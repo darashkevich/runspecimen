@@ -1,0 +1,11 @@
+include CHANGELOG.md
+include SECURITY.md
+recursive-include docs *.md
+recursive-include examples *.json
+recursive-include work *.py
+recursive-include scripts *.py *.sh
+recursive-include tests *.py
+recursive-include plugins *.json *.md *.mdc *.py
+recursive-include .cursor *.mdc
+recursive-include .cursor-plugin *.json
+recursive-include .agents *.json

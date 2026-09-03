@@ -1,0 +1,12 @@
+{
+  "name": "runspecimen",
+  "version": "0.2.0-rc.2",
+  "description": "Approve, bound, run, postflight, and verify consequential local commands.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "RunSpecimen Contributors"
+  },
+  "keywords": ["agents", "automation", "provenance", "safety", "local-first"],
+  "skills": "./skills/",
+  "rules": "./rules/"
+}

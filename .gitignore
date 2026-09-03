@@ -1,0 +1,12 @@
+.tools/
+.runspecimen/
+*.egg-info/
+__pycache__/
+*.py[cod]
+build/
+dist/
+outputs/
+.pytest_cache/
+.mypy_cache/
+*.egg
+qa/live-rc2/outputs/
