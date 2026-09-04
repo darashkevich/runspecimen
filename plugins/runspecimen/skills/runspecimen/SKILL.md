@@ -50,6 +50,11 @@ dashboard with:
 runspecimen dashboard --workspace <workspace> --contract <contract> --open
 ```
 
+`dashboard` is a **blocking** foreground process (`serve_forever`). Agents must
+background it, detach it, or run it in a separate terminal so the session stays
+usable for `approve` / lifecycle commands. Do not treat a hung agent shell as a
+dashboard failure.
+
 It is loopback-only and read-only. It may show status and the exact commands,
 but it must never be described as an approval mechanism or used to bypass the
 real-TTY approval step.

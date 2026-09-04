@@ -15,4 +15,6 @@ layer and not an OS sandbox.
 
 When the user requests a visual view, launch only the loopback, read-only
 dashboard with `runspecimen dashboard --workspace … --contract … --open`.
-The dashboard cannot replace the real-terminal approval step.
+`dashboard` blocks in the foreground; background or detach it so the agent can
+keep running lifecycle commands. The dashboard cannot replace the real-terminal
+approval step.

@@ -30,3 +30,15 @@ before an agent can continue. Receipt checks use:
 runspecimen verify --workspace … --contract … \
   --campaign-id … --run-id …
 ```
+
+## Local dashboard
+
+When launching a visual view, use only:
+
+```bash
+runspecimen dashboard --workspace … --contract … --open
+```
+
+`dashboard` is blocking (`serve_forever`). Agents must background or detach it
+(or run it in another terminal) so they can continue lifecycle commands. It is
+loopback-only and read-only; it cannot replace real-TTY approval.

@@ -77,6 +77,10 @@ Cursor RunSpecimen integration to do so:
 runspecimen dashboard --workspace . --contract examples/demo_contract.json --open
 ```
 
+`dashboard` blocks in the foreground while it serves HTTP. Background it
+(`&`), detach it, or use a separate terminal if you still need the shell for
+`approve` / lifecycle commands (agents should not wait on it in the main turn).
+
 It binds only to `127.0.0.1`, has no remote service or telemetry, and is
 read-only: it shows the current phase, approval/lease/receipt evidence, and
 the exact lifecycle commands. It cannot approve or execute a run. This keeps
