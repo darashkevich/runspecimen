@@ -71,10 +71,37 @@ def check_versions() -> None:
             raise SystemExit(f"missing plugin component: {required}")
 
 
+def ensure_build_backend() -> None:
+    """Fail clearly when the already-installed backend cannot build this project.
+
+    The release check promises to work offline. Installing or upgrading build
+    dependencies here would silently turn that promise into a network request.
+    ``scripts/bootstrap_dev.sh`` is the explicit setup step for a fresh host.
+    """
+    try:
+        import setuptools
+    except ImportError as exc:
+        raise SystemExit(
+            "setuptools>=77 is required; run sh scripts/bootstrap_dev.sh first"
+        ) from exc
+
+    def version_tuple(value: str) -> tuple[int, ...]:
+        match = re.match(r"(\d+(?:\.\d+)*)", value)
+        if match is None:
+            return ()
+        return tuple(int(part) for part in match.group(1).split("."))
+
+    if version_tuple(setuptools.__version__) < (77,):
+        raise SystemExit(
+            "setuptools>=77 is required; run sh scripts/bootstrap_dev.sh first"
+        )
+
+
 def main() -> int:
     check_versions()
     run(sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v")
     run(sys.executable, "-m", "compileall", "-q", "src", "scripts")
+    ensure_build_backend()
 
     with tempfile.TemporaryDirectory(prefix="runspecimen-rc-") as temp:
         temp_path = Path(temp)

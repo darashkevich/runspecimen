@@ -1,0 +1,21 @@
+{
+  "approved_at": "2026-09-04T09:12:01Z",
+  "approved_at_unix": 1788513121.388525,
+  "argv": [
+    "python3",
+    "work/compute.py"
+  ],
+  "campaign_id": "showcase-campaign",
+  "contract_hash": "b3ab510287d2465d80f7dca19c5d1f66c4fa5a1f24308ecddab75b6b28afef8e",
+  "contract_path": "/Users/yahor/Documents/Codex/2026-08-24/how-x20/examples/showcase/contract.json",
+  "expires_at_unix": 1788516721.388525,
+  "run_id": "run-001",
+  "runtime": {
+    "argv0": "python3",
+    "executable_sha256": "b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9",
+    "resolved_executable": "/usr/bin/python3",
+    "runtime_id": "25dd47daa79ae2e09683c3ccf63d2452fae5ae3dda5aa19856b396f1cacf7cee"
+  },
+  "source_hash": "98eeee7ab1a88a631c6f928815e9c02c9dfe409461cbe867f47eaa7230881d93",
+  "ttl_sec": 3600
+}

@@ -1,0 +1,21 @@
+{
+  "approval_expires_at_unix": 1788516721.388525,
+  "campaign_id": "showcase-campaign",
+  "certificate_id": "38e7eb2d33398510ae7930cd695187d7a4a975ca37fba8de4681c1019e51c4af",
+  "contract_hash": "b3ab510287d2465d80f7dca19c5d1f66c4fa5a1f24308ecddab75b6b28afef8e",
+  "event_head": "ec23e80304d0f944798e24462ee3ff06ba73a11231752e72f166486f82994470",
+  "exit_code": 0,
+  "issued_at": "2026-09-04T09:12:01Z",
+  "output_digests": {
+    "outputs/result.json": "b33ef5ab4505924dc71d8f0731ab2be80a0c9fae72591f89bdb1fb73ea9ada33"
+  },
+  "run_id": "run-001",
+  "run_result": "completed",
+  "runtime": {
+    "argv0": "python3",
+    "executable_sha256": "b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9",
+    "resolved_executable": "/usr/bin/python3",
+    "runtime_id": "25dd47daa79ae2e09683c3ccf63d2452fae5ae3dda5aa19856b396f1cacf7cee"
+  },
+  "source_hash": "98eeee7ab1a88a631c6f928815e9c02c9dfe409461cbe867f47eaa7230881d93"
+}

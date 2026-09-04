@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "campaign_id": "showcase-campaign",
+  "run_id": "run-001",
+  "argv": [
+    "python3",
+    "work/compute.py"
+  ],
+  "cwd": ".",
+  "source": {
+    "roots": [
+      "work"
+    ],
+    "excludes": [
+      "work/tmp",
+      "*.pyc"
+    ]
+  },
+  "outputs": {
+    "required": [
+      "outputs/result.json"
+    ]
+  },
+  "caps": {
+    "wall_timeout_sec": 30,
+    "stdout_max_bytes": 65536,
+    "stderr_max_bytes": 65536
+  },
+  "approval": {
+    "ttl_sec": 3600
+  },
+  "predecessor": null,
+  "postflight": {
+    "exit_code": 0,
+    "require_outputs": true,
+    "output_sha256": {},
+    "json_equals": [
+      {
+        "path": "outputs/result.json",
+        "field": "status",
+        "equals": "ok"
+      }
+    ],
+    "source_unchanged": true
+  }
+}

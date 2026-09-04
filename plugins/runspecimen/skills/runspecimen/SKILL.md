@@ -5,9 +5,10 @@ description: Use when a consequential local command should be explicitly approve
 
 # RunSpecimen
 
-Use the installed `runspecimen` CLI as the enforcement boundary. Never imitate
-an approval, call internal test helpers, pipe approval input, or weaken a
-contract to make a refusal disappear.
+Use the installed `runspecimen` CLI as the enforcement boundary. The CLI must be
+on `PATH` (`command -v runspecimen`). Never imitate an approval, call internal
+test helpers, pipe approval input, or weaken a contract to make a refusal
+disappear.
 
 ## Workflow
 
@@ -17,13 +18,25 @@ contract to make a refusal disappear.
    asked for it.
 3. Run `runspecimen validate --workspace <workspace> --contract <contract>`.
 4. Show the user the exact command, outputs, timeout, and major limitations.
-5. Ask the user to run `runspecimen approve ...` in a real terminal. Pause until
-   they confirm it completed; an agent must not enter `APPROVE` for them.
-6. Run `preflight`, then `run`, then `postflight` sequentially. Stop at the first
-   refusal or failure and preserve the evidence.
-7. Run `verify` with the exact campaign and run IDs. Report the certificate ID.
+5. Ask the user to run `runspecimen approve --workspace <workspace> --contract
+   <contract>` in a real terminal. Pause until they confirm it completed; an
+   agent must not enter `APPROVE` for them.
+6. Run sequentially:
+   - `runspecimen preflight --workspace <workspace> --contract <contract>`
+   - `runspecimen run --workspace <workspace> --contract <contract>`
+   - `runspecimen postflight --workspace <workspace> --contract <contract>`
+   Stop at the first refusal or failure and preserve the evidence.
+7. Verify with the full flags (campaign and run IDs must match the contract):
 
-Use `status` for read-only diagnosis. Never run lifecycle steps concurrently,
-reuse a terminal run ID, overwrite asserted outputs, or continue past a missing
-or failed postflight. RunSpecimen is not an OS sandbox; recommend a container or
-stronger isolation for untrusted payloads.
+```bash
+runspecimen verify --workspace <workspace> --contract <contract> \
+  --campaign-id <campaign_id> --run-id <run_id>
+```
+
+Report the certificate ID from the verify JSON.
+
+Use `runspecimen status --workspace <workspace> --campaign-id <campaign_id>
+--run-id <run_id>` for read-only diagnosis. Never run lifecycle steps
+concurrently, reuse a terminal run ID, overwrite asserted outputs, or continue
+past a missing or failed postflight. RunSpecimen is not an OS sandbox; recommend
+a container or stronger isolation for untrusted payloads.

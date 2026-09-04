@@ -27,8 +27,18 @@ No watchers, no recurring scheduler, no parallel workers.
 python3 -m pip install .
 ```
 
-For development, use `python3 -m pip install -e .` with a standard Python
-installation.
+For development, prefer the bootstrap. It pins `setuptools>=77` and performs
+a regular local install; this avoids an editable-install edge case in some
+Python builds where the command is created but cannot import the package:
+
+```bash
+sh scripts/bootstrap_dev.sh
+```
+
+Or manually: `python3 -m pip install --upgrade 'setuptools>=77' wheel` then
+`python3 -m pip install --no-build-isolation .`. Stock setuptools before 77
+rejects the project metadata used by `scripts/release_check.py`. Re-run the
+install after source edits.
 
 Check the host and contract before approval:
 
@@ -52,11 +62,29 @@ runspecimen run --workspace . --contract examples/demo_contract.json
 # 4) Assert outcomes and issue certificate (required before a successor)
 runspecimen postflight --workspace . --contract examples/demo_contract.json
 
-# 5) Verify receipts (requires contract; rehashes live contract+source)
+# 5) Verify receipts (requires contract; rehashes live contract+source+runtime)
 runspecimen verify --workspace . --contract examples/demo_contract.json \
   --campaign-id demo-campaign --run-id run-001
 runspecimen status --workspace . --campaign-id demo-campaign --run-id run-001
 ```
+
+### Showcase receipt (rc2)
+
+`examples/showcase/` holds a regeneratable postflight receipt with
+`outputs/result.json`. Verify it with:
+
+```bash
+runspecimen verify --workspace examples/showcase \
+  --contract examples/showcase/contract.json \
+  --campaign-id showcase-campaign --run-id run-001
+```
+
+Refresh without a TTY (uses the library test hook `skip_tty_check`; not for
+production approvals): `python3 scripts/refresh_showcase.py`. Interactive TTY
+path: `scripts/demo_rc.sh`.
+
+Any local `/.runspecimen/runs/demo-campaign/run-001` left from earlier RCs is
+**historical / pre-`runtime` certificate** and is **not** verifiable on rc2.
 
 ## Contract surface (v1)
 

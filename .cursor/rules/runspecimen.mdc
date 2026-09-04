@@ -4,9 +4,11 @@ alwaysApply: false
 ---
 
 When a user asks for a consequential, long-running, expensive, or provenance-
-sensitive local command, use the installed `runspecimen` CLI. Start with
-`doctor` and `validate`. Never type or pipe the `APPROVE` phrase; the user must
-complete approval in a real terminal. After approval, invoke `preflight`, `run`,
-`postflight`, and `verify` sequentially and stop on any refusal. Never bypass
-the CLI with RunSpecimen's internal test helpers. Explain that RunSpecimen is an
-orchestration/evidence layer and not an OS sandbox.
+sensitive local command, use the installed `runspecimen` CLI on `PATH`. Start
+with `doctor` and `validate`. Never type or pipe the `APPROVE` phrase; the user
+must complete `runspecimen approve --workspace … --contract …` in a real
+terminal. After approval, invoke `preflight`, `run`, `postflight`, then
+`runspecimen verify --workspace … --contract … --campaign-id … --run-id …`
+sequentially and stop on any refusal. Never bypass the CLI with RunSpecimen's
+internal test helpers. Explain that RunSpecimen is an orchestration/evidence
+layer and not an OS sandbox.

@@ -1,12 +1,14 @@
 .tools/
-.runspecimen/
+# Workspace run state (root + QA); examples/showcase/.runspecimen is intentionally tracked
+/.runspecimen/
+qa/**/.runspecimen/
 *.egg-info/
 __pycache__/
 *.py[cod]
 build/
 dist/
-outputs/
+/outputs/
+qa/**/outputs/
 .pytest_cache/
 .mypy_cache/
 *.egg
-qa/live-rc2/outputs/
