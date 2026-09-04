@@ -12,7 +12,7 @@
 - [ ] Full release gate passes on every supported Python version in CI.
 - [x] Wheel is built and smoke-tested from a clean target directory.
 - [x] Plugin and skill validators pass.
-- [ ] Tag `v0.2.0-rc.2` only after the above evidence is recorded.
+- [ ] Tag `v0.2.0-rc.3` only after the above evidence is recorded.
 
 Run `python3 scripts/release_check.py` before tagging. A release candidate is not
 a stable release and does not change the explicit limitations in the threat model.

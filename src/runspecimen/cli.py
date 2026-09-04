@@ -7,6 +7,8 @@ import json
 import os
 import platform
 import sys
+import time
+import webbrowser
 from pathlib import Path
 
 from runspecimen import PRODUCT_NAME, __version__
@@ -89,6 +91,14 @@ def build_parser() -> argparse.ArgumentParser:
         "doctor", help="Check whether this host and workspace are ready"
     )
     _add_workspace(p_doctor)
+
+    p_dashboard = sub.add_parser(
+        "dashboard", help="Open a loopback-only read-only lifecycle dashboard"
+    )
+    _add_workspace(p_dashboard)
+    _add_contract(p_dashboard)
+    p_dashboard.add_argument("--port", type=int, default=0, help="Loopback port (default: choose one)")
+    p_dashboard.add_argument("--open", action="store_true", help="Open the dashboard in the default browser")
 
     return parser
 
@@ -175,6 +185,22 @@ def main(argv: list[str] | None = None) -> int:
             }
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0 if result["ok"] else 1
+        if args.command == "dashboard":
+            if not 0 <= args.port <= 65535:
+                raise RunSpecimenError("dashboard port must be between 0 and 65535")
+            from runspecimen.dashboard import start_dashboard
+
+            server, url = start_dashboard(
+                workspace=workspace, contract_path=args.contract, port=args.port
+            )
+            print(json.dumps({"ok": True, "url": url, "loopback_only": True}, sort_keys=True))
+            if args.open:
+                webbrowser.open(url)
+            try:
+                server.serve_forever()
+            finally:
+                server.server_close()
+            return 0
         parser.error(f"unknown command: {args.command}")
         return 2
     except RunSpecimenError as exc:

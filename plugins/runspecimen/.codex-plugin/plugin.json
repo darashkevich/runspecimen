@@ -1,6 +1,6 @@
 {
   "name": "runspecimen",
-  "version": "0.2.0-rc.2",
+  "version": "0.2.0-rc.3+codex.20260904133232",
   "description": "Approve, bound, run, postflight, and verify consequential local commands.",
   "license": "Apache-2.0",
   "author": {
@@ -13,9 +13,14 @@
     "longDescription": "RunSpecimen gives Codex a constrained workflow for contract validation, explicit TTY approval, bounded execution, mandatory postflight, and receipt verification.",
     "developerName": "RunSpecimen Contributors",
     "category": "Productivity",
-    "capabilities": ["Bounded local execution", "Provenance receipts", "Predecessor gating"],
+    "capabilities": [
+      "Bounded local execution",
+      "Provenance receipts",
+      "Predecessor gating"
+    ],
     "defaultPrompt": [
-      "Put this local command behind a verified RunSpecimen lifecycle."
+      "Put this local command behind a verified RunSpecimen lifecycle.",
+      "Open the RunSpecimen local dashboard for this contract."
     ]
   }
 }

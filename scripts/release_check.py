@@ -13,8 +13,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_PYTHON_VERSION = "0.2.0rc2"
-EXPECTED_PLUGIN_VERSION = "0.2.0-rc.2"
+EXPECTED_PYTHON_VERSION = "0.2.0rc3"
+EXPECTED_PLUGIN_VERSION = "0.2.0-rc.3"
 
 
 def run(*args: str, env: dict[str, str] | None = None) -> None:
@@ -30,7 +30,7 @@ def check_versions() -> None:
     plugin = json.loads(
         (ROOT / "plugins/runspecimen/.codex-plugin/plugin.json").read_text(encoding="utf-8")
     )
-    if plugin.get("version") != EXPECTED_PLUGIN_VERSION:
+    if plugin.get("version", "").split("+", 1)[0] != EXPECTED_PLUGIN_VERSION:
         raise SystemExit("plugin version does not match release_check.py")
     cursor_plugin = json.loads(
         (ROOT / "plugins/runspecimen/.cursor-plugin/plugin.json").read_text(

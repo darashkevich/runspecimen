@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0rc3 - 2026-09-04
+
+- Add a contract-scoped, loopback-only local dashboard that renders phase,
+  evidence, and the exact lifecycle commands for Codex and Cursor users.
+- Keep the dashboard read-only: it cannot approve or execute commands, so the
+  real-TTY approval and CLI enforcement boundaries remain intact.
+- Teach the Codex and Cursor adapters to launch the dashboard on request.
+
 ## 0.2.0rc2 - 2026-09-03
 
 - Execute the exact absolute executable whose digest was approved, including

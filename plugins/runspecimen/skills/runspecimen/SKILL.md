@@ -40,3 +40,16 @@ Use `runspecimen status --workspace <workspace> --campaign-id <campaign_id>
 concurrently, reuse a terminal run ID, overwrite asserted outputs, or continue
 past a missing or failed postflight. RunSpecimen is not an OS sandbox; recommend
 a container or stronger isolation for untrusted payloads.
+
+## Local dashboard
+
+When the user asks for a visual interface, launch the contract-scoped local
+dashboard with:
+
+```bash
+runspecimen dashboard --workspace <workspace> --contract <contract> --open
+```
+
+It is loopback-only and read-only. It may show status and the exact commands,
+but it must never be described as an approval mechanism or used to bypass the
+real-TTY approval step.

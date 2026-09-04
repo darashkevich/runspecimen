@@ -12,3 +12,7 @@ terminal. After approval, invoke `preflight`, `run`, `postflight`, then
 sequentially and stop on any refusal. Never bypass the CLI with RunSpecimen's
 internal test helpers. Explain that RunSpecimen is an orchestration/evidence
 layer and not an OS sandbox.
+
+When the user requests a visual view, launch only the loopback, read-only
+dashboard with `runspecimen dashboard --workspace … --contract … --open`.
+The dashboard cannot replace the real-terminal approval step.

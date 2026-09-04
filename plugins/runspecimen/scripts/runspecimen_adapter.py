@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 
-ALLOWED = frozenset({"doctor", "validate", "status", "preflight", "run", "postflight", "verify"})
+ALLOWED = frozenset({"dashboard", "doctor", "validate", "status", "preflight", "run", "postflight", "verify"})
 
 
 def main() -> int:
@@ -19,6 +19,7 @@ def main() -> int:
     parser.add_argument("--contract", type=Path)
     parser.add_argument("--campaign-id")
     parser.add_argument("--run-id")
+    parser.add_argument("--open", action="store_true")
     args = parser.parse_args()
 
     executable = shutil.which("runspecimen")
@@ -31,6 +32,10 @@ def main() -> int:
         command.extend(["--campaign-id", args.campaign_id])
     if args.run_id is not None:
         command.extend(["--run-id", args.run_id])
+    if args.open:
+        if args.action != "dashboard":
+            parser.error("--open is supported only for dashboard")
+        command.append("--open")
     return subprocess.run(command, check=False).returncode
 
 

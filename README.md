@@ -1,7 +1,7 @@
 # RunSpecimen
 
 RunSpecimen is a local safety and evidence layer for consequential agent-driven
-research and engineering commands. This repository contains the `0.2.0rc2`
+research and engineering commands. This repository contains the `0.2.0rc3`
 release candidate.
 
 ## Core promise
@@ -67,6 +67,21 @@ runspecimen verify --workspace . --contract examples/demo_contract.json \
   --campaign-id demo-campaign --run-id run-001
 runspecimen status --workspace . --campaign-id demo-campaign --run-id run-001
 ```
+
+## Local dashboard for Codex and Cursor users
+
+Open a contract-scoped dashboard from a terminal, or ask the installed Codex or
+Cursor RunSpecimen integration to do so:
+
+```bash
+runspecimen dashboard --workspace . --contract examples/demo_contract.json --open
+```
+
+It binds only to `127.0.0.1`, has no remote service or telemetry, and is
+read-only: it shows the current phase, approval/lease/receipt evidence, and
+the exact lifecycle commands. It cannot approve or execute a run. This keeps
+the real-TTY approval gate and the CLI enforcement boundary intact while making
+the workflow visible in the browser.
 
 ### Showcase receipt (rc2)
 
