@@ -10,7 +10,7 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from runspecimen import PRODUCT_NAME, __version__
+from runspecimen import DOCS_URLS, PRODUCT_NAME, __version__
 from runspecimen.approve import approve_contract
 from runspecimen.certificate import verify_run_receipt
 from runspecimen.contract import load_contract
@@ -22,6 +22,15 @@ from runspecimen.run import run_contract
 from runspecimen.status import format_status, status_for
 from runspecimen.runtime import runtime_provenance
 from runspecimen.lease import Lease
+
+
+_ABOUT_SUMMARY = (
+    "Exactly one human-approved, bounded local run at a time, with provenance "
+    "binding and a tamper-evident receipt. Core lifecycle: approve → preflight → "
+    "run → postflight → verify. Safety model: TTY approval, workspace lease, "
+    "hash-chained events, and certificates — evidence controls, not an OS sandbox. "
+    "The dashboard is loopback-only and read-only; it cannot approve or execute."
+)
 
 
 def _add_workspace(p: argparse.ArgumentParser) -> None:
@@ -45,9 +54,19 @@ def build_parser() -> argparse.ArgumentParser:
             "provenance binding, crash-safe state, mandatory postflight, "
             "and tamper-evident receipts."
         ),
+        epilog=(
+            "Docs: "
+            f"About {DOCS_URLS['about']} · "
+            f"User guide {DOCS_URLS['user_guide']} · "
+            f"FAQ {DOCS_URLS['faq']} · "
+            "or run: runspecimen about"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("about", help="Describe RunSpecimen and print documentation URLs")
 
     p_approve = sub.add_parser("approve", help="Interactively approve a contract+source binding")
     _add_workspace(p_approve)
@@ -105,6 +124,28 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == "about":
+        print(
+            json.dumps(
+                {
+                    "product": PRODUCT_NAME,
+                    "version": __version__,
+                    "summary": _ABOUT_SUMMARY,
+                    "lifecycle": [
+                        "approve",
+                        "preflight",
+                        "run",
+                        "postflight",
+                        "verify",
+                    ],
+                    "docs": dict(DOCS_URLS),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+
     workspace = resolve_workspace(args.workspace)
 
     try:
@@ -181,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
                 "workspace_writable": workspace_writable,
                 "workspace_lease_held": lease_held,
                 "active_lease": lease_meta.to_dict() if lease_meta else None,
+                "docs": dict(DOCS_URLS),
             }
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0 if result["ok"] else 1

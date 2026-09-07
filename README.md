@@ -21,6 +21,14 @@ No watchers, no recurring scheduler, no parallel workers.
 - POSIX (`fcntl` leases)
 - Stdlib only (no third-party dependencies)
 
+## Docs
+
+- [About](docs/ABOUT.md) — what RunSpecimen does, lifecycle, safety model, dashboard role
+- [User guide](docs/USER_GUIDE.md) — install, lifecycle, contracts, dashboard, plugins, troubleshooting
+- [FAQ](docs/FAQ.md) — vs CI/sandbox/agents, TTY approval, verify-after-clone, parallelism, receipts
+- [Product plan](docs/PRODUCT_PLAN.md) — invariants and roadmap
+- [Threat model](docs/THREAT_MODEL.md) — trusted boundary and residual risks
+
 ## Install
 
 ```bash
@@ -82,10 +90,11 @@ runspecimen dashboard --workspace . --contract examples/demo_contract.json --ope
 `approve` / lifecycle commands (agents should not wait on it in the main turn).
 
 It binds only to `127.0.0.1`, has no remote service or telemetry, and is
-read-only: it shows the current phase, approval/lease/receipt evidence, and
-the exact lifecycle commands. It cannot approve or execute a run. This keeps
-the real-TTY approval gate and the CLI enforcement boundary intact while making
-the workflow visible in the browser.
+read-only: it shows an About overview, the current phase, approval/lease/receipt
+evidence, and the exact lifecycle commands. It cannot approve or execute a run.
+This keeps the real-TTY approval gate and the CLI enforcement boundary intact
+while making the workflow visible in the browser. Docs links open the published
+About, User guide, and FAQ on GitHub. CLI shortcut: `runspecimen about`.
 
 ### Showcase receipt (rc2)
 
@@ -163,5 +172,6 @@ python3 -m unittest discover -s tests -v
 ```
 
 For the complete release-candidate gate, run `python3 scripts/release_check.py`.
-See [the threat model](docs/THREAT_MODEL.md), [release checklist](docs/RELEASE_CHECKLIST.md),
-and [security policy](SECURITY.md) before using RunSpecimen for sensitive work.
+Day-to-day usage: [about](docs/ABOUT.md), [user guide](docs/USER_GUIDE.md), and [FAQ](docs/FAQ.md).
+Before sensitive work: [threat model](docs/THREAT_MODEL.md),
+[release checklist](docs/RELEASE_CHECKLIST.md), and [security policy](SECURITY.md).

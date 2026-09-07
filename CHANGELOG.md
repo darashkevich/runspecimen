@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add a dashboard About panel plus User guide / FAQ links, `docs/ABOUT.md`,
+  `docs/USER_GUIDE.md`, `docs/FAQ.md`, and a `runspecimen about` command
+  (docs URLs also appear in `doctor` and `--help`).
+
 ## 0.2.0rc3 - 2026-09-04
 
 - Add a contract-scoped, loopback-only local dashboard that renders phase,

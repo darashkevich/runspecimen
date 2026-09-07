@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from runspecimen import DOCS_URLS
 from runspecimen.contract import load_contract
 from runspecimen.paths import resolve_workspace
 from runspecimen.status import status_for
@@ -25,6 +26,9 @@ def dashboard_document(*, workspace: Path, contract_path: Path, status: dict[str
     workspace_s = html.escape(str(workspace))
     contract_s = html.escape(str(contract_path))
     phase = html.escape(str(status["phase"]))
+    about_url = html.escape(DOCS_URLS["about"], quote=True)
+    guide_url = html.escape(DOCS_URLS["user_guide"], quote=True)
+    faq_url = html.escape(DOCS_URLS["faq"], quote=True)
     workspace_arg = shlex.quote(str(workspace))
     contract_arg = shlex.quote(str(contract_path))
     campaign_arg = shlex.quote(contract.campaign_id)
@@ -45,9 +49,19 @@ def dashboard_document(*, workspace: Path, contract_path: Path, status: dict[str
     return f"""<!doctype html>
 <html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">
 <title>RunSpecimen — {html.escape(contract.campaign_id)} / {html.escape(contract.run_id)}</title>
-<style>body{{font:16px system-ui,sans-serif;max-width:940px;margin:3rem auto;padding:0 1rem;color:#172033;background:#fbfcfe}}h1{{margin-bottom:.2rem}}.badge{{display:inline-block;background:#e8eefc;border-radius:999px;padding:.2rem .65rem;font-weight:700}}.warning{{background:#fff3d6;border-left:4px solid #d99800;padding:1rem;margin:1.5rem 0}}code,pre{{display:block;white-space:pre-wrap;overflow-wrap:anywhere;background:#101828;color:#e6edf7;padding:.7rem;border-radius:6px;margin:.45rem 0 1rem}}li{{margin:1rem 0}}button{{padding:.4rem .7rem}}small{{color:#536174}}</style></head>
+<style>body{{font:16px system-ui,sans-serif;max-width:940px;margin:3rem auto;padding:0 1rem;color:#172033;background:#fbfcfe}}h1{{margin-bottom:.2rem}}.badge{{display:inline-block;background:#e8eefc;border-radius:999px;padding:.2rem .65rem;font-weight:700}}.warning{{background:#fff3d6;border-left:4px solid #d99800;padding:1rem;margin:1.5rem 0}}code,pre{{display:block;white-space:pre-wrap;overflow-wrap:anywhere;background:#101828;color:#e6edf7;padding:.7rem;border-radius:6px;margin:.45rem 0 1rem}}li{{margin:1rem 0}}button{{padding:.4rem .7rem}}small{{color:#536174}}.about{{margin:1.5rem 0;padding:1rem;border:1px solid #d7dee8;border-radius:8px}}.about h2{{margin-top:0}}.about-docs{{display:flex;flex-wrap:wrap;gap:.75rem 1rem;margin-top:.75rem}}.about-docs a{{color:#1d4ed8;font-weight:700;text-decoration:none}}.about-docs a:hover{{text-decoration:underline}}</style></head>
 <body><h1>RunSpecimen local dashboard</h1><p><span class=\"badge\">{phase}</span></p>
 <p><strong>Workspace:</strong> {workspace_s}<br><strong>Contract:</strong> {contract_s}</p>
+<section id=\"about\" class=\"about\" aria-labelledby=\"about-heading\">
+<h2 id=\"about-heading\">About RunSpecimen</h2>
+<p>Exactly one human-approved, bounded local run at a time, with provenance binding and a tamper-evident receipt. Evidence controls (TTY approval, workspace lease, hash-chained events, certificates) — not an OS sandbox.</p>
+<p>This dashboard is loopback-only and read-only; it cannot approve or execute a run.</p>
+<nav class=\"about-docs\" aria-label=\"Learn more\">
+<a href=\"{about_url}\" target=\"_blank\" rel=\"noopener noreferrer\">About (full)</a>
+<a href=\"{guide_url}\" target=\"_blank\" rel=\"noopener noreferrer\">User guide</a>
+<a href=\"{faq_url}\" target=\"_blank\" rel=\"noopener noreferrer\">FAQ</a>
+</nav>
+</section>
 <div class=\"warning\"><strong>Safety boundary:</strong> this page is read-only. It cannot approve or execute a run. Approval must be typed by a human in a real terminal; use the commands below one at a time.</div>
 <h2>Guided lifecycle</h2><ol>{steps}</ol>
 <h2>Current evidence</h2><pre id=\"status\">{escaped_status}</pre>

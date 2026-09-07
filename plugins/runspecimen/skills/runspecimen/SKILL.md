@@ -1,6 +1,6 @@
 ---
 name: runspecimen
-description: Use when a consequential local command should be explicitly approved, bounded to one workspace execution, provenance-checked, postflighted, and issued a tamper-evident receipt. Also use for RunSpecimen contract authoring, status, diagnosis, or receipt verification.
+description: Use when a consequential local command should be explicitly approved, bounded to one workspace execution, provenance-checked, postflighted, and issued a tamper-evident receipt. Also use for RunSpecimen contract authoring, status, diagnosis, receipt verification, or explaining what the product does (about / docs).
 ---
 
 # RunSpecimen
@@ -10,6 +10,9 @@ on `PATH` (`command -v runspecimen`). Never imitate an approval, call internal
 test helpers, pipe approval input, or weaken a contract to make a refusal
 disappear.
 
+For a short product summary and documentation URLs, run `runspecimen about` or
+point the user at the dashboard About panel (User guide and FAQ links open on
+GitHub).
 ## Workflow
 
 1. Run `runspecimen doctor --workspace <workspace>`.
@@ -55,6 +58,6 @@ background it, detach it, or run it in a separate terminal so the session stays
 usable for `approve` / lifecycle commands. Do not treat a hung agent shell as a
 dashboard failure.
 
-It is loopback-only and read-only. It may show status and the exact commands,
-but it must never be described as an approval mechanism or used to bypass the
-real-TTY approval step.
+It is loopback-only and read-only. It may show the About overview, status, and
+the exact commands, but it must never be described as an approval mechanism or
+used to bypass the real-TTY approval step.

@@ -9,13 +9,23 @@ import subprocess
 from pathlib import Path
 
 
-ALLOWED = frozenset({"dashboard", "doctor", "validate", "status", "preflight", "run", "postflight", "verify"})
+ALLOWED = frozenset({
+    "about",
+    "dashboard",
+    "doctor",
+    "validate",
+    "status",
+    "preflight",
+    "run",
+    "postflight",
+    "verify",
+})
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=sorted(ALLOWED))
-    parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--workspace", type=Path)
     parser.add_argument("--contract", type=Path)
     parser.add_argument("--campaign-id")
     parser.add_argument("--run-id")
@@ -25,6 +35,12 @@ def main() -> int:
     executable = shutil.which("runspecimen")
     if executable is None:
         parser.error("runspecimen is not installed on PATH")
+    if args.action == "about":
+        if args.workspace is not None or args.contract is not None or args.campaign_id or args.run_id or args.open:
+            parser.error("about takes no workspace/contract/open flags")
+        return subprocess.run([executable, "about"], check=False).returncode
+    if args.workspace is None:
+        parser.error("--workspace is required")
     command = [executable, args.action, "--workspace", str(args.workspace.resolve())]
     if args.contract is not None:
         command.extend(["--contract", str(args.contract.resolve())])

@@ -28,6 +28,12 @@ class TestDashboard(RunSpecimenTestCase):
         )
         self.assertIn("Safety boundary", page)
         self.assertIn("Approve in a terminal", page)
+        self.assertIn("About RunSpecimen", page)
+        self.assertIn('id="about"', page)
+        self.assertIn("Exactly one human-approved, bounded local run", page)
+        self.assertIn("https://github.com/darashkevich/runspecimen/blob/main/docs/ABOUT.md", page)
+        self.assertIn("https://github.com/darashkevich/runspecimen/blob/main/docs/USER_GUIDE.md", page)
+        self.assertIn("https://github.com/darashkevich/runspecimen/blob/main/docs/FAQ.md", page)
         self.assertNotIn("/api/run", page)
 
     def test_dashboard_binds_loopback_only(self) -> None:
