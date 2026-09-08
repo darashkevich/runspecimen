@@ -1,7 +1,7 @@
 # RunSpecimen
 
 RunSpecimen is a local safety and evidence layer for consequential agent-driven
-research and engineering commands. This repository contains the `0.2.0rc6`
+research and engineering commands. This repository contains the `0.2.0rc7`
 release candidate.
 
 ## Core promise

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0rc7 - 2026-09-08
+
+- Made the installed-dashboard release smoke deterministic on macOS runners by hosting and probing the loopback server in one process.
+
 ## 0.2.0rc6 - 2026-09-08
 
 - Replaced the release-gate dashboard startup log dependency with direct loopback HTTP readiness verification for reliable macOS checks.

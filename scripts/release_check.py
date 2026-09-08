@@ -14,12 +14,10 @@ import json
 import os
 import re
 import shutil
-import socket
 import subprocess
 import sys
 import tarfile
 import tempfile
-import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -27,8 +25,8 @@ from pathlib import Path, PurePosixPath
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_PYTHON_VERSION = "0.2.0rc6"
-EXPECTED_PLUGIN_VERSION = "0.2.0-rc.6"
+EXPECTED_PYTHON_VERSION = "0.2.0rc7"
+EXPECTED_PLUGIN_VERSION = "0.2.0-rc.7"
 SOURCE_COMPONENTS = (
     "pyproject.toml", "MANIFEST.in", "README.md", "LICENSE", "CHANGELOG.md",
     "SECURITY.md", "src", "scripts", "tests", "docs", "examples", "work",
@@ -199,58 +197,38 @@ def build_plugin(source: Path, output: Path) -> None:
             archive.writestr(info, path.read_bytes())
 
 
-def smoke_dashboard(cli: Path, workspace: Path, contract: Path, env: dict[str, str]) -> None:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as reservation:
-        reservation.bind(("127.0.0.1", 0))
-        port = reservation.getsockname()[1]
-    url = f"http://127.0.0.1:{port}/"
-    command = [str(cli), "dashboard", "--workspace", str(workspace), "--contract", str(contract), "--port", str(port)]
-    print("+", " ".join(command), "[HTTP smoke]", flush=True)
-    with tempfile.TemporaryFile(mode="w+t") as errors:
-        process = subprocess.Popen(command, cwd=workspace, env=env, stdin=subprocess.DEVNULL,
-                                   stdout=subprocess.PIPE, stderr=errors, text=True)
-        try:
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-            deadline = time.monotonic() + 15
-            while True:
-                try:
-                    with opener.open(url, timeout=1) as response:
-                        page = response.read().decode("utf-8")
-                        if "RunSpecimen" not in page or response.headers.get("Cache-Control") != "no-store":
-                            raise SystemExit("installed dashboard HTML/security smoke failed")
-                    break
-                except urllib.error.URLError as exc:
-                    if time.monotonic() >= deadline:
-                        raise SystemExit("dashboard did not accept loopback HTTP within 15 seconds") from exc
-                    if process.poll() is not None:
-                        raise SystemExit("dashboard exited before accepting loopback HTTP")
-                    time.sleep(0.1)
-            with opener.open(url + "api/status", timeout=5) as response:
-                status = json.load(response)
-                if status.get("campaign_id") != "release-smoke" or status.get("approval") is not None:
-                    raise SystemExit("installed dashboard returned unexpected run state")
-            try:
-                opener.open(urllib.request.Request(url + "api/status", data=b"{}", method="POST"), timeout=5)
-            except urllib.error.HTTPError as exc:
-                if exc.code != 405:
-                    raise SystemExit(f"dashboard mutation returned {exc.code}, expected 405") from exc
-            else:
-                raise SystemExit("dashboard accepted a mutation")
-        except (ValueError, KeyError) as exc:
-            raise SystemExit(f"dashboard emitted invalid startup/status JSON: {exc}") from exc
-        finally:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-            if process.stdout:
-                process.stdout.close()
-            errors.seek(0)
-            diagnostics = errors.read()
-            if diagnostics:
-                print(diagnostics, file=sys.stderr, end="")
+def smoke_dashboard(python: Path, workspace: Path, contract: Path, env: dict[str, str]) -> None:
+    """Exercise the installed wheel's loopback server in one process.
+
+    macOS hosted runners do not reliably permit a parent process to probe a
+    separately spawned loopback server, despite allowing the server itself.
+    """
+    script = """
+import json, threading, urllib.error, urllib.request
+from pathlib import Path
+from runspecimen.dashboard import start_dashboard
+workspace, contract = map(Path, __import__('sys').argv[1:3])
+server, url = start_dashboard(workspace=workspace, contract_path=contract)
+thread = threading.Thread(target=server.serve_forever, daemon=True)
+thread.start()
+try:
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(url, timeout=5) as response:
+        page = response.read().decode('utf-8')
+        assert 'RunSpecimen' in page and response.headers.get('Cache-Control') == 'no-store'
+    with opener.open(url + 'api/status', timeout=5) as response:
+        status = json.load(response)
+        assert status.get('campaign_id') == 'release-smoke' and status.get('approval') is None
+    try:
+        opener.open(urllib.request.Request(url + 'api/status', data=b'{}', method='POST'), timeout=5)
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 405
+    else:
+        raise AssertionError('dashboard accepted a mutation')
+finally:
+    server.shutdown(); thread.join(timeout=5); server.server_close()
+"""
+    run(str(python), "-c", script, str(workspace), str(contract), cwd=workspace, env=env)
 
 
 def smoke_install(wheel: Path, source: Path, temp: Path, env: dict[str, str]) -> None:
@@ -282,7 +260,8 @@ def smoke_install(wheel: Path, source: Path, temp: Path, env: dict[str, str]) ->
             raise SystemExit(f"installed {action} check failed")
     run(str(python), str(source / "plugins/runspecimen/scripts/runspecimen_adapter.py"),
         "doctor", "--workspace", str(workspace), cwd=workspace, env=smoke_env)
-    smoke_dashboard(cli, workspace, contract, smoke_env)
+    run(str(cli), "dashboard", "--help", cwd=workspace, env=smoke_env, capture=True)
+    smoke_dashboard(python, workspace, contract, smoke_env)
     if list(workspace.rglob("approval.json")) or (workspace / "outputs").exists():
         raise SystemExit("read-only release smoke unexpectedly approved or executed its payload")
 
