@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0rc6 - 2026-09-08
+
+- Replaced the release-gate dashboard startup log dependency with direct loopback HTTP readiness verification for reliable macOS checks.
+
 ## 0.2.0rc5 - 2026-09-08
 
 - Make the offline release gate wait for dashboard startup without relying on

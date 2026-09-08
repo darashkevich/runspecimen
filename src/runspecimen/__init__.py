@@ -3,7 +3,7 @@
 Local execution assurance for research and engineering workflows.
 """
 
-__version__ = "0.2.0rc5"
+__version__ = "0.2.0rc6"
 PRODUCT_NAME = "RunSpecimen"
 
 # Canonical published docs (installed wheels do not embed the markdown tree).

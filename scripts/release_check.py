@@ -12,24 +12,23 @@ import argparse
 import hashlib
 import json
 import os
-import queue
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tarfile
 import tempfile
-import threading
+import time
 import urllib.error
-import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_PYTHON_VERSION = "0.2.0rc5"
-EXPECTED_PLUGIN_VERSION = "0.2.0-rc.5"
+EXPECTED_PYTHON_VERSION = "0.2.0rc6"
+EXPECTED_PLUGIN_VERSION = "0.2.0-rc.6"
 SOURCE_COMPONENTS = (
     "pyproject.toml", "MANIFEST.in", "README.md", "LICENSE", "CHANGELOG.md",
     "SECURITY.md", "src", "scripts", "tests", "docs", "examples", "work",
@@ -201,37 +200,31 @@ def build_plugin(source: Path, output: Path) -> None:
 
 
 def smoke_dashboard(cli: Path, workspace: Path, contract: Path, env: dict[str, str]) -> None:
-    command = [str(cli), "dashboard", "--workspace", str(workspace), "--contract", str(contract)]
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    url = f"http://127.0.0.1:{port}/"
+    command = [str(cli), "dashboard", "--workspace", str(workspace), "--contract", str(contract), "--port", str(port)]
     print("+", " ".join(command), "[HTTP smoke]", flush=True)
     with tempfile.TemporaryFile(mode="w+t") as errors:
         process = subprocess.Popen(command, cwd=workspace, env=env, stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=errors, text=True)
         try:
-            if process.stdout is None:
-                raise SystemExit("dashboard startup output is unavailable")
-            startup_lines: queue.Queue[str] = queue.Queue(maxsize=1)
-
-            def read_startup() -> None:
-                startup_lines.put(process.stdout.readline())
-
-            reader = threading.Thread(target=read_startup, daemon=True)
-            reader.start()
-            try:
-                startup_line = startup_lines.get(timeout=15)
-            except queue.Empty as exc:
-                raise SystemExit("dashboard did not announce its URL within 15 seconds") from exc
-            if not startup_line:
-                raise SystemExit("dashboard exited without announcing its URL")
-            startup = json.loads(startup_line)
-            url = startup["url"]
-            parsed = urllib.parse.urlsplit(url)
-            if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or not parsed.port:
-                raise SystemExit(f"dashboard announced a non-loopback URL: {url}")
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-            with opener.open(url, timeout=5) as response:
-                page = response.read().decode("utf-8")
-                if "RunSpecimen" not in page or response.headers.get("Cache-Control") != "no-store":
-                    raise SystemExit("installed dashboard HTML/security smoke failed")
+            deadline = time.monotonic() + 15
+            while True:
+                try:
+                    with opener.open(url, timeout=1) as response:
+                        page = response.read().decode("utf-8")
+                        if "RunSpecimen" not in page or response.headers.get("Cache-Control") != "no-store":
+                            raise SystemExit("installed dashboard HTML/security smoke failed")
+                    break
+                except urllib.error.URLError as exc:
+                    if time.monotonic() >= deadline:
+                        raise SystemExit("dashboard did not accept loopback HTTP within 15 seconds") from exc
+                    if process.poll() is not None:
+                        raise SystemExit("dashboard exited before accepting loopback HTTP")
+                    time.sleep(0.1)
             with opener.open(url + "api/status", timeout=5) as response:
                 status = json.load(response)
                 if status.get("campaign_id") != "release-smoke" or status.get("approval") is not None:

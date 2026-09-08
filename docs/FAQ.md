@@ -79,7 +79,7 @@ assertions, use a fresh `run_id` per attempt, and chain steps with
 
 - Repository: https://github.com/darashkevich/runspecimen
 - Check installed CLI: `runspecimen --version` (engine package version, e.g.
-  `0.2.0rc5`)
+  `0.2.0rc6`)
 
 ## Is the dashboard safe to leave open?
 

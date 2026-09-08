@@ -13,7 +13,7 @@
   (matrix today: 3.9/3.11/3.12 on ubuntu+macos; not every `>=3.9` interpreter).
 - [x] Wheel is built and smoke-tested from a clean target directory.
 - [x] Plugin and skill validators pass.
-- [ ] Tag `v0.2.0-rc.5` after the release gate passes on the release commit.
+- [ ] Tag `v0.2.0-rc.6` after the release gate passes on the release commit.
 
 Run `python3 scripts/release_check.py` before tagging. A release candidate is not
 a stable release and does not change the explicit limitations in the threat model.

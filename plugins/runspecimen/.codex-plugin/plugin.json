@@ -1,6 +1,6 @@
 {
   "name": "runspecimen",
-  "version": "0.2.0-rc.5+codex.20260908131529",
+  "version": "0.2.0-rc.6+codex.20260908132248",
   "description": "Approve, bound, run, postflight, and verify consequential local commands.",
   "license": "Apache-2.0",
   "author": {
