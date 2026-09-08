@@ -1,7 +1,7 @@
 # RunSpecimen
 
 RunSpecimen is a local safety and evidence layer for consequential agent-driven
-research and engineering commands. This repository contains the `0.2.0rc3`
+research and engineering commands. This repository contains the `0.2.0rc4`
 release candidate.
 
 ## Core promise
@@ -55,6 +55,13 @@ runspecimen doctor --workspace .
 runspecimen validate --workspace . --contract examples/demo_contract.json
 ```
 
+Create a fresh, unapproved demo workspace without modifying an existing
+directory:
+
+```bash
+runspecimen init-demo --workspace ./runspecimen-demo
+```
+
 ## Typical sequence
 
 ```bash
@@ -96,7 +103,7 @@ This keeps the real-TTY approval gate and the CLI enforcement boundary intact
 while making the workflow visible in the browser. Docs links open the published
 About, User guide, and FAQ on GitHub. CLI shortcut: `runspecimen about`.
 
-### Showcase receipt (rc2)
+### Showcase receipt
 
 `examples/showcase/` holds a regeneratable postflight receipt with
 `outputs/result.json`. Verify it with:

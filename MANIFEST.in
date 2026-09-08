@@ -1,11 +1,22 @@
 include CHANGELOG.md
 include SECURITY.md
-recursive-include docs *.md
-recursive-include examples *.json
-recursive-include work *.py
+include docs/ABOUT.md
+include docs/FAQ.md
+include docs/MARKET_AND_DISTRIBUTION.md
+include docs/PRODUCT_PLAN.md
+include docs/RELEASE_CHECKLIST.md
+include docs/THREAT_MODEL.md
+include docs/USER_GUIDE.md
+include examples/demo_contract.json
+include examples/showcase/README.md
+include examples/showcase/contract.json
+include examples/showcase/work/compute.py
+include work/compute.py
 recursive-include scripts *.py *.sh
 recursive-include tests *.py
 recursive-include plugins *.json *.md *.mdc *.py
 recursive-include .cursor *.mdc
 recursive-include .cursor-plugin *.json
 recursive-include .agents *.json
+prune examples/showcase/.runspecimen
+global-exclude __pycache__ *.py[cod] .DS_Store

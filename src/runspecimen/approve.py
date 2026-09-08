@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import sys
 import time
 from pathlib import Path
@@ -204,8 +205,14 @@ def approval_is_valid(
     if approval.get("campaign_id") != contract.campaign_id or approval.get("run_id") != contract.run_id:
         return False, "approval run identity mismatch"
     expires = approval.get("expires_at_unix")
-    if not isinstance(expires, (int, float)):
-        return False, "approval missing expires_at_unix"
-    if ts > float(expires):
+    if isinstance(expires, bool) or not isinstance(expires, (int, float)):
+        return False, "approval missing or invalid expires_at_unix"
+    try:
+        finite_expiry = math.isfinite(expires)
+    except OverflowError:
+        finite_expiry = False
+    if not finite_expiry:
+        return False, "approval invalid expires_at_unix (must be finite)"
+    if ts >= expires:
         return False, "approval expired (stale)"
     return True, "ok"

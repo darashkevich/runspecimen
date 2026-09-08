@@ -27,6 +27,21 @@ def _dig_field(data: Any, dotted: str) -> Any:
     return cur
 
 
+def _json_values_equal(actual: Any, expected: Any) -> bool:
+    """Compare JSON values without Python's true == 1 / false == 0 coercion."""
+    if isinstance(actual, bool) or isinstance(expected, bool):
+        return type(actual) is type(expected) and actual == expected
+    if isinstance(actual, dict) and isinstance(expected, dict):
+        return actual.keys() == expected.keys() and all(
+            _json_values_equal(actual[key], expected[key]) for key in actual
+        )
+    if isinstance(actual, list) and isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            _json_values_equal(left, right) for left, right in zip(actual, expected)
+        )
+    return actual == expected
+
+
 def postflight(
     *,
     contract_path: Path,
@@ -123,7 +138,7 @@ def _postflight_under_lease(*, contract, workspace: Path) -> dict:
         except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
             failures.append(f"json_equals {assertion.path}:{assertion.field}: {exc}")
             continue
-        if actual != assertion.equals:
+        if not _json_values_equal(actual, assertion.equals):
             failures.append(
                 f"json_equals {assertion.path}:{assertion.field}: "
                 f"expected {assertion.equals!r}, got {actual!r}"

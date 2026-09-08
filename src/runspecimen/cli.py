@@ -68,6 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("about", help="Describe RunSpecimen and print documentation URLs")
 
+    p_demo = sub.add_parser("init-demo", help="Create a fresh unapproved demo workspace")
+    p_demo.add_argument("--workspace", type=Path, required=True, help="New directory to create (must not exist)")
+
     p_approve = sub.add_parser("approve", help="Interactively approve a contract+source binding")
     _add_workspace(p_approve)
     _add_contract(p_approve)
@@ -149,6 +152,11 @@ def main(argv: list[str] | None = None) -> int:
     workspace = resolve_workspace(args.workspace)
 
     try:
+        if args.command == "init-demo":
+            from runspecimen.demo import init_demo
+
+            print(json.dumps(init_demo(workspace), indent=2, sort_keys=True))
+            return 0
         if args.command == "approve":
             doc = approve_contract(contract_path=args.contract, workspace=workspace)
             print(json.dumps({"ok": True, "approval": doc}, indent=2, sort_keys=True))
@@ -234,10 +242,10 @@ def main(argv: list[str] | None = None) -> int:
             server, url = start_dashboard(
                 workspace=workspace, contract_path=args.contract, port=args.port
             )
-            print(json.dumps({"ok": True, "url": url, "loopback_only": True}, sort_keys=True))
-            if args.open:
-                webbrowser.open(url)
+            print(json.dumps({"ok": True, "url": url, "loopback_only": True}, sort_keys=True), flush=True)
             try:
+                if args.open:
+                    webbrowser.open(url)
                 server.serve_forever()
             finally:
                 server.server_close()
@@ -249,8 +257,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except BrokenPipeError:
         return 0
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        print(f"{PRODUCT_NAME} error: {exc}", file=sys.stderr)
+        return 1
     except KeyboardInterrupt:
-        print(f"{PRODUCT_NAME}: interrupted; no approval was recorded", file=sys.stderr)
+        print(f"{PRODUCT_NAME}: {args.command} interrupted; inspect status before continuing", file=sys.stderr)
         return 130
 
 

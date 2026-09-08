@@ -3,19 +3,35 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   release-check:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        python: ["3.9", "3.11", "3.12"]
+        os: [ubuntu-latest]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: macos-latest
+            python: "3.11"
+          - os: macos-latest
+            python: "3.14"
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
       - run: python -m pip install --upgrade pip setuptools wheel
-      - run: python scripts/release_check.py
+      - name: Offline release gate
+        run: python scripts/release_check.py --output-dir "${{ runner.temp }}/runspecimen-release"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runspecimen-${{ matrix.os }}-python-${{ matrix.python }}
+          path: ${{ runner.temp }}/runspecimen-release/
+          if-no-files-found: error

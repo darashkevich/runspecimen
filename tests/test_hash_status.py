@@ -104,7 +104,19 @@ class TestStatusCli(RunSpecimenTestCase):
         out = StringIO()
         with redirect_stdout(out):
             self.assertEqual(main(["doctor", "--workspace", str(self.ws)]), 0)
-        self.assertTrue(json.loads(out.getvalue())["ok"])
+        doctor = json.loads(out.getvalue())
+        self.assertTrue(doctor["ok"])
+        self.assertIn("user_guide", doctor["docs"])
+        self.assertIn("FAQ.md", doctor["docs"]["faq"])
+
+        out = StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(main(["about"]), 0)
+        about = json.loads(out.getvalue())
+        self.assertEqual(about["product"], "RunSpecimen")
+        self.assertIn("approve", about["lifecycle"])
+        self.assertIn("bounded local run", about["summary"])
+        self.assertIn("ABOUT.md", about["docs"]["about"])
 
         out = StringIO()
         with redirect_stdout(out):

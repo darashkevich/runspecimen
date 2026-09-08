@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import os
+import selectors
 import signal
 import subprocess
-import threading
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from runspecimen.approve import approval_is_valid, load_approval
@@ -43,28 +44,59 @@ def _kill_process_group(proc: subprocess.Popen[bytes]) -> None:
             pass
 
 
-def _drain_bounded(stream, max_bytes: int, sink: list) -> None:
-    """Background reader: keep at most max_bytes; drop the rest."""
-    buf = bytearray()
-    truncated = False
+@dataclass
+class _Capture:
+    limit: int
+    data: bytearray = field(default_factory=bytearray)
+    truncated: bool = False
+
+    def append(self, chunk: bytes) -> None:
+        remaining = self.limit - len(self.data)
+        self.data.extend(chunk[:remaining])
+        self.truncated = self.truncated or len(chunk) > remaining
+
+
+def _supervise_process(proc, stdout: _Capture, stderr: _Capture, deadline: float) -> bool:
+    """Drain both pipes without allowing inherited descriptors to block cleanup."""
+    assert proc.stdout is not None and proc.stderr is not None
+    selector = selectors.DefaultSelector()
     try:
-        while True:
-            chunk = stream.read(65536)
-            if not chunk:
-                break
-            if truncated:
-                continue
-            remaining = max_bytes - len(buf)
+        for stream, capture in ((proc.stdout, stdout), (proc.stderr, stderr)):
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ, capture)
+        group_cleaned = False
+        while selector.get_map() or proc.poll() is None:
+            if proc.poll() is not None and not group_cleaned:
+                # A successful launcher can leave workers holding the pipes
+                # open. End its process group before releasing the lease.
+                _kill_process_group(proc)
+                group_cleaned = True
+            remaining = deadline - time.monotonic()
             if remaining <= 0:
-                truncated = True
-                continue
-            if len(chunk) > remaining:
-                buf.extend(chunk[:remaining])
-                truncated = True
+                return True
+            if selector.get_map():
+                for key, _ in selector.select(timeout=min(0.1, remaining)):
+                    try:
+                        chunk = os.read(key.fd, 65536)
+                    except BlockingIOError:
+                        continue
+                    if chunk:
+                        key.data.append(chunk)
+                    else:
+                        selector.unregister(key.fileobj)
             else:
-                buf.extend(chunk)
+                try:
+                    proc.wait(timeout=min(0.1, remaining))
+                except subprocess.TimeoutExpired:
+                    pass
+        return False
     finally:
-        sink.append((bytes(buf), truncated))
+        selector.close()
+
+
+def _stop_process(proc) -> None:
+    _kill_process_group(proc)
+    proc.wait(timeout=5)
 
 
 def run_contract(
@@ -80,28 +112,26 @@ def run_contract(
 
     state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
     ensure_dir(state_dir)
-    ts = time.time() if now is None else now
-
     try:
         with hold_workspace_lease(workspace, holder="run"):
             return _run_under_lease(
                 contract=contract,
                 workspace=workspace,
                 state_dir=state_dir,
-                ts=ts,
+                now=now,
             )
     except LeaseError as exc:
         raise RunError(str(exc)) from exc
 
 
-def _run_under_lease(*, contract, workspace: Path, state_dir: Path, ts: float) -> dict:
+def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float | None) -> dict:
     approval = load_approval(state_dir)
     if approval is None:
         raise PreflightError("no approval present; run approve first")
     source_hash, _ = hash_source(
         workspace, list(contract.source.roots), list(contract.source.excludes)
     )
-    ok, reason = approval_is_valid(approval, contract, source_hash, now=ts)
+    ok, reason = approval_is_valid(approval, contract, source_hash, now=now)
     if not ok:
         raise PreflightError(reason)
     runtime = runtime_provenance(contract, workspace)
@@ -119,6 +149,13 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, ts: float) -
     cwd = ensure_within(workspace, Path(contract.cwd), label="cwd")
     if not cwd.is_dir():
         raise RunError(f"cwd does not exist or is not a directory: {contract.cwd}")
+
+    # Source/runtime hashing and predecessor verification can outlast a short
+    # approval. Check the clock again at the actual launch boundary.
+    ts = time.time() if now is None else now
+    ok, reason = approval_is_valid(approval, contract, source_hash, now=ts)
+    if not ok:
+        raise PreflightError(reason)
 
     log = EventLog.for_state_dir(state_dir)
     log.append(
@@ -143,6 +180,7 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, ts: float) -
         runtime=runtime,
     )
 
+    deadline = time.monotonic() + contract.caps.wall_timeout_sec
     try:
         # Launch the exact absolute executable that was just hashed instead of
         # asking PATH to resolve argv[0] a second time.
@@ -152,6 +190,7 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, ts: float) -
             cwd=str(cwd),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            bufsize=0,
             shell=False,
             start_new_session=True,
         )
@@ -166,55 +205,34 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, ts: float) -
         log.append("run_failed", {"error": f"spawn failed: {exc}"})
         raise RunError(f"failed to spawn process: {exc}") from exc
 
-    assert proc.stdout is not None and proc.stderr is not None
-    stdout_sink: list = []
-    stderr_sink: list = []
-    t_out = threading.Thread(
-        target=_drain_bounded,
-        args=(proc.stdout, contract.caps.stdout_max_bytes, stdout_sink),
-        daemon=True,
-    )
-    t_err = threading.Thread(
-        target=_drain_bounded,
-        args=(proc.stderr, contract.caps.stderr_max_bytes, stderr_sink),
-        daemon=True,
-    )
-    t_out.start()
-    t_err.start()
-
-    timed_out = False
-    deadline = time.monotonic() + contract.caps.wall_timeout_sec
+    stdout = _Capture(contract.caps.stdout_max_bytes)
+    stderr = _Capture(contract.caps.stderr_max_bytes)
     try:
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                timed_out = True
-                _kill_process_group(proc)
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    _kill_process_group(proc)
-                    proc.wait(timeout=5)
-                break
-            try:
-                proc.wait(timeout=min(0.2, max(remaining, 0.01)))
-                break
-            except subprocess.TimeoutExpired:
-                continue
+        timed_out = _supervise_process(proc, stdout, stderr, deadline)
+        _stop_process(proc)
+    except BaseException as exc:
+        _stop_process(proc)
+        result = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "failed"
+        atomic_write_bytes(state_dir / STDOUT_FILENAME, bytes(stdout.data))
+        atomic_write_bytes(state_dir / STDERR_FILENAME, bytes(stderr.data))
+        update_state(
+            state_dir,
+            phase="failed",
+            run_result=result,
+            exit_code=proc.returncode,
+            error=f"run {result}: {type(exc).__name__}",
+            run_finished_at=utc_now_iso(),
+            stdout_truncated=stdout.truncated,
+            stderr_truncated=stderr.truncated,
+        )
+        log.append(f"run_{result}", {"exit_code": proc.returncode, "error": type(exc).__name__})
+        raise
     finally:
-        t_out.join(timeout=5)
-        t_err.join(timeout=5)
-        try:
-            proc.stdout.close()
-        except OSError:
-            pass
-        try:
-            proc.stderr.close()
-        except OSError:
-            pass
+        proc.stdout.close()
+        proc.stderr.close()
 
-    stdout_data, stdout_trunc = stdout_sink[0] if stdout_sink else (b"", False)
-    stderr_data, stderr_trunc = stderr_sink[0] if stderr_sink else (b"", False)
+    stdout_data, stdout_trunc = bytes(stdout.data), stdout.truncated
+    stderr_data, stderr_trunc = bytes(stderr.data), stderr.truncated
     atomic_write_bytes(state_dir / STDOUT_FILENAME, stdout_data)
     atomic_write_bytes(state_dir / STDERR_FILENAME, stderr_data)
 

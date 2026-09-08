@@ -1,10 +1,9 @@
 """RunSpecimen: one approved bounded run with tamper-evident receipts.
 
-Temporary working product name — keep branding easy to rename by changing
-the package/CLI identifiers in pyproject.toml and this module docstring.
+Local execution assurance for research and engineering workflows.
 """
 
-__version__ = "0.2.0rc3"
+__version__ = "0.2.0rc4"
 PRODUCT_NAME = "RunSpecimen"
 
 # Canonical published docs (installed wheels do not embed the markdown tree).

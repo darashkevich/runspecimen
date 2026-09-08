@@ -84,10 +84,25 @@ def iter_source_files(
     for root in roots:
         abs_root = ensure_within(workspace, Path(root), label=f"source root {root!r}")
         rel_root = abs_root.relative_to(workspace).as_posix()
-        if abs_root.is_symlink():
-            if _is_excluded(rel_root, abs_root.name, all_excludes):
-                continue
-            _refuse_symlink(rel_root)
+        # ensure_within resolves symlinks, so inspect the requested root and
+        # its ancestors before walking the resolved tree. Otherwise a symlink
+        # used as the root (or above it) silently bypasses the refusal below.
+        requested = workspace / Path(root)
+        root_excluded = False
+        for part in (requested, *requested.parents):
+            if part == workspace:
+                break
+            if part.is_symlink():
+                try:
+                    rel_part = part.relative_to(workspace).as_posix()
+                except ValueError:
+                    rel_part = str(part)
+                if _is_excluded(rel_part, part.name, all_excludes):
+                    root_excluded = True
+                    break
+                _refuse_symlink(rel_part)
+        if root_excluded:
+            continue
         if abs_root.is_file():
             if not _is_excluded(rel_root, abs_root.name, all_excludes):
                 if abs_root not in seen:

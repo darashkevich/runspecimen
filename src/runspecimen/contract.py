@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from runspecimen.errors import ContractError
-from runspecimen.hashutil import hash_contract_file
+from runspecimen.hashutil import hash_contract_file, sha256_bytes
 from runspecimen.paths import ensure_within, resolve_workspace
 
 # Hard caps enforced by the tool (unsafe if contract exceeds these).
@@ -165,7 +165,9 @@ def validate_caps(caps: CapsSpec) -> None:
         )
 
 
-def parse_contract(data: dict[str, Any], *, path: Path) -> Contract:
+def parse_contract(
+    data: dict[str, Any], *, path: Path, contract_hash: str | None = None
+) -> Contract:
     data = _require_dict(data, "contract")
     _reject_unknown(
         data,
@@ -307,6 +309,8 @@ def parse_contract(data: dict[str, Any], *, path: Path) -> Contract:
             {"path", "field", "equals"},
             f"postflight.json_equals[{i}]",
         )
+        if "equals" not in item_d:
+            raise ContractError(f"postflight.json_equals[{i}].equals is required")
         json_equals.append(
             JsonEqualsAssert(
                 path=_require_str(item_d.get("path"), f"postflight.json_equals[{i}].path"),
@@ -328,7 +332,8 @@ def parse_contract(data: dict[str, Any], *, path: Path) -> Contract:
         source_unchanged=source_unchanged,
     )
 
-    contract_hash = hash_contract_file(path)
+    if contract_hash is None:
+        contract_hash = hash_contract_file(path)
     return Contract(
         version=version,
         campaign_id=campaign_id,
@@ -352,13 +357,15 @@ def load_contract(path: Path) -> Contract:
     if not path.is_file():
         raise ContractError(f"contract not found: {path}")
     try:
-        with path.open("r", encoding="utf-8") as fh:
-            data = json.load(fh, object_pairs_hook=_object_without_duplicates)
+        # Parse and fingerprint one snapshot. Reopening the path to hash it
+        # could bind the parsed command to a replacement contract's bytes.
+        payload = path.read_bytes()
+        data = json.loads(payload.decode("utf-8"), object_pairs_hook=_object_without_duplicates)
     except ContractError:
         raise
     except Exception as exc:  # noqa: BLE001
         raise ContractError(f"invalid contract JSON: {exc}") from exc
-    return parse_contract(data, path=path)
+    return parse_contract(data, path=path, contract_hash=sha256_bytes(payload))
 
 
 def check_contract_paths(contract: Contract, workspace: Path) -> None:

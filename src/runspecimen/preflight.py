@@ -91,8 +91,6 @@ def _preflight_under_lease(
     now: float | None,
 ) -> dict:
     state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
-    ts = time.time() if now is None else now
-
     approval = load_approval(state_dir)
     if approval is None:
         raise PreflightError("no approval present; run approve first")
@@ -100,7 +98,7 @@ def _preflight_under_lease(
     source_hash, _ = hash_source(
         workspace, list(contract.source.roots), list(contract.source.excludes)
     )
-    ok, reason = approval_is_valid(approval, contract, source_hash, now=ts)
+    ok, reason = approval_is_valid(approval, contract, source_hash, now=now)
     if not ok:
         raise PreflightError(reason)
     runtime = runtime_provenance(contract, workspace)
@@ -120,6 +118,11 @@ def _preflight_under_lease(
     phase = state.get("phase")
     if phase in {"running", "completed", "failed", "postflighted"}:
         raise PreflightError(f"run already in phase={phase!r}; refuse re-entry")
+
+    ts = time.time() if now is None else now
+    ok, reason = approval_is_valid(approval, contract, source_hash, now=ts)
+    if not ok:
+        raise PreflightError(reason)
 
     result = {
         "ok": True,

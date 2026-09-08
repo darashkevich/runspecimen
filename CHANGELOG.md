@@ -1,10 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.2.0rc4 - 2026-09-07
 
-- Add a dashboard About panel plus User guide / FAQ links, `docs/ABOUT.md`,
-  `docs/USER_GUIDE.md`, `docs/FAQ.md`, and a `runspecimen about` command
-  (docs URLs also appear in `doctor` and `--help`).
+- Harden lifecycle supervision so inherited output pipes, timeouts, and
+  interruption all leave bounded captures and a terminal recorded state.
+- Bind approvals and receipts to the exact parsed contract bytes, reject unsafe
+  source-root symlinks, and recheck expiry at launch.
+- Make the local dashboard honest about recorded evidence versus live receipt
+  verification; reject cross-origin access, contract drift, and write requests.
+- Add a dashboard About panel plus User guide / FAQ links, `docs/ABOUT.md`, and
+  a `runspecimen about` command (docs URLs also appear in `doctor` and `--help`).
+- Add a fresh `init-demo` onboarding command and a clean-install release gate
+  for source archives, wheels, the dashboard, and the plugin package.
 
 ## 0.2.0rc3 - 2026-09-04
 
