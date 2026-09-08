@@ -2,6 +2,9 @@
 
 RunSpecimen is a working name, not a final brand or a trademark clearance.
 
+Honest taglines, elevators, audience copy, and CTAs:
+[MARKETING_PITCHES.md](MARKETING_PITCHES.md).
+
 ## Product thesis
 
 Do not position this as another generic AI-agent firewall, trace viewer, or sandbox. Those markets already contain credible open-source and enterprise products.
