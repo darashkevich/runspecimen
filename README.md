@@ -1,7 +1,7 @@
 # RunSpecimen
 
 RunSpecimen is a local safety and evidence layer for consequential agent-driven
-research and engineering commands. This repository contains the `0.2.0rc4`
+research and engineering commands. This repository contains the `0.2.0rc5`
 release candidate.
 
 ## Core promise
@@ -27,6 +27,8 @@ No watchers, no recurring scheduler, no parallel workers.
 - [User guide](docs/USER_GUIDE.md) — install, lifecycle, contracts, dashboard, plugins, troubleshooting
 - [FAQ](docs/FAQ.md) — vs CI/sandbox/agents, TTY approval, verify-after-clone, parallelism, receipts
 - [Product plan](docs/PRODUCT_PLAN.md) — invariants and roadmap
+- [Market and distribution](docs/MARKET_AND_DISTRIBUTION.md) — wedge, channels, commercial sequence
+- [Marketing pitches](docs/MARKETING_PITCHES.md) — honest one-liners, elevators, CTAs
 - [Threat model](docs/THREAT_MODEL.md) — trusted boundary and residual risks
 
 ## Install

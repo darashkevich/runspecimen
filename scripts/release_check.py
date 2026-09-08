@@ -12,13 +12,14 @@ import argparse
 import hashlib
 import json
 import os
+import queue
 import re
-import selectors
 import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -27,8 +28,8 @@ from pathlib import Path, PurePosixPath
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_PYTHON_VERSION = "0.2.0rc4"
-EXPECTED_PLUGIN_VERSION = "0.2.0-rc.4"
+EXPECTED_PYTHON_VERSION = "0.2.0rc5"
+EXPECTED_PLUGIN_VERSION = "0.2.0-rc.5"
 SOURCE_COMPONENTS = (
     "pyproject.toml", "MANIFEST.in", "README.md", "LICENSE", "CHANGELOG.md",
     "SECURITY.md", "src", "scripts", "tests", "docs", "examples", "work",
@@ -208,11 +209,20 @@ def smoke_dashboard(cli: Path, workspace: Path, contract: Path, env: dict[str, s
         try:
             if process.stdout is None:
                 raise SystemExit("dashboard startup output is unavailable")
-            with selectors.DefaultSelector() as selector:
-                selector.register(process.stdout, selectors.EVENT_READ)
-                if not selector.select(timeout=15):
-                    raise SystemExit("dashboard did not announce its URL within 15 seconds")
-            startup = json.loads(process.stdout.readline())
+            startup_lines: queue.Queue[str] = queue.Queue(maxsize=1)
+
+            def read_startup() -> None:
+                startup_lines.put(process.stdout.readline())
+
+            reader = threading.Thread(target=read_startup, daemon=True)
+            reader.start()
+            try:
+                startup_line = startup_lines.get(timeout=15)
+            except queue.Empty as exc:
+                raise SystemExit("dashboard did not announce its URL within 15 seconds") from exc
+            if not startup_line:
+                raise SystemExit("dashboard exited without announcing its URL")
+            startup = json.loads(startup_line)
             url = startup["url"]
             parsed = urllib.parse.urlsplit(url)
             if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or not parsed.port:

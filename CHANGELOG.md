@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.0rc5 - 2026-09-08
+
+- Make the offline release gate wait for dashboard startup without relying on
+  platform-specific pipe readiness notifications.
+
 ## 0.2.0rc4 - 2026-09-07
 
 - Harden lifecycle supervision so inherited output pipes, timeouts, and
