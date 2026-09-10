@@ -34,6 +34,7 @@ SOURCE_COMPONENTS = (
 )
 PLUGIN_COMPONENTS = (
     ".codex-plugin/plugin.json", ".cursor-plugin/plugin.json", "README.md",
+    "assets/runspecimen-logo.png",
     "rules/runspecimen.mdc", "scripts/runspecimen_adapter.py",
     "skills/runspecimen/SKILL.md",
 )

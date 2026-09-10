@@ -12,6 +12,7 @@ include examples/showcase/README.md
 include examples/showcase/contract.json
 include examples/showcase/work/compute.py
 include work/compute.py
+include plugins/runspecimen/assets/runspecimen-logo.png
 recursive-include scripts *.py *.sh
 recursive-include tests *.py
 recursive-include plugins *.json *.md *.mdc *.py

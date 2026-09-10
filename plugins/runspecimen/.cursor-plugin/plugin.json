@@ -6,6 +6,7 @@
   "author": {
     "name": "RunSpecimen Contributors"
   },
+  "logo": "assets/runspecimen-logo.png",
   "keywords": ["agents", "automation", "provenance", "safety", "local-first"],
   "skills": "./skills/",
   "rules": "./rules/"
