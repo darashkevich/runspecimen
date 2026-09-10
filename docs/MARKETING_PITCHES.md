@@ -1,7 +1,7 @@
 # RunSpecimen marketing pitches
 
 Catchy copy that stays honest about the current release candidate
-(`0.2.0rc7` at time of writing). Use these for landing pages, GitHub social
+(`0.2.0rc8` at time of writing). Use these for landing pages, GitHub social
 preview, marketplace listings, and outreach. Prefer product truth over hype.
 
 **Product in one sentence:** a local safety and evidence layer for consequential

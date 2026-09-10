@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0rc8 - 2026-09-10
+
+- Package the RunSpecimen logo in source and plugin archives and reference it
+  from the Cursor plugin and marketplace manifests.
+- Extend the release gate so missing plugin branding fails before publication.
+
 ## 0.2.0rc7 - 2026-09-08
 
 - Made the installed-dashboard release smoke deterministic on macOS runners by hosting and probing the loopback server in one process.

@@ -2,7 +2,7 @@
 
 Practical how-to for the local CLI. This guide matches the installed
 `runspecimen` commands and current release-candidate limits
-(`0.2.0rc7` at time of writing). For a short product overview see
+(`0.2.0rc8` at time of writing). For a short product overview see
 [ABOUT.md](ABOUT.md); for product intent see
 [PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
 
@@ -278,6 +278,32 @@ earlier RCs are not verifiable on current builds.
 6. Keep human TTY `approve` in the terminal; let agents run
    validate → preflight → run → postflight → verify after you approve.
 
+## External tandem (Grok)
+
+When you want a second model to critique pitches, prioritize roadmap items, or
+adversarially review docs **without** using Cursor’s in-chat model alone, use
+**xAI Grok via Composio** the same way ChatGPT tandem was used.
+
+| Role | Tooling |
+| --- | --- |
+| Connect | Composio toolkit `grok` + xAI API key from [console.x.ai](https://console.x.ai) |
+| Chat | Prefer tools whose slug starts with `GROK_` (e.g. `GROK_CREATE_RESPONSE`) |
+| Log | Append only real replies to [GROK_TANDEM.md](GROK_TANDEM.md) |
+| ChatGPT history | [CHATGPT_TANDEM.md](CHATGPT_TANDEM.md) (often quota-blocked) |
+
+**Footgun:** Composio search often confuses **Grok / Groq / OpenAI**. Reject any
+“Grok chat” that resolves to `COMPOSIO_SEARCH_GROQ_*` or
+`OPENAI_CREATE_CHAT_COMPLETION`.
+
+**Brief shape:** paste [ABOUT.md](ABOUT.md) constraints → attach
+[MARKETING_PITCHES.md](MARKETING_PITCHES.md) or [NEXT_CHANGES.md](NEXT_CHANGES.md)
+→ ask for ranked picks, cuts, honesty risks → log Q/A → attribute accepted
+advice in the artifact (`## Grok evaluation`).
+
+**Hard stop:** Grok (and ChatGPT, Gemini, Cursor agents) must **not** type
+`APPROVE`. RunSpecimen approval stays an interactive TTY action; adapters
+exclude `approve`.
+
 ## Troubleshooting
 
 | Symptom | What to check |
@@ -300,4 +326,6 @@ earlier RCs are not verifiable on current builds.
 - [PRODUCT_PLAN.md](PRODUCT_PLAN.md)
 - [THREAT_MODEL.md](THREAT_MODEL.md)
 - [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)
+- [GROK_TANDEM.md](GROK_TANDEM.md) — external Grok review log
+- [CHATGPT_TANDEM.md](CHATGPT_TANDEM.md) — ChatGPT tandem history
 - [SECURITY.md](../SECURITY.md)

@@ -25,8 +25,8 @@ from pathlib import Path, PurePosixPath
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_PYTHON_VERSION = "0.2.0rc7"
-EXPECTED_PLUGIN_VERSION = "0.2.0-rc.7"
+EXPECTED_PYTHON_VERSION = "0.2.0rc8"
+EXPECTED_PLUGIN_VERSION = "0.2.0-rc.8"
 SOURCE_COMPONENTS = (
     "pyproject.toml", "MANIFEST.in", "README.md", "LICENSE", "CHANGELOG.md",
     "SECURITY.md", "src", "scripts", "tests", "docs", "examples", "work",
