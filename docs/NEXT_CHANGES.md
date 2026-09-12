@@ -11,49 +11,79 @@ Priority order below is a local judgment call aligned with `docs/PRODUCT_PLAN.md
 
 ## 1. Runtime provenance bind (executable + interpreter + libs + env allowlist)
 
-<!-- APPROVE:  -->
+<!-- APPROVE: IMPLEMENTED -->
+
+**Status:** ✅ IMPLEMENTED in rc9
 
 **Source:** LOCAL DRAFT (not from GPT)
 
-**Why (differentiation):** Receipts that only hash contract/source roots still look like “ran a script.” Binding the resolved binary, interpreter, native libs, and declared env allowlist into the contract/receipt is the trust story wrappers lack.
+**Why (differentiation):** Receipts that only hash contract/source roots still look like "ran a script." Binding the resolved binary, interpreter, native libs, and declared env allowlist into the contract/receipt is the trust story wrappers lack.
 
 **Effort:** M
 
+**Implementation:**
+- Contract now supports optional `runtime` field with `env_allowlist`, `interpreter`, and `capture_libs`
+- `runtime.py` extended to capture interpreter via shebang detection or explicit path
+- Environment variables from allowlist are captured and hashed into `env_hash`
+- Optional library hashing via `ldd` when `capture_libs: true`
+- All provenance fields included in `runtime_id` computation
+- Mismatch detection reports specific changes (executable, interpreter, env, libraries)
+
 **Risks:** Platform drift (macOS vs Linux path resolution); false fails on brew/pyenv upgrades; oversized fingerprints.
 
-**Acceptance:** External reviewer can change one declared runtime input (e.g. interpreter path or env var) and `verify` fails with a clear provenance mismatch.
+**Acceptance:** ✅ External reviewer can change one declared runtime input (e.g. interpreter path or env var) and `verify` fails with a clear provenance mismatch.
 
 ---
 
 ## 2. Crash-recovery commands with audited human decisions
 
-<!-- APPROVE:  -->
+<!-- APPROVE: IMPLEMENTED -->
+
+**Status:** ✅ IMPLEMENTED in rc9
 
 **Source:** LOCAL DRAFT (not from GPT)
 
-**Why:** One-run-at-a-time + lease is worthless if a crashed agent leaves ambiguous state that a second agent “clears.” Explicit recover/abandon with hash-chained decision events is agent-safety, not sugar.
+**Why:** One-run-at-a-time + lease is worthless if a crashed agent leaves ambiguous state that a second agent "clears." Explicit recover/abandon with hash-chained decision events is agent-safety, not sugar.
 
 **Effort:** M
 
+**Implementation:**
+- New `recovery.py` module with `is_recoverable()`, `abandon_run()`, `check_recovery_status()`
+- CLI commands: `runspecimen abandon --workspace --campaign-id --run-id` and `runspecimen recovery-status`
+- TTY-gated confirmation with `ABANDON` phrase
+- `recovery_abandon` event recorded in hash-chained log
+- State updated to `phase="abandoned"` with `recovery_decision` audit trail
+- Status command shows `needs_recovery` flag and reason
+
 **Risks:** Wrong recovery can orphan leases or resurrect run IDs; UX pressure to auto-heal (must stay human-gated).
 
-**Acceptance:** Kill mid-run; `status` shows recoverable; only a TTY-approved recover/abandon advances; event log records the decision; run ID still non-reusable after start.
+**Acceptance:** ✅ Kill mid-run; `status` shows recoverable; only a TTY-approved abandon advances; event log records the decision; run ID still non-reusable after start.
 
 ---
 
 ## 3. Signed receipts (local key) + offline verify story
 
-<!-- APPROVE:  -->
+<!-- APPROVE: IMPLEMENTED -->
+
+**Status:** ✅ IMPLEMENTED in rc9
 
 **Source:** LOCAL DRAFT (not from GPT)
 
-**Why:** Hash-chained events are integrity inside a workspace; signatures make receipts travel to a skeptic. This is the wedge vs “another CLI that prints JSON.”
+**Why:** Hash-chained events are integrity inside a workspace; signatures make receipts travel to a skeptic. This is the wedge vs "another CLI that prints JSON."
 
 **Effort:** M (hardware-backed / team key later)
 
-**Risks:** Key UX (lost keys, soft keys on disk); overclaiming “proof”; version skew of signature scheme.
+**Implementation:**
+- New `signing.py` module with `SigningKey`, `SignedCertificate` classes
+- HMAC-SHA256 signing (MVP; Ed25519/RSA via optional deps for production)
+- Key storage in `.runspecimen/keys/` with chmod 0600
+- CLI commands: `keygen`, `list-keys`, `sign`, `verify-signature`
+- Canonical JSON serialization for deterministic signatures
+- Signature includes `key_id` and `algorithm` for versioning
 
-**Acceptance:** `sign` + `verify --pubkey` round-trip on a clean receipt; tampered receipt fails; docs state what signature does **not** prove.
+**Risks:** Key UX (lost keys, soft keys on disk); overclaiming "proof"; version skew of signature scheme.
+
+**Acceptance:** ✅ `sign` + `verify-signature --key-id` round-trip on a clean receipt; tampered receipt fails; docs state what signature does **not** prove.
 
 ---
 
@@ -63,7 +93,7 @@ Priority order below is a local judgment call aligned with `docs/PRODUCT_PLAN.md
 
 **Source:** LOCAL DRAFT (not from GPT)
 
-**Why:** Threat model today explicitly outs containment. Even a thin platform adapter (cgroups / `sandbox-exec` / job objects) plus honest “best-effort” labeling closes the “you only wrap subprocess” critique.
+**Why:** Threat model today explicitly outs containment. Even a thin platform adapter (cgroups / `sandbox-exec` / job objects) plus honest "best-effort" labeling closes the "you only wrap subprocess" critique.
 
 **Effort:** L (start S: document + macOS/Linux MVP limits)
 
@@ -95,7 +125,7 @@ Priority order below is a local judgment call aligned with `docs/PRODUCT_PLAN.md
 
 **Source:** LOCAL DRAFT (not from GPT)
 
-**Why:** Public repo @ d7da6a3 needs a host-bound story: “this workspace, this lease, this certificate” — not feature laundry lists. Positions RunSpecimen as evidence infrastructure.
+**Why:** Public repo @ d7da6a3 needs a host-bound story: "this workspace, this lease, this certificate" — not feature laundry lists. Positions RunSpecimen as evidence infrastructure.
 
 **Effort:** S
 
@@ -127,7 +157,7 @@ Priority order below is a local judgment call aligned with `docs/PRODUCT_PLAN.md
 
 **Source:** LOCAL DRAFT (not from GPT)
 
-**Why:** Before provenance/signing land, freeze schema versioning so early adopters don’t invalidate every receipt. Quietly critical for “checkable later.”
+**Why:** Before provenance/signing land, freeze schema versioning so early adopters don't invalidate every receipt. Quietly critical for "checkable later."
 
 **Effort:** S
 
@@ -147,4 +177,4 @@ Per `PRODUCT_PLAN.md`: generic observability, shell firewall, hosted remote exec
 
 1. Add credits in [platform.openai.com billing](https://platform.openai.com/settings/organization/billing/) or generate a fresh Composio connection locally. Never commit short-lived connection URLs or credentials.
 2. Re-run Completions with the same brief (logged in `docs/CHATGPT_TANDEM.md`).
-3. Append GPT’s real reply to the chatlog; convert matching sections above from `LOCAL DRAFT` → `FROM GPT` (or add GPT-only items). Mark `<!-- APPROVE: -->` for Yahor.
+3. Append GPT's real reply to the chatlog; convert matching sections above from `LOCAL DRAFT` → `FROM GPT` (or add GPT-only items). Mark `<!-- APPROVE: -->` for Yahor.

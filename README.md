@@ -154,11 +154,60 @@ Per run under `{workspace}/.runspecimen/runs/{campaign_id}/{run_id}/`:
 Workspace-wide execution lease: `{workspace}/.runspecimen/execution.lock` (held by
 approve/preflight/run/postflight; status is read-only).
 
+## New in rc9: Missing features implemented
+
+### Crash recovery with audited human decisions
+
+When a run crashes mid-execution, use the new recovery commands:
+
+```bash
+# Check if a run needs recovery
+runspecimen recovery-status --workspace . --campaign-id demo --run-id run-001
+
+# Abandon a crashed run (TTY confirmation required)
+runspecimen abandon --workspace . --campaign-id demo --run-id run-001
+```
+
+### Signed receipts with local keys
+
+Sign certificates for offline verification:
+
+```bash
+# Generate a signing key
+runspecimen keygen --workspace .
+
+# List available keys
+runspecimen list-keys --workspace .
+
+# Sign a certificate
+runspecimen sign --workspace . --key-id <key-id> --certificate path/to/certificate.json
+
+# Verify a signed certificate
+runspecimen verify-signature --workspace . --key-id <key-id> --signed path/to/certificate.signed.json
+```
+
+### Extended runtime provenance
+
+Contracts now support a `runtime` field for enhanced provenance binding:
+
+```json
+{
+  "runtime": {
+    "env_allowlist": ["PATH", "HOME", "PYTHONPATH"],
+    "interpreter": "/usr/bin/python3",
+    "capture_libs": true
+  }
+}
+```
+
+This binds environment variables, interpreter, and optionally linked libraries
+into the certificate's `runtime_id`.
+
 ## Release-candidate limitations
 
-- Receipts are locally hash-chained, not yet signed by an external key or
-  transparency service. A privileged attacker who can rewrite the complete
-  workspace can fabricate a new history.
+- Signed receipts use HMAC-SHA256 with local keys (MVP). Production deployments
+  should upgrade to Ed25519/RSA via optional dependencies for true asymmetric
+  verification without sharing the signing key.
 - The executed payload is not sandboxed and CPU, memory, network, filesystem,
   and child-process limits are not yet enforced. The current hard bounds are one
   workspace run, wall-clock duration, and captured output size.
