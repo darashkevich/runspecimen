@@ -41,3 +41,11 @@ class CertificateError(RunSpecimenError):
 
 class PathEscapeError(RunSpecimenError):
     """A configured path escapes the workspace root."""
+
+
+class RecoveryError(RunSpecimenError):
+    """Recovery decision failed or not allowed."""
+
+
+class SigningError(RunSpecimenError):
+    """Signing or signature verification failed."""
