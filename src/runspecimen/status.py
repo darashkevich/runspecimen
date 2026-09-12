@@ -11,6 +11,7 @@ from runspecimen.contract import load_contract
 from runspecimen.events import EventLog
 from runspecimen.lease import Lease
 from runspecimen.paths import resolve_workspace, run_state_dir
+from runspecimen.recovery import is_recoverable
 from runspecimen.state import load_state
 
 
@@ -41,6 +42,9 @@ def status_for(
             "argv": list(c.argv),
         }
 
+    # Check if run needs recovery (crashed mid-execution)
+    needs_recovery, recovery_reason = is_recoverable(state)
+    
     return {
         "workspace": str(workspace),
         "campaign_id": campaign_id,
@@ -61,6 +65,8 @@ def status_for(
         "lease_held_by_other": lease_held,
         "lease_meta": lease_meta.to_dict() if lease_meta else None,
         "contract": contract_info,
+        "needs_recovery": needs_recovery,
+        "recovery_reason": recovery_reason if needs_recovery else None,
     }
 
 

@@ -22,6 +22,15 @@ from runspecimen.run import run_contract
 from runspecimen.status import format_status, status_for
 from runspecimen.runtime import runtime_provenance
 from runspecimen.lease import Lease
+from runspecimen.recovery import abandon_run, check_recovery_status
+from runspecimen.signing import (
+    SigningKey,
+    list_signing_keys,
+    load_signing_key,
+    save_signing_key,
+    sign_certificate_file,
+    verify_signed_file,
+)
 
 
 _ABOUT_SUMMARY = (
@@ -120,6 +129,53 @@ def build_parser() -> argparse.ArgumentParser:
     _add_contract(p_dashboard)
     p_dashboard.add_argument("--port", type=int, default=0, help="Loopback port (default: choose one)")
     p_dashboard.add_argument("--open", action="store_true", help="Open the dashboard in the default browser")
+
+    p_abandon = sub.add_parser(
+        "abandon",
+        help="Abandon a crashed run after TTY confirmation (marks run as failed)",
+    )
+    _add_workspace(p_abandon)
+    p_abandon.add_argument("--campaign-id", required=True)
+    p_abandon.add_argument("--run-id", required=True)
+    p_abandon.add_argument("--reason", default="", help="Optional reason for abandonment")
+
+    p_recovery_status = sub.add_parser(
+        "recovery-status",
+        help="Check if a run needs recovery (crashed mid-execution)",
+    )
+    _add_workspace(p_recovery_status)
+    p_recovery_status.add_argument("--campaign-id", required=True)
+    p_recovery_status.add_argument("--run-id", required=True)
+
+    p_keygen = sub.add_parser(
+        "keygen",
+        help="Generate a new signing key and save it to the workspace",
+    )
+    _add_workspace(p_keygen)
+    p_keygen.add_argument("--key-id", default=None, help="Optional key ID (auto-generated if omitted)")
+
+    p_list_keys = sub.add_parser(
+        "list-keys",
+        help="List available signing keys in the workspace",
+    )
+    _add_workspace(p_list_keys)
+
+    p_sign = sub.add_parser(
+        "sign",
+        help="Sign a certificate file with a local key",
+    )
+    _add_workspace(p_sign)
+    p_sign.add_argument("--key-id", required=True, help="ID of the signing key to use")
+    p_sign.add_argument("--certificate", type=Path, required=True, help="Path to certificate.json")
+    p_sign.add_argument("--output", type=Path, default=None, help="Output path (default: certificate.signed.json)")
+
+    p_verify_sig = sub.add_parser(
+        "verify-signature",
+        help="Verify a signed certificate file",
+    )
+    _add_workspace(p_verify_sig)
+    p_verify_sig.add_argument("--key-id", required=True, help="ID of the key to verify against")
+    p_verify_sig.add_argument("--signed", type=Path, required=True, help="Path to signed certificate file")
 
     return parser
 
@@ -250,6 +306,69 @@ def main(argv: list[str] | None = None) -> int:
             finally:
                 server.server_close()
             return 0
+        if args.command == "abandon":
+            result = abandon_run(
+                workspace=workspace,
+                campaign_id=args.campaign_id,
+                run_id=args.run_id,
+                reason=args.reason,
+            )
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return 0
+        if args.command == "recovery-status":
+            result = check_recovery_status(
+                workspace=workspace,
+                campaign_id=args.campaign_id,
+                run_id=args.run_id,
+            )
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return 0 if not result.get("needs_recovery") else 1
+        if args.command == "keygen":
+            key = SigningKey.generate(key_id=args.key_id)
+            key_path = save_signing_key(workspace, key)
+            result = {
+                "ok": True,
+                "key_id": key.key_id,
+                "algorithm": key.algorithm,
+                "key_path": str(key_path),
+                "message": "key generated; keep the .key file secure",
+            }
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return 0
+        if args.command == "list-keys":
+            keys = list_signing_keys(workspace)
+            result = {
+                "ok": True,
+                "workspace": str(workspace),
+                "key_ids": keys,
+            }
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return 0
+        if args.command == "sign":
+            key = load_signing_key(workspace, args.key_id)
+            output_path = sign_certificate_file(args.certificate, key, args.output)
+            result = {
+                "ok": True,
+                "certificate": str(args.certificate),
+                "signed_output": str(output_path),
+                "key_id": key.key_id,
+                "algorithm": key.algorithm,
+            }
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return 0
+        if args.command == "verify-signature":
+            key = load_signing_key(workspace, args.key_id)
+            ok, msg, cert = verify_signed_file(args.signed, key)
+            result = {
+                "ok": ok,
+                "message": msg,
+                "signed_file": str(args.signed),
+                "key_id": args.key_id,
+            }
+            if ok and cert:
+                result["certificate_id"] = cert.get("certificate_id")
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return 0 if ok else 1
         parser.error(f"unknown command: {args.command}")
         return 2
     except RunSpecimenError as exc:
