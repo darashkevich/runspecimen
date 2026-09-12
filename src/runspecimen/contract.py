@@ -94,6 +94,14 @@ class ApprovalSpec:
 
 
 @dataclass(frozen=True)
+class RuntimeSpec:
+    """Runtime provenance configuration in contract."""
+    env_allowlist: tuple[str, ...]  # Environment variables to capture and bind
+    interpreter: str | None  # Optional interpreter path (auto-detected if None)
+    capture_libs: bool  # Whether to capture linked library hashes
+
+
+@dataclass(frozen=True)
 class PredecessorSpec:
     campaign_id: str
     run_id: str
@@ -130,6 +138,7 @@ class Contract:
     approval: ApprovalSpec
     predecessor: PredecessorSpec | None
     postflight: PostflightSpec
+    runtime: RuntimeSpec | None
     path: Path
     contract_hash: str
     raw: dict[str, Any] = field(repr=False)
@@ -183,6 +192,7 @@ def parse_contract(
             "approval",
             "predecessor",
             "postflight",
+            "runtime",
         },
         "contract",
     )
@@ -332,6 +342,34 @@ def parse_contract(
         source_unchanged=source_unchanged,
     )
 
+    # Parse optional runtime provenance configuration
+    runtime_raw = data.get("runtime")
+    runtime_spec: RuntimeSpec | None = None
+    if runtime_raw is not None:
+        rt = _require_dict(runtime_raw, "runtime")
+        _reject_unknown(rt, {"env_allowlist", "interpreter", "capture_libs"}, "runtime")
+        
+        env_allowlist_raw = rt.get("env_allowlist", [])
+        env_allowlist_list = _require_list(env_allowlist_raw, "runtime.env_allowlist")
+        env_allowlist = tuple(
+            _require_str(x, f"runtime.env_allowlist[{i}]")
+            for i, x in enumerate(env_allowlist_list)
+        )
+        
+        interpreter = rt.get("interpreter")
+        if interpreter is not None:
+            interpreter = _require_str(interpreter, "runtime.interpreter")
+        
+        capture_libs = rt.get("capture_libs", False)
+        if capture_libs is not None:
+            capture_libs = _require_bool(capture_libs, "runtime.capture_libs")
+        
+        runtime_spec = RuntimeSpec(
+            env_allowlist=env_allowlist,
+            interpreter=interpreter,
+            capture_libs=capture_libs or False,
+        )
+
     if contract_hash is None:
         contract_hash = hash_contract_file(path)
     return Contract(
@@ -346,6 +384,7 @@ def parse_contract(
         approval=approval,
         predecessor=predecessor,
         postflight=postflight,
+        runtime=runtime_spec,
         path=path.resolve(),
         contract_hash=contract_hash,
         raw=data,
