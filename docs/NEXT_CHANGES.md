@@ -69,21 +69,26 @@ Priority order below is a local judgment call aligned with `docs/PRODUCT_PLAN.md
 
 **Source:** LOCAL DRAFT (not from GPT)
 
-**Why:** Hash-chained events are integrity inside a workspace; signatures make receipts travel to a skeptic. This is the wedge vs "another CLI that prints JSON."
+**Why:** Hash-chained events are integrity inside a workspace; authenticated receipts enable controlled sharing.
 
 **Effort:** M (hardware-backed / team key later)
 
 **Implementation:**
 - New `signing.py` module with `SigningKey`, `SignedCertificate` classes
-- HMAC-SHA256 signing (MVP; Ed25519/RSA via optional deps for production)
+- HMAC-SHA256 authentication (shared-secret MAC; not digital signatures)
 - Key storage in `.runspecimen/keys/` with chmod 0600
 - CLI commands: `keygen`, `list-keys`, `sign`, `verify-signature`
-- Canonical JSON serialization for deterministic signatures
-- Signature includes `key_id` and `algorithm` for versioning
+- Canonical JSON serialization for deterministic authentication
+- Authentication tag includes `key_id` and `algorithm` for versioning
 
-**Risks:** Key UX (lost keys, soft keys on disk); overclaiming "proof"; version skew of signature scheme.
+**Important limitation:** HMAC-SHA256 is a shared-secret Message Authentication Code.
+Anyone who can verify can also forge. This is NOT non-repudiation and does NOT
+provide independent third-party verification. True digital signatures (Ed25519/RSA)
+are planned for a future release.
 
-**Acceptance:** ✅ `sign` + `verify-signature --key-id` round-trip on a clean receipt; tampered receipt fails; docs state what signature does **not** prove.
+**Risks:** Key UX (lost keys, soft keys on disk); overclaiming "proof"; version skew of scheme.
+
+**Acceptance:** ✅ `sign` + `verify-signature --key-id` round-trip on a clean receipt; tampered receipt fails; docs state what authentication does **not** prove.
 
 ---
 

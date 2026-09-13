@@ -81,43 +81,55 @@ class TestRecoveryWithLease(unittest.TestCase):
     def test_running_with_active_lease_not_recoverable(self):
         """A running state with an active lease is still executing."""
         from runspecimen.lease import hold_workspace_lease
+        from tests.helpers import SRC
         import subprocess
         import sys
         import os
-        import time
-        
+
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
             state = {"phase": "running"}
-            
+
+            # Create a ready signal file for deterministic synchronization
+            ready_signal = workspace / "ready.signal"
+
             # Create a script file to hold the lease
             script = workspace / "hold_lease.py"
             script.write_text(f'''
 import sys
-sys.path.insert(0, "/workspace/src")
+sys.path.insert(0, {str(SRC)!r})
 from runspecimen.lease import hold_workspace_lease
-import time
 import signal
+from pathlib import Path
 
 def handler(signum, frame):
     sys.exit(0)
 
 signal.signal(signal.SIGTERM, handler)
 
-with hold_workspace_lease("{workspace}", holder="test-runner"):
-    time.sleep(30)
+with hold_workspace_lease({str(workspace)!r}, holder="test-runner"):
+    # Signal that lease is acquired
+    Path({str(ready_signal)!r}).write_text("ready")
+    # Wait for termination
+    signal.pause()
 ''')
-            
+
             # Start a process that holds the lease
             proc = subprocess.Popen(
                 [sys.executable, str(script)],
-                cwd="/workspace",
+                cwd=str(workspace),
             )
-            
+
             try:
-                # Give it time to acquire the lease
-                time.sleep(0.5)
-                
+                # Wait for ready signal (deterministic sync)
+                for _ in range(100):  # 10 second timeout
+                    if ready_signal.exists():
+                        break
+                    import time
+                    time.sleep(0.1)
+                else:
+                    self.fail("Subprocess did not acquire lease in time")
+
                 # Now check - should not be recoverable
                 ok, msg = is_recoverable(state, workspace=workspace)
                 self.assertFalse(ok)
@@ -126,25 +138,155 @@ with hold_workspace_lease("{workspace}", holder="test-runner"):
                 proc.terminate()
                 proc.wait()
 
+    def test_stale_running_no_lease_needs_recovery(self):
+        """A running state with no lease indicates a crash needing recovery."""
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+            state_dir = workspace / ".runspecimen" / "runs" / "test" / "run-001"
+            state_dir.mkdir(parents=True)
+
+            # Phase is running but no lease is held (simulates crash)
+            update_state(
+                state_dir,
+                phase="running",
+                run_started_at="2024-01-01T00:00:00Z",
+            )
+
+            # Should need recovery
+            result = check_recovery_status(
+                workspace=workspace,
+                campaign_id="test",
+                run_id="run-001",
+            )
+
+            self.assertTrue(result["needs_recovery"])
+            self.assertFalse(result["workspace_lease_held"])
+
+    def test_concurrent_abandon_refused_when_lease_held(self):
+        """Abandon must fail if workspace lease is held by another process."""
+        from runspecimen.lease import hold_workspace_lease
+        from tests.helpers import SRC
+        import subprocess
+        import sys
+
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+            state_dir = workspace / ".runspecimen" / "runs" / "test" / "run-001"
+            state_dir.mkdir(parents=True)
+
+            update_state(
+                state_dir,
+                phase="running",
+                run_started_at="2024-01-01T00:00:00Z",
+            )
+
+            ready_signal = workspace / "ready.signal"
+            script = workspace / "hold_lease.py"
+            script.write_text(f'''
+import sys
+sys.path.insert(0, {str(SRC)!r})
+from runspecimen.lease import hold_workspace_lease
+import signal
+from pathlib import Path
+
+def handler(signum, frame):
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, handler)
+
+with hold_workspace_lease({str(workspace)!r}, holder="blocking-runner"):
+    Path({str(ready_signal)!r}).write_text("ready")
+    signal.pause()
+''')
+
+            proc = subprocess.Popen(
+                [sys.executable, str(script)],
+                cwd=str(workspace),
+            )
+
+            try:
+                for _ in range(100):
+                    if ready_signal.exists():
+                        break
+                    import time
+                    time.sleep(0.1)
+                else:
+                    self.fail("Subprocess did not acquire lease in time")
+
+                # Attempt abandon should fail because lease is held
+                with self.assertRaises(RecoveryError) as ctx:
+                    abandon_run(
+                        workspace=workspace,
+                        campaign_id="test",
+                        run_id="run-001",
+                        stdin=io.StringIO(ABANDON_PHRASE + "\n"),
+                        stdout=io.StringIO(),
+                        skip_tty_check=True,
+                    )
+                self.assertIn("lease", str(ctx.exception).lower())
+            finally:
+                proc.terminate()
+                proc.wait()
+
+    def test_abandon_event_state_consistency(self):
+        """After abandon, event log and state must be consistent."""
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+            state_dir = workspace / ".runspecimen" / "runs" / "test" / "run-001"
+            state_dir.mkdir(parents=True)
+
+            # Initialize event log
+            log = EventLog.for_state_dir(state_dir)
+            log.ensure()
+
+            update_state(
+                state_dir,
+                phase="running",
+                run_started_at="2024-01-01T00:00:00Z",
+                campaign_id="test",
+                run_id="run-001",
+            )
+
+            abandon_run(
+                workspace=workspace,
+                campaign_id="test",
+                run_id="run-001",
+                stdin=io.StringIO(ABANDON_PHRASE + "\n"),
+                stdout=io.StringIO(),
+                skip_tty_check=True,
+            )
+
+            # Check state consistency
+            state = load_state(state_dir)
+            self.assertEqual(state["phase"], "abandoned")
+            self.assertEqual(state["run_result"], "abandoned")
+            self.assertEqual(state["recovery_decision"], "abandon")
+
+            # Check event log consistency
+            events = log.read_all()
+            abandon_events = [e for e in events if e.type == "recovery_abandon"]
+            self.assertEqual(len(abandon_events), 1)
+            self.assertEqual(abandon_events[0].body["decision"], "abandon")
+
     def test_check_recovery_status_includes_lease_info(self):
         """check_recovery_status should include lease information."""
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
             state_dir = workspace / ".runspecimen" / "runs" / "test" / "run-001"
             state_dir.mkdir(parents=True)
-            
+
             update_state(
                 state_dir,
                 phase="running",
                 run_started_at="2024-01-01T00:00:00Z",
             )
-            
+
             result = check_recovery_status(
                 workspace=workspace,
                 campaign_id="test",
                 run_id="run-001",
             )
-            
+
             # Should include lease info
             self.assertIn("workspace_lease_held", result)
             self.assertIn("lease_holder", result)
@@ -176,13 +318,13 @@ class TestAbandonRun(unittest.TestCase):
             workspace = Path(ws)
             state_dir = workspace / ".runspecimen" / "runs" / "test" / "run-001"
             state_dir.mkdir(parents=True)
-            
+
             # Set phase to "none" (not recoverable)
             update_state(state_dir, phase="none")
-            
+
             stdin = io.StringIO(ABANDON_PHRASE + "\n")
             stdout = io.StringIO()
-            
+
             with self.assertRaises(RecoveryError) as ctx:
                 abandon_run(
                     workspace=workspace,
@@ -199,13 +341,13 @@ class TestAbandonRun(unittest.TestCase):
             workspace = Path(ws)
             state_dir = workspace / ".runspecimen" / "runs" / "test" / "run-001"
             state_dir.mkdir(parents=True)
-            
+
             # Set phase to "running" (recoverable)
             update_state(state_dir, phase="running", run_started_at="2024-01-01T00:00:00Z")
-            
+
             stdin = io.StringIO("wrong-phrase\n")
             stdout = io.StringIO()
-            
+
             with self.assertRaises(RecoveryError) as ctx:
                 abandon_run(
                     workspace=workspace,
@@ -222,7 +364,7 @@ class TestAbandonRun(unittest.TestCase):
             workspace = Path(ws)
             state_dir = workspace / ".runspecimen" / "runs" / "test" / "run-001"
             state_dir.mkdir(parents=True)
-            
+
             # Set phase to "running" (recoverable)
             update_state(
                 state_dir,
@@ -231,10 +373,10 @@ class TestAbandonRun(unittest.TestCase):
                 campaign_id="test",
                 run_id="run-001",
             )
-            
+
             stdin = io.StringIO(ABANDON_PHRASE + "\n")
             stdout = io.StringIO()
-            
+
             result = abandon_run(
                 workspace=workspace,
                 campaign_id="test",
@@ -244,10 +386,10 @@ class TestAbandonRun(unittest.TestCase):
                 skip_tty_check=True,
                 reason="test abandonment",
             )
-            
+
             self.assertTrue(result["ok"])
             self.assertEqual(result["action"], "abandon")
-            
+
             # Verify state was updated
             state = load_state(state_dir)
             self.assertEqual(state["phase"], "abandoned")
@@ -259,11 +401,11 @@ class TestAbandonRun(unittest.TestCase):
             workspace = Path(ws)
             state_dir = workspace / ".runspecimen" / "runs" / "test" / "run-001"
             state_dir.mkdir(parents=True)
-            
+
             # Initialize event log
             log = EventLog.for_state_dir(state_dir)
             log.ensure()
-            
+
             # Set phase to "running" (recoverable)
             update_state(
                 state_dir,
@@ -272,10 +414,10 @@ class TestAbandonRun(unittest.TestCase):
                 campaign_id="test",
                 run_id="run-001",
             )
-            
+
             stdin = io.StringIO(ABANDON_PHRASE + "\n")
             stdout = io.StringIO()
-            
+
             abandon_run(
                 workspace=workspace,
                 campaign_id="test",
@@ -284,7 +426,7 @@ class TestAbandonRun(unittest.TestCase):
                 stdout=stdout,
                 skip_tty_check=True,
             )
-            
+
             # Verify event was recorded
             events = log.read_all()
             self.assertTrue(len(events) > 0)
@@ -301,19 +443,19 @@ class TestCheckRecoveryStatus(unittest.TestCase):
             workspace = Path(ws)
             state_dir = workspace / ".runspecimen" / "runs" / "test" / "run-001"
             state_dir.mkdir(parents=True)
-            
+
             update_state(
                 state_dir,
                 phase="running",
                 run_started_at="2024-01-01T00:00:00Z",
             )
-            
+
             result = check_recovery_status(
                 workspace=workspace,
                 campaign_id="test",
                 run_id="run-001",
             )
-            
+
             self.assertEqual(result["campaign_id"], "test")
             self.assertEqual(result["run_id"], "run-001")
             self.assertEqual(result["phase"], "running")
@@ -328,7 +470,7 @@ class TestAbandonedRunIsPermanentlyTerminal(unittest.TestCase):
         from runspecimen.approve import approve_contract
         from runspecimen.errors import ApprovalError
         from tests.helpers import base_contract, write_contract, PhraseReader, NullWriter
-        
+
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
             (workspace / "work").mkdir()
@@ -336,10 +478,10 @@ class TestAbandonedRunIsPermanentlyTerminal(unittest.TestCase):
             (workspace / "work" / "job.py").write_text(
                 "print('ok')\n", encoding="utf-8"
             )
-            
+
             doc = base_contract()
             contract_path = write_contract(workspace, "contract.json", doc)
-            
+
             # Set up abandoned state
             state_dir = workspace / ".runspecimen" / "runs" / doc["campaign_id"] / doc["run_id"]
             state_dir.mkdir(parents=True)
@@ -350,7 +492,7 @@ class TestAbandonedRunIsPermanentlyTerminal(unittest.TestCase):
                 campaign_id=doc["campaign_id"],
                 run_id=doc["run_id"],
             )
-            
+
             # Attempt re-approval should fail
             with self.assertRaises(ApprovalError) as ctx:
                 approve_contract(
@@ -368,7 +510,7 @@ class TestAbandonedRunIsPermanentlyTerminal(unittest.TestCase):
         from runspecimen.errors import PreflightError
         from runspecimen.approve import approve_contract
         from tests.helpers import base_contract, write_contract, PhraseReader, NullWriter
-        
+
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
             (workspace / "work").mkdir()
@@ -376,28 +518,28 @@ class TestAbandonedRunIsPermanentlyTerminal(unittest.TestCase):
             (workspace / "work" / "job.py").write_text(
                 "print('ok')\n", encoding="utf-8"
             )
-            
+
             doc = base_contract()
             contract_path = write_contract(workspace, "contract.json", doc)
-            
+
             # Set up abandoned state with approval (simulating a crash after approval)
             state_dir = workspace / ".runspecimen" / "runs" / doc["campaign_id"] / doc["run_id"]
             state_dir.mkdir(parents=True)
-            
+
             # Write an approval document
             import time
             from runspecimen.atomic import atomic_write_json
             from runspecimen.hashutil import hash_source
             from runspecimen.contract import load_contract
             from runspecimen.runtime import runtime_provenance
-            
+
             contract = load_contract(contract_path)
             source_hash, _ = hash_source(
                 workspace, list(contract.source.roots), list(contract.source.excludes)
             )
             runtime = runtime_provenance(contract, workspace)
             ts = time.time()
-            
+
             approval_doc = {
                 "approved_at_unix": ts,
                 "expires_at_unix": ts + 3600,
@@ -408,7 +550,7 @@ class TestAbandonedRunIsPermanentlyTerminal(unittest.TestCase):
                 "runtime": runtime,
             }
             atomic_write_json(state_dir / "approval.json", approval_doc)
-            
+
             # Set phase to abandoned
             update_state(
                 state_dir,
@@ -417,7 +559,7 @@ class TestAbandonedRunIsPermanentlyTerminal(unittest.TestCase):
                 campaign_id=doc["campaign_id"],
                 run_id=doc["run_id"],
             )
-            
+
             # Attempt preflight should fail
             with self.assertRaises(PreflightError) as ctx:
                 preflight(contract_path=contract_path, workspace=workspace)
@@ -428,7 +570,7 @@ class TestAbandonedRunIsPermanentlyTerminal(unittest.TestCase):
         from runspecimen.run import run_contract
         from runspecimen.errors import PreflightError
         from tests.helpers import base_contract, write_contract
-        
+
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
             (workspace / "work").mkdir()
@@ -436,10 +578,10 @@ class TestAbandonedRunIsPermanentlyTerminal(unittest.TestCase):
             (workspace / "work" / "job.py").write_text(
                 "print('ok')\n", encoding="utf-8"
             )
-            
+
             doc = base_contract()
             contract_path = write_contract(workspace, "contract.json", doc)
-            
+
             # Set up abandoned state
             state_dir = workspace / ".runspecimen" / "runs" / doc["campaign_id"] / doc["run_id"]
             state_dir.mkdir(parents=True)
@@ -450,7 +592,7 @@ class TestAbandonedRunIsPermanentlyTerminal(unittest.TestCase):
                 campaign_id=doc["campaign_id"],
                 run_id=doc["run_id"],
             )
-            
+
             # Attempt run should fail
             with self.assertRaises(PreflightError) as ctx:
                 run_contract(contract_path=contract_path, workspace=workspace)
@@ -461,10 +603,10 @@ class TestAbandonedRunIsPermanentlyTerminal(unittest.TestCase):
         from runspecimen.preflight import check_predecessor
         from runspecimen.contract import Contract, PredecessorSpec
         from runspecimen.errors import PreflightError
-        
+
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
-            
+
             # Set up predecessor in abandoned state
             pred_dir = workspace / ".runspecimen" / "runs" / "camp" / "run-pred"
             pred_dir.mkdir(parents=True)
@@ -475,7 +617,7 @@ class TestAbandonedRunIsPermanentlyTerminal(unittest.TestCase):
                 campaign_id="camp",
                 run_id="run-pred",
             )
-            
+
             # Create a mock contract with predecessor spec
             # refuse_if_failed=True, require_postflight=False
             class MockContract:
@@ -485,7 +627,7 @@ class TestAbandonedRunIsPermanentlyTerminal(unittest.TestCase):
                     require_postflight=False,
                     refuse_if_failed=True,
                 )
-            
+
             # This should fail because predecessor is abandoned
             with self.assertRaises(PreflightError) as ctx:
                 check_predecessor(workspace, MockContract())

@@ -22,7 +22,7 @@ from runspecimen.approve import approve_contract  # noqa: E402
 
 def assert_paths_same(test_case: unittest.TestCase, path1: Union[str, Path], path2: Union[str, Path], msg: str | None = None) -> None:
     """Assert that two paths refer to the same file/directory.
-    
+
     This handles platform-specific symlink aliasing like macOS /var -> /private/var.
     Uses os.path.realpath which follows ALL symlinks including at root level.
     """

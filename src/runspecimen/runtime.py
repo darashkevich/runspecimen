@@ -42,10 +42,10 @@ _PLATFORM_SYSTEM = platform.system()
 
 def _detect_interpreter(executable: Path) -> tuple[Path | None, list[str] | None]:
     """Detect if executable is a script and return its interpreter path and args.
-    
+
     Reads the shebang line to determine the interpreter.
     Returns (interpreter_path, interpreter_args) or (None, None) if not a script.
-    
+
     Safely handles:
     - Direct path shebangs: #!/usr/bin/python3 -u
     - Env-style shebangs: #!/usr/bin/env python3
@@ -57,7 +57,7 @@ def _detect_interpreter(executable: Path) -> tuple[Path | None, list[str] | None
         if not first_line.startswith(b"#!"):
             return None, None
         shebang = first_line[2:].decode("utf-8", errors="replace").strip()
-        
+
         # Handle env-style shebangs: #!/usr/bin/env python3
         # Also handle: #!/usr/bin/env -S python3 -u (env with -S split args)
         if "/env" in shebang:
@@ -89,7 +89,7 @@ def _detect_interpreter(executable: Path) -> tuple[Path | None, list[str] | None
 
 def _capture_env_allowlist(allowlist: tuple[str, ...]) -> dict[str, str | None]:
     """Capture environment variables from the allowlist.
-    
+
     Returns a dict mapping variable names to values (or None if not set).
     """
     result: dict[str, str | None] = {}
@@ -99,9 +99,14 @@ def _capture_env_allowlist(allowlist: tuple[str, ...]) -> dict[str, str | None]:
 
 
 def _hash_env_allowlist(env_capture: dict[str, str | None]) -> str:
-    """Compute a hash of the captured environment variables."""
-    # Sort and hash to get deterministic representation
-    return sha256_bytes(canonical_json_bytes(env_capture))
+    """Compute a domain-separated hash of the captured environment variables.
+
+    Uses a versioned domain tag to prevent cross-context hash collisions.
+    """
+    # Domain-separated hash with versioned prefix
+    domain_tag = b"runspecimen.env_allowlist.v1\x00"
+    env_bytes = canonical_json_bytes(env_capture)
+    return sha256_bytes(domain_tag + env_bytes)
 
 
 def _get_linked_libraries(
@@ -110,36 +115,36 @@ def _get_linked_libraries(
     is_trusted: bool = False,
 ) -> tuple[list[str], str | None]:
     """Get list of linked libraries for an executable.
-    
+
     Args:
         executable: Path to the executable to inspect
         is_trusted: If True, the executable has been validated as a known
                    interpreter and is safe to inspect with ldd. If False,
                    refuse to run ldd on potentially malicious binaries.
-    
+
     Returns:
         (list of library paths, error_message or None)
-        
+
         error_message is set when library capture cannot be performed:
         - Platform not supported (non-Linux)
         - ldd not available
         - Executable is untrusted (is_trusted=False)
-    
+
     Security note: ldd on some platforms may execute code in the binary being
     inspected. Only call with is_trusted=True for known-safe executables.
     """
     # Platform check
     if _PLATFORM_SYSTEM not in ("Linux",):
         return [], f"capture_libs not supported on {_PLATFORM_SYSTEM} (Linux only)"
-    
+
     # Security: refuse to run ldd on untrusted binaries
     if not is_trusted:
         return [], "capture_libs skipped: binary not verified as trusted interpreter"
-    
+
     # Check ldd availability
     if not shutil.which("ldd"):
         return [], "ldd not found on PATH"
-    
+
     try:
         result = subprocess.run(
             ["ldd", str(executable)],
@@ -149,7 +154,7 @@ def _get_linked_libraries(
         )
         if result.returncode != 0:
             return [], f"ldd returned exit code {result.returncode}"
-        
+
         libs: list[str] = []
         for line in result.stdout.splitlines():
             line = line.strip()
@@ -184,7 +189,7 @@ def _hash_libraries(lib_paths: list[str]) -> dict[str, str]:
 
 def runtime_provenance(contract: Contract, workspace: Path) -> dict[str, Any]:
     """Resolve and hash argv[0] using the same cwd/PATH rules as execution.
-    
+
     When contract.runtime is specified, also captures:
     - Interpreter provenance (if script)
     - Environment variables from allowlist
@@ -227,7 +232,7 @@ def runtime_provenance(contract: Contract, workspace: Path) -> dict[str, Any]:
         interpreter: Path | None = None
         interpreter_args: list[str] | None = None
         is_known_interpreter = False
-        
+
         if runtime_spec.interpreter:
             # Use explicitly specified interpreter - MUST resolve and be executable
             interp_path = Path(runtime_spec.interpreter)
@@ -253,7 +258,7 @@ def runtime_provenance(contract: Contract, workspace: Path) -> dict[str, Any]:
                         f"configured interpreter is not executable: {runtime_spec.interpreter}"
                     )
                 interpreter = interp_path.resolve()
-            
+
             # Configured interpreters are trusted (user explicitly specified them)
             is_known_interpreter = True
         else:
@@ -262,32 +267,32 @@ def runtime_provenance(contract: Contract, workspace: Path) -> dict[str, Any]:
             # Auto-detected interpreters from system paths are trusted
             if interpreter:
                 is_known_interpreter = str(interpreter).startswith(("/usr/", "/bin/", "/opt/"))
-        
+
         if interpreter:
             body["interpreter"] = str(interpreter)
             body["interpreter_sha256"] = sha256_file(interpreter)
             if interpreter_args:
                 body["interpreter_args"] = interpreter_args
-        
+
         # Capture environment variables from allowlist (names and presence only)
         if runtime_spec.env_allowlist:
             env_capture = _capture_env_allowlist(runtime_spec.env_allowlist)
             body["env_allowlist"] = list(runtime_spec.env_allowlist)
             # Only store hashes, not raw values (security: no secrets in artifacts)
             body["env_hash"] = _hash_env_allowlist(env_capture)
-        
+
         # Optionally capture library hashes
         if runtime_spec.capture_libs:
             # For scripts, capture libraries of the interpreter, not the script
             lib_target = interpreter if interpreter else executable
             is_trusted = is_known_interpreter if interpreter else False
-            
+
             libs, lib_error = _get_linked_libraries(lib_target, is_trusted=is_trusted)
-            
+
             if lib_error:
                 # Record the error rather than silently failing
                 body["capture_libs_error"] = lib_error
-            
+
             if libs:
                 lib_hashes = _hash_libraries(libs)
                 body["linked_libraries"] = libs
@@ -306,7 +311,7 @@ def runtime_matches(approval: dict[str, Any], current: dict[str, Any]) -> tuple[
     if approved.get("runtime_id") != current.get("runtime_id"):
         # Provide more detailed mismatch info
         mismatches: list[str] = []
-        
+
         if approved.get("executable_sha256") != current.get("executable_sha256"):
             mismatches.append("executable changed")
         if approved.get("interpreter_sha256") != current.get("interpreter_sha256"):
@@ -315,7 +320,7 @@ def runtime_matches(approval: dict[str, Any], current: dict[str, Any]) -> tuple[
             mismatches.append("environment variables changed")
         if approved.get("libraries_hash") != current.get("libraries_hash"):
             mismatches.append("linked libraries changed")
-        
+
         if mismatches:
             return False, f"runtime provenance mismatch: {', '.join(mismatches)}"
         return False, "approval runtime provenance mismatch (runtime_id changed)"

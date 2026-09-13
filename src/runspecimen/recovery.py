@@ -31,12 +31,12 @@ RECOVER_PHRASE = "RECOVER"
 
 def is_recoverable_phase(state: dict) -> tuple[bool, str]:
     """Check if a run's phase indicates it might need recovery.
-    
+
     This only checks the phase; use is_recoverable() to also check the lease.
     Returns (phase_is_running, reason).
     """
     phase = state.get("phase")
-    
+
     if phase == "none":
         return False, "no run has started"
     if phase == "approved":
@@ -53,25 +53,25 @@ def is_recoverable_phase(state: dict) -> tuple[bool, str]:
         return False, "run already abandoned"
     if phase == "running":
         return True, "phase is running"
-    
+
     return False, f"unknown phase: {phase}"
 
 
 def is_recoverable(state: dict, *, workspace: Path | None = None) -> tuple[bool, str]:
     """Check if a run is in a recoverable (crashed) state.
-    
+
     A run is recoverable if:
     - Phase is "running" (process was executing)
     - There's no active workspace lease held by another process
-    
+
     When workspace is None, only the phase is checked (for backward compat).
     Returns (is_recoverable, reason).
     """
     phase_ok, phase_reason = is_recoverable_phase(state)
-    
+
     if not phase_ok:
         return False, phase_reason
-    
+
     # Phase is "running" - now check if there's an active lease
     if workspace is not None:
         lease = Lease.for_workspace(workspace, holder="recovery-check")
@@ -79,7 +79,7 @@ def is_recoverable(state: dict, *, workspace: Path | None = None) -> tuple[bool,
             lease_meta = lease.read_meta()
             holder = lease_meta.holder if lease_meta else "unknown"
             return False, f"run is still active (lease held by {holder!r})"
-    
+
     return True, "run interrupted (phase=running, no active lease)"
 
 
@@ -94,29 +94,29 @@ def abandon_run(
     reason: str = "",
 ) -> dict:
     """Abandon a crashed run after TTY confirmation.
-    
+
     This marks the run as failed/abandoned and prevents any future use of this
     run ID. A new run with a different ID can then proceed.
-    
+
     The abandon operation acquires the workspace lease, which means it will
     fail if another process is actively running a command. This ensures we
     don't abandon a run that's still executing.
     """
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
-    
+
     if not skip_tty_check:
         require_interactive_tty(stdin, stdout)
-    
+
     workspace = resolve_workspace(workspace)
     state_dir = run_state_dir(workspace, campaign_id, run_id)
-    
+
     # Pre-check: verify the phase is "running" before trying to acquire lease
     state = load_state(state_dir)
     phase_ok, phase_reason = is_recoverable_phase(state)
     if not phase_ok:
         raise RecoveryError(f"run is not in a recoverable state: {phase_reason}")
-    
+
     try:
         with hold_workspace_lease(workspace, holder="abandon"):
             return _abandon_under_lease(
@@ -149,10 +149,10 @@ def _abandon_under_lease(
     state = load_state(state_dir)
     # We hold the lease, so pass workspace=None to skip redundant lease check
     recoverable, msg = is_recoverable(state, workspace=None)
-    
+
     if not recoverable:
         raise RecoveryError(f"run is not in a recoverable state: {msg}")
-    
+
     stdout.write(
         f"Abandon crashed run?\n"
         f"  campaign: {campaign_id}\n"
@@ -167,19 +167,19 @@ def _abandon_under_lease(
         f"Type {ABANDON_PHRASE!r} to confirm abandonment: "
     )
     stdout.flush()
-    
+
     line = stdin.readline()
     if line is None:
         raise RecoveryError("no input for abandon confirmation")
     if line.strip() != ABANDON_PHRASE:
         raise RecoveryError("abandon aborted (confirmation phrase mismatch)")
-    
+
     # Re-check state after interactive pause (still under lease)
     state = load_state(state_dir)
     recoverable, msg = is_recoverable(state, workspace=None)
     if not recoverable:
         raise RecoveryError(f"run state changed during confirmation: {msg}")
-    
+
     ts = utc_now_iso()
     log = EventLog.for_state_dir(state_dir)
     log.append(
@@ -191,7 +191,7 @@ def _abandon_under_lease(
             "decided_at": ts,
         },
     )
-    
+
     update_state(
         state_dir,
         phase="abandoned",
@@ -200,7 +200,7 @@ def _abandon_under_lease(
         recovery_reason=reason or "human decision via TTY",
         recovery_decided_at=ts,
     )
-    
+
     return {
         "ok": True,
         "action": "abandon",
@@ -218,25 +218,25 @@ def check_recovery_status(
     run_id: str,
 ) -> dict:
     """Check if a run needs recovery and return status details.
-    
+
     A run needs recovery when:
     - Phase is "running" (process was executing)
     - No other process holds the workspace lease
-    
+
     If phase is "running" but a lease is held, the run is still active.
     """
     workspace = resolve_workspace(workspace)
     state_dir = run_state_dir(workspace, campaign_id, run_id)
     state = load_state(state_dir)
-    
+
     # Check lease status
     lease = Lease.for_workspace(workspace, holder="recovery-status")
     lease_held = lease.is_locked_by_other()
     lease_meta = lease.read_meta() if lease_held else None
-    
+
     # Check if recoverable (considering lease)
     recoverable, reason = is_recoverable(state, workspace=workspace)
-    
+
     return {
         "campaign_id": campaign_id,
         "run_id": run_id,

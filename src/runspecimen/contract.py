@@ -348,22 +348,22 @@ def parse_contract(
     if runtime_raw is not None:
         rt = _require_dict(runtime_raw, "runtime")
         _reject_unknown(rt, {"env_allowlist", "interpreter", "capture_libs"}, "runtime")
-        
+
         env_allowlist_raw = rt.get("env_allowlist", [])
         env_allowlist_list = _require_list(env_allowlist_raw, "runtime.env_allowlist")
         env_allowlist = tuple(
             _require_str(x, f"runtime.env_allowlist[{i}]")
             for i, x in enumerate(env_allowlist_list)
         )
-        
+
         interpreter = rt.get("interpreter")
         if interpreter is not None:
             interpreter = _require_str(interpreter, "runtime.interpreter")
-        
+
         capture_libs = rt.get("capture_libs", False)
         if capture_libs is not None:
             capture_libs = _require_bool(capture_libs, "runtime.capture_libs")
-        
+
         runtime_spec = RuntimeSpec(
             env_allowlist=env_allowlist,
             interpreter=interpreter,

@@ -21,6 +21,7 @@ from runspecimen.signing import (
     verify_signature,
     verify_signed_file,
 )
+from tests.helpers import assert_paths_same
 
 
 class TestSigningKey(unittest.TestCase):
@@ -39,7 +40,7 @@ class TestSigningKey(unittest.TestCase):
     def test_from_hex_creates_key(self):
         original = SigningKey.generate()
         hex_key = original.to_hex()
-        
+
         restored = SigningKey.from_hex(original.key_id, hex_key)
         self.assertEqual(restored.key_id, original.key_id)
         self.assertEqual(restored.key_bytes, original.key_bytes)
@@ -55,20 +56,20 @@ class TestSigningKey(unittest.TestCase):
     def test_sign_and_verify_roundtrip(self):
         key = SigningKey.generate()
         data = b"test data to sign"
-        
+
         signature = key.sign(data)
         self.assertTrue(key.verify(data, signature))
 
     def test_verify_fails_for_wrong_data(self):
         key = SigningKey.generate()
         signature = key.sign(b"original data")
-        
+
         self.assertFalse(key.verify(b"different data", signature))
 
     def test_verify_fails_for_wrong_key(self):
         key1 = SigningKey.generate()
         key2 = SigningKey.generate()
-        
+
         signature = key1.sign(b"test data")
         self.assertFalse(key2.verify(b"test data", signature))
 
@@ -83,10 +84,10 @@ class TestKeyStorage(unittest.TestCase):
     def test_save_and_load_key(self):
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
-            
+
             key = SigningKey.generate(key_id="test-key")
             save_signing_key(workspace, key)
-            
+
             loaded = load_signing_key(workspace, "test-key")
             self.assertEqual(loaded.key_id, key.key_id)
             self.assertEqual(loaded.key_bytes, key.key_bytes)
@@ -94,21 +95,21 @@ class TestKeyStorage(unittest.TestCase):
     def test_load_missing_key_fails(self):
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
-            
+
             with self.assertRaises(SigningError):
                 load_signing_key(workspace, "nonexistent")
 
     def test_list_keys(self):
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
-            
+
             # Initially empty
             self.assertEqual(list_signing_keys(workspace), [])
-            
+
             # Add keys
             save_signing_key(workspace, SigningKey.generate(key_id="key1"))
             save_signing_key(workspace, SigningKey.generate(key_id="key2"))
-            
+
             keys = list_signing_keys(workspace)
             self.assertEqual(set(keys), {"key1", "key2"})
 
@@ -116,7 +117,7 @@ class TestKeyStorage(unittest.TestCase):
 def _make_valid_certificate() -> dict:
     """Create a valid RunSpecimen certificate for testing."""
     from runspecimen.hashutil import canonical_json_bytes, sha256_bytes
-    
+
     body = {
         "approval_expires_at_unix": 1234567890,
         "campaign_id": "test-campaign",
@@ -140,9 +141,9 @@ class TestCertificateSigning(unittest.TestCase):
     def test_sign_certificate_creates_valid_signature(self):
         key = SigningKey.generate()
         cert = _make_valid_certificate()
-        
+
         signed = sign_certificate(cert, key)
-        
+
         self.assertEqual(signed.certificate, cert)
         self.assertEqual(signed.key_id, key.key_id)
         self.assertEqual(signed.algorithm, key.algorithm)
@@ -152,16 +153,16 @@ class TestCertificateSigning(unittest.TestCase):
         """Can sign arbitrary data when validation is disabled."""
         key = SigningKey.generate()
         cert = {"test": "data"}  # Not a valid RunSpecimen certificate
-        
+
         signed = sign_certificate(cert, key, validate=False)
-        
+
         self.assertEqual(signed.certificate, cert)
 
     def test_sign_certificate_rejects_invalid_schema(self):
         """Signing with validation rejects invalid certificates."""
         key = SigningKey.generate()
         cert = {"test": "data"}  # Missing required fields
-        
+
         with self.assertRaises(SigningError) as ctx:
             sign_certificate(cert, key, validate=True)
         self.assertIn("missing required fields", str(ctx.exception))
@@ -171,7 +172,7 @@ class TestCertificateSigning(unittest.TestCase):
         key = SigningKey.generate()
         cert = _make_valid_certificate()
         cert["certificate_id"] = "tampered" + cert["certificate_id"][8:]
-        
+
         with self.assertRaises(SigningError) as ctx:
             sign_certificate(cert, key, validate=True)
         self.assertIn("mismatch", str(ctx.exception).lower())
@@ -179,10 +180,10 @@ class TestCertificateSigning(unittest.TestCase):
     def test_verify_signature_succeeds_for_valid(self):
         key = SigningKey.generate()
         cert = _make_valid_certificate()
-        
+
         signed = sign_certificate(cert, key)
         result = verify_signature(signed, key)
-        
+
         self.assertTrue(result.ok)
         self.assertTrue(result.mac_valid)
         self.assertTrue(result.schema_valid)
@@ -192,10 +193,10 @@ class TestCertificateSigning(unittest.TestCase):
         key1 = SigningKey.generate(key_id="key1")
         key2 = SigningKey.generate(key_id="key2")
         cert = _make_valid_certificate()
-        
+
         signed = sign_certificate(cert, key1)
         result = verify_signature(signed, key2)
-        
+
         self.assertFalse(result.ok)
         self.assertFalse(result.mac_valid)
         self.assertIn("key_id mismatch", result.message)
@@ -203,9 +204,9 @@ class TestCertificateSigning(unittest.TestCase):
     def test_verify_signature_fails_for_tampered_cert(self):
         key = SigningKey.generate()
         cert = _make_valid_certificate()
-        
+
         signed = sign_certificate(cert, key)
-        
+
         # Tamper with the certificate
         tampered_cert = dict(signed.certificate)
         tampered_cert["run_id"] = "tampered"
@@ -215,7 +216,7 @@ class TestCertificateSigning(unittest.TestCase):
             key_id=signed.key_id,
             algorithm=signed.algorithm,
         )
-        
+
         result = verify_signature(tampered, key)
         self.assertFalse(result.ok)
         self.assertFalse(result.mac_valid)
@@ -225,10 +226,10 @@ class TestCertificateSigning(unittest.TestCase):
         """MAC can be valid but schema can be invalid for forged data."""
         key = SigningKey.generate()
         fake_cert = {"not": "a real certificate"}
-        
+
         signed = sign_certificate(fake_cert, key, validate=False)
         result = verify_signature(signed, key, validate_schema=True)
-        
+
         self.assertFalse(result.ok)
         self.assertTrue(result.mac_valid)  # MAC is valid
         self.assertFalse(result.schema_valid)  # But schema is invalid
@@ -241,10 +242,10 @@ class TestSignedCertificate(unittest.TestCase):
         key = SigningKey.generate()
         cert = {"id": "test123"}
         signed = sign_certificate(cert, key, validate=False)
-        
+
         serialized = signed.to_dict()
         restored = SignedCertificate.from_dict(serialized)
-        
+
         self.assertEqual(restored.certificate, signed.certificate)
         self.assertEqual(restored.signature, signed.signature)
         self.assertEqual(restored.key_id, signed.key_id)
@@ -261,22 +262,22 @@ class TestFileOperations(unittest.TestCase):
     def test_sign_certificate_file(self):
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
-            
+
             # Create a certificate file (use validate=False for simple test)
             cert = {"certificate_id": "test123", "data": "value"}
             cert_path = workspace / "certificate.json"
             atomic_write_json(cert_path, cert)
-            
+
             # Create and save a key
             key = SigningKey.generate(key_id="file-test-key")
             save_signing_key(workspace, key)
-            
+
             # Sign the file (disable validation for simple test)
             output_path = sign_certificate_file(cert_path, key, validate=False)
-            
+
             self.assertTrue(output_path.exists())
             self.assertEqual(output_path.name, "certificate.signed.json")
-            
+
             # Verify the signed file (disable schema validation for simple test)
             ok, msg, loaded_cert = verify_signed_file(output_path, key, validate_schema=False)
             self.assertTrue(ok)
@@ -285,37 +286,38 @@ class TestFileOperations(unittest.TestCase):
     def test_sign_certificate_file_custom_output(self):
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
-            
+
             cert = {"id": "test"}
             cert_path = workspace / "cert.json"
             atomic_write_json(cert_path, cert)
-            
+
             key = SigningKey.generate()
             custom_output = workspace / "custom.signed.json"
-            
+
             output_path = sign_certificate_file(cert_path, key, custom_output, validate=False)
-            
-            self.assertEqual(output_path, custom_output)
+
+            # Use portable path assertion for macOS /var vs /private/var
+            assert_paths_same(self, output_path, custom_output)
             self.assertTrue(output_path.exists())
 
     def test_verify_signed_file_detects_tampering(self):
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
-            
+
             cert = {"id": "original"}
             cert_path = workspace / "cert.json"
             atomic_write_json(cert_path, cert)
-            
+
             key = SigningKey.generate()
             signed_path = sign_certificate_file(cert_path, key, validate=False)
-            
+
             # Tamper with the signed file
             with signed_path.open("r") as f:
                 data = json.load(f)
             data["certificate"]["id"] = "tampered"
             with signed_path.open("w") as f:
                 json.dump(data, f)
-            
+
             # Disable schema validation to focus on MAC check
             ok, msg, _ = verify_signed_file(signed_path, key, validate_schema=False)
             self.assertFalse(ok)
@@ -324,7 +326,7 @@ class TestFileOperations(unittest.TestCase):
     def test_verify_missing_file_fails(self):
         key = SigningKey.generate()
         ok, msg, cert = verify_signed_file(Path("/nonexistent/file.json"), key)
-        
+
         self.assertFalse(ok)
         self.assertIn("not found", msg)
         self.assertIsNone(cert)
@@ -369,11 +371,11 @@ class TestKeyIdValidation(unittest.TestCase):
         with self.assertRaises(SigningError) as ctx:
             validate_key_id("../escape")
         self.assertIn("separator", str(ctx.exception).lower())
-        
+
         with self.assertRaises(SigningError) as ctx:
             validate_key_id("path/to/key")
         self.assertIn("separator", str(ctx.exception).lower())
-        
+
         with self.assertRaises(SigningError) as ctx:
             validate_key_id("path\\to\\key")
         self.assertIn("separator", str(ctx.exception).lower())
@@ -418,7 +420,7 @@ class TestKeyStorageHardening(unittest.TestCase):
         """Saving a key with path traversal in ID should be blocked."""
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
-            
+
             # This would escape the keys directory
             with self.assertRaises(SigningError) as ctx:
                 key = SigningKey(key_id="../escape", key_bytes=b"0" * 32)
@@ -429,7 +431,7 @@ class TestKeyStorageHardening(unittest.TestCase):
         """Loading a key with path traversal in ID should be blocked."""
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
-            
+
             with self.assertRaises(SigningError) as ctx:
                 load_signing_key(workspace, "../escape")
             self.assertIn("separator", str(ctx.exception).lower())
@@ -438,31 +440,98 @@ class TestKeyStorageHardening(unittest.TestCase):
         """Saving a key with an existing ID should fail without explicit flag."""
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
-            
+
             key = SigningKey.generate(key_id="test-key")
             save_signing_key(workspace, key)
-            
+
             # Attempt to overwrite should fail
             key2 = SigningKey.generate(key_id="test-key")
             with self.assertRaises(SigningError) as ctx:
                 save_signing_key(workspace, key2)
             self.assertIn("already exists", str(ctx.exception).lower())
 
-    def test_overwrite_allowed_with_flag(self):
-        """Saving with allow_overwrite=True should succeed."""
+    def test_symlink_keys_dir_escape_blocked(self):
+        """A symlinked keys directory pointing outside workspace must be rejected."""
+        import os
+
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
-            
-            key1 = SigningKey.generate(key_id="test-key")
-            save_signing_key(workspace, key1)
-            
-            key2 = SigningKey.generate(key_id="test-key")
-            # Should succeed with explicit flag
-            save_signing_key(workspace, key2, allow_overwrite=True)
-            
-            # Verify the new key is saved
-            loaded = load_signing_key(workspace, "test-key")
-            self.assertEqual(loaded.key_bytes, key2.key_bytes)
+            outside = Path(tempfile.mkdtemp())
+
+            try:
+                # Create .runspecimen dir
+                (workspace / ".runspecimen").mkdir()
+
+                # Create keys as a symlink pointing outside
+                keys_link = workspace / ".runspecimen" / "keys"
+                keys_link.symlink_to(outside)
+
+                # Attempt to save should fail
+                key = SigningKey.generate(key_id="test-key")
+                with self.assertRaises(SigningError) as ctx:
+                    save_signing_key(workspace, key)
+                self.assertIn("symlink", str(ctx.exception).lower())
+            finally:
+                import shutil
+                shutil.rmtree(outside)
+
+    def test_symlink_control_plane_escape_blocked(self):
+        """A symlinked .runspecimen pointing outside workspace must be rejected."""
+        import os
+
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+            outside = Path(tempfile.mkdtemp())
+
+            try:
+                # Create .runspecimen as a symlink pointing outside
+                control_link = workspace / ".runspecimen"
+                control_link.symlink_to(outside)
+
+                # Attempt to save should fail
+                key = SigningKey.generate(key_id="test-key")
+                with self.assertRaises(SigningError) as ctx:
+                    save_signing_key(workspace, key)
+                self.assertIn("symlink", str(ctx.exception).lower())
+            finally:
+                import shutil
+                shutil.rmtree(outside)
+
+    def test_concurrent_key_creation_race_safe(self):
+        """Concurrent key creation with same ID should not corrupt or overwrite."""
+        import threading
+        import time
+
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+
+            results = {"success": 0, "exists": 0, "errors": []}
+            lock = threading.Lock()
+
+            def try_create():
+                try:
+                    key = SigningKey.generate(key_id="race-key")
+                    save_signing_key(workspace, key)
+                    with lock:
+                        results["success"] += 1
+                except SigningError as e:
+                    with lock:
+                        if "already exists" in str(e).lower():
+                            results["exists"] += 1
+                        else:
+                            results["errors"].append(str(e))
+
+            # Run multiple threads trying to create the same key
+            threads = [threading.Thread(target=try_create) for _ in range(10)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            # Exactly one should succeed, others should get "already exists"
+            self.assertEqual(results["success"], 1)
+            self.assertEqual(results["exists"], 9)
+            self.assertEqual(results["errors"], [])
 
     def test_list_keys_filters_invalid_ids(self):
         """list_signing_keys should only return valid key IDs."""
@@ -470,15 +539,15 @@ class TestKeyStorageHardening(unittest.TestCase):
             workspace = Path(ws)
             kdir = workspace / ".runspecimen" / "keys"
             kdir.mkdir(parents=True)
-            
+
             # Create a valid key
             key = SigningKey.generate(key_id="valid-key")
             save_signing_key(workspace, key)
-            
+
             # Manually create an invalid key file
             invalid_path = kdir / ".hidden.key"
             invalid_path.write_text('{"key_id": ".hidden"}')
-            
+
             # List should only return valid keys
             keys = list_signing_keys(workspace)
             self.assertEqual(keys, ["valid-key"])

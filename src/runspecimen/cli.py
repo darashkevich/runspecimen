@@ -23,11 +23,13 @@ from runspecimen.status import format_status, status_for
 from runspecimen.runtime import runtime_provenance
 from runspecimen.lease import Lease
 from runspecimen.recovery import abandon_run, check_recovery_status
+from runspecimen.atomic import atomic_write_json, read_json
 from runspecimen.signing import (
     SigningKey,
     list_signing_keys,
     load_signing_key,
     save_signing_key,
+    sign_certificate,
     sign_certificate_file,
     verify_signed_file,
 )
@@ -360,30 +362,151 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0
         if args.command == "sign":
+            from runspecimen.errors import CertificateError
+
+            # Bound certificate path to workspace
+            cert_path = args.certificate.resolve()
+            try:
+                cert_path.relative_to(workspace)
+            except ValueError:
+                print(f"{PRODUCT_NAME} error: --certificate must be inside the workspace", file=sys.stderr)
+                return 1
+
+            # Load the certificate
+            cert = read_json(cert_path)
+            if not isinstance(cert, dict):
+                print(f"{PRODUCT_NAME} error: certificate file must be a JSON object", file=sys.stderr)
+                return 1
+
+            # Verify this is a real RunSpecimen receipt before signing
+            campaign_id = cert.get("campaign_id")
+            run_id = cert.get("run_id")
+            if not campaign_id or not run_id:
+                print(f"{PRODUCT_NAME} error: certificate missing campaign_id or run_id", file=sys.stderr)
+                return 1
+
+            try:
+                verify_run_receipt(
+                    workspace=workspace,
+                    campaign_id=str(campaign_id),
+                    run_id=str(run_id),
+                    require_live_provenance=False,
+                )
+            except CertificateError as e:
+                print(f"{PRODUCT_NAME} error: receipt verification failed: {e}", file=sys.stderr)
+                return 1
+
+            # Now sign with full validation
             key = load_signing_key(workspace, args.key_id)
-            output_path = sign_certificate_file(args.certificate, key, args.output)
+            output_path = args.output
+            if output_path is None:
+                output_path = cert_path.parent / f"{cert_path.stem}.signed.json"
+            output_path = output_path.resolve()
+
+            # Bound output path to workspace
+            try:
+                output_path.relative_to(workspace)
+            except ValueError:
+                print(f"{PRODUCT_NAME} error: --output must be inside the workspace", file=sys.stderr)
+                return 1
+
+            signed = sign_certificate(cert, key, validate=True)
+            atomic_write_json(output_path, signed.to_dict())
+
             result = {
                 "ok": True,
-                "certificate": str(args.certificate),
+                "certificate": str(cert_path),
                 "signed_output": str(output_path),
                 "key_id": key.key_id,
                 "algorithm": key.algorithm,
+                "receipt_verified": True,
             }
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0
         if args.command == "verify-signature":
+            from runspecimen.errors import CertificateError
+            from runspecimen.signing import verify_signature, SignedCertificate
+
+            # Bound signed file path to workspace
+            signed_path = args.signed.resolve()
+            try:
+                signed_path.relative_to(workspace)
+            except ValueError:
+                print(f"{PRODUCT_NAME} error: --signed must be inside the workspace", file=sys.stderr)
+                return 1
+
             key = load_signing_key(workspace, args.key_id)
-            ok, msg, cert = verify_signed_file(args.signed, key)
+
+            # Load and verify MAC
+            if not signed_path.exists():
+                result = {
+                    "ok": False,
+                    "mac_valid": False,
+                    "schema_valid": False,
+                    "receipt_valid": False,
+                    "message": f"signed file not found: {signed_path}",
+                }
+                print(json.dumps(result, indent=2, sort_keys=True))
+                return 1
+
+            try:
+                data = read_json(signed_path)
+                signed_cert = SignedCertificate.from_dict(data)
+            except Exception as e:
+                result = {
+                    "ok": False,
+                    "mac_valid": False,
+                    "schema_valid": False,
+                    "receipt_valid": False,
+                    "message": f"failed to parse signed file: {e}",
+                }
+                print(json.dumps(result, indent=2, sort_keys=True))
+                return 1
+
+            # Verify MAC and schema
+            ver_result = verify_signature(signed_cert, key, validate_schema=True)
+
             result = {
-                "ok": ok,
-                "message": msg,
-                "signed_file": str(args.signed),
+                "ok": False,  # Will be set to True only if all checks pass
+                "mac_valid": ver_result.mac_valid,
+                "schema_valid": ver_result.schema_valid,
+                "certificate_id_valid": ver_result.certificate_id_valid,
+                "receipt_valid": False,
+                "signed_file": str(signed_path),
                 "key_id": args.key_id,
+                "message": ver_result.message,
             }
-            if ok and cert:
+
+            if not ver_result.mac_valid:
+                print(json.dumps(result, indent=2, sort_keys=True))
+                return 1
+
+            # MAC valid - try full receipt verification
+            cert = signed_cert.certificate
+            campaign_id = cert.get("campaign_id")
+            run_id = cert.get("run_id")
+
+            if campaign_id and run_id:
+                try:
+                    verify_run_receipt(
+                        workspace=workspace,
+                        campaign_id=str(campaign_id),
+                        run_id=str(run_id),
+                        require_live_provenance=False,
+                    )
+                    result["receipt_valid"] = True
+                    result["ok"] = ver_result.ok  # Only ok if MAC + schema + cert_id valid
+                except CertificateError as e:
+                    result["receipt_verification_error"] = str(e)
+            else:
+                result["receipt_verification_error"] = "missing campaign_id or run_id"
+
+            if ver_result.ok and result["receipt_valid"]:
                 result["certificate_id"] = cert.get("certificate_id")
+                result["ok"] = True
+
             print(json.dumps(result, indent=2, sort_keys=True))
-            return 0 if ok else 1
+            return 0 if result["ok"] else 1
         parser.error(f"unknown command: {args.command}")
         return 2
     except RunSpecimenError as exc:

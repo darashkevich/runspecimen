@@ -60,7 +60,7 @@ _SAFE_KEY_ID_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}[a-zA-Z0-9]?$
 
 def validate_key_id(key_id: str) -> None:
     """Validate a key ID against the safe-ID grammar.
-    
+
     Rejects:
     - Empty strings
     - Path separators (/, \\)
@@ -71,20 +71,20 @@ def validate_key_id(key_id: str) -> None:
     """
     if not key_id:
         raise SigningError("key_id cannot be empty")
-    
+
     if len(key_id) > 64:
         raise SigningError(f"key_id too long (max 64 chars): {len(key_id)}")
-    
+
     # Check for path traversal attacks
     if "/" in key_id or "\\" in key_id:
         raise SigningError("key_id cannot contain path separators")
-    
+
     if key_id.startswith("."):
         raise SigningError("key_id cannot start with a dot")
-    
+
     if ".." in key_id:
         raise SigningError("key_id cannot contain dot traversal")
-    
+
     # Validate against safe pattern
     if not _SAFE_KEY_ID_PATTERN.match(key_id):
         raise SigningError(
@@ -99,15 +99,15 @@ class SigningKey:
     key_id: str
     key_bytes: bytes
     algorithm: str = SIGNATURE_ALGORITHM
-    
+
     @classmethod
     def generate(cls, key_id: str | None = None) -> "SigningKey":
         """Generate a new random signing key.
-        
+
         Args:
             key_id: Optional key ID. If None, generates one from key hash.
                    Must match safe-ID grammar if provided.
-        
+
         Raises:
             SigningError: If provided key_id is invalid.
         """
@@ -117,7 +117,7 @@ class SigningKey:
         else:
             validate_key_id(key_id)
         return cls(key_id=key_id, key_bytes=key_bytes)
-    
+
     @classmethod
     def from_hex(cls, key_id: str, hex_key: str) -> "SigningKey":
         """Load a signing key from hex-encoded bytes."""
@@ -128,16 +128,16 @@ class SigningKey:
         if len(key_bytes) != KEY_LENGTH_BYTES:
             raise SigningError(f"key must be {KEY_LENGTH_BYTES} bytes, got {len(key_bytes)}")
         return cls(key_id=key_id, key_bytes=key_bytes)
-    
+
     def to_hex(self) -> str:
         """Export key as hex-encoded string."""
         return self.key_bytes.hex()
-    
+
     def sign(self, data: bytes) -> str:
         """Sign data and return hex-encoded signature."""
         sig = hmac.new(self.key_bytes, data, hashlib.sha256).digest()
         return sig.hex()
-    
+
     def verify(self, data: bytes, signature: str) -> bool:
         """Verify a signature against data."""
         try:
@@ -155,7 +155,7 @@ class SignedCertificate:
     signature: str
     key_id: str
     algorithm: str
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "certificate": self.certificate,
@@ -165,7 +165,7 @@ class SignedCertificate:
                 "algorithm": self.algorithm,
             },
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SignedCertificate":
         if "certificate" not in data or "signature" not in data:
@@ -186,106 +186,144 @@ def keys_dir(workspace: Path) -> Path:
     return workspace / ".runspecimen" / "keys"
 
 
+def _validate_keys_dir_security(workspace: Path) -> Path:
+    """Validate the keys directory is secure (not symlinked, inside workspace).
+
+    Returns the resolved keys directory path.
+    Raises SigningError if security checks fail.
+    """
+    workspace = workspace.resolve()
+    control_plane = workspace / ".runspecimen"
+    kdir = control_plane / "keys"
+
+    # Check that .runspecimen is not a symlink pointing outside workspace
+    if control_plane.exists() and control_plane.is_symlink():
+        resolved = control_plane.resolve()
+        try:
+            resolved.relative_to(workspace)
+        except ValueError:
+            raise SigningError(
+                f".runspecimen is a symlink escaping workspace: {control_plane} -> {resolved}"
+            )
+
+    # Check that keys dir is not a symlink pointing outside workspace
+    if kdir.exists() and kdir.is_symlink():
+        resolved = kdir.resolve()
+        try:
+            resolved.relative_to(workspace)
+        except ValueError:
+            raise SigningError(
+                f"keys directory is a symlink escaping workspace: {kdir} -> {resolved}"
+            )
+
+    return kdir.resolve() if kdir.exists() else kdir
+
+
 def _safe_key_path(workspace: Path, key_id: str) -> Path:
-    """Compute and validate the key file path, ensuring it stays inside keys_dir.
-    
-    Raises SigningError if key_id is invalid or would escape the keys directory.
+    """Compute and validate the key file path, ensuring it stays inside workspace.
+
+    Raises SigningError if key_id is invalid, keys dir is insecure, or path would escape.
     """
     validate_key_id(key_id)
-    
+
     workspace = workspace.resolve()
-    kdir = keys_dir(workspace).resolve()
-    key_path = (kdir / f"{key_id}.key").resolve()
-    
-    # Ensure the resolved path is inside the keys directory
+    kdir = _validate_keys_dir_security(workspace)
+    kdir_resolved = kdir.resolve() if kdir.exists() else (workspace / ".runspecimen" / "keys")
+    key_path = (kdir_resolved / f"{key_id}.key")
+
+    # Ensure the resolved path stays inside the workspace
+    key_path_resolved = key_path.resolve() if key_path.exists() else key_path
     try:
-        key_path.relative_to(kdir)
+        key_path_resolved.relative_to(workspace)
     except ValueError:
-        raise SigningError(f"key path escapes keys directory: {key_id}")
-    
+        raise SigningError(f"key path escapes workspace: {key_id}")
+
     return key_path
 
 
-def save_signing_key(
-    workspace: Path,
-    key: SigningKey,
-    *,
-    allow_overwrite: bool = False,
-) -> Path:
+def save_signing_key(workspace: Path, key: SigningKey) -> Path:
     """Save a signing key to the workspace keys directory.
-    
+
     The key file is chmod 0600 to limit read access.
-    
+    Uses exclusive file creation to prevent race conditions.
+
     Args:
         workspace: Workspace root path
         key: The signing key to save
-        allow_overwrite: If False (default), refuse to overwrite existing keys.
-                        Key rotation should use an explicit workflow.
-    
+
     Raises:
-        SigningError: If key_id is invalid, path escapes, or key exists
+        SigningError: If key_id is invalid, path escapes, key exists, or security check fails
     """
     workspace = workspace.resolve()
+
+    # Security: validate keys dir is not a symlink escape
+    _validate_keys_dir_security(workspace)
+
     kdir = keys_dir(workspace)
     ensure_dir(kdir)
-    
+
+    # Re-validate after directory creation
+    _validate_keys_dir_security(workspace)
+
     key_path = _safe_key_path(workspace, key.key_id)
-    
-    # Refuse to overwrite unless explicitly allowed
-    if key_path.exists() and not allow_overwrite:
-        raise SigningError(
-            f"key {key.key_id!r} already exists; use explicit key rotation "
-            f"workflow to replace keys"
-        )
-    
+
     key_data = {
         "key_id": key.key_id,
         "algorithm": key.algorithm,
         "key_hex": key.to_hex(),
     }
-    
-    atomic_write_json(key_path, key_data)
+
+    # Use exclusive creation to prevent race conditions and overwrites
+    import json
     try:
-        os.chmod(key_path, 0o600)
-    except OSError:
-        pass  # Best effort on platforms that don't support chmod
-    
+        fd = os.open(str(key_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(fd, json.dumps(key_data, indent=2).encode("utf-8"))
+        finally:
+            os.close(fd)
+    except FileExistsError:
+        raise SigningError(
+            f"key {key.key_id!r} already exists; key rotation is not supported"
+        )
+    except OSError as e:
+        raise SigningError(f"failed to create key file: {e}") from e
+
     return key_path
 
 
 def load_signing_key(workspace: Path, key_id: str) -> SigningKey:
     """Load a signing key from the workspace keys directory.
-    
+
     Raises:
         SigningError: If key_id is invalid, path escapes, or key not found
     """
     key_path = _safe_key_path(workspace, key_id)
-    
+
     if not key_path.exists():
         raise SigningError(f"signing key not found: {key_id}")
-    
+
     try:
         data = read_json(key_path)
     except Exception as e:
         raise SigningError(f"failed to read key file: {e}") from e
-    
+
     if data.get("key_id") != key_id:
         raise SigningError("key file key_id mismatch")
-    
+
     return SigningKey.from_hex(key_id, data["key_hex"])
 
 
 def list_signing_keys(workspace: Path) -> list[str]:
     """List available signing key IDs in the workspace.
-    
+
     Only returns key IDs that match the safe-ID grammar.
     """
     workspace = workspace.resolve()
     kdir = keys_dir(workspace)
-    
+
     if not kdir.exists():
         return []
-    
+
     key_ids = []
     for p in kdir.iterdir():
         if p.suffix == ".key" and p.is_file():
@@ -333,20 +371,20 @@ def _recompute_certificate_id(cert: dict[str, Any]) -> str:
 
 def validate_certificate_schema(cert: dict[str, Any]) -> tuple[bool, str]:
     """Validate that a certificate has the required schema.
-    
+
     Checks:
     - All required fields are present
     - certificate_id matches recomputed value
-    
+
     Returns (ok, message).
     """
     if not isinstance(cert, dict):
         return False, "certificate must be a JSON object"
-    
+
     missing = _REQUIRED_CERT_FIELDS - set(cert.keys())
     if missing:
         return False, f"certificate missing required fields: {sorted(missing)}"
-    
+
     # Validate types for critical fields
     if not isinstance(cert.get("certificate_id"), str):
         return False, "certificate_id must be a string"
@@ -354,19 +392,19 @@ def validate_certificate_schema(cert: dict[str, Any]) -> tuple[bool, str]:
         return False, "output_digests must be a dict"
     if not isinstance(cert.get("runtime"), dict):
         return False, "runtime must be a dict"
-    
+
     # Recompute and verify certificate_id
     try:
         recomputed = _recompute_certificate_id(cert)
     except (KeyError, TypeError) as e:
         return False, f"cannot recompute certificate_id: {e}"
-    
+
     if recomputed != cert["certificate_id"]:
         return False, (
             f"certificate_id mismatch (tampering detected): "
             f"expected {recomputed}, got {cert['certificate_id']}"
         )
-    
+
     return True, "ok"
 
 
@@ -377,17 +415,17 @@ def sign_certificate(
     validate: bool = True,
 ) -> SignedCertificate:
     """Sign a RunSpecimen certificate with the given key.
-    
+
     Args:
         certificate: The certificate to sign
         key: The signing key
         validate: If True (default), validate the certificate schema and
                  recompute certificate_id before signing. Set to False only
                  for testing or when signing non-RunSpecimen data.
-    
+
     Raises:
         SigningError: If validation fails
-    
+
     Note: This provides shared-secret authentication only. Anyone with the
     key can both sign and verify. For independent third-party verification,
     use asymmetric cryptography.
@@ -396,11 +434,11 @@ def sign_certificate(
         ok, msg = validate_certificate_schema(certificate)
         if not ok:
             raise SigningError(f"certificate validation failed: {msg}")
-    
+
     # Canonicalize the certificate for signing
     cert_bytes = canonical_json_bytes(certificate)
     signature = key.sign(cert_bytes)
-    
+
     return SignedCertificate(
         certificate=certificate,
         signature=signature,
@@ -416,11 +454,11 @@ class SignatureVerificationResult:
     schema_valid: bool | None  # Does the certificate match RunSpecimen schema? None if not checked.
     certificate_id_valid: bool | None  # Does certificate_id match recomputed value? None if not checked.
     message: str
-    
+
     @property
     def ok(self) -> bool:
         """Verification passed based on what was checked.
-        
+
         If schema validation was skipped (schema_valid=None), only MAC validity matters.
         If schema validation was performed, all three checks must pass.
         """
@@ -440,20 +478,20 @@ def verify_signature(
     validate_schema: bool = True,
 ) -> SignatureVerificationResult:
     """Verify a signed certificate against a key.
-    
+
     This verifies:
     1. MAC validity: The signature matches the certificate content
     2. Schema validity: The certificate has required RunSpecimen fields
     3. Certificate ID validity: The certificate_id matches recomputed value
-    
+
     Args:
         signed_cert: The signed certificate to verify
         key: The key to verify against
         validate_schema: If True (default), also validate the certificate schema
-    
+
     Returns:
         SignatureVerificationResult with detailed status
-    
+
     Note: This uses shared-secret HMAC - anyone with the key can forge signatures.
     MAC validity does NOT prove the certificate came from a trusted source unless
     the key was securely shared out-of-band.
@@ -466,7 +504,7 @@ def verify_signature(
             certificate_id_valid=False,
             message=f"key_id mismatch: expected {key.key_id}, got {signed_cert.key_id}",
         )
-    
+
     # Check algorithm match
     if signed_cert.algorithm != key.algorithm:
         return SignatureVerificationResult(
@@ -475,11 +513,11 @@ def verify_signature(
             certificate_id_valid=False,
             message=f"algorithm mismatch: expected {key.algorithm}, got {signed_cert.algorithm}",
         )
-    
+
     # Verify MAC
     cert_bytes = canonical_json_bytes(signed_cert.certificate)
     mac_valid = key.verify(cert_bytes, signed_cert.signature)
-    
+
     if not mac_valid:
         return SignatureVerificationResult(
             mac_valid=False,
@@ -487,7 +525,7 @@ def verify_signature(
             certificate_id_valid=False,
             message="MAC verification failed (signature invalid or content tampered)",
         )
-    
+
     # MAC is valid - now check schema if requested
     if not validate_schema:
         return SignatureVerificationResult(
@@ -496,7 +534,7 @@ def verify_signature(
             certificate_id_valid=None,  # Not checked
             message="MAC valid (schema not validated)",
         )
-    
+
     schema_ok, schema_msg = validate_certificate_schema(signed_cert.certificate)
     if not schema_ok:
         return SignatureVerificationResult(
@@ -505,7 +543,7 @@ def verify_signature(
             certificate_id_valid=False,
             message=f"MAC valid but certificate schema invalid: {schema_msg}",
         )
-    
+
     return SignatureVerificationResult(
         mac_valid=True,
         schema_valid=True,
@@ -522,32 +560,32 @@ def sign_certificate_file(
     validate: bool = True,
 ) -> Path:
     """Sign a certificate file and write the signed version.
-    
+
     Args:
         cert_path: Path to the certificate file
         key: The signing key
         output_path: Output path (default: {cert_path.stem}.signed.json)
         validate: If True (default), validate the certificate schema.
                  Set to False only for testing or non-RunSpecimen data.
-    
+
     Returns:
         Path to the signed certificate file
     """
     cert_path = cert_path.resolve()
     if not cert_path.exists():
         raise SigningError(f"certificate file not found: {cert_path}")
-    
+
     try:
         cert = read_json(cert_path)
     except Exception as e:
         raise SigningError(f"failed to read certificate: {e}") from e
-    
+
     signed = sign_certificate(cert, key, validate=validate)
-    
+
     if output_path is None:
         output_path = cert_path.parent / f"{cert_path.stem}.signed.json"
     output_path = output_path.resolve()
-    
+
     atomic_write_json(output_path, signed.to_dict())
     return output_path
 
@@ -559,18 +597,18 @@ def verify_signed_file(
     validate_schema: bool = True,
 ) -> tuple[bool, str, dict[str, Any] | None]:
     """Verify a signed certificate file.
-    
+
     Args:
         signed_path: Path to the signed certificate file
         key: The key to verify against
         validate_schema: If True (default), also validate the certificate schema
-    
+
     Returns:
         (ok, message, certificate or None)
-        
+
         ok is True only if MAC is valid AND (when validate_schema=True) the
         certificate has a valid RunSpecimen schema with matching certificate_id.
-    
+
     Note: MAC validity alone does NOT prove the certificate is a legitimate
     RunSpecimen receipt. It only proves the content wasn't modified after signing
     by someone with the same shared secret.
@@ -578,16 +616,16 @@ def verify_signed_file(
     signed_path = signed_path.resolve()
     if not signed_path.exists():
         return False, f"signed file not found: {signed_path}", None
-    
+
     try:
         data = read_json(signed_path)
     except Exception as e:
         return False, f"failed to read signed file: {e}", None
-    
+
     try:
         signed_cert = SignedCertificate.from_dict(data)
     except SigningError as e:
         return False, str(e), None
-    
+
     result = verify_signature(signed_cert, key, validate_schema=validate_schema)
     return result.ok, result.message, signed_cert.certificate if result.ok else None

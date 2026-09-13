@@ -18,8 +18,9 @@ mandatory postflight before a successor; tamper-evident hash-chained receipts.
   orchestration controls, not a security boundary against a hostile payload.
 - A job scheduler. No cron, watchers, fan-out, or parallel workers in one
   workspace lease domain.
-- A cryptographic signature service. Receipts are locally hash-chained, not
-  signed by an external key or transparency log.
+- A digital signature service. Receipts are locally hash-chained. The `sign`
+  command provides shared-secret HMAC authentication (not digital signatures).
+  True asymmetric signing with non-repudiation is planned for a future release.
 - Proof that a scientific or engineering claim is true. A green postflight
   means the approved contract ran under recorded provenance and assertions
   passed.
