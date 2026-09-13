@@ -149,22 +149,23 @@ class TestCertificateSigning(unittest.TestCase):
         self.assertEqual(signed.algorithm, key.algorithm)
         self.assertIsInstance(signed.signature, str)
 
-    def test_sign_certificate_without_validation(self):
-        """Can sign arbitrary data when validation is disabled."""
+    def test_sign_certificate_always_rejects_arbitrary_json(self):
+        """sign_certificate ALWAYS rejects arbitrary JSON - no bypass."""
         key = SigningKey.generate()
         cert = {"test": "data"}  # Not a valid RunSpecimen certificate
 
-        signed = sign_certificate(cert, key, validate=False)
-
-        self.assertEqual(signed.certificate, cert)
+        # Must reject - no validate=False bypass allowed
+        with self.assertRaises(SigningError) as ctx:
+            sign_certificate(cert, key)
+        self.assertIn("missing required fields", str(ctx.exception))
 
     def test_sign_certificate_rejects_invalid_schema(self):
-        """Signing with validation rejects invalid certificates."""
+        """Signing rejects invalid certificates (missing required fields)."""
         key = SigningKey.generate()
         cert = {"test": "data"}  # Missing required fields
 
         with self.assertRaises(SigningError) as ctx:
-            sign_certificate(cert, key, validate=True)
+            sign_certificate(cert, key)
         self.assertIn("missing required fields", str(ctx.exception))
 
     def test_sign_certificate_rejects_tampered_id(self):
@@ -174,7 +175,7 @@ class TestCertificateSigning(unittest.TestCase):
         cert["certificate_id"] = "tampered" + cert["certificate_id"][8:]
 
         with self.assertRaises(SigningError) as ctx:
-            sign_certificate(cert, key, validate=True)
+            sign_certificate(cert, key)
         self.assertIn("mismatch", str(ctx.exception).lower())
 
     def test_verify_signature_succeeds_for_valid(self):
@@ -222,17 +223,26 @@ class TestCertificateSigning(unittest.TestCase):
         self.assertFalse(result.mac_valid)
         self.assertIn("MAC verification failed", result.message)
 
-    def test_verify_signature_detects_invalid_schema(self):
-        """MAC can be valid but schema can be invalid for forged data."""
+    def test_verify_signature_always_validates_schema(self):
+        """verify_signature ALWAYS validates schema - no bypass."""
         key = SigningKey.generate()
-        fake_cert = {"not": "a real certificate"}
+        cert = _make_valid_certificate()
 
-        signed = sign_certificate(fake_cert, key, validate=False)
-        result = verify_signature(signed, key, validate_schema=True)
+        signed = sign_certificate(cert, key)
 
+        # Tamper with the signed certificate's content directly
+        # This simulates receiving a signed blob with invalid schema
+        tampered = SignedCertificate(
+            certificate={"not": "a real certificate"},
+            signature=signed.signature,  # Original signature won't match anyway
+            key_id=key.key_id,
+            algorithm=key.algorithm,
+        )
+
+        result = verify_signature(tampered, key)
         self.assertFalse(result.ok)
-        self.assertTrue(result.mac_valid)  # MAC is valid
-        self.assertFalse(result.schema_valid)  # But schema is invalid
+        # MAC fails because content changed
+        self.assertFalse(result.mac_valid)
 
 
 class TestSignedCertificate(unittest.TestCase):
@@ -240,8 +250,8 @@ class TestSignedCertificate(unittest.TestCase):
 
     def test_to_dict_and_from_dict_roundtrip(self):
         key = SigningKey.generate()
-        cert = {"id": "test123"}
-        signed = sign_certificate(cert, key, validate=False)
+        cert = _make_valid_certificate()  # Use valid certificate
+        signed = sign_certificate(cert, key)
 
         serialized = signed.to_dict()
         restored = SignedCertificate.from_dict(serialized)
@@ -263,8 +273,8 @@ class TestFileOperations(unittest.TestCase):
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
 
-            # Create a certificate file (use validate=False for simple test)
-            cert = {"certificate_id": "test123", "data": "value"}
+            # Create a valid certificate file
+            cert = _make_valid_certificate()
             cert_path = workspace / "certificate.json"
             atomic_write_json(cert_path, cert)
 
@@ -272,29 +282,45 @@ class TestFileOperations(unittest.TestCase):
             key = SigningKey.generate(key_id="file-test-key")
             save_signing_key(workspace, key)
 
-            # Sign the file (disable validation for simple test)
-            output_path = sign_certificate_file(cert_path, key, validate=False)
+            # Sign the file
+            output_path = sign_certificate_file(cert_path, key)
 
             self.assertTrue(output_path.exists())
             self.assertEqual(output_path.name, "certificate.signed.json")
 
-            # Verify the signed file (disable schema validation for simple test)
-            ok, msg, loaded_cert = verify_signed_file(output_path, key, validate_schema=False)
+            # Verify the signed file
+            ok, msg, loaded_cert = verify_signed_file(output_path, key)
             self.assertTrue(ok)
             self.assertEqual(loaded_cert, cert)
+
+    def test_sign_certificate_file_rejects_invalid(self):
+        """sign_certificate_file ALWAYS rejects invalid certificates."""
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+
+            # Create an invalid certificate file
+            cert = {"not": "a valid certificate"}
+            cert_path = workspace / "cert.json"
+            atomic_write_json(cert_path, cert)
+
+            key = SigningKey.generate()
+
+            with self.assertRaises(SigningError) as ctx:
+                sign_certificate_file(cert_path, key)
+            self.assertIn("missing required fields", str(ctx.exception))
 
     def test_sign_certificate_file_custom_output(self):
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
 
-            cert = {"id": "test"}
+            cert = _make_valid_certificate()
             cert_path = workspace / "cert.json"
             atomic_write_json(cert_path, cert)
 
             key = SigningKey.generate()
             custom_output = workspace / "custom.signed.json"
 
-            output_path = sign_certificate_file(cert_path, key, custom_output, validate=False)
+            output_path = sign_certificate_file(cert_path, key, custom_output)
 
             # Use portable path assertion for macOS /var vs /private/var
             assert_paths_same(self, output_path, custom_output)
@@ -304,22 +330,22 @@ class TestFileOperations(unittest.TestCase):
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
 
-            cert = {"id": "original"}
+            cert = _make_valid_certificate()
             cert_path = workspace / "cert.json"
             atomic_write_json(cert_path, cert)
 
             key = SigningKey.generate()
-            signed_path = sign_certificate_file(cert_path, key, validate=False)
+            signed_path = sign_certificate_file(cert_path, key)
 
             # Tamper with the signed file
             with signed_path.open("r") as f:
                 data = json.load(f)
-            data["certificate"]["id"] = "tampered"
+            data["certificate"]["campaign_id"] = "tampered"
             with signed_path.open("w") as f:
                 json.dump(data, f)
 
-            # Disable schema validation to focus on MAC check
-            ok, msg, _ = verify_signed_file(signed_path, key, validate_schema=False)
+            # MAC check should fail due to tampering
+            ok, msg, _ = verify_signed_file(signed_path, key)
             self.assertFalse(ok)
             self.assertIn("MAC verification failed", msg)
 
@@ -474,6 +500,47 @@ class TestKeyStorageHardening(unittest.TestCase):
             finally:
                 import shutil
                 shutil.rmtree(outside)
+
+    def test_symlink_keys_dir_inside_workspace_blocked(self):
+        """A symlinked keys directory pointing INSIDE workspace must also be rejected."""
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+
+            # Create a real directory inside workspace
+            real_keys = workspace / "real_keys_dir"
+            real_keys.mkdir()
+
+            # Create .runspecimen dir
+            (workspace / ".runspecimen").mkdir()
+
+            # Create keys as a symlink pointing inside workspace
+            keys_link = workspace / ".runspecimen" / "keys"
+            keys_link.symlink_to(real_keys)
+
+            # Attempt to save should fail - ALL symlinks rejected
+            key = SigningKey.generate(key_id="test-key")
+            with self.assertRaises(SigningError) as ctx:
+                save_signing_key(workspace, key)
+            self.assertIn("symlink", str(ctx.exception).lower())
+
+    def test_symlink_control_plane_inside_workspace_blocked(self):
+        """A symlinked .runspecimen pointing INSIDE workspace must also be rejected."""
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+
+            # Create a real directory inside workspace
+            real_control = workspace / "real_runspecimen"
+            real_control.mkdir()
+
+            # Create .runspecimen as a symlink pointing inside workspace
+            control_link = workspace / ".runspecimen"
+            control_link.symlink_to(real_control)
+
+            # Attempt to save should fail - ALL symlinks rejected
+            key = SigningKey.generate(key_id="test-key")
+            with self.assertRaises(SigningError) as ctx:
+                save_signing_key(workspace, key)
+            self.assertIn("symlink", str(ctx.exception).lower())
 
     def test_symlink_control_plane_escape_blocked(self):
         """A symlinked .runspecimen pointing outside workspace must be rejected."""

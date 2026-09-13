@@ -172,6 +172,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Authenticate a certificate with a shared-secret MAC",
         description=(
             "Add an HMAC-SHA256 authentication tag to a certificate. "
+            "Requires the certificate to match the canonical receipt and "
+            "verifies live provenance against the contract. "
             "NOTE: This uses shared-secret authentication, NOT digital signatures. "
             "Anyone with the key can forge authenticated certificates."
         ),
@@ -179,13 +181,15 @@ def build_parser() -> argparse.ArgumentParser:
     _add_workspace(p_sign)
     p_sign.add_argument("--key-id", required=True, help="ID of the authentication key to use")
     p_sign.add_argument("--certificate", type=Path, required=True, help="Path to certificate.json")
+    p_sign.add_argument("--contract", type=Path, required=True, help="Path to contract.json for live provenance verification")
     p_sign.add_argument("--output", type=Path, default=None, help="Output path (default: certificate.signed.json)")
 
     p_verify_sig = sub.add_parser(
         "verify-signature",
         help="Verify an authenticated certificate's MAC",
         description=(
-            "Verify the HMAC authentication tag on a certificate. "
+            "Verify the HMAC authentication tag on a certificate and validate "
+            "it matches the canonical receipt with full live provenance verification. "
             "MAC validity proves the content wasn't modified after authentication, "
             "but does NOT prove origin - anyone with the key could have created it."
         ),
@@ -193,6 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_workspace(p_verify_sig)
     p_verify_sig.add_argument("--key-id", required=True, help="ID of the key to verify against")
     p_verify_sig.add_argument("--signed", type=Path, required=True, help="Path to authenticated certificate file")
+    p_verify_sig.add_argument("--contract", type=Path, required=True, help="Path to contract.json for live provenance verification")
 
     return parser
 
@@ -363,6 +368,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "sign":
             from runspecimen.errors import CertificateError
+            from runspecimen.certificate import load_certificate
+            from runspecimen.state import run_state_dir
+            from runspecimen.hashutil import canonical_json_bytes
 
             # Bound certificate path to workspace
             cert_path = args.certificate.resolve()
@@ -372,31 +380,56 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{PRODUCT_NAME} error: --certificate must be inside the workspace", file=sys.stderr)
                 return 1
 
-            # Load the certificate
+            # Load the user-supplied certificate
             cert = read_json(cert_path)
             if not isinstance(cert, dict):
                 print(f"{PRODUCT_NAME} error: certificate file must be a JSON object", file=sys.stderr)
                 return 1
 
-            # Verify this is a real RunSpecimen receipt before signing
+            # Extract identity from certificate
             campaign_id = cert.get("campaign_id")
             run_id = cert.get("run_id")
             if not campaign_id or not run_id:
                 print(f"{PRODUCT_NAME} error: certificate missing campaign_id or run_id", file=sys.stderr)
                 return 1
 
+            # Load the contract for live provenance verification
+            if not args.contract:
+                print(f"{PRODUCT_NAME} error: --contract is required for sign command", file=sys.stderr)
+                return 1
+            contract = load_contract(args.contract)
+
+            # Verify the canonical receipt with full live provenance
             try:
                 verify_run_receipt(
                     workspace=workspace,
                     campaign_id=str(campaign_id),
                     run_id=str(run_id),
-                    require_live_provenance=False,
+                    require_live_provenance=True,
+                    contract=contract,
                 )
             except CertificateError as e:
                 print(f"{PRODUCT_NAME} error: receipt verification failed: {e}", file=sys.stderr)
                 return 1
 
-            # Now sign with full validation
+            # Load the canonical certificate from state directory
+            state_dir = run_state_dir(workspace, str(campaign_id), str(run_id))
+            canonical_cert = load_certificate(state_dir)
+            if canonical_cert is None:
+                print(f"{PRODUCT_NAME} error: canonical certificate not found in state directory", file=sys.stderr)
+                return 1
+
+            # CRITICAL: Compare user-supplied certificate to canonical certificate
+            # The exact document being signed must match the canonical receipt
+            user_cert_bytes = canonical_json_bytes(cert)
+            canonical_cert_bytes = canonical_json_bytes(canonical_cert)
+            if user_cert_bytes != canonical_cert_bytes:
+                print(f"{PRODUCT_NAME} error: supplied certificate does not match canonical receipt", file=sys.stderr)
+                print(f"  certificate_id supplied: {cert.get('certificate_id')}", file=sys.stderr)
+                print(f"  certificate_id canonical: {canonical_cert.get('certificate_id')}", file=sys.stderr)
+                return 1
+
+            # Now sign the verified canonical certificate
             key = load_signing_key(workspace, args.key_id)
             output_path = args.output
             if output_path is None:
@@ -410,7 +443,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{PRODUCT_NAME} error: --output must be inside the workspace", file=sys.stderr)
                 return 1
 
-            signed = sign_certificate(cert, key, validate=True)
+            signed = sign_certificate(canonical_cert, key)
             atomic_write_json(output_path, signed.to_dict())
 
             result = {
@@ -420,12 +453,16 @@ def main(argv: list[str] | None = None) -> int:
                 "key_id": key.key_id,
                 "algorithm": key.algorithm,
                 "receipt_verified": True,
+                "certificate_id": canonical_cert.get("certificate_id"),
             }
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0
         if args.command == "verify-signature":
             from runspecimen.errors import CertificateError
             from runspecimen.signing import verify_signature, SignedCertificate
+            from runspecimen.certificate import load_certificate
+            from runspecimen.state import run_state_dir
+            from runspecimen.hashutil import canonical_json_bytes
 
             # Bound signed file path to workspace
             signed_path = args.signed.resolve()
@@ -434,6 +471,12 @@ def main(argv: list[str] | None = None) -> int:
             except ValueError:
                 print(f"{PRODUCT_NAME} error: --signed must be inside the workspace", file=sys.stderr)
                 return 1
+
+            # Require contract for live provenance verification
+            if not args.contract:
+                print(f"{PRODUCT_NAME} error: --contract is required for verify-signature command", file=sys.stderr)
+                return 1
+            contract = load_contract(args.contract)
 
             key = load_signing_key(workspace, args.key_id)
 
@@ -444,6 +487,7 @@ def main(argv: list[str] | None = None) -> int:
                     "mac_valid": False,
                     "schema_valid": False,
                     "receipt_valid": False,
+                    "canonical_match": False,
                     "message": f"signed file not found: {signed_path}",
                 }
                 print(json.dumps(result, indent=2, sort_keys=True))
@@ -458,20 +502,22 @@ def main(argv: list[str] | None = None) -> int:
                     "mac_valid": False,
                     "schema_valid": False,
                     "receipt_valid": False,
+                    "canonical_match": False,
                     "message": f"failed to parse signed file: {e}",
                 }
                 print(json.dumps(result, indent=2, sort_keys=True))
                 return 1
 
             # Verify MAC and schema
-            ver_result = verify_signature(signed_cert, key, validate_schema=True)
+            ver_result = verify_signature(signed_cert, key)
 
             result = {
-                "ok": False,  # Will be set to True only if all checks pass
+                "ok": False,
                 "mac_valid": ver_result.mac_valid,
                 "schema_valid": ver_result.schema_valid,
                 "certificate_id_valid": ver_result.certificate_id_valid,
                 "receipt_valid": False,
+                "canonical_match": False,
                 "signed_file": str(signed_path),
                 "key_id": args.key_id,
                 "message": ver_result.message,
@@ -481,29 +527,58 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(result, indent=2, sort_keys=True))
                 return 1
 
-            # MAC valid - try full receipt verification
+            # MAC valid - now verify the certificate matches canonical receipt
             cert = signed_cert.certificate
             campaign_id = cert.get("campaign_id")
             run_id = cert.get("run_id")
 
-            if campaign_id and run_id:
-                try:
-                    verify_run_receipt(
-                        workspace=workspace,
-                        campaign_id=str(campaign_id),
-                        run_id=str(run_id),
-                        require_live_provenance=False,
-                    )
-                    result["receipt_valid"] = True
-                    result["ok"] = ver_result.ok  # Only ok if MAC + schema + cert_id valid
-                except CertificateError as e:
-                    result["receipt_verification_error"] = str(e)
-            else:
-                result["receipt_verification_error"] = "missing campaign_id or run_id"
+            if not campaign_id or not run_id:
+                result["message"] = "certificate missing campaign_id or run_id"
+                print(json.dumps(result, indent=2, sort_keys=True))
+                return 1
 
-            if ver_result.ok and result["receipt_valid"]:
+            # Load canonical certificate
+            state_dir = run_state_dir(workspace, str(campaign_id), str(run_id))
+            canonical_cert = load_certificate(state_dir)
+            if canonical_cert is None:
+                result["message"] = "canonical certificate not found in state directory"
+                print(json.dumps(result, indent=2, sort_keys=True))
+                return 1
+
+            # CRITICAL: Compare signed certificate to canonical receipt
+            signed_cert_bytes = canonical_json_bytes(cert)
+            canonical_cert_bytes = canonical_json_bytes(canonical_cert)
+            if signed_cert_bytes != canonical_cert_bytes:
+                result["message"] = (
+                    f"signed certificate does not match canonical receipt; "
+                    f"signed_cert_id={cert.get('certificate_id')}, "
+                    f"canonical_cert_id={canonical_cert.get('certificate_id')}"
+                )
+                print(json.dumps(result, indent=2, sort_keys=True))
+                return 1
+
+            result["canonical_match"] = True
+
+            # Full receipt verification with live provenance
+            try:
+                verify_run_receipt(
+                    workspace=workspace,
+                    campaign_id=str(campaign_id),
+                    run_id=str(run_id),
+                    require_live_provenance=True,
+                    contract=contract,
+                )
+                result["receipt_valid"] = True
+            except CertificateError as e:
+                result["receipt_verification_error"] = str(e)
+                print(json.dumps(result, indent=2, sort_keys=True))
+                return 1
+
+            # All checks passed
+            if ver_result.ok and result["receipt_valid"] and result["canonical_match"]:
                 result["certificate_id"] = cert.get("certificate_id")
                 result["ok"] = True
+                result["message"] = "MAC valid, certificate matches canonical receipt, live provenance verified"
 
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0 if result["ok"] else 1

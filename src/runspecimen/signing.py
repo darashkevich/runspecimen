@@ -187,7 +187,11 @@ def keys_dir(workspace: Path) -> Path:
 
 
 def _validate_keys_dir_security(workspace: Path) -> Path:
-    """Validate the keys directory is secure (not symlinked, inside workspace).
+    """Validate the keys directory is secure (not symlinked).
+
+    SECURITY: Symlinked control-plane directories are ALWAYS rejected,
+    even when the target is inside the workspace. Symlinks create unexpected
+    aliasing and TOCTOU hazards in security-critical paths.
 
     Returns the resolved keys directory path.
     Raises SigningError if security checks fail.
@@ -196,25 +200,19 @@ def _validate_keys_dir_security(workspace: Path) -> Path:
     control_plane = workspace / ".runspecimen"
     kdir = control_plane / "keys"
 
-    # Check that .runspecimen is not a symlink pointing outside workspace
+    # SECURITY: Reject ANY symlinked .runspecimen directory
     if control_plane.exists() and control_plane.is_symlink():
         resolved = control_plane.resolve()
-        try:
-            resolved.relative_to(workspace)
-        except ValueError:
-            raise SigningError(
-                f".runspecimen is a symlink escaping workspace: {control_plane} -> {resolved}"
-            )
+        raise SigningError(
+            f".runspecimen must not be a symlink: {control_plane} -> {resolved}"
+        )
 
-    # Check that keys dir is not a symlink pointing outside workspace
+    # SECURITY: Reject ANY symlinked keys directory
     if kdir.exists() and kdir.is_symlink():
         resolved = kdir.resolve()
-        try:
-            resolved.relative_to(workspace)
-        except ValueError:
-            raise SigningError(
-                f"keys directory is a symlink escaping workspace: {kdir} -> {resolved}"
-            )
+        raise SigningError(
+            f"keys directory must not be a symlink: {kdir} -> {resolved}"
+        )
 
     return kdir.resolve() if kdir.exists() else kdir
 
@@ -411,29 +409,27 @@ def validate_certificate_schema(cert: dict[str, Any]) -> tuple[bool, str]:
 def sign_certificate(
     certificate: dict[str, Any],
     key: SigningKey,
-    *,
-    validate: bool = True,
 ) -> SignedCertificate:
     """Sign a RunSpecimen certificate with the given key.
 
+    This function ALWAYS validates the certificate schema before signing.
+    It refuses to sign arbitrary JSON as a RunSpecimen receipt.
+
     Args:
-        certificate: The certificate to sign
+        certificate: The certificate to sign (must be a valid RunSpecimen certificate)
         key: The signing key
-        validate: If True (default), validate the certificate schema and
-                 recompute certificate_id before signing. Set to False only
-                 for testing or when signing non-RunSpecimen data.
 
     Raises:
-        SigningError: If validation fails
+        SigningError: If certificate validation fails
 
     Note: This provides shared-secret authentication only. Anyone with the
     key can both sign and verify. For independent third-party verification,
     use asymmetric cryptography.
     """
-    if validate:
-        ok, msg = validate_certificate_schema(certificate)
-        if not ok:
-            raise SigningError(f"certificate validation failed: {msg}")
+    # ALWAYS validate - never sign arbitrary JSON as a receipt
+    ok, msg = validate_certificate_schema(certificate)
+    if not ok:
+        raise SigningError(f"certificate validation failed: {msg}")
 
     # Canonicalize the certificate for signing
     cert_bytes = canonical_json_bytes(certificate)
@@ -451,35 +447,23 @@ def sign_certificate(
 class SignatureVerificationResult:
     """Result of signature verification with clear status levels."""
     mac_valid: bool  # Is the MAC (signature) cryptographically valid?
-    schema_valid: bool | None  # Does the certificate match RunSpecimen schema? None if not checked.
-    certificate_id_valid: bool | None  # Does certificate_id match recomputed value? None if not checked.
+    schema_valid: bool  # Does the certificate match RunSpecimen schema?
+    certificate_id_valid: bool  # Does certificate_id match recomputed value?
     message: str
 
     @property
     def ok(self) -> bool:
-        """Verification passed based on what was checked.
-
-        If schema validation was skipped (schema_valid=None), only MAC validity matters.
-        If schema validation was performed, all three checks must pass.
-        """
-        if not self.mac_valid:
-            return False
-        # If schema wasn't checked, MAC validity is sufficient
-        if self.schema_valid is None:
-            return True
-        # If schema was checked, it must be valid along with certificate_id
-        return self.schema_valid and (self.certificate_id_valid is True)
+        """Verification passed: all three checks must pass."""
+        return self.mac_valid and self.schema_valid and self.certificate_id_valid
 
 
 def verify_signature(
     signed_cert: SignedCertificate,
     key: SigningKey,
-    *,
-    validate_schema: bool = True,
 ) -> SignatureVerificationResult:
     """Verify a signed certificate against a key.
 
-    This verifies:
+    This ALWAYS verifies all of:
     1. MAC validity: The signature matches the certificate content
     2. Schema validity: The certificate has required RunSpecimen fields
     3. Certificate ID validity: The certificate_id matches recomputed value
@@ -487,7 +471,6 @@ def verify_signature(
     Args:
         signed_cert: The signed certificate to verify
         key: The key to verify against
-        validate_schema: If True (default), also validate the certificate schema
 
     Returns:
         SignatureVerificationResult with detailed status
@@ -526,15 +509,7 @@ def verify_signature(
             message="MAC verification failed (signature invalid or content tampered)",
         )
 
-    # MAC is valid - now check schema if requested
-    if not validate_schema:
-        return SignatureVerificationResult(
-            mac_valid=True,
-            schema_valid=None,  # Not checked
-            certificate_id_valid=None,  # Not checked
-            message="MAC valid (schema not validated)",
-        )
-
+    # MAC is valid - ALWAYS validate schema for RunSpecimen receipts
     schema_ok, schema_msg = validate_certificate_schema(signed_cert.certificate)
     if not schema_ok:
         return SignatureVerificationResult(
@@ -556,20 +531,22 @@ def sign_certificate_file(
     cert_path: Path,
     key: SigningKey,
     output_path: Path | None = None,
-    *,
-    validate: bool = True,
 ) -> Path:
     """Sign a certificate file and write the signed version.
+
+    This function ALWAYS validates the certificate schema before signing.
+    It refuses to sign arbitrary JSON as a RunSpecimen receipt.
 
     Args:
         cert_path: Path to the certificate file
         key: The signing key
         output_path: Output path (default: {cert_path.stem}.signed.json)
-        validate: If True (default), validate the certificate schema.
-                 Set to False only for testing or non-RunSpecimen data.
 
     Returns:
         Path to the signed certificate file
+
+    Raises:
+        SigningError: If certificate validation fails or file operations fail
     """
     cert_path = cert_path.resolve()
     if not cert_path.exists():
@@ -580,7 +557,7 @@ def sign_certificate_file(
     except Exception as e:
         raise SigningError(f"failed to read certificate: {e}") from e
 
-    signed = sign_certificate(cert, key, validate=validate)
+    signed = sign_certificate(cert, key)
 
     if output_path is None:
         output_path = cert_path.parent / f"{cert_path.stem}.signed.json"
@@ -593,25 +570,25 @@ def sign_certificate_file(
 def verify_signed_file(
     signed_path: Path,
     key: SigningKey,
-    *,
-    validate_schema: bool = True,
 ) -> tuple[bool, str, dict[str, Any] | None]:
     """Verify a signed certificate file.
+
+    This function ALWAYS validates the certificate schema.
+    It refuses to accept arbitrary JSON as a valid RunSpecimen receipt.
 
     Args:
         signed_path: Path to the signed certificate file
         key: The key to verify against
-        validate_schema: If True (default), also validate the certificate schema
 
     Returns:
         (ok, message, certificate or None)
 
-        ok is True only if MAC is valid AND (when validate_schema=True) the
-        certificate has a valid RunSpecimen schema with matching certificate_id.
+        ok is True only if MAC is valid AND the certificate has a valid
+        RunSpecimen schema with matching certificate_id.
 
     Note: MAC validity alone does NOT prove the certificate is a legitimate
-    RunSpecimen receipt. It only proves the content wasn't modified after signing
-    by someone with the same shared secret.
+    RunSpecimen receipt. Full receipt verification against workspace evidence
+    is required for true validation.
     """
     signed_path = signed_path.resolve()
     if not signed_path.exists():
@@ -627,5 +604,5 @@ def verify_signed_file(
     except SigningError as e:
         return False, str(e), None
 
-    result = verify_signature(signed_cert, key, validate_schema=validate_schema)
+    result = verify_signature(signed_cert, key)
     return result.ok, result.message, signed_cert.certificate if result.ok else None

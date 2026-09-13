@@ -15,6 +15,10 @@
 - [x] Receipt authentication requires full evidence verification before signing.
 - [x] Configured interpreters are the exact launch vector (fail closed).
 - [x] Environment secrets are never persisted (only domain-separated hashes).
+- [x] Candidate-receipt substitution attack prevented (certificate must match canonical).
+- [x] No validate=False bypass in receipt signing APIs.
+- [x] ldd never invoked on untrusted workspace/configured binaries.
+- [x] All symlinked control-plane directories rejected (inside and outside workspace).
 - [ ] Full release gate passes on every supported Python version in CI
   (matrix: Linux 3.9-3.14, macOS 3.11/3.14).
 - [x] Wheel is built and smoke-tested from a clean target directory.

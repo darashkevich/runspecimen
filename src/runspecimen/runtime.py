@@ -259,12 +259,14 @@ def runtime_provenance(contract: Contract, workspace: Path) -> dict[str, Any]:
                     )
                 interpreter = interp_path.resolve()
 
-            # Configured interpreters are trusted (user explicitly specified them)
-            is_known_interpreter = True
+            # Only trust interpreters in immutable system paths
+            # SECURITY: Never trust workspace or arbitrary paths for ldd
+            is_known_interpreter = str(interpreter).startswith(("/usr/", "/bin/", "/opt/"))
         else:
             # Auto-detect interpreter from shebang
             interpreter, interpreter_args = _detect_interpreter(executable)
-            # Auto-detected interpreters from system paths are trusted
+            # Only trust auto-detected interpreters from immutable system paths
+            # SECURITY: Never execute ldd on workspace or arbitrary binaries
             if interpreter:
                 is_known_interpreter = str(interpreter).startswith(("/usr/", "/bin/", "/opt/"))
 

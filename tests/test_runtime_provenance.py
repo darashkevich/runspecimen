@@ -343,6 +343,81 @@ class TestEnvValueSecurity(unittest.TestCase):
                 del os.environ["SECRET_VAR"]
 
 
+class TestLddTrustSecurity(unittest.TestCase):
+    """Tests that ldd is never invoked on untrusted/workspace binaries."""
+
+    def test_capture_libs_does_not_execute_workspace_binary(self):
+        """capture_libs must not invoke ldd on workspace/configured untrusted executables."""
+        import platform
+
+        # This test is only meaningful on Linux where ldd exists
+        if platform.system() != "Linux":
+            self.skipTest("ldd trust test only applicable on Linux")
+
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+            (workspace / "work").mkdir()
+
+            # Create a workspace binary that would be dangerous to execute/inspect
+            malicious_binary = workspace / "work" / "malicious_binary"
+            malicious_binary.write_text("#!/bin/sh\necho EXECUTED\n", encoding="utf-8")
+            malicious_binary.chmod(0o755)
+
+            # Configure the contract to use this workspace binary as interpreter
+            doc = base_contract()
+            doc["runtime"] = {
+                "interpreter": str(malicious_binary),
+                "capture_libs": True,  # Request lib capture
+                "env_allowlist": [],
+            }
+            contract_path = write_contract(workspace, "contract.json", doc)
+            contract = load_contract(contract_path)
+
+            prov = runtime_provenance(contract, workspace)
+
+            # The provenance should report capture_libs_error because we
+            # refuse to run ldd on untrusted workspace binaries
+            self.assertIn("capture_libs_error", prov)
+            self.assertIn("not verified as trusted", prov["capture_libs_error"].lower())
+            # No libraries should be captured
+            self.assertEqual(prov.get("lib_hashes", {}), {})
+
+    def test_system_interpreter_is_trusted_for_capture_libs(self):
+        """System interpreters in /usr, /bin, /opt are trusted for ldd."""
+        import platform
+        import shutil
+
+        # This test is only meaningful on Linux where ldd exists
+        if platform.system() != "Linux":
+            self.skipTest("ldd trust test only applicable on Linux")
+
+        # Find a real system interpreter
+        python_path = shutil.which("python3") or shutil.which("python")
+        if not python_path or not python_path.startswith(("/usr/", "/bin/", "/opt/")):
+            self.skipTest("No system Python found in standard paths")
+
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+            (workspace / "work").mkdir()
+
+            doc = base_contract()
+            doc["runtime"] = {
+                "interpreter": python_path,
+                "capture_libs": True,
+                "env_allowlist": [],
+            }
+            contract_path = write_contract(workspace, "contract.json", doc)
+            contract = load_contract(contract_path)
+
+            prov = runtime_provenance(contract, workspace)
+
+            # Should NOT have capture_libs_error for system interpreter
+            # (unless ldd itself isn't available)
+            if "capture_libs_error" in prov:
+                # If there's an error, it should be about ldd availability, not trust
+                self.assertNotIn("not verified as trusted", prov["capture_libs_error"].lower())
+
+
 class TestEnvSecretFullLifecycle(unittest.TestCase):
     """End-to-end tests that secrets are never persisted in any artifact."""
 
