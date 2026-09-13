@@ -1,3 +1,4 @@
+include LICENSE
 include CHANGELOG.md
 include SECURITY.md
 include docs/ABOUT.md

@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.2.0rc9 - 2026-09-13
+
+### Security Hardening
+
+- **Abandoned runs are permanently terminal**: Abandoned run IDs cannot be
+  re-approved, preflighted, or executed. Predecessors with `refuse_if_failed`
+  now reject abandoned predecessors.
+
+- **Recovery status checks active leases**: `needs_recovery` is only true when
+  `phase=running` AND no active workspace lease exists. Prevents abandoning
+  runs that are still executing.
+
+- **Key storage hardening**: Key IDs are validated against a strict safe-ID
+  grammar. Path traversal attacks are blocked. Keys cannot be overwritten
+  without explicit rotation.
+
+- **Certificate validation before signing**: Sign command validates certificate
+  schema and recomputes `certificate_id` before signing. Rejects malformed or
+  tampered certificates.
+
+- **HMAC terminology corrected**: Documentation and CLI now accurately describe
+  HMAC-SHA256 as shared-secret authentication (not digital signatures). Anyone
+  with the key can both create and verify MACs.
+
+- **Interpreter provenance is truthful**: Configured interpreters must resolve
+  to executables and are fingerprinted. Missing or non-executable interpreters
+  cause hard failures. Library capture uses the interpreter (not the script).
+
+- **Environment values not persisted**: Raw environment variable values are
+  never stored in artifacts. Only variable names and domain-separated hashes
+  are recorded.
+
+- **Portable path identity**: Added helper for macOS /var vs /private/var
+  symlink aliasing in path comparisons.
+
+### Bug Fixes
+
+- Fixed macOS path-alias test failures using `os.path.realpath` comparisons.
+- Library capture explicitly reports unsupported platforms (non-Linux).
+
 ## 0.2.0rc8 - 2026-09-10
 
 - Package the RunSpecimen logo in source and plugin archives and reference it

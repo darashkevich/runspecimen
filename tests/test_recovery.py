@@ -15,54 +15,142 @@ from runspecimen.recovery import (
     abandon_run,
     check_recovery_status,
     is_recoverable,
+    is_recoverable_phase,
 )
 from runspecimen.state import load_state, update_state
 
 
-class TestRecoveryStatus(unittest.TestCase):
-    """Tests for checking if a run needs recovery."""
+class TestRecoveryPhaseStatus(unittest.TestCase):
+    """Tests for checking if a run's phase indicates it might need recovery."""
 
     def test_none_phase_not_recoverable(self):
         state = {"phase": "none"}
-        ok, msg = is_recoverable(state)
+        ok, msg = is_recoverable_phase(state)
         self.assertFalse(ok)
         self.assertIn("no run has started", msg)
 
     def test_approved_phase_not_recoverable(self):
         state = {"phase": "approved"}
-        ok, msg = is_recoverable(state)
+        ok, msg = is_recoverable_phase(state)
         self.assertFalse(ok)
         self.assertIn("still in approved phase", msg)
 
-    def test_running_phase_is_recoverable(self):
+    def test_running_phase_could_need_recovery(self):
         state = {"phase": "running"}
-        ok, msg = is_recoverable(state)
+        ok, msg = is_recoverable_phase(state)
         self.assertTrue(ok)
-        self.assertIn("interrupted", msg)
+        self.assertIn("running", msg.lower())
 
     def test_completed_phase_not_recoverable(self):
         state = {"phase": "completed"}
-        ok, msg = is_recoverable(state)
+        ok, msg = is_recoverable_phase(state)
         self.assertFalse(ok)
         self.assertIn("completed successfully", msg)
 
     def test_failed_phase_not_recoverable(self):
         state = {"phase": "failed"}
-        ok, msg = is_recoverable(state)
+        ok, msg = is_recoverable_phase(state)
         self.assertFalse(ok)
         self.assertIn("already marked as failed", msg)
 
     def test_postflighted_phase_not_recoverable(self):
         state = {"phase": "postflighted"}
-        ok, msg = is_recoverable(state)
+        ok, msg = is_recoverable_phase(state)
         self.assertFalse(ok)
         self.assertIn("already postflighted", msg)
 
     def test_abandoned_phase_not_recoverable(self):
         state = {"phase": "abandoned"}
-        ok, msg = is_recoverable(state)
+        ok, msg = is_recoverable_phase(state)
         self.assertFalse(ok)
         self.assertIn("already abandoned", msg)
+
+
+class TestRecoveryWithLease(unittest.TestCase):
+    """Tests for recovery status considering active leases."""
+
+    def test_running_without_lease_is_recoverable(self):
+        """A running state with no active lease needs recovery."""
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+            state = {"phase": "running"}
+            ok, msg = is_recoverable(state, workspace=workspace)
+            self.assertTrue(ok)
+            self.assertIn("no active lease", msg)
+
+    def test_running_with_active_lease_not_recoverable(self):
+        """A running state with an active lease is still executing."""
+        from runspecimen.lease import hold_workspace_lease
+        import subprocess
+        import sys
+        import os
+        import time
+        
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+            state = {"phase": "running"}
+            
+            # Create a script file to hold the lease
+            script = workspace / "hold_lease.py"
+            script.write_text(f'''
+import sys
+sys.path.insert(0, "/workspace/src")
+from runspecimen.lease import hold_workspace_lease
+import time
+import signal
+
+def handler(signum, frame):
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, handler)
+
+with hold_workspace_lease("{workspace}", holder="test-runner"):
+    time.sleep(30)
+''')
+            
+            # Start a process that holds the lease
+            proc = subprocess.Popen(
+                [sys.executable, str(script)],
+                cwd="/workspace",
+            )
+            
+            try:
+                # Give it time to acquire the lease
+                time.sleep(0.5)
+                
+                # Now check - should not be recoverable
+                ok, msg = is_recoverable(state, workspace=workspace)
+                self.assertFalse(ok)
+                self.assertIn("lease held", msg.lower())
+            finally:
+                proc.terminate()
+                proc.wait()
+
+    def test_check_recovery_status_includes_lease_info(self):
+        """check_recovery_status should include lease information."""
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+            state_dir = workspace / ".runspecimen" / "runs" / "test" / "run-001"
+            state_dir.mkdir(parents=True)
+            
+            update_state(
+                state_dir,
+                phase="running",
+                run_started_at="2024-01-01T00:00:00Z",
+            )
+            
+            result = check_recovery_status(
+                workspace=workspace,
+                campaign_id="test",
+                run_id="run-001",
+            )
+            
+            # Should include lease info
+            self.assertIn("workspace_lease_held", result)
+            self.assertIn("lease_holder", result)
+            # No lease held, so should need recovery
+            self.assertTrue(result["needs_recovery"])
+            self.assertFalse(result["workspace_lease_held"])
 
 
 class TestAbandonRun(unittest.TestCase):
@@ -230,6 +318,178 @@ class TestCheckRecoveryStatus(unittest.TestCase):
             self.assertEqual(result["run_id"], "run-001")
             self.assertEqual(result["phase"], "running")
             self.assertTrue(result["needs_recovery"])
+
+
+class TestAbandonedRunIsPermanentlyTerminal(unittest.TestCase):
+    """Tests proving abandoned run IDs are permanently terminal."""
+
+    def test_abandoned_run_cannot_be_reapproved(self):
+        """Abandoned runs must refuse re-approval."""
+        from runspecimen.approve import approve_contract
+        from runspecimen.errors import ApprovalError
+        from tests.helpers import base_contract, write_contract, PhraseReader, NullWriter
+        
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+            (workspace / "work").mkdir()
+            (workspace / "outputs").mkdir()
+            (workspace / "work" / "job.py").write_text(
+                "print('ok')\n", encoding="utf-8"
+            )
+            
+            doc = base_contract()
+            contract_path = write_contract(workspace, "contract.json", doc)
+            
+            # Set up abandoned state
+            state_dir = workspace / ".runspecimen" / "runs" / doc["campaign_id"] / doc["run_id"]
+            state_dir.mkdir(parents=True)
+            update_state(
+                state_dir,
+                phase="abandoned",
+                run_result="abandoned",
+                campaign_id=doc["campaign_id"],
+                run_id=doc["run_id"],
+            )
+            
+            # Attempt re-approval should fail
+            with self.assertRaises(ApprovalError) as ctx:
+                approve_contract(
+                    contract_path=contract_path,
+                    workspace=workspace,
+                    skip_tty_check=True,
+                    stdin=PhraseReader("APPROVE\n"),
+                    stdout=NullWriter(),
+                )
+            self.assertIn("abandoned", str(ctx.exception).lower())
+
+    def test_abandoned_run_cannot_be_preflighted(self):
+        """Abandoned runs must refuse preflight."""
+        from runspecimen.preflight import preflight
+        from runspecimen.errors import PreflightError
+        from runspecimen.approve import approve_contract
+        from tests.helpers import base_contract, write_contract, PhraseReader, NullWriter
+        
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+            (workspace / "work").mkdir()
+            (workspace / "outputs").mkdir()
+            (workspace / "work" / "job.py").write_text(
+                "print('ok')\n", encoding="utf-8"
+            )
+            
+            doc = base_contract()
+            contract_path = write_contract(workspace, "contract.json", doc)
+            
+            # Set up abandoned state with approval (simulating a crash after approval)
+            state_dir = workspace / ".runspecimen" / "runs" / doc["campaign_id"] / doc["run_id"]
+            state_dir.mkdir(parents=True)
+            
+            # Write an approval document
+            import time
+            from runspecimen.atomic import atomic_write_json
+            from runspecimen.hashutil import hash_source
+            from runspecimen.contract import load_contract
+            from runspecimen.runtime import runtime_provenance
+            
+            contract = load_contract(contract_path)
+            source_hash, _ = hash_source(
+                workspace, list(contract.source.roots), list(contract.source.excludes)
+            )
+            runtime = runtime_provenance(contract, workspace)
+            ts = time.time()
+            
+            approval_doc = {
+                "approved_at_unix": ts,
+                "expires_at_unix": ts + 3600,
+                "campaign_id": doc["campaign_id"],
+                "run_id": doc["run_id"],
+                "contract_hash": contract.contract_hash,
+                "source_hash": source_hash,
+                "runtime": runtime,
+            }
+            atomic_write_json(state_dir / "approval.json", approval_doc)
+            
+            # Set phase to abandoned
+            update_state(
+                state_dir,
+                phase="abandoned",
+                run_result="abandoned",
+                campaign_id=doc["campaign_id"],
+                run_id=doc["run_id"],
+            )
+            
+            # Attempt preflight should fail
+            with self.assertRaises(PreflightError) as ctx:
+                preflight(contract_path=contract_path, workspace=workspace)
+            self.assertIn("abandoned", str(ctx.exception).lower())
+
+    def test_abandoned_run_cannot_be_executed(self):
+        """Abandoned runs must refuse execution."""
+        from runspecimen.run import run_contract
+        from runspecimen.errors import PreflightError
+        from tests.helpers import base_contract, write_contract
+        
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+            (workspace / "work").mkdir()
+            (workspace / "outputs").mkdir()
+            (workspace / "work" / "job.py").write_text(
+                "print('ok')\n", encoding="utf-8"
+            )
+            
+            doc = base_contract()
+            contract_path = write_contract(workspace, "contract.json", doc)
+            
+            # Set up abandoned state
+            state_dir = workspace / ".runspecimen" / "runs" / doc["campaign_id"] / doc["run_id"]
+            state_dir.mkdir(parents=True)
+            update_state(
+                state_dir,
+                phase="abandoned",
+                run_result="abandoned",
+                campaign_id=doc["campaign_id"],
+                run_id=doc["run_id"],
+            )
+            
+            # Attempt run should fail
+            with self.assertRaises(PreflightError) as ctx:
+                run_contract(contract_path=contract_path, workspace=workspace)
+            self.assertIn("abandoned", str(ctx.exception).lower())
+
+    def test_abandoned_predecessor_rejected_with_refuse_if_failed(self):
+        """Predecessor with refuse_if_failed=true must reject abandoned predecessor."""
+        from runspecimen.preflight import check_predecessor
+        from runspecimen.contract import Contract, PredecessorSpec
+        from runspecimen.errors import PreflightError
+        
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+            
+            # Set up predecessor in abandoned state
+            pred_dir = workspace / ".runspecimen" / "runs" / "camp" / "run-pred"
+            pred_dir.mkdir(parents=True)
+            update_state(
+                pred_dir,
+                phase="abandoned",
+                run_result="abandoned",
+                campaign_id="camp",
+                run_id="run-pred",
+            )
+            
+            # Create a mock contract with predecessor spec
+            # refuse_if_failed=True, require_postflight=False
+            class MockContract:
+                predecessor = PredecessorSpec(
+                    campaign_id="camp",
+                    run_id="run-pred",
+                    require_postflight=False,
+                    refuse_if_failed=True,
+                )
+            
+            # This should fail because predecessor is abandoned
+            with self.assertRaises(PreflightError) as ctx:
+                check_predecessor(workspace, MockContract())
+            self.assertIn("abandoned", str(ctx.exception).lower())
 
 
 if __name__ == "__main__":

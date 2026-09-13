@@ -149,33 +149,48 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_keygen = sub.add_parser(
         "keygen",
-        help="Generate a new signing key and save it to the workspace",
+        help="Generate a shared-secret authentication key (HMAC-SHA256)",
+        description=(
+            "Generate a new HMAC-SHA256 key for certificate authentication. "
+            "NOTE: This is a shared-secret scheme - anyone with the key can both "
+            "create and verify MACs. For true digital signatures, use asymmetric crypto."
+        ),
     )
     _add_workspace(p_keygen)
     p_keygen.add_argument("--key-id", default=None, help="Optional key ID (auto-generated if omitted)")
 
     p_list_keys = sub.add_parser(
         "list-keys",
-        help="List available signing keys in the workspace",
+        help="List available authentication keys in the workspace",
     )
     _add_workspace(p_list_keys)
 
     p_sign = sub.add_parser(
         "sign",
-        help="Sign a certificate file with a local key",
+        help="Authenticate a certificate with a shared-secret MAC",
+        description=(
+            "Add an HMAC-SHA256 authentication tag to a certificate. "
+            "NOTE: This uses shared-secret authentication, NOT digital signatures. "
+            "Anyone with the key can forge authenticated certificates."
+        ),
     )
     _add_workspace(p_sign)
-    p_sign.add_argument("--key-id", required=True, help="ID of the signing key to use")
+    p_sign.add_argument("--key-id", required=True, help="ID of the authentication key to use")
     p_sign.add_argument("--certificate", type=Path, required=True, help="Path to certificate.json")
     p_sign.add_argument("--output", type=Path, default=None, help="Output path (default: certificate.signed.json)")
 
     p_verify_sig = sub.add_parser(
         "verify-signature",
-        help="Verify a signed certificate file",
+        help="Verify an authenticated certificate's MAC",
+        description=(
+            "Verify the HMAC authentication tag on a certificate. "
+            "MAC validity proves the content wasn't modified after authentication, "
+            "but does NOT prove origin - anyone with the key could have created it."
+        ),
     )
     _add_workspace(p_verify_sig)
     p_verify_sig.add_argument("--key-id", required=True, help="ID of the key to verify against")
-    p_verify_sig.add_argument("--signed", type=Path, required=True, help="Path to signed certificate file")
+    p_verify_sig.add_argument("--signed", type=Path, required=True, help="Path to authenticated certificate file")
 
     return parser
 

@@ -3,13 +3,21 @@
 This module captures comprehensive runtime provenance including:
 - The resolved executable path and its SHA-256 hash
 - The interpreter (if the command is a script)
-- Environment variables from a contract-specified allowlist
+- Environment variables from a contract-specified allowlist (names/hashes only)
 - Optional library dependency hashes (when capture_libs is enabled)
+
+Provenance truthfulness principles:
+- A configured interpreter MUST resolve to an executable and be fingerprinted
+- The interpreter recorded MUST be the exact interpreter that will be launched
+- Missing, non-executable, or mismatched interpreters cause hard failures
+- Library capture explicitly reports unsupported platforms
+- ldd is only invoked on the actual interpreter (not untrusted scripts)
 """
 
 from __future__ import annotations
 
 import os
+import platform
 import shutil
 import subprocess
 from pathlib import Path
@@ -28,38 +36,55 @@ KNOWN_INTERPRETERS = {
     "lua", "php", "Rscript",
 }
 
+# Platform support for library capture
+_PLATFORM_SYSTEM = platform.system()
 
-def _detect_interpreter(executable: Path) -> Path | None:
-    """Detect if executable is a script and return its interpreter path.
+
+def _detect_interpreter(executable: Path) -> tuple[Path | None, list[str] | None]:
+    """Detect if executable is a script and return its interpreter path and args.
     
     Reads the shebang line to determine the interpreter.
-    Returns None if not a script or interpreter not found.
+    Returns (interpreter_path, interpreter_args) or (None, None) if not a script.
+    
+    Safely handles:
+    - Direct path shebangs: #!/usr/bin/python3 -u
+    - Env-style shebangs: #!/usr/bin/env python3
+    - Env with args: #!/usr/bin/env -S python3 -u (records only the interpreter)
     """
     try:
         with executable.open("rb") as f:
             first_line = f.readline(256)
         if not first_line.startswith(b"#!"):
-            return None
+            return None, None
         shebang = first_line[2:].decode("utf-8", errors="replace").strip()
         
         # Handle env-style shebangs: #!/usr/bin/env python3
-        if shebang.startswith("/usr/bin/env "):
+        # Also handle: #!/usr/bin/env -S python3 -u (env with -S split args)
+        if "/env" in shebang:
             parts = shebang.split()
-            if len(parts) >= 2:
-                interp_name = parts[1]
+            # Find the actual interpreter name (skip env and its flags)
+            interp_idx = 1  # Default: first arg after env
+            for i, part in enumerate(parts[1:], 1):
+                if not part.startswith("-"):
+                    interp_idx = i
+                    break
+            if interp_idx < len(parts):
+                interp_name = parts[interp_idx]
+                interp_args = parts[interp_idx + 1:] if interp_idx + 1 < len(parts) else []
                 found = shutil.which(interp_name)
                 if found:
-                    return Path(found).resolve()
+                    return Path(found).resolve(), interp_args
         else:
-            # Direct path shebang: #!/usr/bin/python3
+            # Direct path shebang: #!/usr/bin/python3 -u
             parts = shebang.split()
             if parts:
                 interp_path = Path(parts[0])
+                interp_args = parts[1:] if len(parts) > 1 else []
                 if interp_path.is_file() and os.access(str(interp_path), os.X_OK):
-                    return interp_path.resolve()
-        return None
+                    return interp_path.resolve(), interp_args
+        return None, None
     except (OSError, ValueError):
-        return None
+        return None, None
 
 
 def _capture_env_allowlist(allowlist: tuple[str, ...]) -> dict[str, str | None]:
@@ -79,11 +104,42 @@ def _hash_env_allowlist(env_capture: dict[str, str | None]) -> str:
     return sha256_bytes(canonical_json_bytes(env_capture))
 
 
-def _get_linked_libraries(executable: Path) -> list[str]:
-    """Get list of linked libraries for an executable (best effort).
+def _get_linked_libraries(
+    executable: Path,
+    *,
+    is_trusted: bool = False,
+) -> tuple[list[str], str | None]:
+    """Get list of linked libraries for an executable.
     
-    Uses ldd on Linux. Returns empty list on error or unsupported platforms.
+    Args:
+        executable: Path to the executable to inspect
+        is_trusted: If True, the executable has been validated as a known
+                   interpreter and is safe to inspect with ldd. If False,
+                   refuse to run ldd on potentially malicious binaries.
+    
+    Returns:
+        (list of library paths, error_message or None)
+        
+        error_message is set when library capture cannot be performed:
+        - Platform not supported (non-Linux)
+        - ldd not available
+        - Executable is untrusted (is_trusted=False)
+    
+    Security note: ldd on some platforms may execute code in the binary being
+    inspected. Only call with is_trusted=True for known-safe executables.
     """
+    # Platform check
+    if _PLATFORM_SYSTEM not in ("Linux",):
+        return [], f"capture_libs not supported on {_PLATFORM_SYSTEM} (Linux only)"
+    
+    # Security: refuse to run ldd on untrusted binaries
+    if not is_trusted:
+        return [], "capture_libs skipped: binary not verified as trusted interpreter"
+    
+    # Check ldd availability
+    if not shutil.which("ldd"):
+        return [], "ldd not found on PATH"
+    
     try:
         result = subprocess.run(
             ["ldd", str(executable)],
@@ -92,7 +148,7 @@ def _get_linked_libraries(executable: Path) -> list[str]:
             timeout=5,
         )
         if result.returncode != 0:
-            return []
+            return [], f"ldd returned exit code {result.returncode}"
         
         libs: list[str] = []
         for line in result.stdout.splitlines():
@@ -104,9 +160,13 @@ def _get_linked_libraries(executable: Path) -> list[str]:
                     lib_path = parts[1].strip().split()[0] if parts[1].strip() else ""
                     if lib_path and lib_path.startswith("/"):
                         libs.append(lib_path)
-        return sorted(libs)
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return []
+        return sorted(libs), None
+    except subprocess.TimeoutExpired:
+        return [], "ldd timed out"
+    except FileNotFoundError:
+        return [], "ldd not found"
+    except OSError as e:
+        return [], f"ldd failed: {e}"
 
 
 def _hash_libraries(lib_paths: list[str]) -> dict[str, str]:
@@ -165,33 +225,69 @@ def runtime_provenance(contract: Contract, workspace: Path) -> dict[str, Any]:
     if runtime_spec is not None:
         # Detect or use specified interpreter
         interpreter: Path | None = None
+        interpreter_args: list[str] | None = None
+        is_known_interpreter = False
+        
         if runtime_spec.interpreter:
-            # Use explicitly specified interpreter
+            # Use explicitly specified interpreter - MUST resolve and be executable
             interp_path = Path(runtime_spec.interpreter)
             if not interp_path.is_absolute():
                 found = shutil.which(runtime_spec.interpreter)
                 if found:
                     interpreter = Path(found).resolve()
-            elif interp_path.is_file():
+                else:
+                    raise ProvenanceError(
+                        f"configured interpreter not found on PATH: {runtime_spec.interpreter!r}"
+                    )
+            else:
+                if not interp_path.exists():
+                    raise ProvenanceError(
+                        f"configured interpreter does not exist: {runtime_spec.interpreter}"
+                    )
+                if not interp_path.is_file():
+                    raise ProvenanceError(
+                        f"configured interpreter is not a file: {runtime_spec.interpreter}"
+                    )
+                if not os.access(str(interp_path), os.X_OK):
+                    raise ProvenanceError(
+                        f"configured interpreter is not executable: {runtime_spec.interpreter}"
+                    )
                 interpreter = interp_path.resolve()
+            
+            # Configured interpreters are trusted (user explicitly specified them)
+            is_known_interpreter = True
         else:
             # Auto-detect interpreter from shebang
-            interpreter = _detect_interpreter(executable)
+            interpreter, interpreter_args = _detect_interpreter(executable)
+            # Auto-detected interpreters from system paths are trusted
+            if interpreter:
+                is_known_interpreter = str(interpreter).startswith(("/usr/", "/bin/", "/opt/"))
         
         if interpreter:
             body["interpreter"] = str(interpreter)
             body["interpreter_sha256"] = sha256_file(interpreter)
+            if interpreter_args:
+                body["interpreter_args"] = interpreter_args
         
-        # Capture environment variables from allowlist
+        # Capture environment variables from allowlist (names and presence only)
         if runtime_spec.env_allowlist:
             env_capture = _capture_env_allowlist(runtime_spec.env_allowlist)
             body["env_allowlist"] = list(runtime_spec.env_allowlist)
-            body["env_capture"] = env_capture
+            # Only store hashes, not raw values (security: no secrets in artifacts)
             body["env_hash"] = _hash_env_allowlist(env_capture)
         
         # Optionally capture library hashes
         if runtime_spec.capture_libs:
-            libs = _get_linked_libraries(executable)
+            # For scripts, capture libraries of the interpreter, not the script
+            lib_target = interpreter if interpreter else executable
+            is_trusted = is_known_interpreter if interpreter else False
+            
+            libs, lib_error = _get_linked_libraries(lib_target, is_trusted=is_trusted)
+            
+            if lib_error:
+                # Record the error rather than silently failing
+                body["capture_libs_error"] = lib_error
+            
             if libs:
                 lib_hashes = _hash_libraries(libs)
                 body["linked_libraries"] = libs

@@ -4,8 +4,18 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Union
 
 from runspecimen.errors import PathEscapeError
+
+
+def paths_same(path1: Union[str, Path], path2: Union[str, Path]) -> bool:
+    """Test if two paths refer to the same file/directory.
+    
+    This handles platform-specific symlink aliasing like macOS /var -> /private/var.
+    Uses os.path.realpath which follows ALL symlinks including at root level.
+    """
+    return os.path.realpath(str(path1)) == os.path.realpath(str(path2))
 
 STATE_DIRNAME = ".runspecimen"
 EVENTS_FILENAME = "events.jsonl"

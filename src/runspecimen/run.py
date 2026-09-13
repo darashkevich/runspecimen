@@ -125,6 +125,12 @@ def run_contract(
 
 
 def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float | None) -> dict:
+    # Check phase first - terminal phases must be rejected immediately
+    state = load_state(state_dir)
+    phase = state.get("phase")
+    if phase in {"running", "completed", "failed", "postflighted", "abandoned"}:
+        raise PreflightError(f"run already in phase={phase!r}; refuse re-entry")
+    
     approval = load_approval(state_dir)
     if approval is None:
         raise PreflightError("no approval present; run approve first")
@@ -140,11 +146,6 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
         raise PreflightError(reason)
     check_outputs_absent(workspace, contract)
     check_predecessor(workspace, contract)
-
-    state = load_state(state_dir)
-    phase = state.get("phase")
-    if phase in {"running", "completed", "failed", "postflighted"}:
-        raise PreflightError(f"run already in phase={phase!r}; refuse re-entry")
 
     cwd = ensure_within(workspace, Path(contract.cwd), label="cwd")
     if not cwd.is_dir():

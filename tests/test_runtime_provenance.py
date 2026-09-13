@@ -109,11 +109,26 @@ class TestInterpreterDetection(unittest.TestCase):
             script_path = Path(f.name)
         
         try:
-            interpreter = _detect_interpreter(script_path)
+            interpreter, args = _detect_interpreter(script_path)
             if interpreter and Path("/bin/sh").exists():
                 # /bin/sh could be symlinked to dash, bash, etc.
                 resolved = Path("/bin/sh").resolve()
                 self.assertEqual(interpreter, resolved)
+                self.assertEqual(args, [])
+        finally:
+            script_path.unlink()
+
+    def test_detect_shebang_with_args(self):
+        """Shebang args should be captured."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
+            f.write("#!/bin/sh -e\necho hello\n")
+            f.flush()
+            script_path = Path(f.name)
+        
+        try:
+            interpreter, args = _detect_interpreter(script_path)
+            if interpreter:
+                self.assertEqual(args, ["-e"])
         finally:
             script_path.unlink()
 
@@ -124,8 +139,9 @@ class TestInterpreterDetection(unittest.TestCase):
             file_path = Path(f.name)
         
         try:
-            result = _detect_interpreter(file_path)
-            self.assertIsNone(result)
+            interpreter, args = _detect_interpreter(file_path)
+            self.assertIsNone(interpreter)
+            self.assertIsNone(args)
         finally:
             file_path.unlink()
 
@@ -211,7 +227,8 @@ class TestRuntimeProvenance(unittest.TestCase):
             self.assertIn("executable_sha256", prov)
             self.assertIn("runtime_id", prov)
 
-    def test_provenance_includes_env_capture(self):
+    def test_provenance_includes_env_hash(self):
+        """Environment variables should be recorded as hash only, not raw values."""
         with tempfile.TemporaryDirectory() as ws:
             workspace = Path(ws)
             (workspace / "work").mkdir()
@@ -229,9 +246,10 @@ class TestRuntimeProvenance(unittest.TestCase):
                 prov = runtime_provenance(contract, workspace)
                 
                 self.assertIn("env_allowlist", prov)
-                self.assertIn("env_capture", prov)
                 self.assertIn("env_hash", prov)
-                self.assertEqual(prov["env_capture"]["TEST_PROV_VAR"], "test_value")
+                # env_capture should NOT be present (security: no raw values)
+                self.assertNotIn("env_capture", prov)
+                self.assertEqual(prov["env_allowlist"], ["TEST_PROV_VAR"])
             finally:
                 del os.environ["TEST_PROV_VAR"]
 
@@ -282,6 +300,47 @@ class TestRuntimeProvenance(unittest.TestCase):
                 Path(prov["interpreter"]).resolve(),
                 Path(sys.executable).resolve()
             )
+
+
+class TestEnvValueSecurity(unittest.TestCase):
+    """Tests that raw env values are never persisted in evidence artifacts."""
+    
+    def test_sentinel_secret_absent_from_provenance(self):
+        """A sentinel secret should NOT appear in runtime provenance."""
+        import json
+        
+        with tempfile.TemporaryDirectory() as ws:
+            workspace = Path(ws)
+            (workspace / "work").mkdir()
+            
+            # Use a recognizable sentinel that we can search for
+            sentinel = "RUNSPECIMEN_TEST_SENTINEL_DO_NOT_PERSIST"
+            os.environ["SECRET_VAR"] = sentinel
+            
+            try:
+                doc = base_contract()
+                doc["runtime"] = {
+                    "env_allowlist": ["SECRET_VAR"],
+                }
+                contract_path = write_contract(workspace, "contract.json", doc)
+                contract = load_contract(contract_path)
+                
+                prov = runtime_provenance(contract, workspace)
+                
+                # Serialize the provenance and check for sentinel
+                prov_json = json.dumps(prov)
+                
+                # The sentinel should NOT appear anywhere in the provenance
+                self.assertNotIn(sentinel, prov_json)
+                
+                # Double check: env_capture should not be present
+                self.assertNotIn("env_capture", prov)
+                
+                # But env_allowlist and env_hash should be
+                self.assertIn("env_allowlist", prov)
+                self.assertIn("env_hash", prov)
+            finally:
+                del os.environ["SECRET_VAR"]
 
 
 if __name__ == "__main__":

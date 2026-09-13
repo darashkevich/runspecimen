@@ -1,7 +1,7 @@
 # RunSpecimen
 
 RunSpecimen is a local safety and evidence layer for consequential agent-driven
-research and engineering commands. This repository contains the `0.2.0rc8`
+research and engineering commands. This repository contains the `0.2.0rc9`
 release candidate.
 
 ## Core promise
@@ -168,23 +168,27 @@ runspecimen recovery-status --workspace . --campaign-id demo --run-id run-001
 runspecimen abandon --workspace . --campaign-id demo --run-id run-001
 ```
 
-### Signed receipts with local keys
+### Authenticated receipts (shared-secret)
 
-Sign certificates for offline verification:
+Authenticate certificates with local HMAC keys for tamper detection:
 
 ```bash
-# Generate a signing key
+# Generate an authentication key
 runspecimen keygen --workspace .
 
 # List available keys
 runspecimen list-keys --workspace .
 
-# Sign a certificate
+# Authenticate a certificate (creates .signed.json with MAC)
 runspecimen sign --workspace . --key-id <key-id> --certificate path/to/certificate.json
 
-# Verify a signed certificate
+# Verify an authenticated certificate
 runspecimen verify-signature --workspace . --key-id <key-id> --signed path/to/certificate.signed.json
 ```
+
+**Shared-secret limitation**: HMAC-SHA256 uses the same key for authentication
+and verification. Anyone with the key can forge certificates. For independent
+third-party verification without sharing secrets, use asymmetric cryptography.
 
 ### Extended runtime provenance
 
@@ -205,9 +209,10 @@ into the certificate's `runtime_id`.
 
 ## Release-candidate limitations
 
-- Signed receipts use HMAC-SHA256 with local keys (MVP). Production deployments
-  should upgrade to Ed25519/RSA via optional dependencies for true asymmetric
-  verification without sharing the signing key.
+- Authenticated receipts use HMAC-SHA256 shared-secret MACs (MVP). This provides
+  tamper detection but NOT digital signatures: anyone with the key can forge
+  certificates. Production deployments should upgrade to Ed25519/RSA via
+  optional dependencies for true asymmetric signatures with non-repudiation.
 - The executed payload is not sandboxed and CPU, memory, network, filesystem,
   and child-process limits are not yet enforced. The current hard bounds are one
   workspace run, wall-clock duration, and captured output size.

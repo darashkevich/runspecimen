@@ -42,8 +42,8 @@ def status_for(
             "argv": list(c.argv),
         }
 
-    # Check if run needs recovery (crashed mid-execution)
-    needs_recovery, recovery_reason = is_recoverable(state)
+    # Check if run needs recovery (crashed mid-execution, no active lease)
+    needs_recovery, recovery_reason = is_recoverable(state, workspace=workspace)
     
     return {
         "workspace": str(workspace),

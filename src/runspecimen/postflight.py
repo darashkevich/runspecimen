@@ -63,9 +63,14 @@ def _postflight_under_lease(*, contract, workspace: Path) -> dict:
     state = load_state(state_dir)
     approval = load_approval(state_dir)
 
-    if state.get("phase") not in {"completed", "failed"}:
+    phase = state.get("phase")
+    if phase == "abandoned":
         raise PostflightError(
-            f"postflight requires completed/failed run; phase={state.get('phase')!r}"
+            "postflight refused: run was abandoned (permanently terminal)"
+        )
+    if phase not in {"completed", "failed"}:
+        raise PostflightError(
+            f"postflight requires completed/failed run; phase={phase!r}"
         )
     if "exit_code" not in state:
         raise PostflightError("run state missing exit_code")

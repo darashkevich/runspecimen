@@ -31,9 +31,9 @@ def check_predecessor(workspace: Path, contract: Contract) -> None:
         raise PreflightError(f"predecessor not found: {pred.campaign_id}/{pred.run_id}")
     state = load_state(pred_dir)
     phase = state.get("phase")
-    if pred.refuse_if_failed and phase == "failed":
-        raise PreflightError(f"predecessor failed: {pred.campaign_id}/{pred.run_id}")
-    if pred.refuse_if_failed and state.get("run_result") in {"failed", "timeout"}:
+    if pred.refuse_if_failed and phase in {"failed", "abandoned"}:
+        raise PreflightError(f"predecessor {phase}: {pred.campaign_id}/{pred.run_id}")
+    if pred.refuse_if_failed and state.get("run_result") in {"failed", "timeout", "abandoned"}:
         raise PreflightError(
             f"predecessor run_result={state.get('run_result')!r}: "
             f"{pred.campaign_id}/{pred.run_id}"
@@ -116,7 +116,7 @@ def _preflight_under_lease(
 
     state = load_state(state_dir)
     phase = state.get("phase")
-    if phase in {"running", "completed", "failed", "postflighted"}:
+    if phase in {"running", "completed", "failed", "postflighted", "abandoned"}:
         raise PreflightError(f"run already in phase={phase!r}; refuse re-entry")
 
     ts = time.time() if now is None else now

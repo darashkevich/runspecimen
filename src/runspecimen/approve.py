@@ -24,7 +24,7 @@ from runspecimen.state import load_state, update_state
 from runspecimen.runtime import runtime_provenance
 
 CONFIRM_PHRASE = "APPROVE"
-_TERMINAL_PHASES = frozenset({"running", "completed", "failed", "postflighted"})
+_TERMINAL_PHASES = frozenset({"running", "completed", "failed", "postflighted", "abandoned"})
 
 
 def approval_path(state_dir: Path) -> Path:

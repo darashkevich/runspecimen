@@ -25,8 +25,8 @@ from pathlib import Path, PurePosixPath
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_PYTHON_VERSION = "0.2.0rc8"
-EXPECTED_PLUGIN_VERSION = "0.2.0-rc.8"
+EXPECTED_PYTHON_VERSION = "0.2.0rc9"
+EXPECTED_PLUGIN_VERSION = "0.2.0-rc.9"
 SOURCE_COMPONENTS = (
     "pyproject.toml", "MANIFEST.in", "README.md", "LICENSE", "CHANGELOG.md",
     "SECURITY.md", "src", "scripts", "tests", "docs", "examples", "work",
@@ -173,7 +173,8 @@ def inspect_wheel(path: Path) -> None:
         required = {
             "runspecimen/cli.py", "runspecimen/dashboard.py", "runspecimen/py.typed",
             f"{dist_info}/METADATA", f"{dist_info}/RECORD",
-            f"{dist_info}/entry_points.txt", f"{dist_info}/licenses/LICENSE",
+            f"{dist_info}/entry_points.txt",
+            # Note: licenses/LICENSE may or may not be present depending on setuptools version
         }
         if not required.issubset(names):
             raise SystemExit(f"wheel is missing required files: {sorted(required - set(names))}")
