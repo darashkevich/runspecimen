@@ -1,8 +1,9 @@
 # RunSpecimen
 
 RunSpecimen is a local safety and evidence layer for consequential agent-driven
-research and engineering commands. This repository contains the `0.2.0rc9`
-release candidate.
+research and engineering commands.
+
+**Current release:** [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9)
 
 ## Core promise
 
@@ -34,7 +35,27 @@ No watchers, no recurring scheduler, no parallel workers.
 
 ## Install
 
+### From GitHub release (recommended)
+
+Install directly from the v0.2.0-rc.9 release:
+
 ```bash
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/runspecimen-0.2.0rc9-py3-none-any.whl
+```
+
+Or from source tarball:
+
+```bash
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/runspecimen-0.2.0rc9.tar.gz
+```
+
+Verify checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/SHA256SUMS)
+
+### From local clone
+
+```bash
+git clone https://github.com/darashkevich/runspecimen
+cd runspecimen
 python3 -m pip install .
 ```
 
