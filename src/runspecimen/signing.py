@@ -315,8 +315,16 @@ def list_signing_keys(workspace: Path) -> list[str]:
     """List available signing key IDs in the workspace.
 
     Only returns key IDs that match the safe-ID grammar.
+    Rejects symlinked control-plane directories.
+
+    Raises:
+        SigningError: If .runspecimen or keys directory is a symlink
     """
     workspace = workspace.resolve()
+
+    # SECURITY: Validate keys directory is not symlinked
+    _validate_keys_dir_security(workspace)
+
     kdir = keys_dir(workspace)
 
     if not kdir.exists():

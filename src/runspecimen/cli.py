@@ -369,7 +369,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "sign":
             from runspecimen.errors import CertificateError
             from runspecimen.certificate import load_certificate
-            from runspecimen.state import run_state_dir
+            from runspecimen.paths import run_state_dir
             from runspecimen.hashutil import canonical_json_bytes
 
             # Bound certificate path to workspace
@@ -461,7 +461,7 @@ def main(argv: list[str] | None = None) -> int:
             from runspecimen.errors import CertificateError
             from runspecimen.signing import verify_signature, SignedCertificate
             from runspecimen.certificate import load_certificate
-            from runspecimen.state import run_state_dir
+            from runspecimen.paths import run_state_dir
             from runspecimen.hashutil import canonical_json_bytes
 
             # Bound signed file path to workspace
