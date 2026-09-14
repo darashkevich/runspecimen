@@ -23,9 +23,10 @@
 - [x] Full release gate passes on every supported Python version in CI
   (matrix: Linux 3.9-3.14, macOS 3.11/3.14).
 - [x] Wheel is built and smoke-tested from a clean target directory.
-- [x] Release smoke includes sign/verify-signature command validation.
+- [x] Release smoke includes keygen/list-keys success and sign/verify-signature error handling.
 - [x] Plugin and skill validators pass.
-- [ ] Tag `v0.2.0-rc.9` after the release gate passes on the release commit.
+- [x] Tag `v0.2.0-rc.9` after the release gate passes on the release commit.
+  - Release: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9
 
 Run `python3 scripts/release_check.py` before tagging. A release candidate is not
 a stable release and does not change the explicit limitations in the threat model.

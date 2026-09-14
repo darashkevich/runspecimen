@@ -32,6 +32,20 @@ enter `APPROVE` for you.
 
 Requirements: Python 3.9+, POSIX (`fcntl` leases), stdlib only.
 
+### From GitHub release (recommended)
+
+```bash
+# Install directly from the release
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/runspecimen-0.2.0rc9-py3-none-any.whl
+
+# Version check
+runspecimen --version
+```
+
+Checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/SHA256SUMS)
+
+### From source clone
+
 From a clone of https://github.com/darashkevich/runspecimen:
 
 ```bash
