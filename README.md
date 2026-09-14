@@ -35,7 +35,16 @@ No watchers, no recurring scheduler, no parallel workers.
 
 ## Install
 
-### From GitHub release (recommended)
+### From PyPI (recommended)
+
+```bash
+python3 -m pip install runspecimen==0.2.0rc9
+runspecimen --version
+```
+
+PyPI project: [runspecimen](https://pypi.org/project/runspecimen/)
+
+### From GitHub release
 
 Install directly from the v0.2.0-rc.9 release:
 

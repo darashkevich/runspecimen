@@ -32,7 +32,16 @@ enter `APPROVE` for you.
 
 Requirements: Python 3.9+, POSIX (`fcntl` leases), stdlib only.
 
-### From GitHub release (recommended)
+### From PyPI (recommended)
+
+```bash
+python3 -m pip install runspecimen==0.2.0rc9
+runspecimen --version
+```
+
+Project page: [runspecimen on PyPI](https://pypi.org/project/runspecimen/)
+
+### From GitHub release
 
 ```bash
 # Install directly from the release

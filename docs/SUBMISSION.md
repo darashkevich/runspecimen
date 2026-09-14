@@ -96,20 +96,20 @@ plugins/runspecimen/.codex-plugin/plugin.json
 
 ## 3. PyPI (Python Package Index)
 
-**Status:** Not published
+**Status:** Published
 
-**Registry URL:** https://pypi.org/project/runspecimen/ (will exist after publication)
+**Registry URL:** https://pypi.org/project/runspecimen/
 
-### Prerequisites
+### Current package
 
-- A PyPI account with two-factor authentication enabled
-- A pending Trusted Publisher for the `runspecimen` project
+- **Version:** `0.2.0rc9`
+- **Install:** `python3 -m pip install runspecimen==0.2.0rc9`
+- **Publishing:** GitHub Actions trusted publishing with OIDC; no PyPI API
+  token is stored in GitHub.
 
 ### Trusted Publisher configuration
 
-The repository includes `.github/workflows/publish-pypi.yml`. It uses GitHub
-OIDC and does not require a stored PyPI API token. Register a pending publisher
-at https://pypi.org/manage/account/publishing/ with these exact values:
+The active PyPI trusted publisher has these values:
 
 | Field | Value |
 |---|---|
@@ -119,27 +119,12 @@ at https://pypi.org/manage/account/publishing/ with these exact values:
 | Workflow filename | `publish-pypi.yml` |
 | Environment name | `pypi` |
 
-A pending publisher creates the project during the first successful publish;
-it does not reserve the project name before then. Enter every identity field
-exactly as shown.
-
-### Publication steps
-
-1. Register the pending publisher in PyPI.
-2. Open the repository's **Publish Python package to PyPI** workflow.
-3. Choose **Run workflow**, enter `v0.2.0-rc.9`, and run it from the default
-   branch.
-4. Confirm that https://pypi.org/project/runspecimen/ exists and that
-   `python3 -m pip install runspecimen==0.2.0rc9` succeeds in a clean
-   environment.
-
-The workflow checks out the immutable tag, verifies that it matches the
-package version, reruns the complete release gate, transfers only the wheel
-and source distribution to a separate OIDC-enabled publish job, and then
-uploads them to PyPI.
-
-**MANUAL ACTION REQUIRED:** Sign in to PyPI and register the pending Trusted
-Publisher. No token should be created or stored in GitHub.
+The repository's `.github/workflows/publish-pypi.yml` runs automatically when
+a GitHub release is published. It checks out the immutable release tag,
+verifies that the tag matches the package version, reruns the complete release
+gate, transfers only the wheel and source distribution to a separate
+OIDC-enabled job, and uploads them to PyPI. The GitHub `pypi` environment is
+restricted to `v*` tags.
 
 ---
 
@@ -168,7 +153,7 @@ listings are confirmed live (not pending review).
 | GitHub Release | ✅ | - | ✅ | [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9) |
 | Cursor Marketplace | ❌ | - | - | - |
 | Codex Directory | ❌ | - | - | - |
-| PyPI | ❌ | - | - | - |
+| PyPI | ✅ | - | ✅ | [runspecimen](https://pypi.org/project/runspecimen/) |
 
 **Important:** Do not claim a listing is "public" or "available" until:
 1. Submission is accepted (not just submitted)
