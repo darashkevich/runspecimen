@@ -20,7 +20,7 @@
 - [x] ldd never invoked on untrusted workspace/configured binaries.
 - [x] All symlinked control-plane directories rejected (save, load, list-keys).
 - [x] sign and verify-signature CLI commands import and execute correctly.
-- [ ] Full release gate passes on every supported Python version in CI
+- [x] Full release gate passes on every supported Python version in CI
   (matrix: Linux 3.9-3.14, macOS 3.11/3.14).
 - [x] Wheel is built and smoke-tested from a clean target directory.
 - [x] Release smoke includes sign/verify-signature command validation.
