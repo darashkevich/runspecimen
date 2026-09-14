@@ -29,6 +29,7 @@ _PHASE_LABELS = {
     "completed": "Run completed",
     "failed": "Attention required",
     "postflighted": "Postflight recorded",
+    "abandoned": "Abandoned (terminal)",
 }
 
 
@@ -56,6 +57,7 @@ def _lifecycle_states(status: dict[str, Any]) -> list[str]:
         "completed": 4,
         "failed": 4 if state.get("postflight_ok") is False else 3,
         "postflighted": 5,
+        "abandoned": 3,  # Terminal at run phase
     }.get(phase, 0)
 
     states = ["recorded" if index < next_step else "upcoming" for index in range(6)]
@@ -67,6 +69,8 @@ def _lifecycle_states(status: dict[str, Any]) -> list[str]:
     elif phase == "failed":
         failed_step = 4 if state.get("postflight_ok") is False else 3
         states[failed_step] = "failed"
+    elif phase == "abandoned":
+        states[3] = "failed"  # Abandoned is terminal at run phase
     if phase == "postflighted":
         states[5] = "not-checked"
     return states
@@ -133,6 +137,7 @@ def _presentation(status: dict[str, Any], contract: Contract) -> dict[str, Any]:
         "completed": "Run postflight to evaluate the assertions and issue a certificate.",
         "failed": "Stop and inspect the failure. Preserve the evidence; do not reuse this run ID.",
         "postflighted": "Run Verify receipt in your terminal to check current files and provenance. This dashboard has not performed that verification. Do not reuse this run ID.",
+        "abandoned": "This run was abandoned after a crash. The run ID is permanently terminal; use a new run ID.",
     }.get(phase, "Inspect the recorded state before continuing.")
     return {
         "phase_label": "Attention required" if warnings else _PHASE_LABELS.get(phase, phase),

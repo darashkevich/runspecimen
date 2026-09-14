@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -17,6 +18,17 @@ if str(SRC) not in sys.path:
 # Re-export for test modules: `from tests.helpers import SRC`
 
 from runspecimen.approve import approve_contract  # noqa: E402
+
+
+def assert_paths_same(test_case: unittest.TestCase, path1: Union[str, Path], path2: Union[str, Path], msg: str | None = None) -> None:
+    """Assert that two paths refer to the same file/directory.
+
+    This handles platform-specific symlink aliasing like macOS /var -> /private/var.
+    Uses os.path.realpath which follows ALL symlinks including at root level.
+    """
+    real1 = os.path.realpath(str(path1))
+    real2 = os.path.realpath(str(path2))
+    test_case.assertEqual(real1, real2, msg or f"Paths do not refer to the same location: {path1} vs {path2}")
 
 PYTHON = sys.executable
 

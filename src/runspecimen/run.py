@@ -125,6 +125,12 @@ def run_contract(
 
 
 def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float | None) -> dict:
+    # Check phase first - terminal phases must be rejected immediately
+    state = load_state(state_dir)
+    phase = state.get("phase")
+    if phase in {"running", "completed", "failed", "postflighted", "abandoned"}:
+        raise PreflightError(f"run already in phase={phase!r}; refuse re-entry")
+
     approval = load_approval(state_dir)
     if approval is None:
         raise PreflightError("no approval present; run approve first")
@@ -140,11 +146,6 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
         raise PreflightError(reason)
     check_outputs_absent(workspace, contract)
     check_predecessor(workspace, contract)
-
-    state = load_state(state_dir)
-    phase = state.get("phase")
-    if phase in {"running", "completed", "failed", "postflighted"}:
-        raise PreflightError(f"run already in phase={phase!r}; refuse re-entry")
 
     cwd = ensure_within(workspace, Path(contract.cwd), label="cwd")
     if not cwd.is_dir():
@@ -182,9 +183,21 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
 
     deadline = time.monotonic() + contract.caps.wall_timeout_sec
     try:
-        # Launch the exact absolute executable that was just hashed instead of
-        # asking PATH to resolve argv[0] a second time.
-        launch_argv = [str(runtime["resolved_executable"]), *contract.argv[1:]]
+        # Build launch vector using approved interpreter if present
+        if runtime.get("interpreter"):
+            # When an interpreter is configured/detected, it must be the launch vector:
+            # [interpreter, interpreter_args..., executable, script_args...]
+            interpreter_args = runtime.get("interpreter_args", [])
+            launch_argv = [
+                str(runtime["interpreter"]),
+                *interpreter_args,
+                str(runtime["resolved_executable"]),
+                *contract.argv[1:],
+            ]
+        else:
+            # Direct executable launch (binaries, not scripts)
+            launch_argv = [str(runtime["resolved_executable"]), *contract.argv[1:]]
+
         proc = subprocess.Popen(  # noqa: S603
             launch_argv,
             cwd=str(cwd),

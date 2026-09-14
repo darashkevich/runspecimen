@@ -1,7 +1,7 @@
 # RunSpecimen
 
 RunSpecimen is a local safety and evidence layer for consequential agent-driven
-research and engineering commands. This repository contains the `0.2.0rc8`
+research and engineering commands. This repository contains the `0.2.0rc9`
 release candidate.
 
 ## Core promise
@@ -154,11 +154,65 @@ Per run under `{workspace}/.runspecimen/runs/{campaign_id}/{run_id}/`:
 Workspace-wide execution lease: `{workspace}/.runspecimen/execution.lock` (held by
 approve/preflight/run/postflight; status is read-only).
 
+## New in rc9: Missing features implemented
+
+### Crash recovery with audited human decisions
+
+When a run crashes mid-execution, use the new recovery commands:
+
+```bash
+# Check if a run needs recovery
+runspecimen recovery-status --workspace . --campaign-id demo --run-id run-001
+
+# Abandon a crashed run (TTY confirmation required)
+runspecimen abandon --workspace . --campaign-id demo --run-id run-001
+```
+
+### Authenticated receipts (shared-secret)
+
+Authenticate certificates with local HMAC keys for tamper detection:
+
+```bash
+# Generate an authentication key
+runspecimen keygen --workspace .
+
+# List available keys
+runspecimen list-keys --workspace .
+
+# Authenticate a certificate (creates .signed.json with MAC)
+runspecimen sign --workspace . --key-id <key-id> --certificate path/to/certificate.json
+
+# Verify an authenticated certificate
+runspecimen verify-signature --workspace . --key-id <key-id> --signed path/to/certificate.signed.json
+```
+
+**Shared-secret limitation**: HMAC-SHA256 uses the same key for authentication
+and verification. Anyone with the key can forge certificates. For independent
+third-party verification without sharing secrets, use asymmetric cryptography.
+
+### Extended runtime provenance
+
+Contracts now support a `runtime` field for enhanced provenance binding:
+
+```json
+{
+  "runtime": {
+    "env_allowlist": ["PATH", "HOME", "PYTHONPATH"],
+    "interpreter": "/usr/bin/python3",
+    "capture_libs": true
+  }
+}
+```
+
+This binds environment variables, interpreter, and optionally linked libraries
+into the certificate's `runtime_id`.
+
 ## Release-candidate limitations
 
-- Receipts are locally hash-chained, not yet signed by an external key or
-  transparency service. A privileged attacker who can rewrite the complete
-  workspace can fabricate a new history.
+- Authenticated receipts use HMAC-SHA256 shared-secret MACs (MVP). This provides
+  tamper detection but NOT digital signatures: anyone with the key can forge
+  certificates. Production deployments should upgrade to Ed25519/RSA via
+  optional dependencies for true asymmetric signatures with non-repudiation.
 - The executed payload is not sandboxed and CPU, memory, network, filesystem,
   and child-process limits are not yet enforced. The current hard bounds are one
   workspace run, wall-clock duration, and captured output size.

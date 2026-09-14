@@ -2,7 +2,7 @@
 
 Practical how-to for the local CLI. This guide matches the installed
 `runspecimen` commands and current release-candidate limits
-(`0.2.0rc8` at time of writing). For a short product overview see
+(`0.2.0rc9` at time of writing). For a short product overview see
 [ABOUT.md](ABOUT.md); for product intent see
 [PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
 
@@ -18,8 +18,9 @@ mandatory postflight before a successor; tamper-evident hash-chained receipts.
   orchestration controls, not a security boundary against a hostile payload.
 - A job scheduler. No cron, watchers, fan-out, or parallel workers in one
   workspace lease domain.
-- A cryptographic signature service. Receipts are locally hash-chained, not
-  signed by an external key or transparency log.
+- A digital signature service. Receipts are locally hash-chained. The `sign`
+  command provides shared-secret HMAC authentication (not digital signatures).
+  True asymmetric signing with non-repudiation is planned for a future release.
 - Proof that a scientific or engineering claim is true. A green postflight
   means the approved contract ran under recorded provenance and assertions
   passed.

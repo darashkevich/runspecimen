@@ -1,7 +1,7 @@
 # RunSpecimen marketing pitches
 
 Catchy copy that stays honest about the current release candidate
-(`0.2.0rc8` at time of writing). Use these for landing pages, GitHub social
+(`0.2.0rc9` at time of writing). Use these for landing pages, GitHub social
 preview, marketplace listings, and outreach. Prefer product truth over hype.
 
 **Product in one sentence:** a local safety and evidence layer for consequential
@@ -143,23 +143,23 @@ visible and refuseable — then produces a receipt the next person can verify.
 
 For landing page hero or GitHub social preview (`og:title` / description).
 
-1. **One run. Then prove it.**  
+1. **One run. Then prove it.**
    Human TTY approval, exclusive workspace lease, mandatory postflight, local
    tamper-evident receipt.
 
-2. **Flight ops for agent campaigns.**  
+2. **Flight ops for agent campaigns.**
    Not a sandbox. Not a scheduler. Authorization, exclusivity, and verified
    advancement for consequential local commands.
 
-3. **Approve in the terminal. Advance on evidence.**  
+3. **Approve in the terminal. Advance on evidence.**
    Agents draft and execute the lifecycle; only you type `APPROVE`. Successors
    wait for a certified predecessor.
 
-4. **When exit code isn’t a receipt.**  
+4. **When exit code isn’t a receipt.**
    Bind contract, source, and resolved executable — then assert outputs and
    verify the hash-chained certificate.
 
-5. **Local run assurance. Stdlib-only.**  
+5. **Local run assurance. Stdlib-only.**
    Clone, install, doctor, approve, run, postflight, verify. Loopback dashboard
    shows the state; it cannot approve for you.
 
@@ -195,8 +195,8 @@ not vanity installs.
 
 ### Install / try
 
-- **Clone and install the local engine:**  
-  `git clone https://github.com/darashkevich/runspecimen` → `sh scripts/bootstrap_dev.sh`  
+- **Clone and install the local engine:**
+  `git clone https://github.com/darashkevich/runspecimen` → `sh scripts/bootstrap_dev.sh`
   (or `python3 -m pip install .` after `setuptools>=77`)
 - **Check the host before you approve:** `runspecimen doctor --workspace .`
 - **Validate a contract:** `runspecimen validate --workspace . --contract examples/demo_contract.json`
@@ -205,14 +205,14 @@ not vanity installs.
 
 ### Lifecycle (human in the loop)
 
-- **Approve on a real TTY:** `runspecimen approve --workspace . --contract …`  
+- **Approve on a real TTY:** `runspecimen approve --workspace . --contract …`
   (type `APPROVE` — agents must not)
 - **Run once, then certify:** `runspecimen run` → `runspecimen postflight`
 - **Recheck the receipt:** `runspecimen verify --workspace . --contract … --campaign-id … --run-id …`
 
 ### Dashboard / docs
 
-- **See phase and evidence (loopback, read-only):**  
+- **See phase and evidence (loopback, read-only):**
   `runspecimen dashboard --workspace . --contract … --open`
 - **Read the guide:** [USER_GUIDE.md](USER_GUIDE.md)
 - **Short answers:** [FAQ.md](FAQ.md) · **What it is:** [ABOUT.md](ABOUT.md)

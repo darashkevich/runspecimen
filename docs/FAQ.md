@@ -66,7 +66,14 @@ you need concurrency. There is no built-in worker pool or scheduler.
 **No.** Events and certificates are SHA-256 hash-chained and locally
 recomputable. They detect casual tampering of the evidence set, but a
 privileged attacker who can rewrite the whole workspace can fabricate a new
-history. External signing / transparency is on the roadmap, not in this RC.
+history.
+
+The `sign` command provides HMAC-SHA256 authentication (a shared-secret
+Message Authentication Code), not digital signatures. Anyone with the key
+can both verify and forge authenticated certificates. This is useful for
+controlled sharing between parties who share the key, but does NOT provide
+non-repudiation or independent third-party verification. True asymmetric
+digital signatures (Ed25519/RSA) are planned for a future release.
 
 ## How do I integrate with my research script?
 
@@ -79,7 +86,7 @@ assertions, use a fresh `run_id` per attempt, and chain steps with
 
 - Repository: https://github.com/darashkevich/runspecimen
 - Check installed CLI: `runspecimen --version` (engine package version, e.g.
-  `0.2.0rc8`)
+  `0.2.0rc9`)
 
 ## Is the dashboard safe to leave open?
 
