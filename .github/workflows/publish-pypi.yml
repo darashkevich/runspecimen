@@ -1,0 +1,114 @@
+name: Publish Python package to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish
+        required: true
+        default: v0.2.0-rc.9
+        type: string
+
+concurrency:
+  group: pypi-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and validate distributions
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the immutable release tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify tag matches the package version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import subprocess
+          import tomllib
+          from pathlib import Path
+
+          version = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+          expected_tag = "v" + re.sub(r"(a|b|rc)(\d+)$", r"-\1.\2", version)
+          release_tag = os.environ["RELEASE_TAG"]
+          if release_tag != expected_tag:
+              raise SystemExit(
+                  f"release tag {release_tag!r} does not match package version {version!r}; "
+                  f"expected {expected_tag!r}"
+              )
+          tags = subprocess.check_output(
+              ["git", "tag", "--points-at", "HEAD"], text=True
+          ).splitlines()
+          if release_tag not in tags:
+              raise SystemExit(f"checked-out commit is not tagged {release_tag!r}")
+          PY
+
+      - name: Install isolated build prerequisites
+        run: python -m pip install --upgrade pip "setuptools>=77" wheel
+
+      - name: Run the complete release gate
+        run: python scripts/release_check.py --output-dir "${{ runner.temp }}/validated-release"
+
+      - name: Select PyPI distributions
+        run: |
+          mkdir pypi-dist
+          cp "${{ runner.temp }}"/validated-release/runspecimen-*.whl pypi-dist/
+          cp "${{ runner.temp }}"/validated-release/runspecimen-*.tar.gz pypi-dist/
+          python - <<'PY'
+          from pathlib import Path
+
+          files = sorted(path.name for path in Path("pypi-dist").iterdir())
+          if len(files) != 2 or not any(name.endswith(".whl") for name in files) or not any(
+              name.endswith(".tar.gz") for name in files
+          ):
+              raise SystemExit(f"expected exactly one wheel and one source distribution, got {files}")
+          print("PyPI distributions:", *files, sep="\n- ")
+          PY
+
+      - name: Upload validated distributions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pypi-distributions-${{ github.run_id }}
+          path: pypi-dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish to PyPI with OIDC
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/p/runspecimen
+    permissions:
+      id-token: write
+    steps:
+      - name: Download validated distributions
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: pypi-distributions-${{ github.run_id }}
+          path: pypi-dist/
+
+      - name: Publish distributions
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: pypi-dist/
