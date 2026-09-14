@@ -102,29 +102,44 @@ plugins/runspecimen/.codex-plugin/plugin.json
 
 ### Prerequisites
 
-- PyPI account with publishing rights
-- API token or trusted publisher configured
-- `twine` installed
+- A PyPI account with two-factor authentication enabled
+- A pending Trusted Publisher for the `runspecimen` project
+
+### Trusted Publisher configuration
+
+The repository includes `.github/workflows/publish-pypi.yml`. It uses GitHub
+OIDC and does not require a stored PyPI API token. Register a pending publisher
+at https://pypi.org/manage/account/publishing/ with these exact values:
+
+| Field | Value |
+|---|---|
+| PyPI project name | `runspecimen` |
+| GitHub owner | `darashkevich` |
+| GitHub repository | `runspecimen` |
+| Workflow filename | `publish-pypi.yml` |
+| Environment name | `pypi` |
+
+A pending publisher creates the project during the first successful publish;
+it does not reserve the project name before then. Enter every identity field
+exactly as shown.
 
 ### Publication steps
 
-```bash
-# From clean checkout
-pip install twine build
+1. Register the pending publisher in PyPI.
+2. Open the repository's **Publish Python package to PyPI** workflow.
+3. Choose **Run workflow**, enter `v0.2.0-rc.9`, and run it from the default
+   branch.
+4. Confirm that https://pypi.org/project/runspecimen/ exists and that
+   `python3 -m pip install runspecimen==0.2.0rc9` succeeds in a clean
+   environment.
 
-# Build distributions (already done in release)
-python -m build
+The workflow checks out the immutable tag, verifies that it matches the
+package version, reruns the complete release gate, transfers only the wheel
+and source distribution to a separate OIDC-enabled publish job, and then
+uploads them to PyPI.
 
-# Upload to PyPI
-twine upload dist/runspecimen-0.2.0rc9*
-```
-
-### Using GitHub Actions (recommended)
-
-Add `PYPI_API_TOKEN` secret to repository, then create a publish workflow
-triggered on release creation.
-
-**MANUAL ACTION REQUIRED:** Human must configure PyPI credentials and trigger upload
+**MANUAL ACTION REQUIRED:** Sign in to PyPI and register the pending Trusted
+Publisher. No token should be created or stored in GitHub.
 
 ---
 
