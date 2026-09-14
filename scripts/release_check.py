@@ -317,6 +317,7 @@ def smoke_signing(cli: Path, python: Path, workspace: Path, contract: Path, env:
         raise SystemExit(f"sign with missing key did not report error: {result.stderr}")
 
     # --- verify-signature: missing signed file (enters command branch, expects clean error) ---
+    # Note: verify-signature outputs JSON to stdout even on failure
     missing_signed = workspace / "nonexistent.signed.json"
     result = _run_checked(
         cli, "verify-signature",
@@ -326,10 +327,11 @@ def smoke_signing(cli: Path, python: Path, workspace: Path, contract: Path, env:
         "--contract", str(contract),
         cwd=workspace, env=env, expect_failure=True,
     )
-    if "Traceback" in result.stderr:
-        raise SystemExit(f"verify-signature with missing file produced traceback:\n{result.stderr}")
-    if "error" not in result.stderr.lower() and "not found" not in result.stderr.lower():
-        raise SystemExit(f"verify-signature with missing file did not report error: {result.stderr}")
+    if "Traceback" in result.stderr or "Traceback" in result.stdout:
+        raise SystemExit(f"verify-signature with missing file produced traceback:\n{result.stderr}\n{result.stdout}")
+    combined = result.stderr.lower() + result.stdout.lower()
+    if "error" not in combined and "not found" not in combined:
+        raise SystemExit(f"verify-signature with missing file did not report error: stdout={result.stdout}, stderr={result.stderr}")
 
     # --- verify-signature: invalid JSON (enters command branch, expects clean error) ---
     invalid_signed = workspace / "invalid.signed.json"
@@ -342,8 +344,8 @@ def smoke_signing(cli: Path, python: Path, workspace: Path, contract: Path, env:
         "--contract", str(contract),
         cwd=workspace, env=env, expect_failure=True,
     )
-    if "Traceback" in result.stderr:
-        raise SystemExit(f"verify-signature with invalid JSON produced traceback:\n{result.stderr}")
+    if "Traceback" in result.stderr or "Traceback" in result.stdout:
+        raise SystemExit(f"verify-signature with invalid JSON produced traceback:\n{result.stderr}\n{result.stdout}")
 
     # --- verify-signature: missing key (enters command branch, expects clean error) ---
     # Create a minimal signed structure
@@ -357,10 +359,11 @@ def smoke_signing(cli: Path, python: Path, workspace: Path, contract: Path, env:
         "--contract", str(contract),
         cwd=workspace, env=env, expect_failure=True,
     )
-    if "Traceback" in result.stderr:
-        raise SystemExit(f"verify-signature with missing key produced traceback:\n{result.stderr}")
-    if "error" not in result.stderr.lower():
-        raise SystemExit(f"verify-signature with missing key did not report error: {result.stderr}")
+    if "Traceback" in result.stderr or "Traceback" in result.stdout:
+        raise SystemExit(f"verify-signature with missing key produced traceback:\n{result.stderr}\n{result.stdout}")
+    combined = result.stderr.lower() + result.stdout.lower()
+    if "error" not in combined and "not found" not in combined:
+        raise SystemExit(f"verify-signature with missing key did not report error: stdout={result.stdout}, stderr={result.stderr}")
 
 
 def smoke_install(wheel: Path, source: Path, temp: Path, env: dict[str, str]) -> None:
