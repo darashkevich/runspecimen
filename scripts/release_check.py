@@ -233,35 +233,134 @@ finally:
     run(str(python), "-c", script, str(workspace), str(contract), cwd=workspace, env=env)
 
 
+def _run_checked(cli: Path, *args: str, cwd: Path, env: dict[str, str],
+                  expect_failure: bool = False) -> subprocess.CompletedProcess[str]:
+    """Run CLI command and return result, optionally expecting failure."""
+    cmd = [str(cli)] + list(args)
+    print("+", " ".join(cmd), flush=True)
+    result = subprocess.run(
+        cmd, cwd=cwd, env=env, text=True, timeout=60,
+        stdin=subprocess.DEVNULL, capture_output=True,
+    )
+    if expect_failure and result.returncode == 0:
+        raise SystemExit(f"expected failure but command succeeded: {' '.join(cmd)}")
+    if not expect_failure and result.returncode != 0:
+        raise SystemExit(f"command failed: {' '.join(cmd)}\nstderr: {result.stderr}")
+    return result
+
+
 def smoke_signing(cli: Path, python: Path, workspace: Path, contract: Path, env: dict[str, str]) -> None:
-    """Exercise sign and verify-signature commands."""
-    # Create a signing key
-    result = run(str(cli), "keygen", "--workspace", str(workspace), "--key-id", "smoke-key",
-                 cwd=workspace, env=env, capture=True)
+    """Exercise sign, verify-signature, keygen, and list-keys with real command entry.
+
+    Tests keygen/list-keys success paths and sign/verify-signature error paths.
+    Does not approve or execute any payload; validates that commands enter their
+    logic branches and produce clean errors (no tracebacks) for controlled invalid inputs.
+    """
+    # --- keygen success ---
+    result = _run_checked(cli, "keygen", "--workspace", str(workspace), "--key-id", "smoke-key",
+                          cwd=workspace, env=env)
     keygen_output = json.loads(result.stdout)
     if not keygen_output.get("ok"):
         raise SystemExit(f"keygen failed: {result.stderr}")
 
-    # List keys to verify
-    result = run(str(cli), "list-keys", "--workspace", str(workspace),
-                 cwd=workspace, env=env, capture=True)
+    # --- list-keys success ---
+    result = _run_checked(cli, "list-keys", "--workspace", str(workspace),
+                          cwd=workspace, env=env)
     list_output = json.loads(result.stdout)
     if "smoke-key" not in list_output.get("key_ids", []):
         raise SystemExit(f"list-keys did not show created key: {result.stdout}")
 
-    # Find the certificate path (we need a postflighted run for this)
-    # For release smoke, we just verify the commands don't crash with import errors
-    # and produce proper error messages for missing files
+    # --- sign: missing certificate file (enters command branch, expects clean error) ---
+    missing_cert = workspace / "nonexistent-certificate.json"
+    result = _run_checked(
+        cli, "sign",
+        "--workspace", str(workspace),
+        "--key-id", "smoke-key",
+        "--certificate", str(missing_cert),
+        "--contract", str(contract),
+        cwd=workspace, env=env, expect_failure=True,
+    )
+    if "Traceback" in result.stderr:
+        raise SystemExit(f"sign with missing certificate produced traceback:\n{result.stderr}")
+    if "error" not in result.stderr.lower() and "not found" not in result.stderr.lower():
+        raise SystemExit(f"sign with missing certificate did not report error: {result.stderr}")
 
-    # Test sign --help (verifies no import crash)
-    result = run(str(cli), "sign", "--help", cwd=workspace, env=env, capture=True)
-    if "sign" not in result.stdout.lower():
-        raise SystemExit(f"sign --help failed: {result.stderr}")
+    # --- sign: invalid JSON certificate (enters command branch, expects clean error) ---
+    invalid_cert = workspace / "invalid-certificate.json"
+    invalid_cert.write_text("this is not valid json {{{{", encoding="utf-8")
+    result = _run_checked(
+        cli, "sign",
+        "--workspace", str(workspace),
+        "--key-id", "smoke-key",
+        "--certificate", str(invalid_cert),
+        "--contract", str(contract),
+        cwd=workspace, env=env, expect_failure=True,
+    )
+    if "Traceback" in result.stderr:
+        raise SystemExit(f"sign with invalid JSON produced traceback:\n{result.stderr}")
 
-    # Test verify-signature --help (verifies no import crash)
-    result = run(str(cli), "verify-signature", "--help", cwd=workspace, env=env, capture=True)
-    if "verify" not in result.stdout.lower():
-        raise SystemExit(f"verify-signature --help failed: {result.stderr}")
+    # --- sign: missing key (enters command branch, expects clean error) ---
+    # Create a minimal but valid JSON certificate to pass JSON parsing
+    minimal_cert = workspace / "minimal-certificate.json"
+    minimal_cert.write_text('{"campaign_id": "test", "run_id": "test"}', encoding="utf-8")
+    result = _run_checked(
+        cli, "sign",
+        "--workspace", str(workspace),
+        "--key-id", "nonexistent-key",
+        "--certificate", str(minimal_cert),
+        "--contract", str(contract),
+        cwd=workspace, env=env, expect_failure=True,
+    )
+    if "Traceback" in result.stderr:
+        raise SystemExit(f"sign with missing key produced traceback:\n{result.stderr}")
+    if "error" not in result.stderr.lower():
+        raise SystemExit(f"sign with missing key did not report error: {result.stderr}")
+
+    # --- verify-signature: missing signed file (enters command branch, expects clean error) ---
+    missing_signed = workspace / "nonexistent.signed.json"
+    result = _run_checked(
+        cli, "verify-signature",
+        "--workspace", str(workspace),
+        "--key-id", "smoke-key",
+        "--signed", str(missing_signed),
+        "--contract", str(contract),
+        cwd=workspace, env=env, expect_failure=True,
+    )
+    if "Traceback" in result.stderr:
+        raise SystemExit(f"verify-signature with missing file produced traceback:\n{result.stderr}")
+    if "error" not in result.stderr.lower() and "not found" not in result.stderr.lower():
+        raise SystemExit(f"verify-signature with missing file did not report error: {result.stderr}")
+
+    # --- verify-signature: invalid JSON (enters command branch, expects clean error) ---
+    invalid_signed = workspace / "invalid.signed.json"
+    invalid_signed.write_text("not valid json }}}}", encoding="utf-8")
+    result = _run_checked(
+        cli, "verify-signature",
+        "--workspace", str(workspace),
+        "--key-id", "smoke-key",
+        "--signed", str(invalid_signed),
+        "--contract", str(contract),
+        cwd=workspace, env=env, expect_failure=True,
+    )
+    if "Traceback" in result.stderr:
+        raise SystemExit(f"verify-signature with invalid JSON produced traceback:\n{result.stderr}")
+
+    # --- verify-signature: missing key (enters command branch, expects clean error) ---
+    # Create a minimal signed structure
+    minimal_signed = workspace / "minimal.signed.json"
+    minimal_signed.write_text('{"certificate": {}, "signature": "abc", "key_id": "test"}', encoding="utf-8")
+    result = _run_checked(
+        cli, "verify-signature",
+        "--workspace", str(workspace),
+        "--key-id", "nonexistent-key",
+        "--signed", str(minimal_signed),
+        "--contract", str(contract),
+        cwd=workspace, env=env, expect_failure=True,
+    )
+    if "Traceback" in result.stderr:
+        raise SystemExit(f"verify-signature with missing key produced traceback:\n{result.stderr}")
+    if "error" not in result.stderr.lower():
+        raise SystemExit(f"verify-signature with missing key did not report error: {result.stderr}")
 
 
 def smoke_install(wheel: Path, source: Path, temp: Path, env: dict[str, str]) -> None:
@@ -349,7 +448,7 @@ def main(argv: list[str] | None = None) -> int:
             "checks": ["unit-tests", "source-compile", "source-archive-contents", "wheel-from-source-archive",
                        "wheel-contents", "fresh-install-console-script", "installed-cli-doctor-validate-status",
                        "installed-plugin-adapter", "installed-dashboard-http", "dashboard-write-refusal",
-                       "installed-sign-verify-signature"],
+                       "installed-keygen-listkeys", "installed-sign-verify-error-handling"],
             "artifacts": {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
                           for path in sorted(artifacts.iterdir())},
         }
