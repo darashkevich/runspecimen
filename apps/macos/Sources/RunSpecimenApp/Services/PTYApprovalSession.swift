@@ -46,15 +46,51 @@ final class PTYApprovalSession: @unchecked Sendable {
             "--workspace", workspace.path,
             "--contract", contract.path
         ]
-        let argv: [UnsafeMutablePointer<CChar>?] = args.map { strdup($0) } + [nil]
+        // Shell-script helpers (Contents/Helpers --from-src launcher) must be
+        // exec'd via /bin/bash under App Sandbox; Mach-O CLIs spawn directly.
+        let spawnPath: String
+        let argvStrings: [String]
+        if CLIService.isShellScript(at: cli) {
+            spawnPath = "/bin/bash"
+            argvStrings = ["/bin/bash"] + args
+        } else {
+            spawnPath = cli.path
+            argvStrings = args
+        }
+        let argv: [UnsafeMutablePointer<CChar>?] = argvStrings.map { strdup($0) } + [nil]
         defer {
             for ptr in argv where ptr != nil {
                 free(ptr)
             }
         }
 
+        // Match CLIService PATH so host Python / Homebrew remain discoverable
+        // from the PTY child (posix_spawn defaults would drop app-augmented PATH).
+        let envMap = CLIService.augmentedEnvironment()
+        var envPointers: [UnsafeMutablePointer<CChar>?] = envMap.map { strdup("\($0.key)=\($0.value)") }
+        envPointers.append(nil)
+        defer {
+            for ptr in envPointers where ptr != nil {
+                free(ptr)
+            }
+        }
+
         var pid: pid_t = 0
-        let spawnRC = posix_spawn(&pid, cli.path, &actions, nil, argv, environ)
+        let spawnRC = argv.withUnsafeBufferPointer { argvBuf -> Int32 in
+            envPointers.withUnsafeMutableBufferPointer { envBuf -> Int32 in
+                guard let argvBase = argvBuf.baseAddress, let envBase = envBuf.baseAddress else {
+                    return EINVAL
+                }
+                return posix_spawn(
+                    &pid,
+                    spawnPath,
+                    &actions,
+                    nil,
+                    UnsafeMutablePointer(mutating: argvBase),
+                    envBase
+                )
+            }
+        }
         close(slave)
 
         guard spawnRC == 0 else {

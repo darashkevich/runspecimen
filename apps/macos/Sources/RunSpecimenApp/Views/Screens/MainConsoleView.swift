@@ -57,6 +57,11 @@ struct TopBar: View {
                 .accessibilityLabel(model.hasCLI ? "CLI version \(model.cliIdentity?.version ?? "")" : "CLI missing")
                 .help(model.cliSourceLabel.map { "Source: \($0)" } ?? "Select or install runspecimen 0.2.0rc9+")
 
+            if let source = model.cliSourceLabel ?? model.cliIdentity?.source.label {
+                CapsuleLabel(text: source, tone: source == "Bundled Helpers" ? .signal : .amber)
+                    .accessibilityLabel("CLI source \(source)")
+                    .help("Discovery source (ADR-002). Prefer Bundled Helper forces Contents/Helpers.")
+            }
             if model.dashboardRunning {
                 CapsuleLabel(text: "Dashboard", tone: .amber)
                     .accessibilityLabel("Dashboard child process running")

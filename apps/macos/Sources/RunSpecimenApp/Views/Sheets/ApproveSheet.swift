@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// First-party approval surface. Spawns `runspecimen approve` on a real PTY.
 /// Never auto-submits APPROVE — human must type the phrase intentionally.
@@ -93,10 +94,10 @@ struct ApproveSheet: View {
                 .accessibilityHint("Stops the PTY session without approving.")
             }
 
-            Text("Invariant: agents and plugins cannot approve. Only a human on this PTY.")
+            Text("Invariant: agents and plugins cannot approve. Only a human on this PTY. The app never types APPROVE for you.")
                 .font(.system(size: 11))
                 .foregroundStyle(RSTheme.soft)
-                .accessibilityHidden(true)
+                .accessibilityLabel("Invariant: agents and plugins cannot approve. Only a human on this PTY.")
         }
         .padding(16)
         .background(RSTheme.bgElevated)
@@ -157,10 +158,23 @@ struct ApproveSheet: View {
         do {
             try session.start(cli: cli, workspace: workspace, contract: contract)
             sheet.statusNote = "PTY live. Read the prompt carefully, then type APPROVE yourself."
+            announceAccessibility(sheet.statusNote)
         } catch {
             sheet.sessionFailed = true
             sheet.statusNote = (error as? AppError)?.message ?? error.localizedDescription
+            announceAccessibility(sheet.statusNote)
         }
+    }
+
+    private func announceAccessibility(_ message: String) {
+        NSAccessibility.post(
+            element: NSApp as Any,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: message as NSString,
+                .priority: NSAccessibilityPriorityLevel.medium.rawValue as NSNumber
+            ]
+        )
     }
 
     private func sendInput() {

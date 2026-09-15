@@ -3,6 +3,7 @@ import AppKit
 
 struct EvidenceInspectorView: View {
     @EnvironmentObject private var model: AppModel
+    @StateObject private var copyFlash = CopyFlashModel()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -18,7 +19,14 @@ struct EvidenceInspectorView: View {
                         .accessibilityAddTraits(.isHeader)
                 }
                 Spacer()
-                if let status = model.status {
+                if let message = copyFlash.message {
+                    Text(message)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(RSTheme.signal)
+                        .transition(.opacity)
+                        .accessibilityLabel(message)
+                        .accessibilityAddTraits(.updatesFrequently)
+                } else if let status = model.status {
                     CapsuleLabel(
                         text: status.eventChainOK ? "Chain OK" : "Chain invalid",
                         tone: status.eventChainOK ? .signal : .danger
@@ -68,9 +76,10 @@ struct EvidenceInspectorView: View {
                                 .foregroundStyle(RSTheme.soft)
                             Spacer()
                             Button("Copy JSON") {
-                                copyToPasteboard(json)
+                                copyFlash.copy(json, label: "Status JSON")
                             }
                             .font(.system(size: 11, weight: .semibold))
+                            .accessibilityHint("Copies the full status JSON to the clipboard.")
                         }
                         .padding(.top, 8)
                         Text(json)
@@ -117,7 +126,7 @@ struct EvidenceInspectorView: View {
             Spacer(minLength: 0)
             if copyable, let value, !value.isEmpty {
                 Button {
-                    copyToPasteboard(value)
+                    copyFlash.copy(value, label: label)
                 } label: {
                     Image(systemName: "doc.on.doc")
                         .font(.system(size: 11))
@@ -125,14 +134,36 @@ struct EvidenceInspectorView: View {
                 .buttonStyle(.borderless)
                 .help("Copy \(label)")
                 .accessibilityLabel("Copy \(label)")
+                .accessibilityHint("Copies \(label) to the clipboard.")
             }
         }
         .accessibilityElement(children: .combine)
     }
+}
 
-    private func copyToPasteboard(_ text: String) {
+@MainActor
+final class CopyFlashModel: ObservableObject {
+    @Published var message: String?
+
+    func copy(_ text: String, label: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+        let next = "Copied \(label)"
+        message = next
+        NSAccessibility.post(
+            element: NSApp as Any,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: next as NSString,
+                .priority: NSAccessibilityPriorityLevel.medium.rawValue as NSNumber
+            ]
+        )
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            if message == next {
+                message = nil
+            }
+        }
     }
 }
 

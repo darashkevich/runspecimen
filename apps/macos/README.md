@@ -74,8 +74,9 @@ Dry-run copy of an installed CLI (may embed an absolute shebang):
 ./Scripts/build_app.sh
 ```
 
-`--from-src` needs host Python 3.9+ at runtime. A frozen PyInstaller helper is
-optional later for MAS self-containment. See [Helpers/README.md](Helpers/README.md).
+`--from-src` needs host Python 3.9+ at runtime. An optional PyInstaller freeze is
+available via `RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh` (skips cleanly when
+PyInstaller is absent). See [Helpers/README.md](Helpers/README.md).
 
 ## Sign + notarize (Developer ID)
 

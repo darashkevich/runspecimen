@@ -332,9 +332,14 @@ actor CLIService {
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     let process = Process()
-                    process.executableURL = url
-                    process.arguments = arguments
+                    let invocation = Self.processInvocation(for: url, arguments: arguments)
+                    process.executableURL = invocation.executable
+                    process.arguments = invocation.arguments
                     process.environment = Self.augmentedEnvironment()
+                    // Bundled Helpers live next to the launcher; keep cwd stable for relative paths.
+                    if url.path.contains("/Contents/Helpers/") {
+                        process.currentDirectoryURL = url.deletingLastPathComponent()
+                    }
 
                     let out = Pipe()
                     let err = Pipe()
@@ -365,9 +370,13 @@ actor CLIService {
         DashboardChild.shared.stop()
         let url = try requireCLI()
         let process = Process()
-        process.executableURL = url
-        process.arguments = arguments
+        let invocation = Self.processInvocation(for: url, arguments: arguments)
+        process.executableURL = invocation.executable
+        process.arguments = invocation.arguments
         process.environment = Self.augmentedEnvironment()
+        if url.path.contains("/Contents/Helpers/") {
+            process.currentDirectoryURL = url.deletingLastPathComponent()
+        }
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
@@ -377,7 +386,31 @@ actor CLIService {
         DashboardChild.shared.attach(process)
     }
 
-    private static func augmentedEnvironment() -> [String: String] {
+    /// Foundation Process + posix_spawn both honor shebangs, but sandbox hosts
+    /// sometimes fail to exec a text script as the Mach-O file. Route shell
+    /// launchers through `/bin/bash` explicitly while keeping argv paths intact.
+    nonisolated static func processInvocation(for cli: URL, arguments: [String]) -> (executable: URL, arguments: [String]) {
+        if isShellScript(at: cli) {
+            return (
+                URL(fileURLWithPath: "/bin/bash"),
+                [cli.path] + arguments
+            )
+        }
+        return (cli, arguments)
+    }
+
+    nonisolated static func isShellScript(at url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        let prefix = handle.readData(ofLength: 64)
+        guard let text = String(data: prefix, encoding: .utf8) else { return false }
+        let first = text.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
+        return first.hasPrefix("#!") && (
+            first.contains("bash") || first.contains("sh") || first.contains("/env")
+        )
+    }
+
+    nonisolated static func augmentedEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
         let home = NSHomeDirectory()
         let extras = [
@@ -388,7 +421,10 @@ actor CLIService {
             "\(home)/Library/Python/3.11/bin",
             "\(home)/.pyenv/shims",
             "/opt/homebrew/bin",
-            "/usr/local/bin"
+            "/opt/homebrew/sbin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin"
         ]
         let path = env["PATH"] ?? "/usr/bin:/bin"
         env["PATH"] = (extras + [path]).joined(separator: ":")
