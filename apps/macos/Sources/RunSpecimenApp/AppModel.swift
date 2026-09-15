@@ -11,6 +11,7 @@ final class AppModel: ObservableObject {
     @Published var doctor: DoctorReport?
     @Published var status: RunStatus?
     @Published var lastOutput: String = ""
+    @Published var statusError: String?
     @Published var isBusy = false
     @Published var error: AppError?
     @Published var showApproveSheet = false
@@ -18,6 +19,10 @@ final class AppModel: ObservableObject {
     @Published var pathProbeNote: String?
     /// Persistent banner when CLI is missing, stale bookmark, or below 0.2.0rc9.
     @Published var cliSetupIssue: String?
+    @Published var cliSourceLabel: String?
+    @Published var dashboardRunning = false
+    /// Lifecycle action awaiting user confirmation (Run / Postflight).
+    @Published var pendingConfirmAction: LifecycleAction?
 
     let cli = CLIService()
     private let bookmarks = BookmarkStore.shared
@@ -33,6 +38,8 @@ final class AppModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            // Sync path — async Task may not finish before process exit.
+            DashboardChild.shared.stop()
             Task { @MainActor in
                 await self?.shutdown()
             }
@@ -48,23 +55,33 @@ final class AppModel: ObservableObject {
     func bootstrap() async {
         cliSetupIssue = nil
         pathProbeNote = nil
+        cliSourceLabel = nil
 
-        // 1) Restore security-scoped bookmark (sandbox / MAS path).
+        // Discovery order (ADR-002):
+        // 1) Security-scoped bookmark (sandbox / MAS / user override)
+        // 2) Bundled Contents/Helpers/runspecimen when staged
+        // 3) PATH / common PyPI install locations (Developer ID / local convenience)
+
         if let cliURL = bookmarks.loadCLI() {
             let fm = FileManager.default
             if fm.isExecutableFile(atPath: cliURL.path) {
-                await cli.setCLI(cliURL)
+                await cli.setCLI(cliURL, source: .bookmark)
                 await refreshCLIIdentity()
             } else {
                 cliSetupIssue = "Saved CLI bookmark points to a missing binary:\n\(cliURL.path)\nRe-select runspecimen via Open panel."
             }
         }
 
-        // 2) PATH / common PyPI install locations (Developer ID / local convenience).
+        if cliIdentity == nil, let bundled = cli.resolveBundledHelper() {
+            pathProbeNote = "Using bundled engine at \(bundled.path)."
+            await cli.setCLI(bundled, source: .bundledHelper)
+            await refreshCLIIdentity()
+        }
+
         if cliIdentity == nil {
-            if let probed = await cli.resolveFromPATH() {
+            if let probed = cli.resolveFromPATH() {
                 pathProbeNote = "Found runspecimen at \(probed.path). For App Store sandbox, re-select via Open panel so a security-scoped bookmark is stored."
-                await cli.setCLI(probed)
+                await cli.setCLI(probed, source: .pathProbe)
                 do {
                     try bookmarks.saveCLI(probed)
                 } catch {
@@ -75,12 +92,14 @@ final class AppModel: ObservableObject {
         }
 
         if cliIdentity == nil && cliSetupIssue == nil {
-            cliSetupIssue = "runspecimen CLI not found. Install 0.2.0rc9+ then select the binary:\npython3 -m pip install 'runspecimen==0.2.0rc9'"
+            cliSetupIssue = "runspecimen CLI not found. Install 0.2.0rc9+ then select the binary:\npython3 -m pip install 'runspecimen==0.2.0rc9'\n\nOptional: stage a helper into Contents/Helpers (see Helpers/README.md)."
         }
 
         if let ws = bookmarks.loadWorkspace() {
             workspaceURL = ws
         }
+
+        await refreshDashboardFlag()
     }
 
     func chooseWorkspace() async {
@@ -91,6 +110,7 @@ final class AppModel: ObservableObject {
             contractURL = nil
             contract = nil
             status = nil
+            statusError = nil
             await runDoctor()
         } catch {
             self.error = AppError(message: error.localizedDescription)
@@ -106,8 +126,9 @@ final class AppModel: ObservableObject {
         }
         do {
             try bookmarks.saveCLI(url)
-            await cli.setCLI(url)
+            await cli.setCLI(url, source: .manual)
             cliSetupIssue = nil
+            pathProbeNote = nil
             await refreshCLIIdentity()
         } catch {
             self.error = AppError(message: error.localizedDescription)
@@ -117,6 +138,7 @@ final class AppModel: ObservableObject {
     func chooseContract() async {
         guard let url = PanelPicker.pickContract(startingAt: workspaceURL) else { return }
         contractURL = url
+        statusError = nil
         await loadContractSummary()
         await refreshStatus()
     }
@@ -126,11 +148,14 @@ final class AppModel: ObservableObject {
         await runDoctor()
         await loadContractSummary()
         await refreshStatus()
+        await refreshDashboardFlag()
     }
 
     func refreshCLIIdentity() async {
         do {
-            cliIdentity = try await cli.version()
+            let identity = try await cli.version()
+            cliIdentity = identity
+            cliSourceLabel = identity.source.label
             cliSetupIssue = nil
         } catch {
             cliIdentity = nil
@@ -187,14 +212,41 @@ final class AppModel: ObservableObject {
                 runID: contract.runID,
                 contract: contractURL
             )
+            statusError = nil
         } catch {
-            // Missing run state is normal for a fresh contract.
             let message = (error as? AppError)?.message ?? error.localizedDescription
-            if message.lowercased().contains("error") {
+            // Missing run state is normal for a fresh contract.
+            let lowered = message.lowercased()
+            if lowered.contains("not found") || lowered.contains("no such") || lowered.contains("none") {
                 status = nil
+                statusError = nil
+                lastOutput = message
+            } else {
+                status = nil
+                statusError = message
                 lastOutput = message
             }
         }
+    }
+
+    /// Entry point for UI / shortcuts — may present a confirmation first.
+    func requestPerform(_ action: LifecycleAction) async {
+        guard isActionEnabled(action) else { return }
+        if action.requiresConfirmation {
+            pendingConfirmAction = action
+            return
+        }
+        await perform(action)
+    }
+
+    func confirmPendingAction() async {
+        guard let action = pendingConfirmAction else { return }
+        pendingConfirmAction = nil
+        await perform(action)
+    }
+
+    func cancelPendingAction() {
+        pendingConfirmAction = nil
     }
 
     func perform(_ action: LifecycleAction) async {
@@ -218,11 +270,25 @@ final class AppModel: ObservableObject {
                 campaignID: contract.campaignID,
                 runID: contract.runID
             )
+            statusError = nil
             await refreshStatus()
             await runDoctor()
+            await refreshDashboardFlag()
         } catch {
             self.error = AppError(message: (error as? AppError)?.message ?? error.localizedDescription)
+            await refreshDashboardFlag()
         }
+    }
+
+    func stopDashboard() async {
+        await cli.stopDashboard()
+        cli.stopDashboardSync()
+        await refreshDashboardFlag()
+        lastOutput = "Dashboard stopped."
+    }
+
+    func refreshDashboardFlag() async {
+        dashboardRunning = await cli.isDashboardRunning() || DashboardChild.shared.isRunning
     }
 
     func isActionEnabled(_ action: LifecycleAction) -> Bool {
@@ -247,6 +313,8 @@ final class AppModel: ObservableObject {
 
     func shutdown() async {
         await cli.stopDashboard()
+        cli.stopDashboardSync()
         bookmarks.stopAll()
+        dashboardRunning = false
     }
 }

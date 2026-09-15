@@ -61,6 +61,18 @@ cmd_sign() {
   echo "Hardened Runtime: --options runtime"
 
   xattr -cr "$APP" 2>/dev/null || true
+
+  # Sign nested helper first (if staged), then the app bundle.
+  HELPER="$APP/Contents/Helpers/runspecimen"
+  HELPER_ENTITLEMENTS="$ROOT/Entitlements/RunSpecimen.helper.entitlements"
+  if [[ -x "$HELPER" ]]; then
+    echo "Signing bundled helper: $HELPER"
+    codesign --force --options runtime --timestamp \
+      --entitlements "$HELPER_ENTITLEMENTS" \
+      --sign "$identity" \
+      "$HELPER"
+  fi
+
   codesign --force --deep --options runtime --timestamp \
     --entitlements "$ENTITLEMENTS" \
     --sign "$identity" \

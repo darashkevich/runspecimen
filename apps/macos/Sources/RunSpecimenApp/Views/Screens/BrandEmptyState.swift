@@ -56,7 +56,14 @@ struct BrandEmptyState: View {
                     .padding(.top, 8)
 
                     if let issue = model.cliSetupIssue {
-                        CLISetupBanner(message: issue)
+                        CLISetupBanner(
+                            title: issue.lowercased().contains("version mismatch")
+                                || issue.lowercased().contains("too old")
+                                || issue.lowercased().contains("need 0.2")
+                                ? "CLI VERSION MISMATCH"
+                                : "CLI SETUP REQUIRED",
+                            message: issue
+                        )
                             .padding(.top, 16)
                     } else if let note = model.pathProbeNote {
                         Text(note)
@@ -128,11 +135,12 @@ struct NonGoalsStrip: View {
 }
 
 struct CLISetupBanner: View {
+    var title: String = "CLI SETUP REQUIRED"
     var message: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("CLI SETUP REQUIRED")
+            Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .foregroundStyle(RSTheme.danger)
                 .tracking(1.0)
@@ -153,7 +161,7 @@ struct CLISetupBanner: View {
                 )
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("CLI setup required")
+        .accessibilityLabel(title)
         .accessibilityValue(message)
     }
 }

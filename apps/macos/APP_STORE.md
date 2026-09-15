@@ -36,7 +36,9 @@ Checklist and review posture for the RunSpecimen macOS app
 
 Store stretch plan: embed a signed `runspecimen` helper (Python runtime + package, or a
 future compiled helper) under `Contents/Helpers` with `com.apple.security.inherit`, then
-re-submit Target A.
+re-submit Target A. Discovery + `Contents/Helpers` build wiring are implemented
+([Helpers/README.md](Helpers/README.md), [ADR-002](docs/ADR-002-embedded-helper.md));
+frozen helper packaging still needs a packaging choice + Developer ID signing.
 
 ## Entitlements
 
@@ -142,5 +144,7 @@ Demo path for reviewers:
 - Notarization credentials (App Store Connect API key) — operator-held secrets in
   `Config/signing.env` (gitignored). Run `./Scripts/check_signing_identity.sh`.
 - Full Xcode recommended for Archive / Organizer / MAS upload (CLT builds via `build_app.sh`).
-- Optional: embed signed engine helper for clean Target A — scaffold in `Helpers/` + ADR-002.
+- Optional: embed signed engine helper for clean Target A — discovery +
+  `Contents/Helpers` staging wired (`Helpers/`, `Scripts/stage_helper.sh`, ADR-002);
+  frozen binary + notarized helper still require packaging work and Developer ID certs.
 

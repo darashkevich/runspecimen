@@ -1,80 +1,29 @@
 import Foundation
+#if canImport(RunSpecimenCore)
+import RunSpecimenCore
+#endif
 
-/// Minimum CLI the native app expects (PyPI 0.2.0rc9+ / matching repo tree).
-enum CLIVersionGate {
-    /// Comparable tuple: (major, minor, patch, preKind, preNum)
-    /// preKind: 0 = rc/a/b, 1 = final (no pre-release). Higher is newer.
-    static let minimum = ParsedVersion(major: 0, minor: 2, patch: 0, preKind: 0, preNum: 9)
-
-    struct ParsedVersion: Comparable, Equatable, Sendable {
-        var major: Int
-        var minor: Int
-        var patch: Int
-        /// 0 = pre-release (rc/a/b), 1 = final
-        var preKind: Int
-        var preNum: Int
-
-        static func < (lhs: ParsedVersion, rhs: ParsedVersion) -> Bool {
-            let l = [lhs.major, lhs.minor, lhs.patch, lhs.preKind, lhs.preNum]
-            let r = [rhs.major, rhs.minor, rhs.patch, rhs.preKind, rhs.preNum]
-            return l.lexicographicallyPrecedes(r)
-        }
-
-        var displayMinimum: String { "0.2.0rc9" }
-    }
-
-    static func parse(from versionOutput: String) -> ParsedVersion? {
-        // Accept "runspecimen 0.2.0rc9", "0.2.0rc9", "0.2.0-rc.9", "0.2.0"
-        let lowered = versionOutput.lowercased()
-        let pattern = #"(\d+)\.(\d+)\.(\d+)(?:[-.]?(?:rc|a|b|alpha|beta)\.?(\d+))?"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-        let range = NSRange(lowered.startIndex..<lowered.endIndex, in: lowered)
-        guard let match = regex.firstMatch(in: lowered, range: range) else { return nil }
-
-        func group(_ i: Int) -> String? {
-            let r = match.range(at: i)
-            guard r.location != NSNotFound, let swift = Range(r, in: lowered) else { return nil }
-            return String(lowered[swift])
-        }
-
-        guard let major = Int(group(1) ?? ""),
-              let minor = Int(group(2) ?? ""),
-              let patch = Int(group(3) ?? "") else { return nil }
-
-        if let pre = group(4), let preNum = Int(pre) {
-            return ParsedVersion(major: major, minor: minor, patch: patch, preKind: 0, preNum: preNum)
-        }
-        return ParsedVersion(major: major, minor: minor, patch: patch, preKind: 1, preNum: 0)
-    }
-
-    static func evaluate(versionOutput: String) -> Result<ParsedVersion, AppError> {
-        guard let parsed = parse(from: versionOutput) else {
-            return .failure(AppError(
-                message: "Could not parse runspecimen version from:\n\(versionOutput)\nInstall 0.2.0rc9 or newer."
-            ))
-        }
-        if parsed < minimum {
-            return .failure(AppError(
-                message: "CLI too old (\(versionOutput.trimmingCharacters(in: .whitespacesAndNewlines))). Need \(minimum.displayMinimum)+. Install: python3 -m pip install 'runspecimen==0.2.0rc9'"
-            ))
-        }
-        return .success(parsed)
-    }
-}
-
-/// Invokes the user-selected (or PATH-discovered) `runspecimen` binary.
+/// Invokes the user-selected (or bundled / PATH-discovered) `runspecimen` binary.
 /// Does not weaken engine gates: mutating commands go through the real CLI.
 actor CLIService {
     private(set) var cliURL: URL?
+    private(set) var resolutionSource: CLIResolutionSource?
     /// Tracked dashboard child so we can terminate it on app quit (App Store 2.4.5(iii)).
     private var dashboardProcess: Process?
 
-    func setCLI(_ url: URL?) {
+    func setCLI(_ url: URL?, source: CLIResolutionSource) {
         cliURL = url
+        resolutionSource = url == nil ? nil : source
+    }
+
+    /// Bundled engine under `Contents/Helpers/runspecimen` (ADR-002).
+    /// Present only when packaging staged a real helper into the `.app`.
+    nonisolated func resolveBundledHelper() -> URL? {
+        Self.bundledHelperURL()
     }
 
     /// Broad discovery for Developer ID / local debug. MAS builds still prefer Open-panel bookmarks.
-    func resolveFromPATH() -> URL? {
+    nonisolated func resolveFromPATH() -> URL? {
         let fileManager = FileManager.default
         var candidates: [URL] = []
 
@@ -127,13 +76,11 @@ actor CLIService {
         guard version.lowercased().contains("runspecimen") || version.contains(".") else {
             throw AppError(message: "Selected binary did not report a RunSpecimen version:\n\(version)")
         }
-        switch CLIVersionGate.evaluate(versionOutput: version) {
-        case .failure(let err):
-            throw err
-        case .success:
-            break
+        let evaluation = CLIVersionGate.evaluate(versionOutput: version)
+        if let message = CLIVersionGate.failureMessage(for: evaluation) {
+            throw AppError(message: message)
         }
-        return CLIIdentity(path: url, version: version)
+        return CLIIdentity(path: url, version: version, source: resolutionSource ?? .manual)
     }
 
     func doctor(workspace: URL) async throws -> DoctorReport {
@@ -262,6 +209,10 @@ actor CLIService {
         return result.stdout.isEmpty ? result.stderr : result.stdout
     }
 
+    func isDashboardRunning() -> Bool {
+        dashboardProcess?.isRunning == true
+    }
+
     /// Terminate any tracked dashboard child. Signals only that PID (not a process group)
     /// because Foundation.Process inherits the app's group by default.
     func stopDashboard() {
@@ -278,10 +229,15 @@ actor CLIService {
         }
     }
 
+    /// Synchronous best-effort stop for `applicationWillTerminate` (async Task may not finish).
+    nonisolated func stopDashboardSync() {
+        DashboardChild.shared.stop()
+    }
+
     func requireCLI() throws -> URL {
         guard let cliURL else {
             throw AppError(
-                message: "runspecimen CLI not selected. Use “Select runspecimen CLI” (Open panel) or install 0.2.0rc9+: python3 -m pip install 'runspecimen==0.2.0rc9'"
+                message: "runspecimen CLI not selected. Use “Select runspecimen CLI” (Open panel), install 0.2.0rc9+, or stage a bundled helper under Contents/Helpers."
             )
         }
         let fm = FileManager.default
@@ -291,6 +247,53 @@ actor CLIService {
             )
         }
         return cliURL
+    }
+
+    // MARK: - Bundle helper path
+
+    nonisolated static func bundledHelperURL() -> URL? {
+        let fm = FileManager.default
+        // Prefer Bundle.main when running as .app; fall back to relative layout for tests.
+        let candidates: [URL] = {
+            var urls: [URL] = []
+            if let resourceURL = Bundle.main.resourceURL {
+                // …/Contents/Resources → …/Contents/Helpers/runspecimen
+                urls.append(
+                    resourceURL
+                        .deletingLastPathComponent()
+                        .appendingPathComponent("Helpers/runspecimen")
+                )
+            }
+            if let exe = Bundle.main.executableURL {
+                // …/Contents/MacOS/RunSpecimen → …/Contents/Helpers/runspecimen
+                urls.append(
+                    exe.deletingLastPathComponent()
+                        .deletingLastPathComponent()
+                        .appendingPathComponent("Helpers/runspecimen")
+                )
+            }
+            let bundleURL = Bundle.main.bundleURL
+            urls.append(bundleURL.appendingPathComponent("Contents/Helpers/runspecimen"))
+            urls.append(bundleURL.appendingPathComponent("Helpers/runspecimen"))
+            return urls
+        }()
+
+        var seen = Set<String>()
+        for url in candidates {
+            let path = url.path
+            guard !seen.contains(path) else { continue }
+            seen.insert(path)
+            // Ignore non-executable placeholders (README / .gitkeep copies).
+            guard fm.isExecutableFile(atPath: path) else { continue }
+            // Refuse obviously tiny stub markers.
+            if let attrs = try? fm.attributesOfItem(atPath: path),
+               let size = attrs[.size] as? NSNumber,
+               size.intValue < 64 {
+                continue
+            }
+            return url.resolvingSymlinksInPath()
+        }
+        return nil
     }
 
     // MARK: - Process helpers
@@ -359,6 +362,7 @@ actor CLIService {
 
     private func launchDashboard(arguments: [String]) throws {
         stopDashboard()
+        DashboardChild.shared.stop()
         let url = try requireCLI()
         let process = Process()
         process.executableURL = url
@@ -367,10 +371,10 @@ actor CLIService {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
-        // New process group so stopDashboard can signal the whole tree.
         process.qualityOfService = .utility
         try process.run()
         dashboardProcess = process
+        DashboardChild.shared.attach(process)
     }
 
     private static func augmentedEnvironment() -> [String: String] {
@@ -390,5 +394,43 @@ actor CLIService {
         env["PATH"] = (extras + [path]).joined(separator: ":")
         // No telemetry knobs to set; keep engine local-only.
         return env
+    }
+}
+
+/// Process handle shared with terminate path so dashboard dies even if actor Tasks are cancelled.
+final class DashboardChild: @unchecked Sendable {
+    static let shared = DashboardChild()
+    private let lock = NSLock()
+    private var process: Process?
+
+    func attach(_ process: Process) {
+        lock.lock()
+        self.process = process
+        lock.unlock()
+    }
+
+    func stop() {
+        lock.lock()
+        let process = self.process
+        self.process = nil
+        lock.unlock()
+        guard let process, process.isRunning else { return }
+        let pid = process.processIdentifier
+        process.terminate()
+        kill(pid, SIGTERM)
+        // Brief wait then force-kill — terminate handlers must be sync and short.
+        let deadline = Date().addingTimeInterval(0.8)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if process.isRunning {
+            kill(pid, SIGKILL)
+        }
+    }
+
+    var isRunning: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return process?.isRunning == true
     }
 }

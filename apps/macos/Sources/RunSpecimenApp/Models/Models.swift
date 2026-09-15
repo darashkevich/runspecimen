@@ -1,8 +1,12 @@
 import Foundation
+#if canImport(RunSpecimenCore)
+import RunSpecimenCore
+#endif
 
 struct CLIIdentity: Equatable, Sendable {
     var path: URL
     var version: String
+    var source: CLIResolutionSource = .manual
 }
 
 struct DoctorReport: Equatable, Sendable {
@@ -47,6 +51,17 @@ struct RunStatus: Equatable, Sendable {
         default: return phase.capitalized
         }
     }
+
+    var hasEvidenceFields: Bool {
+        certificateID != nil
+            || eventHead != nil
+            || contractHash != nil
+            || sourceHash != nil
+            || runtimeID != nil
+            || exitCode != nil
+            || postflightOK != nil
+            || eventCount > 0
+    }
 }
 
 struct ContractSummary: Equatable, Sendable {
@@ -90,6 +105,33 @@ enum LifecycleAction: String, CaseIterable, Identifiable {
     var requiresTTY: Bool { self == .approve }
 
     var isDestructiveHint: Bool { self == .run }
+
+    /// Actions that need an explicit confirmation before CLI invocation.
+    var requiresConfirmation: Bool {
+        switch self {
+        case .run, .postflight: return true
+        default: return false
+        }
+    }
+
+    var confirmationTitle: String {
+        switch self {
+        case .run: return "Run this bounded command?"
+        case .postflight: return "Run postflight checks?"
+        default: return "Confirm \(title)?"
+        }
+    }
+
+    var confirmationMessage: String {
+        switch self {
+        case .run:
+            return "Executes one lease-bounded run via the selected CLI. Approval must already be in place. The app will not type APPROVE for you."
+        case .postflight:
+            return "Runs postflight assertions against the recorded run evidence. This does not re-execute the payload."
+        default:
+            return "Continue with \(title)?"
+        }
+    }
 }
 
 struct AppError: Identifiable, Error, LocalizedError {

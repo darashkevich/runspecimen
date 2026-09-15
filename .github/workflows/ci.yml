@@ -35,3 +35,11 @@ jobs:
           name: runspecimen-${{ matrix.os }}-python-${{ matrix.python }}
           path: ${{ runner.temp }}/runspecimen-release/
           if-no-files-found: error
+
+  macos-app:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: macOS companion smoke (swift test + build, no GUI)
+        run: bash apps/macos/Scripts/smoke_macos.sh

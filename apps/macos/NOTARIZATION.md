@@ -135,7 +135,12 @@ cannot complete steps 2–5 here. Local smoke remains:
 
 ```bash
 ./Scripts/build_app.sh && open build/RunSpecimen.app
+# or non-GUI: ./Scripts/smoke_macos.sh
 ```
 
 Obtain a Developer ID Application certificate on the release Mac, then re-run
 `./Scripts/sign_and_notarize.sh all`.
+
+When a helper is staged (`Helpers/payload/runspecimen`), `build_app.sh` copies it into
+`Contents/Helpers/`. Sign that child with `Entitlements/RunSpecimen.helper.entitlements`
+(same Team ID) before notarizing the whole bundle — see `Scripts/stage_helper.sh`.
