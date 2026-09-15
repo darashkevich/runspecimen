@@ -2,6 +2,7 @@ include LICENSE
 include CHANGELOG.md
 include SECURITY.md
 include docs/ABOUT.md
+include docs/ED25519_RECEIPTS.md
 include docs/FAQ.md
 include docs/MARKET_AND_DISTRIBUTION.md
 include docs/NEXT_CHANGES.md

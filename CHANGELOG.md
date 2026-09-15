@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Optional Ed25519 public-key receipts (Phase 1)
+
+- Add optional extra `runspecimen[ed25519]` (PyNaCl) with `keygen` /
+  `sign` / `verify-signature --scheme ed25519`, `export-public-key`, and offline
+  public-key verification without the private key. Default install stays
+  stdlib-only. See `docs/ED25519_RECEIPTS.md`.
+
 ### Product direction
 
 - Refine the phased roadmap toward verifiable execution: prioritize optional

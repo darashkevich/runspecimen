@@ -74,9 +74,13 @@ merge still requires Yahor's later decision.
 
 ---
 
-## Phase 1 — Public-key signed receipts (Ed25519) *(next PR)*
+## Phase 1 — Public-key signed receipts (Ed25519) *(next PR: `cursor/ed25519-pubkey-receipts`)*
 
 **Priority:** Highest after Phase 0.
+
+**Status:** Implementation in progress on branch `cursor/ed25519-pubkey-receipts`
+(stacked on Phase 0 direction commit). Optional PyNaCl extra; offline pubkey
+verify; HMAC path preserved.
 
 **Scope**
 

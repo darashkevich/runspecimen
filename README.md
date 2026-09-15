@@ -33,6 +33,7 @@ No watchers, no recurring scheduler, no parallel workers.
 - [Grok tandem](docs/GROK_TANDEM.md) — external xAI Grok review log (Composio `GROK_*`)
 - [Threat model](docs/THREAT_MODEL.md) — trusted boundary and residual risks
 - [Schema compatibility](docs/SCHEMA_COMPATIBILITY.md) — contract/receipt versions
+- [Ed25519 receipts (optional)](docs/ED25519_RECEIPTS.md) — offline public-key verify
 - [Phased roadmap](docs/ROADMAP_PHASED.md) — feature and UX pipeline
 
 ## Install

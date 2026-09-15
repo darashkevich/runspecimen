@@ -104,3 +104,12 @@ terminal.
 Contracts require `"version": 1`. Receipts may omit `schema_version` (legacy v1)
 or set `"schema_version": 1`. Unknown versions fail closed. See
 [SCHEMA_COMPATIBILITY.md](SCHEMA_COMPATIBILITY.md).
+
+## HMAC vs Ed25519 — what do authenticated receipts prove?
+
+- **HMAC** (`keygen` / `sign` default): shared-secret MAC. Anyone with the key can
+  forge. Useful for controlled sharing, not independent third-party trust.
+- **Ed25519** (optional `pip install 'runspecimen[ed25519]'`, `--scheme ed25519`):
+  offline public-key verification without sharing the private key. Trust equals
+  key custody; not absolute non-repudiation; not scientific proof. See
+  [ED25519_RECEIPTS.md](ED25519_RECEIPTS.md).
