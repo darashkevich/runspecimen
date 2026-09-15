@@ -1,0 +1,143 @@
+import SwiftUI
+
+@MainActor
+final class EmptyStateMotion: ObservableObject {
+    @Published var pulse = false
+}
+
+struct BrandEmptyState: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @StateObject private var motion = EmptyStateMotion()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Spacer(minLength: 48)
+            HStack(alignment: .top, spacing: 28) {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(spacing: 12) {
+                        SignalMark(animated: !reduceMotion && motion.pulse)
+                            .accessibilityHidden(true)
+                        Text("RunSpecimen")
+                            .font(.system(size: 42, weight: .bold, design: .default))
+                            .foregroundStyle(RSTheme.ink)
+                            .accessibilityAddTraits(.isHeader)
+                    }
+
+                    Text("One human-approved bounded run.\nLocal evidence. No telemetry.")
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundStyle(RSTheme.muted)
+                        .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("Native control surface for the CLI enforcement engine. Approval stays interactive on a real TTY. The dashboard remains read-only.")
+                        .font(.system(size: 14))
+                        .foregroundStyle(RSTheme.soft)
+                        .frame(maxWidth: 520, alignment: .leading)
+
+                    HStack(spacing: 12) {
+                        Button {
+                            Task { await model.chooseCLI() }
+                        } label: {
+                            Label(model.hasCLI ? "CLI selected" : "Select runspecimen CLI", systemImage: "terminal")
+                        }
+                        .buttonStyle(SignalButtonStyle(emphasized: !model.hasCLI))
+
+                        Button {
+                            Task { await model.chooseWorkspace() }
+                        } label: {
+                            Label(model.hasWorkspace ? "Workspace selected" : "Open Workspace", systemImage: "folder")
+                        }
+                        .buttonStyle(SignalButtonStyle(emphasized: model.hasCLI && !model.hasWorkspace))
+                        .disabled(!model.hasCLI)
+                    }
+                    .padding(.top, 8)
+
+                    NonGoalsStrip()
+                        .padding(.top, 28)
+                }
+                .frame(maxWidth: 640, alignment: .leading)
+
+                Spacer(minLength: 20)
+            }
+            .padding(.horizontal, 56)
+
+            Spacer()
+            FooterHint()
+                .padding(.horizontal, 56)
+                .padding(.bottom, 28)
+        }
+        .onAppear {
+            if !reduceMotion {
+                withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) {
+                    motion.pulse = true
+                }
+            }
+        }
+    }
+}
+
+struct SignalMark: View {
+    var animated: Bool
+
+    var body: some View {
+        Circle()
+            .fill(
+                RadialGradient(
+                    colors: [Color(red: 0.85, green: 1.0, blue: 0.69), RSTheme.signal, RSTheme.signalDeep],
+                    center: .topLeading,
+                    startRadius: 1,
+                    endRadius: 16
+                )
+            )
+            .frame(width: 14, height: 14)
+            .shadow(color: RSTheme.signal.opacity(animated ? 0.55 : 0.25), radius: animated ? 10 : 4)
+            .accessibilityLabel("RunSpecimen signal mark")
+    }
+}
+
+struct NonGoalsStrip: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("HONEST NON-GOALS")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(RSTheme.amber)
+                .tracking(1.2)
+            Text("Not an OS sandbox · Not a scheduler · Not compliance theater · Receipts are local hash chains, not digital signatures")
+                .font(.system(size: 12))
+                .foregroundStyle(RSTheme.soft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct FooterHint: View {
+    var body: some View {
+        Text("Install: python3 -m pip install 'runspecimen==0.2.0rc9'   ·   Local-only · Apache-2.0")
+            .font(RSTheme.monoSmall)
+            .foregroundStyle(RSTheme.soft)
+    }
+}
+
+struct SignalButtonStyle: ButtonStyle {
+    var emphasized: Bool = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 14, weight: .semibold))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(emphasized ? RSTheme.signal.opacity(configuration.isPressed ? 0.85 : 1) : RSTheme.bgPanel)
+            )
+            .foregroundStyle(emphasized ? Color.black.opacity(0.85) : RSTheme.ink)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(emphasized ? RSTheme.signalDeep : RSTheme.line, lineWidth: 1)
+            )
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
