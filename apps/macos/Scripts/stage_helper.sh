@@ -82,12 +82,21 @@ export PYTHONPATH="$HERE/lib${PYTHONPATH:+:$PYTHONPATH}"
 
 pick_python() {
   local c
-  for c in python3.14 python3.13 python3.12 python3.11 python3.10 python3.9 python3; do
-    if command -v "$c" >/dev/null 2>&1; then
-      if "$c" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
-        printf '%s\n' "$c"
-        return 0
-      fi
+  # Absolute fallbacks first — App Sandbox children sometimes see a stripped PATH.
+  for c in \
+    /usr/bin/python3 \
+    /opt/homebrew/bin/python3 \
+    /usr/local/bin/python3 \
+    python3.14 python3.13 python3.12 python3.11 python3.10 python3.9 python3
+  do
+    if [[ "$c" == /* ]]; then
+      [[ -x "$c" ]] || continue
+    else
+      command -v "$c" >/dev/null 2>&1 || continue
+    fi
+    if "$c" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
+      printf '%s\n' "$c"
+      return 0
     fi
   done
   return 1
@@ -208,13 +217,15 @@ LICENSE NOTES (why --from-src is the default packaging path)
   - PyInstaller freeze is optional for MAS self-containment (bundles CPython).
     PyInstaller bootloader is Apache-2.0; still ship CPython + NOTICE attribution
     and re-audit before App Store submission. Not required for local Helpers tests.
+    Optional script: RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh (no-ops without
+    PyInstaller so CI stays green).
 
 Exact next packaging steps (ADR-002):
   1. Stage a helper (pick one):
        a) ./Scripts/stage_helper.sh --from-src          # recommended local path
        b) ./Scripts/stage_helper.sh --from \$(command -v runspecimen)  # dry-run copy
-       c) Future: PyInstaller onefile named runspecimen → place at payload/
-  2. ./Scripts/stage_helper.sh --verify
+       c) RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh --verify       # optional freeze
+  2. ./Scripts/stage_helper.sh --verify   # (or freeze --verify)
   3. Codesign the helper with the same Team ID as the app using
        Entitlements/RunSpecimen.helper.entitlements (inherit), e.g.:
        codesign --force --options runtime --timestamp \\
@@ -223,11 +234,11 @@ Exact next packaging steps (ADR-002):
   4. ./Scripts/build_app.sh   # copies payload → Contents/Helpers/
   5. Sign + notarize the whole .app (needs Developer ID):
        ./Scripts/sign_and_notarize.sh all
-  6. Verify discovery: clear saved CLI bookmark (Settings) → Source = “Bundled Helpers”
+  6. Verify discovery: Engine → Prefer Bundled Helper → Source = “Bundled Helpers”
   7. Update APP_STORE.md review notes with helper path + demo steps.
 
-Current status: --from-src package-tree staging implemented; no frozen interpreter
-ships in-repo; Developer ID notarization still blocked without Apple certs.
+Current status: --from-src package-tree staging implemented; freeze_helper optional
+and CI-safe; Developer ID notarization still blocked without Apple certs.
 EOF
 }
 

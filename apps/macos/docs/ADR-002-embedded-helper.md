@@ -26,6 +26,8 @@ helper under `Contents/Helpers` is the long-term mitigation.
 - PyInstaller (or equivalent) freeze remains optional for MAS self-containment
   when Developer ID certs exist; until then Target B uses user-selected CLI or
   the host-Python package-tree helper for local testing.
+- `Scripts/freeze_helper.sh` is gated behind `RS_FREEZE_HELPER=1` / `--enable` and
+  exits 0 when PyInstaller is missing so CI stays green.
 
 ## Consequences
 
@@ -36,4 +38,7 @@ helper under `Contents/Helpers` is the long-term mitigation.
 - `Helpers/payload/` stays gitignored for local experiments.
 - App Settings / Engine menu surfaces CLI **Source** and “Prefer Bundled Helper”
   so operators can confirm bundled vs bookmark vs PATH.
-- Exact packaging steps live in `Scripts/stage_helper.sh` and Helpers/README.md.
+- PATH probes are session-only (not auto-bookmarked) so Prefer Bundled / Clear
+  Bookmark cannot race with a silently re-saved Open-panel override.
+- Exact packaging steps live in `Scripts/stage_helper.sh`, `Scripts/freeze_helper.sh`,
+  and Helpers/README.md.

@@ -59,7 +59,7 @@ to clear the bookmark and force (2) when testing a staged helper.
 | --- | --- | --- |
 | `--from-src` package tree + host Python 3.9+ launcher | Redistributes only Apache-2.0 project code (`dependencies = []`) | **Implemented** — preferred for local / Target B experiments |
 | `--from PATH` copy of installed CLI | Same code license; shebang may be machine-local | Dry-run only |
-| PyInstaller onefile (future) | Bootloader Apache-2.0; must attribute bundled CPython | Documented; not required until MAS self-containment |
+| PyInstaller onefile (optional) | Bootloader Apache-2.0; must attribute bundled CPython | `Scripts/freeze_helper.sh` behind `RS_FREEZE_HELPER=1` — **local unsigned freeze verified** on this Mac; skips cleanly if PyInstaller absent. Shipping still needs Developer ID + NOTICE audit |
 
 ## What this stub includes now
 
@@ -67,9 +67,11 @@ to clear the bookmark and force (2) when testing a staged helper.
 - `Helpers/.gitkeep` so the directory is tracked
 - `Helpers/payload/` gitignored — place local build artifacts here during experiments
 - `Scripts/stage_helper.sh` — `--from-src`, `--from`, `--check`, `--verify`
+- `Scripts/freeze_helper.sh` — optional PyInstaller onefile (`RS_FREEZE_HELPER=1`); exit 0 when absent
 - `Scripts/build_app.sh` — copies launcher + `lib/` + NOTICE → `Contents/Helpers/`
 - `Entitlements/RunSpecimen.helper.entitlements` — inherit sandbox for child helper
 - App discovery + Settings / Engine menu source controls (ADR-002)
+- Prefer Bundled Helper clears the CLI bookmark without re-persisting PATH probes
 
 ## Exact next packaging steps
 
@@ -80,9 +82,17 @@ to clear the bookmark and force (2) when testing a staged helper.
 # In-app: Engine → Prefer Bundled Helper → Source = “Bundled Helpers”
 ```
 
-For MAS freeze later: PyInstaller onefile named `runspecimen`, place under
-`Helpers/payload/`, codesign with inherit entitlements, then notarize (needs
-Developer ID).
+For MAS freeze later (optional, not CI-default):
+
+```bash
+python3 -m pip install --user 'pyinstaller>=6'   # local only
+RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh --verify
+./Scripts/build_app.sh
+```
+
+Without PyInstaller or without `RS_FREEZE_HELPER=1`, `freeze_helper.sh` exits 0 and
+prints blockers (Developer ID + CPython NOTICE still required to ship). Codesign the
+frozen Mach-O with inherit entitlements, then notarize (needs Developer ID).
 
 ## Non-goals for this stub
 

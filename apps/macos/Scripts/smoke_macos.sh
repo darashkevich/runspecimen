@@ -48,6 +48,11 @@ echo "==> stage_helper --from-src + --verify (package-tree helper)"
 ./Scripts/stage_helper.sh --from-src --verify
 ./Scripts/stage_helper.sh --check
 
+echo "==> freeze_helper default skip (CI-safe without PyInstaller)"
+./Scripts/freeze_helper.sh >/tmp/rs-freeze.out
+grep -q "skipped (optional)" /tmp/rs-freeze.out
+grep -q "stage_helper.sh --from-src" /tmp/rs-freeze.out
+
 echo "==> build_app.sh (with staged helper)"
 ./Scripts/build_app.sh
 
@@ -80,6 +85,45 @@ assert found >= minimum, f"helper CLI too old: {found} < {minimum}"
 print("Bundled helper version gate OK")
 PY
 
+echo "==> Prefer Bundled Helper e2e: doctor/status + host-python + spaces"
+SHOWCASE="$REPO/examples/showcase"
+python3 - "$HELPER" "$SHOWCASE" <<'PY'
+import json, os, subprocess, sys, tempfile
+from pathlib import Path
+
+helper, showcase = sys.argv[1:3]
+assert "/Contents/Helpers/runspecimen" in helper
+
+# Absolute /usr/bin/python3 must work even with stripped PATH (sandbox-ish).
+env = {"PATH": "/usr/bin:/bin", "HOME": os.path.expanduser("~")}
+r = subprocess.run([helper, "--version"], capture_output=True, text=True, env=env)
+assert r.returncode == 0 and "runspecimen" in (r.stdout + r.stderr).lower(), (r.stdout, r.stderr)
+
+# Explicit /bin/bash invocation (matches CLIService.processInvocation for scripts)
+r = subprocess.run(["/bin/bash", helper, "doctor", "--workspace", showcase], capture_output=True, text=True)
+assert r.returncode == 0, r.stderr
+doc = json.loads(r.stdout)
+assert doc.get("ok") is True, doc
+
+ws = Path(tempfile.mkdtemp(prefix="rs prefer bundled ")) / "ws"
+ws.mkdir()
+r = subprocess.run(
+    ["/bin/bash", helper, "doctor", "--workspace", str(ws)],
+    capture_output=True,
+    text=True,
+)
+assert r.returncode == 0, r.stderr
+assert json.loads(r.stdout).get("ok") is True
+
+r = subprocess.run(
+    ["/bin/bash", helper, "status", "--workspace", str(ws), "--campaign-id", "demo", "--run-id", "1"],
+    capture_output=True,
+    text=True,
+)
+assert r.returncode == 0, (r.stdout, r.stderr)
+print("Prefer Bundled Helper doctor/status OK")
+PY
+
 echo "==> discovery preference: Helpers path is executable under Contents/Helpers"
 # ADR-002: when no Open-panel bookmark, app resolves Contents/Helpers before PATH.
 # Non-GUI assertion: the built helper exists at the exact path CLIService probes.
@@ -92,6 +136,18 @@ assert os.path.isfile(helper) and os.access(helper, os.X_OK), helper
 assert os.path.getsize(helper) >= 64, os.path.getsize(helper)
 print("Helpers discovery target OK:", helper)
 PY
+
+echo "==> Prefer Bundled vs bookmark race guards present in sources"
+grep -q 'never persist PATH probes as bookmarks' \
+  "$ROOT/Sources/RunSpecimenApp/AppModel.swift"
+grep -q 'Does not fall through to PATH' \
+  "$ROOT/Sources/RunSpecimenApp/AppModel.swift"
+grep -q 'isShellScript' \
+  "$ROOT/Sources/RunSpecimenApp/Services/CLIService.swift"
+grep -q 'isShellScript' \
+  "$ROOT/Sources/RunSpecimenApp/Services/PTYApprovalSession.swift"
+grep -q 'Copied' \
+  "$ROOT/Sources/RunSpecimenApp/Views/Screens/EvidenceInspectorView.swift"
 
 echo "==> Info.plist CFBundleIdentifier + About version keys"
 /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist" | grep -q .

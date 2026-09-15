@@ -81,13 +81,11 @@ final class AppModel: ObservableObject {
 
         if cliIdentity == nil {
             if let probed = cli.resolveFromPATH() {
-                pathProbeNote = "Found runspecimen at \(probed.path). For App Store sandbox, re-select via Open panel so a security-scoped bookmark is stored."
+                // Session-only — never persist PATH probes as bookmarks. Auto-saving
+                // fought “Prefer Bundled Helper” / “Clear CLI Bookmark” (next launch
+                // looked like an Open-panel override). MAS still needs Open panel.
+                pathProbeNote = "Found runspecimen at \(probed.path). For App Store sandbox, select it via Open panel so a security-scoped bookmark is stored."
                 await cli.setCLI(probed, source: .pathProbe)
-                do {
-                    try bookmarks.saveCLI(probed)
-                } catch {
-                    // Bookmark may fail outside sandbox grant; still usable this session.
-                }
                 await refreshCLIIdentity()
             }
         }
@@ -149,6 +147,8 @@ final class AppModel: ObservableObject {
     }
 
     /// Prefer a staged Contents/Helpers/runspecimen when present (skips bookmark).
+    /// Does not fall through to PATH or re-persist bookmarks — avoids racing the
+    /// explicit “use bundled” choice against a prior Open-panel / PATH session.
     func preferBundledHelper() async {
         bookmarks.clearCLI()
         await cli.setCLI(nil, source: .manual)
@@ -156,15 +156,15 @@ final class AppModel: ObservableObject {
         cliSourceLabel = nil
         cliSetupIssue = nil
         pathProbeNote = nil
-        if let bundled = cli.resolveBundledHelper() {
-            pathProbeNote = "Using bundled engine at \(bundled.path)."
-            await cli.setCLI(bundled, source: .bundledHelper)
-            await refreshCLIIdentity()
+        guard let bundled = cli.resolveBundledHelper() else {
+            cliSetupIssue = "No executable under Contents/Helpers/runspecimen. Stage with Scripts/stage_helper.sh --from-src then rebuild."
             return
         }
-        await bootstrap()
-        if cliIdentity == nil {
-            cliSetupIssue = "No executable under Contents/Helpers/runspecimen. Stage with Scripts/stage_helper.sh --from-src then rebuild."
+        pathProbeNote = "Using bundled engine at \(bundled.path)."
+        await cli.setCLI(bundled, source: .bundledHelper)
+        await refreshCLIIdentity()
+        if cliIdentity == nil, cliSetupIssue == nil {
+            cliSetupIssue = "Bundled helper at \(bundled.path) did not report a usable RunSpecimen version."
         }
     }
 
