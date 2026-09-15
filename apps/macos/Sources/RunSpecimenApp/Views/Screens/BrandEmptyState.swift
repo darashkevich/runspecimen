@@ -42,6 +42,7 @@ struct BrandEmptyState: View {
                             Label(model.hasCLI ? "CLI selected" : "Select runspecimen CLI", systemImage: "terminal")
                         }
                         .buttonStyle(SignalButtonStyle(emphasized: !model.hasCLI))
+                        .accessibilityHint(model.hasCLI ? "Change the selected runspecimen binary" : "Open a file picker to choose the runspecimen executable")
 
                         Button {
                             Task { await model.chooseWorkspace() }
@@ -50,8 +51,22 @@ struct BrandEmptyState: View {
                         }
                         .buttonStyle(SignalButtonStyle(emphasized: model.hasCLI && !model.hasWorkspace))
                         .disabled(!model.hasCLI)
+                        .accessibilityHint("Choose a workspace folder via Open panel")
                     }
                     .padding(.top, 8)
+
+                    if let issue = model.cliSetupIssue {
+                        CLISetupBanner(message: issue)
+                            .padding(.top, 16)
+                    } else if let note = model.pathProbeNote {
+                        Text(note)
+                            .font(.system(size: 12))
+                            .foregroundStyle(RSTheme.amber)
+                            .frame(maxWidth: 520, alignment: .leading)
+                            .padding(.top, 12)
+                            .accessibilityLabel("CLI discovery note")
+                            .accessibilityValue(note)
+                    }
 
                     NonGoalsStrip()
                         .padding(.top, 28)
@@ -109,6 +124,37 @@ struct NonGoalsStrip: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+struct CLISetupBanner: View {
+    var message: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("CLI SETUP REQUIRED")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(RSTheme.danger)
+                .tracking(1.0)
+            Text(message)
+                .font(.system(size: 13))
+                .foregroundStyle(RSTheme.ink)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: 520, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(RSTheme.danger.opacity(0.1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(RSTheme.danger.opacity(0.35), lineWidth: 1)
+                )
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("CLI setup required")
+        .accessibilityValue(message)
     }
 }
 

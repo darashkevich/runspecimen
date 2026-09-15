@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build a runnable RunSpecimen.app without requiring a full Xcode.app install.
 # Archive / notarization / Mac App Store upload still need Xcode + signing identities.
+# See NOTARIZATION.md and Scripts/sign_and_notarize.sh for Developer ID ship path.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -40,10 +41,14 @@ if command -v codesign >/dev/null 2>&1; then
   if codesign --force --deep --sign - --entitlements "$ENTITLEMENTS" "$APP"; then
     echo "Ad-hoc signed with entitlements."
   else
-    codesign --force --deep --sign - "$APP" || true
+    echo "Entitlements sign failed; retrying after xattr clear…"
+    xattr -cr "$APP" 2>/dev/null || true
+    codesign --force --deep --sign - --entitlements "$ENTITLEMENTS" "$APP" \
+      || codesign --force --deep --sign - "$APP" || true
   fi
 fi
 
 echo "Built: $APP"
 echo "Entitlements source: $ENTITLEMENTS"
 echo "Open with: open \"$APP\""
+echo "Notarize (when certs exist): ./Scripts/check_signing_identity.sh && ./Scripts/sign_and_notarize.sh all"

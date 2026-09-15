@@ -57,10 +57,13 @@ user double-clicks, or in-app PTY).
 ### Target B — Developer ID (`Entitlements/RunSpecimen.developer-id.entitlements`)
 
 - Same sandbox entitlements preferred for parity and safer defaults.
-- Hardened Runtime **required** for notarization.
+- Hardened Runtime **required** for notarization — enable at codesign time with
+  `--options runtime` (see `Scripts/sign_and_notarize.sh` and `NOTARIZATION.md`).
+  It is not a boolean key inside the entitlements plist.
 - Avoid Hardened Runtime *exception* entitlements (`allow-unsigned-executable-memory`,
   `disable-library-validation`, etc.) unless a future embedded interpreter forces them —
   document any exception in this file before enabling.
+- Never ship `get-task-allow` in release entitlements.
 
 ## Privacy
 
@@ -123,19 +126,21 @@ Demo path for reviewers:
 
 - [ ] Built with Xcode (MAS packaging requirement 2.4.5(ii))
 - [ ] App Sandbox enabled (Target A)
-- [ ] Hardened Runtime enabled (Target B notarization)
+- [ ] Hardened Runtime enabled via `codesign --options runtime` (Target B)
 - [ ] `PrivacyInfo.xcprivacy` present and audited
 - [ ] App Privacy answers = Data Not Collected (while true)
 - [ ] Privacy policy URL in Connect + in-app
 - [ ] No `get-task-allow` in release
-- [ ] Notarize (`notarytool`) + staple for direct download
+- [ ] Notarize (`notarytool`) + staple for direct download — see **[NOTARIZATION.md](NOTARIZATION.md)**
 - [ ] Screenshots show native UI, honest non-goals
 - [ ] Export compliance / encryption: HTTPS docs links only → standard answers
+- [ ] Dashboard child terminated on app quit (implemented in `CLIService.stopDashboard`)
 
 ## Remaining blockers (engineering)
 
-- Full Xcode required for Archive / Organizer / MAS upload (this environment has CLT only).
-- PTY Approve polish + VoiceOver pass.
-- Optional: embed signed engine helper for clean Target A submission.
-- Developer ID certificate + Apple Team ID provisioning (not in-repo).
-- Notarization credentials (App Store Connect API key) — operator-held secrets.
+- Developer ID Application certificate + Apple Team ID (operator keychain — not in-repo).
+- Notarization credentials (App Store Connect API key) — operator-held secrets in
+  `Config/signing.env` (gitignored). Run `./Scripts/check_signing_identity.sh`.
+- Full Xcode recommended for Archive / Organizer / MAS upload (CLT builds via `build_app.sh`).
+- Optional: embed signed engine helper for clean Target A — scaffold in `Helpers/` + ADR-002.
+

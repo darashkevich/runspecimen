@@ -7,6 +7,17 @@ struct MainConsoleView: View {
         VStack(spacing: 0) {
             TopBar()
             Divider().overlay(RSTheme.line)
+            if let issue = model.cliSetupIssue {
+                Text(issue)
+                    .font(.system(size: 12))
+                    .foregroundStyle(RSTheme.danger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(RSTheme.danger.opacity(0.08))
+                    .accessibilityLabel("CLI setup issue")
+                    .accessibilityValue(issue)
+            }
             if model.contractURL == nil {
                 ContractPrompt()
             } else {
@@ -39,6 +50,7 @@ struct TopBar: View {
             .accessibilityElement(children: .combine)
 
             CapsuleLabel(text: model.cliIdentity?.version ?? "CLI missing", tone: model.hasCLI ? .signal : .amber)
+                .accessibilityLabel(model.hasCLI ? "CLI version \(model.cliIdentity?.version ?? "")" : "CLI missing")
 
             if let path = model.workspaceURL?.path {
                 Text(path)
