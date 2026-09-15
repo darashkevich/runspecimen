@@ -11,8 +11,13 @@ from runspecimen.errors import CertificateError
 from runspecimen.events import EventLog, utc_now_iso
 from runspecimen.hashutil import canonical_json_bytes, hash_source, sha256_bytes, sha256_file
 from runspecimen.paths import CERTIFICATE_FILENAME, STATE_FILENAME, ensure_within, run_state_dir
-from runspecimen.state import load_state
 from runspecimen.runtime import runtime_provenance
+from runspecimen.schema import (
+    CURRENT_RECEIPT_SCHEMA_VERSION,
+    assert_supported_receipt_schema,
+    certificate_id_material,
+)
+from runspecimen.state import load_state
 
 
 def certificate_path(state_dir: Path) -> Path:
@@ -50,28 +55,16 @@ def build_certificate(
         "output_digests": dict(sorted(output_digests.items())),
         "run_id": contract.run_id,
         "run_result": state.get("run_result"),
-        "source_hash": source_hash,
         "runtime": runtime,
+        "schema_version": CURRENT_RECEIPT_SCHEMA_VERSION,
+        "source_hash": source_hash,
     }
-    certificate_id = sha256_bytes(canonical_json_bytes(body))
+    certificate_id = sha256_bytes(canonical_json_bytes(certificate_id_material(body)))
     return {"certificate_id": certificate_id, **body}
 
 
 def _recompute_certificate_id(cert: dict[str, Any]) -> str:
-    material = {
-        "approval_expires_at_unix": cert.get("approval_expires_at_unix"),
-        "campaign_id": cert["campaign_id"],
-        "contract_hash": cert["contract_hash"],
-        "event_head": cert["event_head"],
-        "exit_code": cert.get("exit_code"),
-        "issued_at": cert["issued_at"],
-        "output_digests": cert["output_digests"],
-        "run_id": cert["run_id"],
-        "run_result": cert.get("run_result"),
-        "source_hash": cert["source_hash"],
-        "runtime": cert["runtime"],
-    }
-    return sha256_bytes(canonical_json_bytes(material))
+    return sha256_bytes(canonical_json_bytes(certificate_id_material(cert)))
 
 
 def _verify_issuance_ordering(log: EventLog, cert: dict[str, Any]) -> None:
@@ -159,6 +152,8 @@ def verify_run_receipt(
     cert = load_certificate(state_dir)
     if cert is None:
         raise CertificateError("certificate not found")
+
+    assert_supported_receipt_schema(cert)
 
     required = [
         "certificate_id",

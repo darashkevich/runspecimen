@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Schema compatibility
+
+- Document contract and receipt schema versioning in
+  `docs/SCHEMA_COMPATIBILITY.md` with fail-closed unknown versions and
+  migration rules.
+- New certificates emit `schema_version: 1` bound into `certificate_id`.
+  Legacy certificates without the field remain valid as v1.
+- Add phased roadmap at `docs/ROADMAP_PHASED.md`.
+
+### Dashboard UX (prototype)
+
+- Redesign the local dashboard first viewport to answer: what run, what
+  happened, whether it is safe to continue, and what to do next.
+- Move About behind progressive disclosure; add an evidence trust ladder that
+  never presents a certificate as live-verified.
+- Keep the dashboard loopback-only and read-only (no approve/run APIs).
+
 ## 0.2.0rc9 - 2026-09-13
 
 ### Security Hardening

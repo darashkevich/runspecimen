@@ -158,17 +158,26 @@ are planned for a future release.
 
 ## 8. Contract/receipt versioning + migration rules (pre-M1 freeze)
 
-<!-- APPROVE:  -->
+<!-- APPROVE: IMPLEMENTED -->
 
-**Source:** LOCAL DRAFT (not from GPT)
+**Status:** ✅ IMPLEMENTED (Phase 0 foundation)
+
+**Source:** LOCAL DRAFT (not from GPT); completed per Cursor roadmap UX brief
 
 **Why:** Before provenance/signing land, freeze schema versioning so early adopters don't invalidate every receipt. Quietly critical for "checkable later."
 
 **Effort:** S
 
+**Implementation:**
+- `docs/SCHEMA_COMPATIBILITY.md` defines contract `version` and receipt `schema_version`
+- Unknown versions fail closed with migration-oriented errors
+- New certificates emit `schema_version: 1` bound into `certificate_id`
+- Legacy certificates (field absent) still verify as v1; showcase golden fixture covered
+- Dashboard IA prototype answers the four oversight questions without weakening read-only boundaries
+
 **Risks:** Over-engineering; delaying M1 features.
 
-**Acceptance:** Docs define version field, compatibility matrix, and fail-closed behavior on unknown versions; one golden old receipt still verifies or fails with a migration message.
+**Acceptance:** ✅ Docs define version field, compatibility matrix, and fail-closed behavior on unknown versions; one golden old receipt still verifies or fails with a migration message.
 
 ---
 
