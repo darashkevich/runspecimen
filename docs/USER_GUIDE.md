@@ -240,8 +240,10 @@ runspecimen dashboard --workspace . --contract path/to/contract.json --open
 ```
 
 - Binds **only** to `127.0.0.1` (loopback).
-- **Read-only**: shows phase, approval/lease/receipt evidence, and exact
-  lifecycle commands. It cannot approve or execute.
+- **Read-only**: first viewport answers what the run is, what happened, whether
+  it is safe to continue, and the next CLI step; shows contract review, a trust
+  ladder (recorded history ≠ live verification), and exact lifecycle commands.
+  It cannot approve or execute.
 - **Blocks** in the foreground (`serve_forever`). Background it (`&`), detach
   it, or use another terminal if you still need the shell for `approve` /
   lifecycle commands. Agents must not wait on it in the main turn.

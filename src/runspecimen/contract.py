@@ -10,6 +10,7 @@ from typing import Any
 from runspecimen.errors import ContractError
 from runspecimen.hashutil import hash_contract_file, sha256_bytes
 from runspecimen.paths import ensure_within, resolve_workspace
+from runspecimen.schema import assert_supported_contract_version
 
 # Hard caps enforced by the tool (unsafe if contract exceeds these).
 MAX_WALL_TIMEOUT_SEC = 24 * 60 * 60
@@ -197,8 +198,7 @@ def parse_contract(
         "contract",
     )
     version = _require_int(data.get("version"), "version")
-    if version != 1:
-        raise ContractError(f"unsupported contract version: {version}")
+    assert_supported_contract_version(version)
 
     campaign_id = _require_str(data.get("campaign_id"), "campaign_id")
     run_id = _require_str(data.get("run_id"), "run_id")

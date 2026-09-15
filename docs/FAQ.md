@@ -95,4 +95,12 @@ telemetry, and is **read-only** (no approve/run APIs). It still exposes local
 run evidence to anything that can reach that port on your machine—treat it like
 other localhost debug UIs. It **blocks** the foreground shell; background or
 detach it so approval and lifecycle commands stay usable. It does not replace
-TTY approval.
+TTY approval. A certificate shown as issued is recorded history only—the
+dashboard never marks live verification green; run `runspecimen verify` in a
+terminal.
+
+## How do contract and receipt versions work?
+
+Contracts require `"version": 1`. Receipts may omit `schema_version` (legacy v1)
+or set `"schema_version": 1`. Unknown versions fail closed. See
+[SCHEMA_COMPATIBILITY.md](SCHEMA_COMPATIBILITY.md).
