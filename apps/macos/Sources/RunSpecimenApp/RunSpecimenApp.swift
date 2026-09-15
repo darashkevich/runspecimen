@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 @main
 struct RunSpecimenApp: App {
@@ -9,7 +10,11 @@ struct RunSpecimenApp: App {
             RootView()
                 .environmentObject(model)
                 .task { await model.bootstrap() }
-                .onDisappear { model.shutdown() }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    Task { @MainActor in
+                        await model.shutdown()
+                    }
+                }
         }
         .windowStyle(.automatic)
         .defaultSize(width: 1180, height: 760)
@@ -46,7 +51,7 @@ struct RunSpecimenApp: App {
         Settings {
             SettingsView()
                 .environmentObject(model)
-                .frame(width: 520, height: 480)
+                .frame(width: 520, height: 520)
         }
     }
 }
@@ -70,7 +75,7 @@ struct RootView: View {
         .sheet(isPresented: $model.showApproveSheet) {
             ApproveSheet()
                 .environmentObject(model)
-                .frame(minWidth: 640, minHeight: 480)
+                .frame(minWidth: 680, minHeight: 520)
         }
     }
 }

@@ -1,32 +1,121 @@
 import Foundation
 
+/// Minimum CLI the native app expects (PyPI 0.2.0rc9+ / matching repo tree).
+enum CLIVersionGate {
+    /// Comparable tuple: (major, minor, patch, preKind, preNum)
+    /// preKind: 0 = rc/a/b, 1 = final (no pre-release). Higher is newer.
+    static let minimum = ParsedVersion(major: 0, minor: 2, patch: 0, preKind: 0, preNum: 9)
+
+    struct ParsedVersion: Comparable, Equatable, Sendable {
+        var major: Int
+        var minor: Int
+        var patch: Int
+        /// 0 = pre-release (rc/a/b), 1 = final
+        var preKind: Int
+        var preNum: Int
+
+        static func < (lhs: ParsedVersion, rhs: ParsedVersion) -> Bool {
+            let l = [lhs.major, lhs.minor, lhs.patch, lhs.preKind, lhs.preNum]
+            let r = [rhs.major, rhs.minor, rhs.patch, rhs.preKind, rhs.preNum]
+            return l.lexicographicallyPrecedes(r)
+        }
+
+        var displayMinimum: String { "0.2.0rc9" }
+    }
+
+    static func parse(from versionOutput: String) -> ParsedVersion? {
+        // Accept "runspecimen 0.2.0rc9", "0.2.0rc9", "0.2.0-rc.9", "0.2.0"
+        let lowered = versionOutput.lowercased()
+        let pattern = #"(\d+)\.(\d+)\.(\d+)(?:[-.]?(?:rc|a|b|alpha|beta)\.?(\d+))?"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(lowered.startIndex..<lowered.endIndex, in: lowered)
+        guard let match = regex.firstMatch(in: lowered, range: range) else { return nil }
+
+        func group(_ i: Int) -> String? {
+            let r = match.range(at: i)
+            guard r.location != NSNotFound, let swift = Range(r, in: lowered) else { return nil }
+            return String(lowered[swift])
+        }
+
+        guard let major = Int(group(1) ?? ""),
+              let minor = Int(group(2) ?? ""),
+              let patch = Int(group(3) ?? "") else { return nil }
+
+        if let pre = group(4), let preNum = Int(pre) {
+            return ParsedVersion(major: major, minor: minor, patch: patch, preKind: 0, preNum: preNum)
+        }
+        return ParsedVersion(major: major, minor: minor, patch: patch, preKind: 1, preNum: 0)
+    }
+
+    static func evaluate(versionOutput: String) -> Result<ParsedVersion, AppError> {
+        guard let parsed = parse(from: versionOutput) else {
+            return .failure(AppError(
+                message: "Could not parse runspecimen version from:\n\(versionOutput)\nInstall 0.2.0rc9 or newer."
+            ))
+        }
+        if parsed < minimum {
+            return .failure(AppError(
+                message: "CLI too old (\(versionOutput.trimmingCharacters(in: .whitespacesAndNewlines))). Need \(minimum.displayMinimum)+. Install: python3 -m pip install 'runspecimen==0.2.0rc9'"
+            ))
+        }
+        return .success(parsed)
+    }
+}
+
 /// Invokes the user-selected (or PATH-discovered) `runspecimen` binary.
 /// Does not weaken engine gates: mutating commands go through the real CLI.
 actor CLIService {
     private(set) var cliURL: URL?
+    /// Tracked dashboard child so we can terminate it on app quit (App Store 2.4.5(iii)).
+    private var dashboardProcess: Process?
 
     func setCLI(_ url: URL?) {
         cliURL = url
     }
 
+    /// Broad discovery for Developer ID / local debug. MAS builds still prefer Open-panel bookmarks.
     func resolveFromPATH() -> URL? {
-        let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
         let fileManager = FileManager.default
+        var candidates: [URL] = []
+
+        let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
         for dir in path.split(separator: ":") {
-            let candidate = URL(fileURLWithPath: String(dir)).appendingPathComponent("runspecimen")
-            if fileManager.isExecutableFile(atPath: candidate.path) {
-                return candidate
-            }
+            candidates.append(URL(fileURLWithPath: String(dir)).appendingPathComponent("runspecimen"))
         }
-        // Common user install location when launched from GUI (PATH often minimal).
+
         let home = fileManager.homeDirectoryForCurrentUser
-        let locals = [
-            home.appendingPathComponent(".local/bin/runspecimen"),
-            URL(fileURLWithPath: "/opt/homebrew/bin/runspecimen"),
-            URL(fileURLWithPath: "/usr/local/bin/runspecimen")
+        let extras: [String] = [
+            ".local/bin/runspecimen",
+            "Library/Python/3.14/bin/runspecimen",
+            "Library/Python/3.13/bin/runspecimen",
+            "Library/Python/3.12/bin/runspecimen",
+            "Library/Python/3.11/bin/runspecimen",
+            "Library/Python/3.10/bin/runspecimen",
+            "Library/Python/3.9/bin/runspecimen",
+            ".pyenv/shims/runspecimen",
+            "miniconda3/bin/runspecimen",
+            "mambaforge/bin/runspecimen",
+            "anaconda3/bin/runspecimen"
         ]
-        for candidate in locals where fileManager.isExecutableFile(atPath: candidate.path) {
-            return candidate
+        for rel in extras {
+            candidates.append(home.appendingPathComponent(rel))
+        }
+        candidates += [
+            URL(fileURLWithPath: "/opt/homebrew/bin/runspecimen"),
+            URL(fileURLWithPath: "/usr/local/bin/runspecimen"),
+            URL(fileURLWithPath: "/opt/homebrew/opt/python@3.12/bin/runspecimen"),
+            URL(fileURLWithPath: "/opt/homebrew/opt/python@3.11/bin/runspecimen")
+        ]
+
+        // Deduplicate while preserving order.
+        var seen = Set<String>()
+        for candidate in candidates {
+            let path = candidate.path
+            guard !seen.contains(path) else { continue }
+            seen.insert(path)
+            if fileManager.isExecutableFile(atPath: path) {
+                return candidate.resolvingSymlinksInPath()
+            }
         }
         return nil
     }
@@ -37,6 +126,12 @@ actor CLIService {
         let version = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         guard version.lowercased().contains("runspecimen") || version.contains(".") else {
             throw AppError(message: "Selected binary did not report a RunSpecimen version:\n\(version)")
+        }
+        switch CLIVersionGate.evaluate(versionOutput: version) {
+        case .failure(let err):
+            throw err
+        case .success:
+            break
         }
         return CLIIdentity(path: url, version: version)
     }
@@ -157,9 +252,8 @@ actor CLIService {
             args = []
         }
         if action == .dashboard {
-            // Non-blocking launch: dashboard serves until terminated.
-            try launchDetached(arguments: args)
-            return "Dashboard launching on loopback (read-only). It cannot approve or execute."
+            try launchDashboard(arguments: args)
+            return "Dashboard launching on loopback (read-only). It cannot approve or execute. It will be stopped when you quit RunSpecimen."
         }
         let result = try await run(arguments: args, expectJSON: false)
         if result.exitCode != 0 {
@@ -168,9 +262,33 @@ actor CLIService {
         return result.stdout.isEmpty ? result.stderr : result.stdout
     }
 
+    /// Terminate any tracked dashboard child. Signals only that PID (not a process group)
+    /// because Foundation.Process inherits the app's group by default.
+    func stopDashboard() {
+        guard let process = dashboardProcess else { return }
+        dashboardProcess = nil
+        guard process.isRunning else { return }
+        let pid = process.processIdentifier
+        process.terminate()
+        kill(pid, SIGTERM)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) {
+            if process.isRunning {
+                kill(pid, SIGKILL)
+            }
+        }
+    }
+
     func requireCLI() throws -> URL {
         guard let cliURL else {
-            throw AppError(message: "Select the runspecimen CLI in Settings (required for App Sandbox).")
+            throw AppError(
+                message: "runspecimen CLI not selected. Use “Select runspecimen CLI” (Open panel) or install 0.2.0rc9+: python3 -m pip install 'runspecimen==0.2.0rc9'"
+            )
+        }
+        let fm = FileManager.default
+        guard fm.isExecutableFile(atPath: cliURL.path) else {
+            throw AppError(
+                message: "runspecimen CLI is missing or not executable at:\n\(cliURL.path)\nRe-select it via Open panel, or reinstall 0.2.0rc9+."
+            )
         }
         return cliURL
     }
@@ -239,7 +357,8 @@ actor CLIService {
         }
     }
 
-    private func launchDetached(arguments: [String]) throws {
+    private func launchDashboard(arguments: [String]) throws {
+        stopDashboard()
         let url = try requireCLI()
         let process = Process()
         process.executableURL = url
@@ -248,13 +367,22 @@ actor CLIService {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
+        // New process group so stopDashboard can signal the whole tree.
+        process.qualityOfService = .utility
         try process.run()
+        dashboardProcess = process
     }
 
     private static func augmentedEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
+        let home = NSHomeDirectory()
         let extras = [
-            "\(NSHomeDirectory())/.local/bin",
+            "\(home)/.local/bin",
+            "\(home)/Library/Python/3.14/bin",
+            "\(home)/Library/Python/3.13/bin",
+            "\(home)/Library/Python/3.12/bin",
+            "\(home)/Library/Python/3.11/bin",
+            "\(home)/.pyenv/shims",
             "/opt/homebrew/bin",
             "/usr/local/bin"
         ]
