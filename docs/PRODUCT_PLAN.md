@@ -43,10 +43,13 @@ tests pass.
 
 - Bind the resolved executable, interpreter, native libraries, environment
   allowlist, input datasets, and engine build to the contract and receipt.
-- Add CPU, memory, process-count, disk, and optional network policy through a
-  platform-specific containment adapter.
-- Sign receipts with a local hardware-backed or team-managed key and support an
-  append-only transparency destination.
+- Prefer opt-in, tested isolation integrations (containers / native OS backends)
+  with capability discovery, fail-closed unmet policy, and receipt-recorded
+  effective settings — not an invented general OS sandbox or resource wrappers
+  marketed as one.
+- Sign receipts with optional Ed25519 (offline public-key verify) while keeping
+  HMAC as shared-secret authentication; support an append-only transparency
+  destination later.
 - Add crash-recovery commands with explicit, audited human decisions.
 - Fuzz contract parsing, state transitions, paths, and interruption points.
 - Define migration and compatibility rules for contract and receipt versions.
@@ -80,11 +83,15 @@ not merely command blocking.
 ## Explicitly postponed
 
 - Generic agent observability.
-- A general-purpose shell firewall.
+- A general-purpose shell firewall or invented OS sandbox product.
+- A core-engine scheduler (cron, watchers, fan-out, parallel workers).
 - Hosted remote execution.
 - A dashboard without a repeated paid requirement.
 - Automatic retry, refill, scheduling, or multi-worker orchestration.
+- Universal scientific/engineering “proven true” verification.
 
 These are crowded categories or conflict with the product's narrow assurance
 promise. RunSpecimen should integrate with sandboxes and firewalls instead of
-pretending to replace them.
+pretending to replace them. An opt-in coordinator remains a customer-validation
+hypothesis only — not an in-engine feature until design partners demand it under
+the constraints in `docs/ROADMAP_PHASED.md`.

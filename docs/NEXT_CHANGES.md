@@ -63,48 +63,60 @@ Priority order below is a local judgment call aligned with `docs/PRODUCT_PLAN.md
 
 ## 3. Signed receipts (local key) + offline verify story
 
-<!-- APPROVE: IMPLEMENTED -->
+<!-- APPROVE: PARTIAL — HMAC shipped; Ed25519 next -->
 
-**Status:** ✅ IMPLEMENTED in rc9
+**Status:** HMAC shared-secret auth ✅ in rc9. **Ed25519 offline pubkey verify is
+the next prioritized slice** (optional dependency; see `docs/ROADMAP_PHASED.md`
+Phase 1). Direction approved: prefer maintained optional crypto over vendoring.
 
-**Source:** LOCAL DRAFT (not from GPT)
+**Source:** LOCAL DRAFT (not from GPT); refined by product-direction follow-up
 
-**Why:** Hash-chained events are integrity inside a workspace; authenticated receipts enable controlled sharing.
+**Why:** Hash-chained events are integrity inside a workspace; authenticated
+receipts enable controlled sharing; asymmetric receipts enable offline verify
+without sharing a secret.
 
 **Effort:** M (hardware-backed / team key later)
 
-**Implementation:**
-- New `signing.py` module with `SigningKey`, `SignedCertificate` classes
-- HMAC-SHA256 authentication (shared-secret MAC; not digital signatures)
+**Implementation (HMAC, shipped):**
+- `signing.py` with HMAC-SHA256 authentication (shared-secret MAC; not digital signatures)
 - Key storage in `.runspecimen/keys/` with chmod 0600
-- CLI commands: `keygen`, `list-keys`, `sign`, `verify-signature`
-- Canonical JSON serialization for deterministic authentication
-- Authentication tag includes `key_id` and `algorithm` for versioning
+- CLI: `keygen`, `list-keys`, `sign`, `verify-signature`
+
+**Planned (Ed25519):**
+- Optional extra (e.g. PyNaCl); stdlib-only default install preserved
+- Public-key export + offline verify without private key
+- Tamper / wrong-key / missing-extra tests; honest custody language
 
 **Important limitation:** HMAC-SHA256 is a shared-secret Message Authentication Code.
-Anyone who can verify can also forge. This is NOT non-repudiation and does NOT
-provide independent third-party verification. True digital signatures (Ed25519/RSA)
-are planned for a future release.
+Anyone who can verify can also forge. This is NOT non-repudiation. Ed25519 improves
+independent verification under key-custody assumptions; it still does not prove
+scientific claims.
 
-**Risks:** Key UX (lost keys, soft keys on disk); overclaiming "proof"; version skew of scheme.
-
-**Acceptance:** ✅ `sign` + `verify-signature --key-id` round-trip on a clean receipt; tampered receipt fails; docs state what authentication does **not** prove.
+**Acceptance (HMAC):** ✅ round-trip; tampered receipt fails; docs honest.
+**Acceptance (Ed25519):** pending Phase 1 PR.
 
 ---
 
-## 4. Containment adapter (CPU / mem / proc / disk; optional net deny)
+## 4. Isolation integrations (not an invented OS sandbox)
 
-<!-- APPROVE:  -->
+<!-- APPROVE: direction refined — integrations first -->
 
-**Source:** LOCAL DRAFT (not from GPT)
+**Source:** LOCAL DRAFT (not from GPT); refined by product-direction follow-up
 
-**Why:** Threat model today explicitly outs containment. Even a thin platform adapter (cgroups / `sandbox-exec` / job objects) plus honest "best-effort" labeling closes the "you only wrap subprocess" critique.
+**Why:** Threat model outs containment. Prefer opt-in tested backends (containers /
+native OS isolation) with capability discovery, fail-closed unmet policy, and
+receipt-recorded effective settings. Resource wrappers alone do not justify an
+OS-sandbox claim. The macOS app UI sandbox (PR #6) does not prove CLI/payload
+confinement.
 
-**Effort:** L (start S: document + macOS/Linux MVP limits)
+**Effort:** L (start S: threat model + discovery + one backend spike)
 
-**Risks:** False security theater; portability; workload breakage; expanding trust boundary accidentally.
+**Risks:** False security theater; portability; workload breakage; expanding trust
+boundary accidentally; marketing UI sandbox as payload sandbox.
 
-**Acceptance:** Contract declares limits; overrun fails closed (non-success); receipt records applied limits; README/threat model updated with residual risks.
+**Acceptance:** Contract declares isolation policy; unmet policy refuses preflight;
+receipt records backend/version/settings; README/threat model state residual risks;
+native/unsandboxed remains honestly labeled.
 
 ---
 

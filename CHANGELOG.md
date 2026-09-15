@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Product direction
+
+- Refine the phased roadmap toward verifiable execution: prioritize optional
+  Ed25519 offline public-key receipts; prefer tested isolation integrations over
+  inventing an OS sandbox; keep the core engine free of schedulers; refuse
+  universal “scientifically proven” claims (`docs/ROADMAP_PHASED.md`,
+  `docs/THREAT_MODEL.md`).
+
 ### Schema compatibility
 
 - Document contract and receipt schema versioning in
