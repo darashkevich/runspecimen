@@ -28,7 +28,9 @@ keygen, or another explicit trust policy). The CLI refuses to report
 from __future__ import annotations
 
 import os
+import secrets
 import stat
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -46,6 +48,8 @@ from runspecimen.signing import (
 ED25519_ALGORITHM = "ed25519-v1"
 _PRIVATE_SUFFIX = ".ed25519"
 _PUBLIC_SUFFIX = ".ed25519.pub"
+_ROTATE_TMP_MARK = ".rotating"
+_ROTATE_BAK_MARK = ".bak"
 
 
 def require_ed25519() -> Any:
@@ -100,11 +104,27 @@ def _exclusive_create_flags() -> int:
     return flags
 
 
+def _readonly_nofollow_flags() -> int:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    return flags
+
+
+def _is_symlink_open_error(exc: OSError) -> bool:
+    """True when open(O_NOFOLLOW) refused a symlink (ELOOP) or equivalent."""
+    import errno as errno_mod
+
+    errno = getattr(exc, "errno", None)
+    return errno in {errno_mod.ELOOP, errno_mod.EPERM} or "symbolic link" in str(exc).lower()
+
+
 def _write_exclusive_bytes(path: Path, data: bytes, *, mode: int) -> None:
     """Create ``path`` exclusively with ``mode`` from creation; refuse symlinks.
 
     Uses O_CREAT|O_EXCL(|O_NOFOLLOW) so the mode applies at create time and
     existing files / symlink destinations cannot be overwritten in place.
+    Data is fsynced before the fd is closed.
     """
     if path.is_symlink():
         raise SigningError(f"refusing to write through symlink: {path}")
@@ -113,39 +133,127 @@ def _write_exclusive_bytes(path: Path, data: bytes, *, mode: int) -> None:
     except FileExistsError as exc:
         raise SigningError(f"refusing to overwrite existing path: {path}") from exc
     except OSError as exc:
-        # Some platforms surface ELOOP / EEXIST for symlink races.
+        if _is_symlink_open_error(exc):
+            raise SigningError(f"refusing to write through symlink: {path}") from exc
         raise SigningError(f"failed to create key file {path}: {exc}") from exc
     try:
         # Re-check mode in case umask cleared bits; restore intended mode.
         os.fchmod(fd, mode)
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise SigningError(f"key path is not a regular file after create: {path}")
         os.write(fd, data)
+        os.fsync(fd)
+    except Exception:
+        os.close(fd)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    else:
+        os.close(fd)
+
+
+def _read_nofollow_bytes(
+    path: Path,
+    *,
+    label: str,
+    require_private_perms: bool = False,
+) -> bytes:
+    """Open ``path`` without following symlinks; validate the opened fd, then read.
+
+    Closes the check-then-read race: type and permission checks use ``fstat`` on
+    the same fd that is read, not a separate path-based ``lstat``.
+    """
+    try:
+        fd = os.open(str(path), _readonly_nofollow_flags())
+    except FileNotFoundError as exc:
+        raise SigningError(f"{label} not found: {path}") from exc
+    except OSError as exc:
+        if _is_symlink_open_error(exc) or path.is_symlink():
+            raise SigningError(f"{label} must not be a symlink: {path}") from exc
+        raise SigningError(f"cannot open {label}: {path}: {exc}") from exc
+    try:
+        st = os.fstat(fd)
+        if stat.S_ISLNK(st.st_mode):
+            raise SigningError(f"{label} must not be a symlink: {path}")
+        if not stat.S_ISREG(st.st_mode):
+            raise SigningError(f"{label} must be a regular file: {path}")
+        if require_private_perms and (st.st_mode & 0o077):
+            raise SigningError(
+                f"Ed25519 private key permissions too open (want 0600): {path} "
+                f"mode={oct(st.st_mode & 0o777)}"
+            )
+        chunks: list[bytes] = []
+        while True:
+            block = os.read(fd, 65536)
+            if not block:
+                break
+            chunks.append(block)
+        return b"".join(chunks)
     finally:
         os.close(fd)
 
 
-def _assert_regular_file(path: Path, *, label: str) -> None:
-    if path.is_symlink():
-        raise SigningError(f"{label} must not be a symlink: {path}")
-    if not path.is_file():
-        raise SigningError(f"{label} not found: {path}")
+def _fsync_dir(dir_path: Path) -> None:
     try:
-        st = path.lstat()
+        dir_fd = os.open(str(dir_path), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:
+        pass
+    finally:
+        os.close(dir_fd)
+
+
+def _unique_sidecar(path: Path, mark: str) -> Path:
+    token = f"{int(time.time_ns())}.{os.getpid()}.{secrets.token_hex(4)}"
+    return path.with_name(f".{path.name}{mark}.{token}")
+
+
+def _rename_nofollow(src: Path, dst: Path) -> None:
+    """Rename ``src`` → ``dst``; refuse if either path is a symlink."""
+    if src.is_symlink() or dst.is_symlink():
+        raise SigningError(f"refusing rename involving symlink: {src} -> {dst}")
+    if dst.exists():
+        raise SigningError(f"refusing rename onto existing path: {dst}")
+    try:
+        os.rename(str(src), str(dst))
     except OSError as exc:
-        raise SigningError(f"cannot stat {label}: {path}: {exc}") from exc
-    if stat.S_ISLNK(st.st_mode):
-        raise SigningError(f"{label} must not be a symlink: {path}")
-    if not stat.S_ISREG(st.st_mode):
-        raise SigningError(f"{label} must be a regular file: {path}")
+        raise SigningError(f"failed to rename {src} -> {dst}: {exc}") from exc
 
 
-def _assert_private_key_permissions(path: Path) -> None:
-    """Refuse group/other-readable private key files."""
-    st = path.lstat()
-    if st.st_mode & 0o077:
-        raise SigningError(
-            f"Ed25519 private key permissions too open (want 0600): {path} "
-            f"mode={oct(st.st_mode & 0o777)}"
-        )
+def _replace_file(src: Path, dst: Path) -> None:
+    """Atomically replace ``dst`` with ``src`` (POSIX ``rename`` over existing)."""
+    if src.is_symlink() or (dst.exists() and dst.is_symlink()):
+        raise SigningError(f"refusing replace involving symlink: {src} -> {dst}")
+    try:
+        os.replace(str(src), str(dst))
+    except OSError as exc:
+        raise SigningError(f"failed to replace {dst} with {src}: {exc}") from exc
+
+
+def _unlink_quiet(path: Path | None) -> None:
+    if path is None:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _path_is_present(path: Path) -> bool:
+    """True if path exists including as a broken symlink."""
+    try:
+        path.lstat()
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return path.exists() or path.is_symlink()
 
 
 @dataclass(frozen=True)
@@ -274,6 +382,11 @@ def save_ed25519_keypair(
 
     Returns (private, public) paths. Refuses symlink paths and uses exclusive
     create (O_EXCL|O_NOFOLLOW when available).
+
+    Rotation (``overwrite=True``) is all-or-nothing and recoverable:
+    new keys are written to exclusive temp names and fsynced first; the live
+    private key is never removed until the new public key is installed. On any
+    failure the previous working pair is restored at the final paths.
     """
     require_ed25519()
     workspace = workspace.resolve()
@@ -287,21 +400,103 @@ def save_ed25519_keypair(
     for path, label in ((priv, "private key"), (pub, "public key")):
         if path.is_symlink():
             raise SigningError(f"refusing to write {label} through symlink: {path}")
-        if path.exists() and not overwrite:
-            raise SigningError(
-                f"Ed25519 key {pair.key_id!r} already exists; pass overwrite to rotate"
-            )
-        if path.exists() and overwrite:
-            if path.is_symlink():
-                raise SigningError(f"refusing to overwrite symlink {label}: {path}")
-            try:
-                path.unlink()
-            except OSError as exc:
-                raise SigningError(f"failed to remove existing {label}: {exc}") from exc
 
-    _write_exclusive_bytes(priv, (pair.private_hex() + "\n").encode("utf-8"), mode=0o600)
-    _write_exclusive_bytes(pub, (pair.public_hex() + "\n").encode("utf-8"), mode=0o644)
-    return priv, pub
+    priv_exists = _path_is_present(priv)
+    pub_exists = _path_is_present(pub)
+    if (priv_exists or pub_exists) and not overwrite:
+        raise SigningError(
+            f"Ed25519 key {pair.key_id!r} already exists; pass overwrite to rotate"
+        )
+
+    priv_data = (pair.private_hex() + "\n").encode("utf-8")
+    pub_data = (pair.public_hex() + "\n").encode("utf-8")
+
+    priv_tmp = _unique_sidecar(priv, _ROTATE_TMP_MARK + "-priv")
+    pub_tmp = _unique_sidecar(pub, _ROTATE_TMP_MARK + "-pub")
+    priv_bak: Path | None = None
+    pub_bak: Path | None = None
+
+    def _rollback() -> None:
+        # Prefer restoring the previous working pair over leaving temps in place.
+        if priv_bak is not None and _path_is_present(priv_bak):
+            if _path_is_present(priv) and not priv.is_symlink():
+                _unlink_quiet(priv)
+            try:
+                _rename_nofollow(priv_bak, priv)
+            except SigningError:
+                pass
+        if pub_bak is not None and _path_is_present(pub_bak):
+            if _path_is_present(pub) and not pub.is_symlink():
+                _unlink_quiet(pub)
+            try:
+                _rename_nofollow(pub_bak, pub)
+            except SigningError:
+                pass
+        _unlink_quiet(priv_tmp)
+        _unlink_quiet(pub_tmp)
+
+    try:
+        # Stage both new files first — live paths untouched until both succeed.
+        _write_exclusive_bytes(priv_tmp, priv_data, mode=0o600)
+        _write_exclusive_bytes(pub_tmp, pub_data, mode=0o644)
+        _fsync_dir(kdir)
+
+        if not priv_exists and not pub_exists:
+            # Fresh create: install private then public so we never leave
+            # "public present / private missing" if the second rename fails.
+            _rename_nofollow(priv_tmp, priv)
+            try:
+                _rename_nofollow(pub_tmp, pub)
+            except Exception:
+                _unlink_quiet(priv)
+                raise
+            _fsync_dir(kdir)
+            return priv, pub
+
+        # Rotation: never delete/remove the live private key before the new
+        # public key is confirmed installed at the final public path.
+        # 1) Move old public aside (private still live and loadable with bak).
+        # 2) Install new public.
+        # 3) Move old private aside only after public install succeeded.
+        # 4) Install new private.
+        # 5) Drop backups.
+        if pub_exists:
+            pub_bak = _unique_sidecar(pub, _ROTATE_BAK_MARK + "-pub")
+            _rename_nofollow(pub, pub_bak)
+        try:
+            _rename_nofollow(pub_tmp, pub)
+        except Exception:
+            if pub_bak is not None:
+                _rename_nofollow(pub_bak, pub)
+                pub_bak = None
+            raise
+
+        if priv_exists:
+            priv_bak = _unique_sidecar(priv, _ROTATE_BAK_MARK + "-priv")
+            _rename_nofollow(priv, priv_bak)
+        try:
+            _rename_nofollow(priv_tmp, priv)
+        except Exception:
+            # Public is already new; restore previous pair fully.
+            _unlink_quiet(priv)
+            if priv_bak is not None:
+                _rename_nofollow(priv_bak, priv)
+                priv_bak = None
+            _unlink_quiet(pub)
+            if pub_bak is not None:
+                _rename_nofollow(pub_bak, pub)
+                pub_bak = None
+            raise
+
+        _unlink_quiet(priv_bak)
+        _unlink_quiet(pub_bak)
+        priv_bak = None
+        pub_bak = None
+        _fsync_dir(kdir)
+        return priv, pub
+    except Exception:
+        _rollback()
+        raise
 
 
 def load_ed25519_public_key_bytes(workspace: Path, key_id: str) -> bytes:
@@ -310,10 +505,12 @@ def load_ed25519_public_key_bytes(workspace: Path, key_id: str) -> bytes:
     workspace = workspace.resolve()
     _validate_keys_dir_security(workspace)
     pub = public_key_path(workspace, key_id)
-    _assert_regular_file(pub, label=f"Ed25519 public key {key_id!r}")
     try:
-        return bytes.fromhex(pub.read_text(encoding="utf-8").strip())
+        raw = _read_nofollow_bytes(pub, label=f"Ed25519 public key {key_id!r}")
+        return bytes.fromhex(raw.decode("utf-8").strip())
     except ValueError as exc:
+        raise SigningError(f"invalid Ed25519 public key encoding for {key_id}: {exc}") from exc
+    except UnicodeDecodeError as exc:
         raise SigningError(f"invalid Ed25519 public key encoding for {key_id}: {exc}") from exc
 
 
@@ -323,13 +520,24 @@ def load_ed25519_keypair(workspace: Path, key_id: str) -> Ed25519KeyPair:
     _validate_keys_dir_security(workspace)
     priv = private_key_path(workspace, key_id)
     pub = public_key_path(workspace, key_id)
-    _assert_regular_file(priv, label=f"Ed25519 private key {key_id!r}")
-    _assert_regular_file(pub, label=f"Ed25519 public key {key_id!r}")
-    _assert_private_key_permissions(priv)
     try:
-        seed = bytes.fromhex(priv.read_text(encoding="utf-8").strip())
-        public = bytes.fromhex(pub.read_text(encoding="utf-8").strip())
+        seed = bytes.fromhex(
+            _read_nofollow_bytes(
+                priv,
+                label=f"Ed25519 private key {key_id!r}",
+                require_private_perms=True,
+            )
+            .decode("utf-8")
+            .strip()
+        )
+        public = bytes.fromhex(
+            _read_nofollow_bytes(pub, label=f"Ed25519 public key {key_id!r}")
+            .decode("utf-8")
+            .strip()
+        )
     except ValueError as exc:
+        raise SigningError(f"invalid Ed25519 key encoding for {key_id}: {exc}") from exc
+    except UnicodeDecodeError as exc:
         raise SigningError(f"invalid Ed25519 key encoding for {key_id}: {exc}") from exc
     nacl_signing = require_ed25519()
     sk = nacl_signing.SigningKey(seed)
@@ -340,10 +548,12 @@ def load_ed25519_keypair(workspace: Path, key_id: str) -> Ed25519KeyPair:
 
 def load_ed25519_public_key_file(path: Path) -> bytes:
     require_ed25519()
-    _assert_regular_file(path, label="Ed25519 public key file")
     try:
-        return bytes.fromhex(path.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError) as exc:
+        raw = _read_nofollow_bytes(path, label="Ed25519 public key file")
+        return bytes.fromhex(raw.decode("utf-8").strip())
+    except SigningError:
+        raise
+    except (OSError, ValueError, UnicodeDecodeError) as exc:
         raise SigningError(f"cannot load Ed25519 public key from {path}: {exc}") from exc
 
 
@@ -353,10 +563,18 @@ def export_ed25519_public_key(workspace: Path, key_id: str, output: Path) -> Pat
     output = output.resolve()
     if output.is_symlink():
         raise SigningError(f"refusing to write public key through symlink: {output}")
-    if output.exists():
+    if _path_is_present(output):
         if output.is_symlink():
             raise SigningError(f"refusing to overwrite symlink: {output}")
-        output.unlink()
+        # Replace via exclusive temp + atomic rename (no unlink-then-create gap).
+        tmp = _unique_sidecar(output, _ROTATE_TMP_MARK + "-export")
+        try:
+            _write_exclusive_bytes(tmp, (public.hex() + "\n").encode("utf-8"), mode=0o644)
+            _replace_file(tmp, output)
+        except Exception:
+            _unlink_quiet(tmp)
+            raise
+        return output
     _write_exclusive_bytes(output, (public.hex() + "\n").encode("utf-8"), mode=0o644)
     return output
 

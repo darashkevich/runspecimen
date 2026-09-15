@@ -237,16 +237,16 @@ class TestEd25519Persistence(RunSpecimenTestCase):
         save_ed25519_keypair(self.ws, pair)
         priv = private_key_path(self.ws, "export1")
         out = self.ws / "exported.pub"
+        priv_resolved = str(priv.resolve())
 
-        real_open = open
+        real_open = os.open
 
-        def guarded_open(path, *args, **kwargs):  # type: ignore[no-untyped-def]
-            resolved = Path(path).resolve()
-            if resolved == priv.resolve():
+        def guarded_open(path, flags, *args, **kwargs):  # type: ignore[no-untyped-def]
+            if str(Path(path).resolve()) == priv_resolved:
                 raise AssertionError("export must not open the private key file")
-            return real_open(path, *args, **kwargs)
+            return real_open(path, flags, *args, **kwargs)
 
-        with mock.patch("builtins.open", guarded_open):
+        with mock.patch("os.open", guarded_open):
             export_ed25519_public_key(self.ws, "export1", out)
         self.assertEqual(out.read_text(encoding="utf-8").strip(), pair.public_hex())
 
@@ -292,6 +292,32 @@ class TestEd25519Persistence(RunSpecimenTestCase):
             load_ed25519_keypair(self.ws, "symload")
         self.assertIn("symlink", str(ctx.exception).lower())
 
+    def test_refuse_symlink_public_key_on_load(self) -> None:
+        from runspecimen.pubkey import (
+            Ed25519KeyPair,
+            load_ed25519_keypair,
+            load_ed25519_public_key_bytes,
+            private_key_path,
+            public_key_path,
+            save_ed25519_keypair,
+        )
+
+        pair = Ed25519KeyPair.generate(key_id="sympub")
+        save_ed25519_keypair(self.ws, pair)
+        pub = public_key_path(self.ws, "sympub")
+        hex_pub = pub.read_text(encoding="utf-8")
+        pub.unlink()
+        outside = self.ws / "outside.pub"
+        outside.write_text(hex_pub, encoding="utf-8")
+        pub.symlink_to(outside)
+        self.assertTrue(private_key_path(self.ws, "sympub").is_file())
+        with self.assertRaises(SigningError) as ctx:
+            load_ed25519_keypair(self.ws, "sympub")
+        self.assertIn("symlink", str(ctx.exception).lower())
+        with self.assertRaises(SigningError) as ctx2:
+            load_ed25519_public_key_bytes(self.ws, "sympub")
+        self.assertIn("symlink", str(ctx2.exception).lower())
+
     def test_refuse_overwrite_without_flag(self) -> None:
         from runspecimen.pubkey import Ed25519KeyPair, save_ed25519_keypair
 
@@ -300,6 +326,171 @@ class TestEd25519Persistence(RunSpecimenTestCase):
         other = Ed25519KeyPair.generate(key_id="once")
         with self.assertRaises(SigningError):
             save_ed25519_keypair(self.ws, other)
+
+    def test_rotate_overwrite_replaces_pair(self) -> None:
+        from runspecimen.pubkey import (
+            Ed25519KeyPair,
+            load_ed25519_keypair,
+            save_ed25519_keypair,
+        )
+
+        first = Ed25519KeyPair.generate(key_id="rotate1")
+        save_ed25519_keypair(self.ws, first)
+        second = Ed25519KeyPair.generate(key_id="rotate1")
+        save_ed25519_keypair(self.ws, second, overwrite=True)
+        loaded = load_ed25519_keypair(self.ws, "rotate1")
+        self.assertEqual(loaded.public_hex(), second.public_hex())
+        self.assertNotEqual(loaded.public_hex(), first.public_hex())
+
+    def test_failed_rotation_keeps_old_keypair(self) -> None:
+        """If public staging fails, the previous private+public pair must still load."""
+        from runspecimen.pubkey import (
+            Ed25519KeyPair,
+            load_ed25519_keypair,
+            save_ed25519_keypair,
+        )
+
+        first = Ed25519KeyPair.generate(key_id="rotfail")
+        save_ed25519_keypair(self.ws, first)
+        second = Ed25519KeyPair.generate(key_id="rotfail")
+
+        real_write = None
+        import runspecimen.pubkey as pubkey_mod
+
+        real_write = pubkey_mod._write_exclusive_bytes
+        calls = {"n": 0}
+
+        def flaky_write(path, data, *, mode):  # type: ignore[no-untyped-def]
+            calls["n"] += 1
+            # First call stages the new private temp; fail on public temp.
+            if calls["n"] >= 2:
+                raise OSError("simulated public key write failure")
+            return real_write(path, data, mode=mode)
+
+        with mock.patch.object(pubkey_mod, "_write_exclusive_bytes", flaky_write):
+            with self.assertRaises(OSError):
+                save_ed25519_keypair(self.ws, second, overwrite=True)
+
+        loaded = load_ed25519_keypair(self.ws, "rotfail")
+        self.assertEqual(loaded.private_hex(), first.private_hex())
+        self.assertEqual(loaded.public_hex(), first.public_hex())
+
+    def test_failed_public_install_during_rotation_keeps_old_keypair(self) -> None:
+        """Private must not be removed if installing the new public path fails."""
+        from runspecimen.pubkey import (
+            Ed25519KeyPair,
+            _ROTATE_TMP_MARK,
+            load_ed25519_keypair,
+            save_ed25519_keypair,
+        )
+        import runspecimen.pubkey as pubkey_mod
+
+        first = Ed25519KeyPair.generate(key_id="rotpubfail")
+        save_ed25519_keypair(self.ws, first)
+        second = Ed25519KeyPair.generate(key_id="rotpubfail")
+        pub_final = pubkey_mod.public_key_path(self.ws.resolve(), "rotpubfail")
+
+        real_rename = pubkey_mod._rename_nofollow
+
+        def rename_fail_pub_install(src, dst):  # type: ignore[no-untyped-def]
+            # After staging, install attempt is new pub_tmp → pub.
+            if Path(dst).resolve() == pub_final.resolve() and _ROTATE_TMP_MARK in Path(src).name:
+                raise SigningError("simulated public install failure")
+            return real_rename(src, dst)
+
+        with mock.patch.object(pubkey_mod, "_rename_nofollow", rename_fail_pub_install):
+            with self.assertRaises(SigningError):
+                save_ed25519_keypair(self.ws, second, overwrite=True)
+
+        loaded = load_ed25519_keypair(self.ws, "rotpubfail")
+        self.assertEqual(loaded.public_hex(), first.public_hex())
+        self.assertEqual(loaded.private_hex(), first.private_hex())
+
+    def test_interrupted_private_install_rolls_back_to_old_keypair(self) -> None:
+        """If new private install fails after new public is in place, restore old pair."""
+        from runspecimen.pubkey import (
+            Ed25519KeyPair,
+            load_ed25519_keypair,
+            save_ed25519_keypair,
+        )
+        import runspecimen.pubkey as pubkey_mod
+
+        first = Ed25519KeyPair.generate(key_id="rotprivfail")
+        save_ed25519_keypair(self.ws, first)
+        second = Ed25519KeyPair.generate(key_id="rotprivfail")
+        priv_final = pubkey_mod.private_key_path(self.ws.resolve(), "rotprivfail")
+
+        real_rename = pubkey_mod._rename_nofollow
+
+        def rename_fail_priv_install(src, dst):  # type: ignore[no-untyped-def]
+            if (
+                Path(dst).resolve() == priv_final.resolve()
+                and pubkey_mod._ROTATE_TMP_MARK in Path(src).name
+            ):
+                raise SigningError("simulated private install failure")
+            return real_rename(src, dst)
+
+        with mock.patch.object(pubkey_mod, "_rename_nofollow", rename_fail_priv_install):
+            with self.assertRaises(SigningError):
+                save_ed25519_keypair(self.ws, second, overwrite=True)
+
+        loaded = load_ed25519_keypair(self.ws, "rotprivfail")
+        self.assertEqual(loaded.public_hex(), first.public_hex())
+        self.assertEqual(loaded.private_hex(), first.private_hex())
+
+    def test_symlink_swap_during_private_read_is_rejected(self) -> None:
+        """TOCTOU: path must be opened O_NOFOLLOW; fd fstat must reject link swaps."""
+        from runspecimen.pubkey import (
+            Ed25519KeyPair,
+            load_ed25519_keypair,
+            private_key_path,
+            save_ed25519_keypair,
+        )
+        import runspecimen.pubkey as pubkey_mod
+
+        pair = Ed25519KeyPair.generate(key_id="toctou")
+        save_ed25519_keypair(self.ws, pair)
+        priv = private_key_path(self.ws, "toctou")
+        outside = self.ws / "swapped.seed"
+        outside.write_text(pair.private_hex() + "\n", encoding="utf-8")
+
+        real_open = os.open
+        opened: list[int] = []
+
+        def open_then_swap(path, flags, *args, **kwargs):  # type: ignore[no-untyped-def]
+            fd = real_open(path, flags, *args, **kwargs)
+            if Path(path).resolve() == priv.resolve():
+                opened.append(flags)
+                # After open of the real file, replace path with a symlink.
+                # Subsequent path-based reads would follow it; fd-based must not.
+                priv.unlink()
+                priv.symlink_to(outside)
+            return fd
+
+        with mock.patch.object(pubkey_mod.os, "open", open_then_swap):
+            # Load should still succeed via the already-opened fd (same inode),
+            # proving we do not re-resolve the path after open.
+            loaded = load_ed25519_keypair(self.ws, "toctou")
+        self.assertEqual(loaded.public_hex(), pair.public_hex())
+        self.assertTrue(opened)
+        self.assertTrue(all(f & os.O_NOFOLLOW for f in opened))
+
+        # Direct load when the private path is already a symlink must fail.
+        with self.assertRaises(SigningError) as ctx:
+            load_ed25519_keypair(self.ws, "toctou")
+        self.assertIn("symlink", str(ctx.exception).lower())
+
+    def test_public_key_file_load_refuses_symlink(self) -> None:
+        from runspecimen.pubkey import Ed25519KeyPair, load_ed25519_public_key_file
+
+        pair = Ed25519KeyPair.generate(key_id="filepub")
+        target = self.ws / "real.pub"
+        target.write_text(pair.public_hex() + "\n", encoding="utf-8")
+        link = self.ws / "link.pub"
+        link.symlink_to(target)
+        with self.assertRaises(SigningError) as ctx:
+            load_ed25519_public_key_file(link)
+        self.assertIn("symlink", str(ctx.exception).lower())
 
 
 if __name__ == "__main__":

@@ -44,6 +44,12 @@ MAC — not a digital signature.
 - **Trusted success** (`ok: true`): the signature verifies under an **externally
   trusted** public key (`--public-key` or workspace `--key-id` / `*.ed25519.pub`).
 - Soft keys on disk are only as strong as filesystem custody and rotation.
+- Key rotation (`keygen --overwrite`) stages new private/public files under
+  exclusive no-follow temps, fsyncs, then renames so the live private key is
+  never removed before the new public key is installed. A failed mid-rotation
+  restores the previous working pair.
+- Private and public key reads open with `O_NOFOLLOW` and validate the opened
+  file descriptor (`fstat`) — not a separate path-based lstat-then-open race.
 - This does **not** prove a scientific or engineering claim is true.
 - Do not call HMAC a digital signature; do not promise absolute non-repudiation.
 - Optional Ed25519 ≠ sandbox, job scheduler, or append-only transparency log.
