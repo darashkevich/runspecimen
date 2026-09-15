@@ -1,8 +1,11 @@
 # ADR-002 — Optional embedded engine helper (stretch)
 
-**Status:** Accepted — package-tree staging implemented; frozen interpreter deferred  
+**Status:** Accepted — package-tree staging implemented; optional PyInstaller freeze
+wired (`RS_FREEZE_HELPER=1` / `build_app.sh --frozen-helper`); shipping freeze still
+needs Developer ID + NOTICE audit  
 **Date:** 2026-09-15  
-**Related:** [ADR-001](ADR-001-architecture.md), [Helpers/README.md](../Helpers/README.md), [APP_STORE.md](../APP_STORE.md)
+**Related:** [ADR-001](ADR-001-architecture.md), [Helpers/README.md](../Helpers/README.md),
+[APP_STORE.md](../APP_STORE.md), [RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md)
 
 ## Context
 
@@ -23,11 +26,11 @@ helper under `Contents/Helpers` is the long-term mitigation.
   staged; otherwise README placeholder).
 - Helper entitlements: `Entitlements/RunSpecimen.helper.entitlements` (inherit).
 - Approval remains PTY-gated; no auto-`APPROVE`; no telemetry.
-- PyInstaller (or equivalent) freeze remains optional for MAS self-containment
-  when Developer ID certs exist; until then Target B uses user-selected CLI or
-  the host-Python package-tree helper for local testing.
-- `Scripts/freeze_helper.sh` is gated behind `RS_FREEZE_HELPER=1` / `--enable` and
-  exits 0 when PyInstaller is missing so CI stays green.
+- PyInstaller (or equivalent) freeze remains optional for MAS self-containment.
+  Gate: `RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh` or
+  `./Scripts/build_app.sh --frozen-helper` (falls back to `--from-src` when
+  PyInstaller is absent). Shipping still needs Developer ID + CPython NOTICE.
+- `Scripts/freeze_helper.sh` exits 0 when PyInstaller is missing so CI stays green.
 
 ## Consequences
 
@@ -41,4 +44,4 @@ helper under `Contents/Helpers` is the long-term mitigation.
 - PATH probes are session-only (not auto-bookmarked) so Prefer Bundled / Clear
   Bookmark cannot race with a silently re-saved Open-panel override.
 - Exact packaging steps live in `Scripts/stage_helper.sh`, `Scripts/freeze_helper.sh`,
-  and Helpers/README.md.
+  `Scripts/build_app.sh`, Helpers/README.md, and RELEASE_CHECKLIST.md.

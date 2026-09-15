@@ -217,14 +217,15 @@ LICENSE NOTES (why --from-src is the default packaging path)
   - PyInstaller freeze is optional for MAS self-containment (bundles CPython).
     PyInstaller bootloader is Apache-2.0; still ship CPython + NOTICE attribution
     and re-audit before App Store submission. Not required for local Helpers tests.
-    Optional script: RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh (no-ops without
-    PyInstaller so CI stays green).
+    Optional: RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh
+    or ./Scripts/build_app.sh --frozen-helper (falls back to --from-src; CI-safe).
 
 Exact next packaging steps (ADR-002):
   1. Stage a helper (pick one):
        a) ./Scripts/stage_helper.sh --from-src          # recommended local path
        b) ./Scripts/stage_helper.sh --from \$(command -v runspecimen)  # dry-run copy
        c) RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh --verify       # optional freeze
+       d) ./Scripts/build_app.sh --frozen-helper        # freeze or fall back to --from-src
   2. ./Scripts/stage_helper.sh --verify   # (or freeze --verify)
   3. Codesign the helper with the same Team ID as the app using
        Entitlements/RunSpecimen.helper.entitlements (inherit), e.g.:
@@ -236,6 +237,7 @@ Exact next packaging steps (ADR-002):
        ./Scripts/sign_and_notarize.sh all
   6. Verify discovery: Engine → Prefer Bundled Helper → Source = “Bundled Helpers”
   7. Update APP_STORE.md review notes with helper path + demo steps.
+     Operator checklist: RELEASE_CHECKLIST.md
 
 Current status: --from-src package-tree staging implemented; freeze_helper optional
 and CI-safe; Developer ID notarization still blocked without Apple certs.

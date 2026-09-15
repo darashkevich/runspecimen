@@ -53,6 +53,13 @@ echo "==> freeze_helper default skip (CI-safe without PyInstaller)"
 grep -q "skipped (optional)" /tmp/rs-freeze.out
 grep -q "stage_helper.sh --from-src" /tmp/rs-freeze.out
 
+echo "==> build_app.sh --help documents --frozen-helper"
+./Scripts/build_app.sh -h >/tmp/rs-build-help.out
+grep -q -- "--frozen-helper" /tmp/rs-build-help.out
+grep -q -- "--from-src" /tmp/rs-build-help.out
+test -f "$ROOT/RELEASE_CHECKLIST.md"
+grep -q "RS_FREEZE_HELPER=1" "$ROOT/RELEASE_CHECKLIST.md"
+
 echo "==> build_app.sh (with staged helper)"
 ./Scripts/build_app.sh
 
@@ -191,5 +198,36 @@ PY
 else
   echo "runspecimen not on PATH — skipping live PATH probe (bundled helper already verified)."
 fi
+
+echo "==> build_app.sh --frozen-helper (freeze if PyInstaller else --from-src fallback)"
+# Runs after the --from-src Prefer Bundled e2e so a local freeze cannot break those checks.
+# Unset RS_FREEZE_HELPER so this invocation is driven only by --frozen-helper.
+env -u RS_FREEZE_HELPER ./Scripts/build_app.sh --frozen-helper >/tmp/rs-frozen-build.out 2>&1 || {
+  cat /tmp/rs-frozen-build.out >&2
+  exit 1
+}
+cat /tmp/rs-frozen-build.out
+grep -E "Using frozen helper payload|falling back to stage_helper" /tmp/rs-frozen-build.out
+test -x "$APP/Contents/Helpers/runspecimen"
+FROZEN_VER="$("$APP/Contents/Helpers/runspecimen" --version 2>&1)" || {
+  echo "Bundled helper after --frozen-helper failed (exit $?):" >&2
+  echo "$FROZEN_VER" >&2
+  exit 1
+}
+echo "post --frozen-helper --version → $FROZEN_VER"
+echo "$FROZEN_VER" | grep -qi runspecimen
+# Frozen path: no package-tree lib/. Fallback --from-src: lib/ present.
+if grep -q "Using frozen helper payload" /tmp/rs-frozen-build.out; then
+  test ! -d "$APP/Contents/Helpers/lib"
+  file "$APP/Contents/Helpers/runspecimen" | grep -q 'Mach-O'
+  echo "OK: frozen Mach-O helper in bundle (no lib/ tree)"
+else
+  test -d "$APP/Contents/Helpers/lib/runspecimen"
+  echo "OK: --frozen-helper fell back to --from-src package tree"
+fi
+
+# Restore CI-default package-tree helper so a subsequent local open matches smoke.
+./Scripts/stage_helper.sh --from-src --verify >/dev/null
+./Scripts/build_app.sh >/dev/null
 
 echo "SMOKE OK"

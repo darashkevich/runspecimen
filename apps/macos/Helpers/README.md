@@ -82,18 +82,30 @@ to clear the bookmark and force (2) when testing a staged helper.
 # In-app: Engine → Prefer Bundled Helper → Source = “Bundled Helpers”
 ```
 
-For MAS freeze later (optional, not CI-default):
+Or one-shot: `./Scripts/build_app.sh --from-src`
+
+### Optional freeze end-to-end (`RS_FREEZE_HELPER=1`)
+
+Not CI-default. Local experiment / MAS stretch prep. Still needs Developer ID to ship.
 
 ```bash
 python3 -m pip install --user 'pyinstaller>=6'   # local only
 RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh --verify
 ./Scripts/build_app.sh
+build/RunSpecimen.app/Contents/Helpers/runspecimen --version
+# Expect Mach-O helper; no Contents/Helpers/lib/ tree
 ```
 
-Without PyInstaller or without `RS_FREEZE_HELPER=1`, `freeze_helper.sh` exits 0 and
-prints blockers (Developer ID + CPython NOTICE still required to ship). Codesign the
-frozen Mach-O with inherit entitlements, then notarize (needs Developer ID).
+One-shot with automatic fallback when PyInstaller is missing:
 
+```bash
+./Scripts/build_app.sh --frozen-helper
+# Logs “Using frozen helper…” or “falling back to stage_helper.sh --from-src”
+```
+
+Without PyInstaller or without `RS_FREEZE_HELPER=1` / `--frozen-helper`, freeze is skipped
+(exit 0) so CI stays green. Operator checklist: [RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md).
+Codesign the frozen Mach-O with inherit entitlements, then notarize (needs Developer ID).
 ## Non-goals for this stub
 
 - Do not weaken interactive approval.
