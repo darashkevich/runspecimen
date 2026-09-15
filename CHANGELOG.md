@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0rc10 - 2026-09-15
 
 ### Optional Ed25519 public-key receipts (Phase 1)
 
@@ -12,10 +12,12 @@
   markers; private keys use 0600 exclusive no-follow creates; public-key export
   never reads the private seed; trusted verify requires an external trust
   anchor (embedded-key-only consistency is never `ok: true`).
-- Key rotation (`overwrite`) stages exclusive no-follow temps, never removes the
-  live private key before the new public path is installed, and rolls back so a
-  failed rotation keeps the previous working pair. Key reads use `O_NOFOLLOW` +
-  `fstat` on the opened fd (private and public).
+- Key rotation (`overwrite`) is crash-safe and all-or-nothing: durable journal +
+  exclusive temps/backups at each transition; a killed process automatically
+  rolls back to the previous working pair (or finishes cleanup after both new
+  finals are installed) on the next open/use. SIGKILL fault-injection covers
+  every transition. Concurrent key create/list/rotate/load ops are excluded via
+  `fcntl` `keys.op.lock`. Key reads use `O_NOFOLLOW` + `fstat` on the opened fd.
 
 ### Product direction
 
@@ -41,6 +43,8 @@
 - Move About behind progressive disclosure; add an evidence trust ladder that
   never presents a certificate as live-verified.
 - Keep the dashboard loopback-only and read-only (no approve/run APIs).
+- Name documentation links for assistive tech (including links inside closed
+  `<details>`); keep a always-visible footer docs nav on desktop and mobile.
 
 ## 0.2.0rc9 - 2026-09-13
 

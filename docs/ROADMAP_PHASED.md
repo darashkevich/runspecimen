@@ -1,7 +1,7 @@
 # RunSpecimen phased roadmap (Cursor session)
 
 Durable plan from `CURSOR_ROADMAP_UX_BRIEF.md`, refined by
-`CURSOR_PRODUCT_DIRECTION_FOLLOWUP.md`. Compared against **v0.2.0-rc.9**.
+`CURSOR_PRODUCT_DIRECTION_FOLLOWUP.md`. Compared against **v0.2.0-rc.10**.
 
 Do **not** merge, publish, deploy, or submit marketplace listings without an
 explicit later release decision. Preserve the dirty checkout at

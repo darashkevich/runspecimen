@@ -416,8 +416,9 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
 .refresh-toolbar{{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:0 0 16px}}.refresh-toolbar label{{font-size:12px;color:var(--muted)}}.refresh-toolbar .refresh-message{{margin:0}}
 .step.recorded .step-marker{{background:#e9eef6;color:#475975;border-color:#bfcbdd}}.step.recorded .step-state{{color:#52637e}}.step.not-checked .step-state{{color:var(--warn)}}.step.not-checked .step-marker{{border-color:#d99800;color:var(--warn)}}#warnings{{margin:0 0 16px;padding:14px 16px 14px 34px;background:var(--danger-soft);color:var(--danger);border:1px solid #f0c2c7;border-radius:4px}}[hidden]{{display:none!important}}.terminal-help{{margin:0 0 18px}}.terminal-help summary{{cursor:pointer;color:var(--brand);font-weight:700}}.terminal-help p{{color:var(--muted);font-size:13px}}.connection-stale .status-grid,.connection-stale .compose{{opacity:.6}}button:disabled{{opacity:.5;cursor:default}}.step-content{{min-width:0}}.evidence-summary::after{{content:"+";color:var(--brand)}}details[open]>.evidence-summary::after{{content:"−"}}
 @media(max-width:900px){{.status-grid,.trust-ladder,.answer-grid{{grid-template-columns:repeat(2,1fr)}}.dashboard-grid{{grid-template-columns:1fr}}.about-grid{{grid-template-columns:1fr}}}}
-@media(max-width:580px){{main{{padding:20px 14px 40px}}.topbar{{padding:0 14px}}.read-only,.docs-nav{{display:none}}.status-grid,.trust-ladder,.answer-grid,.facts{{grid-template-columns:1fr}}.fact.wide{{grid-column:auto}}.command-row{{display:block}}.copy-button{{margin-top:7px;width:100%}}}}
+@media(max-width:580px){{main{{padding:20px 14px 40px}}.topbar{{padding:0 14px}}.read-only{{display:none}}.docs-nav{{gap:8px;font-size:11px}}.status-grid,.trust-ladder,.answer-grid,.facts{{grid-template-columns:1fr}}.fact.wide{{grid-column:auto}}.command-row{{display:block}}.copy-button{{margin-top:7px;width:100%}}.footer-docs{{flex-direction:column;align-items:flex-start}}}}
 @media(prefers-reduced-motion:no-preference){{.copy-button,.refresh-button{{transition:border-color .15s,color .15s}}.compose-hero{{animation:rise .45s ease-out}}.next-action{{animation:rise .55s ease-out}}.trust-ladder{{animation:rise .65s ease-out}}@keyframes rise{{from{{opacity:0;transform:translateY(6px)}}to{{opacity:1;transform:none}}}}
+.site-footer{{margin-top:28px;padding-top:18px;border-top:1px solid var(--line);display:grid;gap:8px}}.footer-docs{{display:flex;flex-wrap:wrap;gap:10px 16px}}.footer-docs a{{color:var(--brand);font-weight:700;font-size:13px;text-decoration:none}}.footer-docs a:hover{{text-decoration:underline}}.footer-note{{margin:0;color:var(--muted);font-size:12px}}
 </style></head>
 <body>
 <header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">RS</span><span>RunSpecimen</span></div><div class="topbar-meta"><nav class="docs-nav" aria-label="Documentation"><a href="#about">About</a><a href="{_escape(DOCS_URLS['user_guide'])}" target="_blank" rel="noopener noreferrer">User guide</a><a href="{_escape(DOCS_URLS['faq'])}" target="_blank" rel="noopener noreferrer">FAQ</a></nav><span class="read-only">Local · loopback only · read-only</span></div></header>
@@ -518,12 +519,21 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
         </div>
       </div>
       <nav class="about-docs" aria-label="Learn more">
-        <a href="{_escape(DOCS_URLS['about'])}" target="_blank" rel="noopener noreferrer">About (full)</a>
-        <a href="{_escape(DOCS_URLS['user_guide'])}" target="_blank" rel="noopener noreferrer">User guide</a>
-        <a href="{_escape(DOCS_URLS['faq'])}" target="_blank" rel="noopener noreferrer">FAQ</a>
+        <a href="{_escape(DOCS_URLS['about'])}" target="_blank" rel="noopener noreferrer" aria-label="About RunSpecimen documentation">About (full)</a>
+        <a href="{_escape(DOCS_URLS['user_guide'])}" target="_blank" rel="noopener noreferrer" aria-label="RunSpecimen user guide">User guide</a>
+        <a href="{_escape(DOCS_URLS['faq'])}" target="_blank" rel="noopener noreferrer" aria-label="RunSpecimen FAQ">FAQ</a>
       </nav>
     </div>
   </details>
+  <footer class="site-footer">
+    <nav class="footer-docs" aria-label="Documentation">
+      <a href="#about">About</a>
+      <a href="{_escape(DOCS_URLS['user_guide'])}" target="_blank" rel="noopener noreferrer">User guide</a>
+      <a href="{_escape(DOCS_URLS['faq'])}" target="_blank" rel="noopener noreferrer">FAQ</a>
+      <a href="{_escape(DOCS_URLS['about'])}" target="_blank" rel="noopener noreferrer">About (full)</a>
+    </nav>
+    <p class="footer-note">Loopback · read-only · receipt issued ≠ live verification</p>
+  </footer>
 </main>
 <script>
 const text=(id,value)=>{{const el=document.getElementById(id);if(el)el.textContent=String(value)}};

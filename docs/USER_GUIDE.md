@@ -2,7 +2,7 @@
 
 Practical how-to for the local CLI. This guide matches the installed
 `runspecimen` commands and current release-candidate limits
-(`0.2.0rc9` at time of writing). For a short product overview see
+(`0.2.0rc10` at time of writing). For a short product overview see
 [ABOUT.md](ABOUT.md); for product intent see
 [PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
 
@@ -35,7 +35,7 @@ Requirements: Python 3.9+, POSIX (`fcntl` leases), stdlib only.
 ### From PyPI (recommended)
 
 ```bash
-python3 -m pip install runspecimen==0.2.0rc9
+python3 -m pip install runspecimen==0.2.0rc10
 runspecimen --version
 ```
 
@@ -45,13 +45,13 @@ Project page: [runspecimen on PyPI](https://pypi.org/project/runspecimen/)
 
 ```bash
 # Install directly from the release
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/runspecimen-0.2.0rc9-py3-none-any.whl
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10-py3-none-any.whl
 
 # Version check
 runspecimen --version
 ```
 
-Checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/SHA256SUMS)
+Checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/SHA256SUMS)
 
 ### From source clone
 

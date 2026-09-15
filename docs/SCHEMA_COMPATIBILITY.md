@@ -60,5 +60,5 @@ New certificates always set `"schema_version": 1` and bind that value into
 
 | Engine release family | Contracts | Receipts |
 | --- | --- | --- |
-| 0.2.0-rc.9 and earlier | `version: 1` | Legacy (no `schema_version`) |
+| 0.2.0-rc.10 and earlier | `version: 1` | Legacy (no `schema_version`) |
 | Phase 0+ (this roadmap) | `version: 1` | Legacy **or** `schema_version: 1` |

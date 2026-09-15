@@ -3,7 +3,9 @@
 RunSpecimen is a local safety and evidence layer for consequential agent-driven
 research and engineering commands.
 
-**Current release:** [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9)
+**Current package version (this branch / proposed RC):** `0.2.0rc10`  
+**Last published:** [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9) / PyPI `runspecimen==0.2.0rc9`  
+GitHub Release assets and PyPI for rc10 appear only after an explicit publish (not done on this PR).
 
 ## Core promise
 
@@ -38,30 +40,34 @@ No watchers, no recurring scheduler, no parallel workers.
 
 ## Install
 
-### From PyPI (recommended)
+### From PyPI (after rc10 is published)
 
 ```bash
-python3 -m pip install runspecimen==0.2.0rc9
+python3 -m pip install runspecimen==0.2.0rc10
 runspecimen --version
 ```
 
+Until rc10 is published, install the last published candidate with
+`python3 -m pip install runspecimen==0.2.0rc9`, or install this branch from a
+local clone (below).
+
 PyPI project: [runspecimen](https://pypi.org/project/runspecimen/)
 
-### From GitHub release
+### From GitHub release (after rc10 tag exists)
 
-Install directly from the v0.2.0-rc.9 release:
+Install directly from the v0.2.0-rc.10 release:
 
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/runspecimen-0.2.0rc9-py3-none-any.whl
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10-py3-none-any.whl
 ```
 
 Or from source tarball:
 
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/runspecimen-0.2.0rc9.tar.gz
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10.tar.gz
 ```
 
-Verify checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/SHA256SUMS)
+Verify checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/SHA256SUMS)
 
 ### From local clone
 

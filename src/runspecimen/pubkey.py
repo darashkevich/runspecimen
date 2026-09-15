@@ -27,13 +27,15 @@ keygen, or another explicit trust policy). The CLI refuses to report
 
 from __future__ import annotations
 
+import contextlib
+import json
 import os
 import secrets
 import stat
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Iterator
 
 from runspecimen.atomic import atomic_write_json, read_json
 from runspecimen.errors import SigningError
@@ -45,11 +47,23 @@ from runspecimen.signing import (
     validate_key_id,
 )
 
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX
+    fcntl = None  # type: ignore[assignment]
+
 ED25519_ALGORITHM = "ed25519-v1"
 _PRIVATE_SUFFIX = ".ed25519"
 _PUBLIC_SUFFIX = ".ed25519.pub"
 _ROTATE_TMP_MARK = ".rotating"
 _ROTATE_BAK_MARK = ".bak"
+_KEYS_LOCK_NAME = "keys.op.lock"
+_JOURNAL_SUFFIX = ".ed25519.rotate.journal"
+_JOURNAL_VERSION = 1
+
+# Test-only hook: called after durable journal commits at named phases.
+# Production code never sets this. Fault-injection tests may SIGKILL here.
+_CRASH_AFTER_PHASE: Callable[[str], None] | None = None
 
 
 def require_ed25519() -> Any:
@@ -256,6 +270,284 @@ def _path_is_present(path: Path) -> bool:
         return path.exists() or path.is_symlink()
 
 
+def _maybe_crash(phase: str) -> None:
+    """Invoke the optional test crash hook after a durable phase commit."""
+    hook = _CRASH_AFTER_PHASE
+    if hook is not None:
+        hook(phase)
+
+
+def _keys_lock_path(workspace: Path) -> Path:
+    return workspace.resolve() / ".runspecimen" / _KEYS_LOCK_NAME
+
+
+def _ensure_control_plane(workspace: Path) -> Path:
+    """Ensure ``.runspecimen`` exists and is not a symlink; return its path."""
+    workspace = workspace.resolve()
+    control = workspace / ".runspecimen"
+    if control.exists() and control.is_symlink():
+        raise SigningError(
+            f".runspecimen must not be a symlink: {control} -> {control.resolve()}"
+        )
+    if not control.exists():
+        try:
+            control.mkdir(mode=0o755, exist_ok=True)
+        except OSError as exc:
+            raise SigningError(f"cannot create control plane {control}: {exc}") from exc
+    if control.is_symlink():
+        raise SigningError(
+            f".runspecimen must not be a symlink: {control} -> {control.resolve()}"
+        )
+    return control
+
+
+@contextlib.contextmanager
+def hold_keys_dir_lock(
+    workspace: Path,
+    *,
+    blocking: bool = True,
+) -> Iterator[None]:
+    """Exclusive cross-process lock for key-directory create/list/rotate/load/sign I/O.
+
+    Serializes concurrent Ed25519 key operations so directory creation, listing,
+    rotation, and reads cannot interleave mid-mutation. Uses ``fcntl.flock`` on
+    ``.runspecimen/keys.op.lock`` (same posture as the execution lease).
+    """
+    if fcntl is None:
+        raise SigningError("Ed25519 key locks require a POSIX platform with fcntl")
+    control = _ensure_control_plane(workspace)
+    lock_path = control / _KEYS_LOCK_NAME
+    lock_path.touch(exist_ok=True)
+    fd = os.open(str(lock_path), os.O_RDWR)
+    flags = fcntl.LOCK_EX if blocking else (fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        fcntl.flock(fd, flags)
+    except OSError as exc:
+        os.close(fd)
+        raise SigningError(
+            "Ed25519 keys directory is busy (another process holds keys.op.lock)"
+        ) from exc
+    try:
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+
+def _rotation_journal_path(workspace: Path, key_id: str) -> Path:
+    validate_key_id(key_id)
+    return keys_dir(workspace) / f".{key_id}{_JOURNAL_SUFFIX}"
+
+
+def _write_rotation_journal(path: Path, payload: dict[str, Any]) -> None:
+    """Durably write the rotation journal (exclusive create or atomic replace)."""
+    data = (json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode(
+        "utf-8"
+    )
+    parent = path.parent
+    ensure_dir(parent)
+    tmp = _unique_sidecar(path, _ROTATE_TMP_MARK + "-journal")
+    try:
+        _write_exclusive_bytes(tmp, data, mode=0o644)
+        os.replace(str(tmp), str(path))
+        _fsync_dir(parent)
+    except Exception:
+        _unlink_quiet(tmp)
+        raise
+
+
+def _read_rotation_journal(path: Path) -> dict[str, Any] | None:
+    if not _path_is_present(path):
+        return None
+    try:
+        raw = _read_nofollow_bytes(path, label="Ed25519 rotation journal")
+        data = json.loads(raw.decode("utf-8"))
+    except (SigningError, OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def _restore_from_bak(bak: Path | None, final: Path) -> None:
+    if bak is None or not _path_is_present(bak):
+        return
+    if _path_is_present(final) and not final.is_symlink():
+        _unlink_quiet(final)
+    try:
+        _rename_nofollow(bak, final)
+    except SigningError:
+        # Last resort: replace if rename blocked by leftover final.
+        if _path_is_present(bak):
+            try:
+                os.replace(str(bak), str(final))
+            except OSError:
+                pass
+
+
+def _recover_one_rotation_journal(workspace: Path, journal_path: Path) -> str:
+    """Recover a single interrupted rotation. Returns action taken."""
+    data = _read_rotation_journal(journal_path)
+    if data is None:
+        _unlink_quiet(journal_path)
+        return "discarded_corrupt_journal"
+
+    key_id = str(data.get("key_id") or "")
+    phase = str(data.get("phase") or "")
+    try:
+        validate_key_id(key_id)
+    except SigningError:
+        _unlink_quiet(journal_path)
+        return "discarded_invalid_key_id"
+
+    priv = private_key_path(workspace, key_id)
+    pub = public_key_path(workspace, key_id)
+    priv_tmp = Path(str(data["priv_tmp"])) if data.get("priv_tmp") else None
+    pub_tmp = Path(str(data["pub_tmp"])) if data.get("pub_tmp") else None
+    priv_bak = Path(str(data["priv_bak"])) if data.get("priv_bak") else None
+    pub_bak = Path(str(data["pub_bak"])) if data.get("pub_bak") else None
+
+    # All-or-nothing: until both new finals are installed, roll back to the
+    # previous working pair. After priv_installed, complete cleanup only.
+    if phase in {"intent", "staged", ""}:
+        _unlink_quiet(priv_tmp)
+        _unlink_quiet(pub_tmp)
+        _unlink_quiet(journal_path)
+        return f"rolled_back_pre_commit:{key_id}"
+
+    if phase == "fresh_priv_installed":
+        # Fresh create crashed after private install — drop incomplete pair.
+        _unlink_quiet(priv)
+        _unlink_quiet(pub)
+        _unlink_quiet(priv_tmp)
+        _unlink_quiet(pub_tmp)
+        _unlink_quiet(journal_path)
+        return f"rolled_back_fresh_incomplete:{key_id}"
+
+    if phase in {"pub_backed", "pub_installed", "priv_backed"}:
+        # Prefer old pair from bak sidecars; never leave a mixed new/old pair.
+        _unlink_quiet(priv_tmp)
+        _unlink_quiet(pub_tmp)
+        if phase == "priv_backed" or (
+            phase == "pub_installed" and priv_bak is not None and _path_is_present(priv_bak)
+        ):
+            _restore_from_bak(priv_bak, priv)
+        elif phase == "pub_installed" and not _path_is_present(priv):
+            # Should not happen with ordered steps, but restore if possible.
+            _restore_from_bak(priv_bak, priv)
+        # Always restore old public when we have a bak (new public may be live).
+        _restore_from_bak(pub_bak, pub)
+        # If pub was backed up but not yet replaced, pub_bak restore is enough.
+        # If only pub_backed and final pub missing, restore covers it.
+        if phase == "pub_backed" and not _path_is_present(pub):
+            _restore_from_bak(pub_bak, pub)
+        if not _path_is_present(priv) and priv_bak is not None:
+            _restore_from_bak(priv_bak, priv)
+        _unlink_quiet(priv_bak)
+        _unlink_quiet(pub_bak)
+        _unlink_quiet(journal_path)
+        return f"rolled_back_to_previous:{key_id}:{phase}"
+
+    if phase in {"priv_installed", "complete"}:
+        # New pair is fully installed; drop leftovers and journal.
+        _unlink_quiet(priv_tmp)
+        _unlink_quiet(pub_tmp)
+        _unlink_quiet(priv_bak)
+        _unlink_quiet(pub_bak)
+        _unlink_quiet(journal_path)
+        return f"committed_cleanup:{key_id}"
+
+    # Unknown phase: safest is roll back if baks exist, else drop temps.
+    _unlink_quiet(priv_tmp)
+    _unlink_quiet(pub_tmp)
+    _restore_from_bak(priv_bak, priv)
+    _restore_from_bak(pub_bak, pub)
+    _unlink_quiet(priv_bak)
+    _unlink_quiet(pub_bak)
+    _unlink_quiet(journal_path)
+    return f"rolled_back_unknown_phase:{key_id}:{phase}"
+
+
+def recover_interrupted_ed25519_keys(workspace: Path) -> list[str]:
+    """Automatically resume/roll back crash-interrupted Ed25519 rotations.
+
+    Scans the keys directory for durable rotation journals and orphaned
+    ``.bak`` / ``.rotating`` sidecars. Safe to call on every open/use; holds the
+    keys-directory lock.
+    """
+    workspace = workspace.resolve()
+    actions: list[str] = []
+    with hold_keys_dir_lock(workspace):
+        actions.extend(_recover_interrupted_ed25519_keys_unlocked(workspace))
+    return actions
+
+
+def _recover_interrupted_ed25519_keys_unlocked(workspace: Path) -> list[str]:
+    actions: list[str] = []
+    try:
+        kdir = _validate_keys_dir_security(workspace)
+    except SigningError:
+        return actions
+    if not kdir.is_dir() or kdir.is_symlink():
+        return actions
+
+    journals = sorted(
+        p for p in kdir.iterdir() if p.name.startswith(".") and p.name.endswith(_JOURNAL_SUFFIX)
+    )
+    for journal_path in journals:
+        actions.append(_recover_one_rotation_journal(workspace, journal_path))
+
+    # Orphaned sidecars without a journal: restore bak when the live final is
+    # missing; otherwise drop leftover rotating temps / committed baks.
+    for path in sorted(kdir.iterdir()):
+        name = path.name
+        if not name.startswith("."):
+            continue
+        if name.endswith(_JOURNAL_SUFFIX):
+            continue
+        if _ROTATE_TMP_MARK in name:
+            _unlink_quiet(path)
+            actions.append(f"dropped_orphan_temp:{name}")
+            continue
+        # Sidecar: .{final_name}.bak-priv.{token} or .{final_name}.bak-pub.{token}
+        for kind in ("bak-priv", "bak-pub"):
+            needle = f".{kind}."
+            if needle not in name:
+                continue
+            # name = ".{final}.{kind}.{token}" → strip leading "." then split
+            body = name[1:]
+            final_name, _sep, _rest = body.partition(needle)
+            if not final_name:
+                break
+            final = kdir / final_name
+            if not _path_is_present(final):
+                _restore_from_bak(path, final)
+                actions.append(f"restored_orphan_bak:{final_name}")
+            else:
+                _unlink_quiet(path)
+                actions.append(f"dropped_orphan_bak:{name}")
+            break
+    return actions
+
+
+def _commit_phase(
+    journal_path: Path,
+    base: dict[str, Any],
+    phase: str,
+    *,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = dict(base)
+    payload["phase"] = phase
+    if extra:
+        payload.update(extra)
+    _write_rotation_journal(journal_path, payload)
+    _maybe_crash(phase)
+    return payload
+
+
 @dataclass(frozen=True)
 class Ed25519KeyPair:
     """Ed25519 key pair (private seed retained for signing)."""
@@ -383,13 +675,25 @@ def save_ed25519_keypair(
     Returns (private, public) paths. Refuses symlink paths and uses exclusive
     create (O_EXCL|O_NOFOLLOW when available).
 
-    Rotation (``overwrite=True``) is all-or-nothing and recoverable:
-    new keys are written to exclusive temp names and fsynced first; the live
-    private key is never removed until the new public key is installed. On any
-    failure the previous working pair is restored at the final paths.
+    Rotation (``overwrite=True``) is crash-safe and all-or-nothing:
+    a durable journal plus exclusive temps/backups record each transition so a
+    killed process can automatically roll back to the previous working pair (or
+    finish cleanup after both new finals are installed) on the next open/use.
+    Concurrent key operations are excluded via ``keys.op.lock``.
     """
     require_ed25519()
     workspace = workspace.resolve()
+    with hold_keys_dir_lock(workspace):
+        _recover_interrupted_ed25519_keys_unlocked(workspace)
+        return _save_ed25519_keypair_unlocked(workspace, pair, overwrite=overwrite)
+
+
+def _save_ed25519_keypair_unlocked(
+    workspace: Path,
+    pair: Ed25519KeyPair,
+    *,
+    overwrite: bool,
+) -> tuple[Path, Path]:
     kdir = _validate_keys_dir_security(workspace)
     ensure_dir(kdir)
     _validate_keys_dir_security(workspace)
@@ -413,11 +717,21 @@ def save_ed25519_keypair(
 
     priv_tmp = _unique_sidecar(priv, _ROTATE_TMP_MARK + "-priv")
     pub_tmp = _unique_sidecar(pub, _ROTATE_TMP_MARK + "-pub")
+    journal_path = _rotation_journal_path(workspace, pair.key_id)
     priv_bak: Path | None = None
     pub_bak: Path | None = None
 
-    def _rollback() -> None:
-        # Prefer restoring the previous working pair over leaving temps in place.
+    base_journal: dict[str, Any] = {
+        "version": _JOURNAL_VERSION,
+        "key_id": pair.key_id,
+        "phase": "intent",
+        "priv_tmp": str(priv_tmp),
+        "pub_tmp": str(pub_tmp),
+        "priv_bak": None,
+        "pub_bak": None,
+    }
+
+    def _rollback_in_process() -> None:
         if priv_bak is not None and _path_is_present(priv_bak):
             if _path_is_present(priv) and not priv.is_symlink():
                 _unlink_quiet(priv)
@@ -434,35 +748,39 @@ def save_ed25519_keypair(
                 pass
         _unlink_quiet(priv_tmp)
         _unlink_quiet(pub_tmp)
+        _unlink_quiet(journal_path)
 
     try:
-        # Stage both new files first — live paths untouched until both succeed.
+        _commit_phase(journal_path, base_journal, "intent")
         _write_exclusive_bytes(priv_tmp, priv_data, mode=0o600)
         _write_exclusive_bytes(pub_tmp, pub_data, mode=0o644)
         _fsync_dir(kdir)
+        _commit_phase(journal_path, base_journal, "staged")
 
         if not priv_exists and not pub_exists:
-            # Fresh create: install private then public so we never leave
-            # "public present / private missing" if the second rename fails.
+            # Fresh create: journal each install so a crash cannot leave a
+            # private-only orphan that recovery would treat as a working key.
             _rename_nofollow(priv_tmp, priv)
+            base_journal = _commit_phase(journal_path, base_journal, "fresh_priv_installed")
             try:
                 _rename_nofollow(pub_tmp, pub)
             except Exception:
                 _unlink_quiet(priv)
                 raise
             _fsync_dir(kdir)
+            _commit_phase(journal_path, base_journal, "complete")
+            _unlink_quiet(journal_path)
+            _maybe_crash("fresh_complete")
             return priv, pub
 
-        # Rotation: never delete/remove the live private key before the new
-        # public key is confirmed installed at the final public path.
-        # 1) Move old public aside (private still live and loadable with bak).
-        # 2) Install new public.
-        # 3) Move old private aside only after public install succeeded.
-        # 4) Install new private.
-        # 5) Drop backups.
+        # Rotation transitions (journal fsynced before each dangerous window):
+        # pub_backed → pub_installed → priv_backed → priv_installed → complete
         if pub_exists:
             pub_bak = _unique_sidecar(pub, _ROTATE_BAK_MARK + "-pub")
             _rename_nofollow(pub, pub_bak)
+            base_journal = _commit_phase(
+                journal_path, base_journal, "pub_backed", extra={"pub_bak": str(pub_bak)}
+            )
         try:
             _rename_nofollow(pub_tmp, pub)
         except Exception:
@@ -470,14 +788,20 @@ def save_ed25519_keypair(
                 _rename_nofollow(pub_bak, pub)
                 pub_bak = None
             raise
+        base_journal = _commit_phase(journal_path, base_journal, "pub_installed")
 
         if priv_exists:
             priv_bak = _unique_sidecar(priv, _ROTATE_BAK_MARK + "-priv")
             _rename_nofollow(priv, priv_bak)
+            base_journal = _commit_phase(
+                journal_path,
+                base_journal,
+                "priv_backed",
+                extra={"priv_bak": str(priv_bak)},
+            )
         try:
             _rename_nofollow(priv_tmp, priv)
         except Exception:
-            # Public is already new; restore previous pair fully.
             _unlink_quiet(priv)
             if priv_bak is not None:
                 _rename_nofollow(priv_bak, priv)
@@ -487,15 +811,18 @@ def save_ed25519_keypair(
                 _rename_nofollow(pub_bak, pub)
                 pub_bak = None
             raise
+        base_journal = _commit_phase(journal_path, base_journal, "priv_installed")
 
         _unlink_quiet(priv_bak)
         _unlink_quiet(pub_bak)
         priv_bak = None
         pub_bak = None
         _fsync_dir(kdir)
+        _commit_phase(journal_path, base_journal, "complete")
+        _unlink_quiet(journal_path)
         return priv, pub
     except Exception:
-        _rollback()
+        _rollback_in_process()
         raise
 
 
@@ -503,47 +830,45 @@ def load_ed25519_public_key_bytes(workspace: Path, key_id: str) -> bytes:
     """Load only the public key file (never opens the private seed)."""
     require_ed25519()
     workspace = workspace.resolve()
-    _validate_keys_dir_security(workspace)
-    pub = public_key_path(workspace, key_id)
-    try:
-        raw = _read_nofollow_bytes(pub, label=f"Ed25519 public key {key_id!r}")
-        return bytes.fromhex(raw.decode("utf-8").strip())
-    except ValueError as exc:
-        raise SigningError(f"invalid Ed25519 public key encoding for {key_id}: {exc}") from exc
-    except UnicodeDecodeError as exc:
-        raise SigningError(f"invalid Ed25519 public key encoding for {key_id}: {exc}") from exc
+    with hold_keys_dir_lock(workspace):
+        _recover_interrupted_ed25519_keys_unlocked(workspace)
+        return _load_ed25519_public_key_bytes_unlocked(workspace, key_id)
 
 
 def load_ed25519_keypair(workspace: Path, key_id: str) -> Ed25519KeyPair:
     require_ed25519()
     workspace = workspace.resolve()
-    _validate_keys_dir_security(workspace)
-    priv = private_key_path(workspace, key_id)
-    pub = public_key_path(workspace, key_id)
-    try:
-        seed = bytes.fromhex(
-            _read_nofollow_bytes(
-                priv,
-                label=f"Ed25519 private key {key_id!r}",
-                require_private_perms=True,
+    with hold_keys_dir_lock(workspace):
+        _recover_interrupted_ed25519_keys_unlocked(workspace)
+        _validate_keys_dir_security(workspace)
+        priv = private_key_path(workspace, key_id)
+        pub = public_key_path(workspace, key_id)
+        try:
+            seed = bytes.fromhex(
+                _read_nofollow_bytes(
+                    priv,
+                    label=f"Ed25519 private key {key_id!r}",
+                    require_private_perms=True,
+                )
+                .decode("utf-8")
+                .strip()
             )
-            .decode("utf-8")
-            .strip()
-        )
-        public = bytes.fromhex(
-            _read_nofollow_bytes(pub, label=f"Ed25519 public key {key_id!r}")
-            .decode("utf-8")
-            .strip()
-        )
-    except ValueError as exc:
-        raise SigningError(f"invalid Ed25519 key encoding for {key_id}: {exc}") from exc
-    except UnicodeDecodeError as exc:
-        raise SigningError(f"invalid Ed25519 key encoding for {key_id}: {exc}") from exc
-    nacl_signing = require_ed25519()
-    sk = nacl_signing.SigningKey(seed)
-    if bytes(sk.verify_key) != public:
-        raise SigningError(f"Ed25519 public key does not match private seed for {key_id}")
-    return Ed25519KeyPair(key_id=key_id, private_seed=seed, public_key=public)
+            public = bytes.fromhex(
+                _read_nofollow_bytes(pub, label=f"Ed25519 public key {key_id!r}")
+                .decode("utf-8")
+                .strip()
+            )
+        except ValueError as exc:
+            raise SigningError(f"invalid Ed25519 key encoding for {key_id}: {exc}") from exc
+        except UnicodeDecodeError as exc:
+            raise SigningError(f"invalid Ed25519 key encoding for {key_id}: {exc}") from exc
+        nacl_signing = require_ed25519()
+        sk = nacl_signing.SigningKey(seed)
+        if bytes(sk.verify_key) != public:
+            raise SigningError(
+                f"Ed25519 public key does not match private seed for {key_id}"
+            )
+        return Ed25519KeyPair(key_id=key_id, private_seed=seed, public_key=public)
 
 
 def load_ed25519_public_key_file(path: Path) -> bytes:
@@ -559,14 +884,15 @@ def load_ed25519_public_key_file(path: Path) -> bytes:
 
 def export_ed25519_public_key(workspace: Path, key_id: str, output: Path) -> Path:
     """Export the workspace public key file without reading the private seed."""
-    public = load_ed25519_public_key_bytes(workspace, key_id)
+    with hold_keys_dir_lock(workspace):
+        _recover_interrupted_ed25519_keys_unlocked(workspace.resolve())
+        public = _load_ed25519_public_key_bytes_unlocked(workspace.resolve(), key_id)
     output = output.resolve()
     if output.is_symlink():
         raise SigningError(f"refusing to write public key through symlink: {output}")
     if _path_is_present(output):
         if output.is_symlink():
             raise SigningError(f"refusing to overwrite symlink: {output}")
-        # Replace via exclusive temp + atomic rename (no unlink-then-create gap).
         tmp = _unique_sidecar(output, _ROTATE_TMP_MARK + "-export")
         try:
             _write_exclusive_bytes(tmp, (public.hex() + "\n").encode("utf-8"), mode=0o644)
@@ -579,26 +905,42 @@ def export_ed25519_public_key(workspace: Path, key_id: str, output: Path) -> Pat
     return output
 
 
+def _load_ed25519_public_key_bytes_unlocked(workspace: Path, key_id: str) -> bytes:
+    _validate_keys_dir_security(workspace)
+    pub = public_key_path(workspace, key_id)
+    try:
+        raw = _read_nofollow_bytes(pub, label=f"Ed25519 public key {key_id!r}")
+        return bytes.fromhex(raw.decode("utf-8").strip())
+    except ValueError as exc:
+        raise SigningError(f"invalid Ed25519 public key encoding for {key_id}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise SigningError(f"invalid Ed25519 public key encoding for {key_id}: {exc}") from exc
+
+
 def list_ed25519_key_ids(workspace: Path) -> list[str]:
     workspace = workspace.resolve()
-    try:
-        kdir = _validate_keys_dir_security(workspace)
-    except SigningError:
-        raise
-    if not kdir.is_dir() or kdir.is_symlink():
-        return []
-    ids: list[str] = []
-    for path in kdir.iterdir():
-        if path.name.endswith(_PRIVATE_SUFFIX) and not path.name.endswith(_PUBLIC_SUFFIX):
-            key_id = path.name[: -len(_PRIVATE_SUFFIX)]
-            try:
-                validate_key_id(key_id)
-            except SigningError:
-                continue
-            pub = public_key_path(workspace, key_id)
-            if pub.is_file() and not pub.is_symlink() and not path.is_symlink():
-                ids.append(key_id)
-    return sorted(ids)
+    with hold_keys_dir_lock(workspace):
+        _recover_interrupted_ed25519_keys_unlocked(workspace)
+        try:
+            kdir = _validate_keys_dir_security(workspace)
+        except SigningError:
+            raise
+        if not kdir.is_dir() or kdir.is_symlink():
+            return []
+        ids: list[str] = []
+        for path in kdir.iterdir():
+            if path.name.endswith(_PRIVATE_SUFFIX) and not path.name.endswith(_PUBLIC_SUFFIX):
+                if path.name.startswith("."):
+                    continue
+                key_id = path.name[: -len(_PRIVATE_SUFFIX)]
+                try:
+                    validate_key_id(key_id)
+                except SigningError:
+                    continue
+                pub = public_key_path(workspace, key_id)
+                if pub.is_file() and not pub.is_symlink() and not path.is_symlink():
+                    ids.append(key_id)
+        return sorted(ids)
 
 
 def sign_certificate_ed25519(

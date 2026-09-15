@@ -6,12 +6,12 @@ by a human with appropriate credentials.
 
 ## Current Release
 
-- **Version:** 0.2.0-rc.9
-- **Release URL:** https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9
-- **Wheel:** https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/runspecimen-0.2.0rc9-py3-none-any.whl
-- **Source:** https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/runspecimen-0.2.0rc9.tar.gz
-- **Plugin archive:** https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/runspecimen-plugin-0.2.0-rc.9.zip
-- **Checksums:** https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/SHA256SUMS
+- **Version:** 0.2.0-rc.10
+- **Release URL:** https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10
+- **Wheel:** https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10-py3-none-any.whl
+- **Source:** https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10.tar.gz
+- **Plugin archive:** https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-plugin-0.2.0-rc.10.zip
+- **Checksums:** https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/SHA256SUMS
 
 ## 1. Cursor Marketplace
 
@@ -102,8 +102,8 @@ plugins/runspecimen/.codex-plugin/plugin.json
 
 ### Current package
 
-- **Version:** `0.2.0rc9`
-- **Install:** `python3 -m pip install runspecimen==0.2.0rc9`
+- **Version:** `0.2.0rc10`
+- **Install:** `python3 -m pip install runspecimen==0.2.0rc10`
 - **Publishing:** GitHub Actions trusted publishing with OIDC; no PyPI API
   token is stored in GitHub.
 
@@ -150,7 +150,7 @@ listings are confirmed live (not pending review).
 
 | Channel | Submitted | Pending | Live | URL |
 | --- | --- | --- | --- | --- |
-| GitHub Release | ✅ | - | ✅ | [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9) |
+| GitHub Release | ✅ | - | ✅ | [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) |
 | Cursor Marketplace | ❌ | - | - | - |
 | Codex Directory | ❌ | - | - | - |
 | PyPI | ✅ | - | ✅ | [runspecimen](https://pypi.org/project/runspecimen/) |
@@ -168,5 +168,5 @@ After each channel goes live, verify:
 
 1. **Cursor:** Search "runspecimen" in Cursor Marketplace
 2. **Codex:** Search "runspecimen" in ChatGPT/Codex Plugins Directory
-3. **PyPI:** `pip install runspecimen` works and `runspecimen --version` shows `0.2.0rc9`
+3. **PyPI:** `pip install runspecimen` works and `runspecimen --version` shows `0.2.0rc10`
 4. **Website:** Update with verified live links only

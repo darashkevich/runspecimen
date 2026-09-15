@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import stat
 import sys
 import tempfile
@@ -76,7 +77,7 @@ class TestPackagingOptionalExtras(unittest.TestCase):
         good = (
             "Metadata-Version: 2.1\n"
             "Name: runspecimen\n"
-            "Version: 0.2.0rc9\n"
+            "Version: 0.2.0rc10\n"
             'Requires-Dist: pynacl>=1.5.0; extra == "ed25519"\n'
             'Requires-Dist: pynacl>=1.5.0; extra == "signing"\n'
             "Provides-Extra: ed25519\n"
@@ -217,6 +218,9 @@ class TestEd25519Persistence(RunSpecimenTestCase):
         real_open = os.open
 
         def tracking_open(path, flags, mode=0o777, *args, **kwargs):  # type: ignore[no-untyped-def]
+            # Ignore the keys.op.lock / journal opens used by the lock helper.
+            if str(path).endswith("keys.op.lock") or ".ed25519.rotate.journal" in str(path):
+                return real_open(path, flags, mode, *args, **kwargs)
             modes.append(mode)
             return real_open(path, flags, mode, *args, **kwargs)
 
@@ -242,7 +246,10 @@ class TestEd25519Persistence(RunSpecimenTestCase):
         real_open = os.open
 
         def guarded_open(path, flags, *args, **kwargs):  # type: ignore[no-untyped-def]
-            if str(Path(path).resolve()) == priv_resolved:
+            resolved = str(Path(path).resolve())
+            if resolved.endswith("keys.op.lock") or ".ed25519.rotate.journal" in resolved:
+                return real_open(path, flags, *args, **kwargs)
+            if resolved == priv_resolved:
                 raise AssertionError("export must not open the private key file")
             return real_open(path, flags, *args, **kwargs)
 
@@ -458,6 +465,8 @@ class TestEd25519Persistence(RunSpecimenTestCase):
         opened: list[int] = []
 
         def open_then_swap(path, flags, *args, **kwargs):  # type: ignore[no-untyped-def]
+            if "keys.op.lock" in str(path) or ".ed25519.rotate.journal" in str(path):
+                return real_open(path, flags, *args, **kwargs)
             fd = real_open(path, flags, *args, **kwargs)
             if Path(path).resolve() == priv.resolve():
                 opened.append(flags)
@@ -491,6 +500,270 @@ class TestEd25519Persistence(RunSpecimenTestCase):
         with self.assertRaises(SigningError) as ctx:
             load_ed25519_public_key_file(link)
         self.assertIn("symlink", str(ctx.exception).lower())
+
+
+@unittest.skipUnless(HAS_NACL, "PyNaCl not installed")
+class TestEd25519CrashSafeRotation(RunSpecimenTestCase):
+    """SIGKILL / durable-journal recovery at each rotation transition."""
+
+    CRASH_PHASES = (
+        "intent",
+        "staged",
+        "pub_backed",
+        "pub_installed",
+        "priv_backed",
+        "priv_installed",
+    )
+
+    _CHILD_SCRIPT = r"""
+import os
+import signal
+import sys
+from pathlib import Path
+
+from nacl.signing import SigningKey
+
+sys.path.insert(0, sys.argv[1])
+from runspecimen.pubkey import Ed25519KeyPair, save_ed25519_keypair
+import runspecimen.pubkey as pubkey_mod
+
+workspace = Path(sys.argv[2])
+phase = sys.argv[3]
+seed = bytes.fromhex(sys.argv[4])
+
+
+def crash(hit: str) -> None:
+    if hit == phase:
+        os.kill(os.getpid(), signal.SIGKILL)
+
+
+pubkey_mod._CRASH_AFTER_PHASE = crash
+sk = SigningKey(seed)
+pair = Ed25519KeyPair(
+    key_id="crashrot",
+    private_seed=seed,
+    public_key=bytes(sk.verify_key),
+)
+save_ed25519_keypair(workspace, pair, overwrite=True)
+"""
+
+    def _child_rotate_and_crash(self, workspace: Path, phase: str, second_seed_hex: str) -> int:
+        import subprocess
+
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(SRC) + os.pathsep + env.get("PYTHONPATH", "")
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                self._CHILD_SCRIPT,
+                str(SRC),
+                str(workspace),
+                phase,
+                second_seed_hex,
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        return proc.returncode
+
+    def test_sigkill_at_each_rotation_phase_recovers_working_pair(self) -> None:
+        from runspecimen.pubkey import (
+            Ed25519KeyPair,
+            load_ed25519_keypair,
+            save_ed25519_keypair,
+        )
+
+        first = Ed25519KeyPair.generate(key_id="crashrot")
+        save_ed25519_keypair(self.ws, first)
+        second = Ed25519KeyPair.generate(key_id="crashrot")
+
+        for phase in self.CRASH_PHASES:
+            with self.subTest(phase=phase):
+                # Reset to first key before each kill scenario.
+                save_ed25519_keypair(self.ws, first, overwrite=True)
+                rc = self._child_rotate_and_crash(self.ws, phase, second.private_hex())
+                # SIGKILL typically yields returncode -9 / 128+9 depending on platform.
+                self.assertNotEqual(rc, 0, f"child should not exit cleanly after crash at {phase}")
+                self.assertIn(
+                    rc,
+                    {-signal.SIGKILL, -9, 128 + signal.SIGKILL, 137},
+                    f"expected SIGKILL status for {phase}, got rc={rc}",
+                )
+
+                loaded = load_ed25519_keypair(self.ws, "crashrot")
+                if phase == "priv_installed":
+                    # New pair fully installed; recovery only cleans sidecars.
+                    self.assertEqual(loaded.public_hex(), second.public_hex())
+                    self.assertEqual(loaded.private_hex(), second.private_hex())
+                else:
+                    # Prior phases must restore the previous working pair.
+                    self.assertEqual(loaded.public_hex(), first.public_hex())
+                    self.assertEqual(loaded.private_hex(), first.private_hex())
+
+    def test_sigkill_during_fresh_create_does_not_leave_half_pair(self) -> None:
+        import subprocess
+
+        from runspecimen.pubkey import (
+            list_ed25519_key_ids,
+            load_ed25519_keypair,
+            private_key_path,
+            public_key_path,
+        )
+
+        script = r"""
+import os
+import signal
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+from runspecimen.pubkey import Ed25519KeyPair, save_ed25519_keypair
+import runspecimen.pubkey as pubkey_mod
+
+
+def crash(hit: str) -> None:
+    if hit == "fresh_priv_installed":
+        os.kill(os.getpid(), signal.SIGKILL)
+
+
+pubkey_mod._CRASH_AFTER_PHASE = crash
+pair = Ed25519KeyPair.generate(key_id="freshkill")
+save_ed25519_keypair(Path(sys.argv[2]), pair)
+"""
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(SRC) + os.pathsep + env.get("PYTHONPATH", "")
+        proc = subprocess.run(
+            [sys.executable, "-c", script, str(SRC), str(self.ws)],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertIn(proc.returncode, {-signal.SIGKILL, -9, 128 + signal.SIGKILL, 137})
+        self.assertNotIn("freshkill", list_ed25519_key_ids(self.ws))
+        self.assertFalse(private_key_path(self.ws, "freshkill").exists())
+        self.assertFalse(public_key_path(self.ws, "freshkill").exists())
+        with self.assertRaises(SigningError):
+            load_ed25519_keypair(self.ws, "freshkill")
+
+
+@unittest.skipUnless(HAS_NACL, "PyNaCl not installed")
+class TestEd25519KeyDirConcurrency(RunSpecimenTestCase):
+    def test_cross_process_rotation_and_load_stay_consistent(self) -> None:
+        import subprocess
+        import time
+
+        from runspecimen.pubkey import Ed25519KeyPair, load_ed25519_keypair, save_ed25519_keypair
+
+        first = Ed25519KeyPair.generate(key_id="race1")
+        save_ed25519_keypair(self.ws, first)
+
+        rotator = r"""
+import sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from runspecimen.pubkey import Ed25519KeyPair, save_ed25519_keypair
+ws = Path(sys.argv[2])
+for _ in range(12):
+    save_ed25519_keypair(ws, Ed25519KeyPair.generate(key_id="race1"), overwrite=True)
+    time.sleep(0.002)
+"""
+        loader = r"""
+import sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from runspecimen.pubkey import load_ed25519_keypair
+ws = Path(sys.argv[2])
+for _ in range(40):
+    load_ed25519_keypair(ws, "race1")
+    time.sleep(0.001)
+"""
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(SRC) + os.pathsep + env.get("PYTHONPATH", "")
+        procs = [
+            subprocess.Popen(
+                [sys.executable, "-c", rotator, str(SRC), str(self.ws)],
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            ),
+            subprocess.Popen(
+                [sys.executable, "-c", loader, str(SRC), str(self.ws)],
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            ),
+        ]
+        codes = []
+        errs = []
+        for proc in procs:
+            try:
+                _out, err = proc.communicate(timeout=60)
+                codes.append(proc.returncode)
+                errs.append(err)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                _out, err = proc.communicate()
+                codes.append(99)
+                errs.append(err)
+        self.assertEqual(codes, [0, 0], f"rotator/loader failed: {errs}")
+        final = load_ed25519_keypair(self.ws, "race1")
+        self.assertEqual(len(final.public_hex()), 64)
+
+    def test_nonblocking_lock_rejects_second_process(self) -> None:
+        import subprocess
+        import time
+
+        holder = r"""
+import sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from runspecimen.pubkey import hold_keys_dir_lock
+with hold_keys_dir_lock(Path(sys.argv[2]), blocking=True):
+    time.sleep(2.0)
+"""
+        challenger = r"""
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from runspecimen.errors import SigningError
+from runspecimen.pubkey import hold_keys_dir_lock
+try:
+    with hold_keys_dir_lock(Path(sys.argv[2]), blocking=False):
+        raise SystemExit("lock should have been busy")
+except SigningError as exc:
+    if "busy" in str(exc).lower():
+        raise SystemExit(0)
+    raise
+"""
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(SRC) + os.pathsep + env.get("PYTHONPATH", "")
+        hold_proc = subprocess.Popen(
+            [sys.executable, "-c", holder, str(SRC), str(self.ws)],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            time.sleep(0.3)
+            chal = subprocess.run(
+                [sys.executable, "-c", challenger, str(SRC), str(self.ws)],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(chal.returncode, 0, chal.stdout + chal.stderr)
+        finally:
+            try:
+                hold_proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                hold_proc.kill()
+                hold_proc.communicate()
 
 
 if __name__ == "__main__":
