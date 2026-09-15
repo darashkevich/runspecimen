@@ -242,16 +242,18 @@ into the certificate's `runtime_id`.
 
 ## Release-candidate limitations
 
-- Authenticated receipts use HMAC-SHA256 shared-secret MACs (MVP). This provides
-  tamper detection but NOT digital signatures: anyone with the key can forge
-  certificates. Optional Ed25519 offline public-key verification is the next
-  prioritized slice (see `docs/ROADMAP_PHASED.md`); it is not claimed shipped
-  until it lands and is independently validated.
-- The executed payload is not sandboxed. CPU, memory, network, filesystem, and
-  child-process limits are not yet enforced via tested isolation backends. The
-  current hard bounds are one workspace run, wall-clock duration, and captured
-  output size. A companion app’s UI sandbox (if any) does not imply payload
-  confinement.
+- Default authenticated receipts use HMAC-SHA256 shared-secret MACs. Anyone with
+  the key can forge certificates. Optional Ed25519 offline public-key
+  verification is available via `pip install 'runspecimen[ed25519]'` (see
+  `docs/ED25519_RECEIPTS.md`). Trusted Ed25519 verify requires an external
+  public-key trust anchor; a key embedded only in the receipt is never enough
+  for `ok: true`. Soft keys on disk are not absolute non-repudiation.
+- The executed payload is not sandboxed. Optional Ed25519 ≠ OS sandbox. CPU,
+  memory, network, filesystem, and child-process limits are not yet enforced via
+  tested isolation backends. The current hard bounds are one workspace run,
+  wall-clock duration, and captured output size. A companion app’s UI sandbox
+  (if any) does not imply payload confinement.
+
 - RunSpecimen does not schedule work and does not prove scientific claims.
 - The resolved executable or interpreter is automatically hashed. Native
   libraries, environment variables, and input datasets still need to be placed

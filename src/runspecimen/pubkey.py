@@ -3,6 +3,7 @@
 Requires the optional dependency::
 
     python3 -m pip install 'runspecimen[ed25519]'
+    # or: python3 -m pip install 'runspecimen[signing]'
 
 This provides offline public-key verification without sharing the private key.
 It does **not** provide absolute non-repudiation (soft keys on disk; custody
@@ -10,12 +11,24 @@ matters) and does **not** prove scientific or engineering claims.
 
 HMAC-SHA256 in ``signing.py`` remains the shared-secret authentication path.
 An HMAC MAC cannot satisfy Ed25519 verification, and vice versa.
+
+Trust model
+-----------
+A signature that verifies under a public key *embedded in the signed document*
+proves only **signature consistency** (the receipt is self-consistent under
+that key). That is **not** trusted success: an attacker can forge a receipt,
+embed their own public key, and sign it.
+
+**Trusted success** requires verifying against an **externally trusted** public
+key (user-supplied file, workspace ``*.ed25519.pub`` from a prior trusted
+keygen, or another explicit trust policy). The CLI refuses to report
+``ok: true`` without such a trust anchor.
 """
 
 from __future__ import annotations
 
-import json
 import os
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -43,7 +56,8 @@ def require_ed25519() -> Any:
         raise SigningError(
             "Ed25519 support requires the optional dependency PyNaCl. "
             "Install with: python3 -m pip install 'runspecimen[ed25519]' "
-            "(Community/default installs remain stdlib-only without this extra)."
+            "(or 'runspecimen[signing]'; Community/default installs remain "
+            "stdlib-only without this extra)."
         ) from exc
     return nacl_signing
 
@@ -60,6 +74,78 @@ def private_key_path(workspace: Path, key_id: str) -> Path:
 def public_key_path(workspace: Path, key_id: str) -> Path:
     validate_key_id(key_id)
     return keys_dir(workspace) / f"{key_id}{_PUBLIC_SUFFIX}"
+
+
+def _validate_keys_dir_security(workspace: Path) -> Path:
+    """Reject symlinked control-plane / keys directories (same posture as HMAC)."""
+    workspace = workspace.resolve()
+    control_plane = workspace / ".runspecimen"
+    kdir = control_plane / "keys"
+
+    if control_plane.exists() and control_plane.is_symlink():
+        raise SigningError(
+            f".runspecimen must not be a symlink: {control_plane} -> {control_plane.resolve()}"
+        )
+    if kdir.exists() and kdir.is_symlink():
+        raise SigningError(
+            f"keys directory must not be a symlink: {kdir} -> {kdir.resolve()}"
+        )
+    return kdir
+
+
+def _exclusive_create_flags() -> int:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    return flags
+
+
+def _write_exclusive_bytes(path: Path, data: bytes, *, mode: int) -> None:
+    """Create ``path`` exclusively with ``mode`` from creation; refuse symlinks.
+
+    Uses O_CREAT|O_EXCL(|O_NOFOLLOW) so the mode applies at create time and
+    existing files / symlink destinations cannot be overwritten in place.
+    """
+    if path.is_symlink():
+        raise SigningError(f"refusing to write through symlink: {path}")
+    try:
+        fd = os.open(str(path), _exclusive_create_flags(), mode)
+    except FileExistsError as exc:
+        raise SigningError(f"refusing to overwrite existing path: {path}") from exc
+    except OSError as exc:
+        # Some platforms surface ELOOP / EEXIST for symlink races.
+        raise SigningError(f"failed to create key file {path}: {exc}") from exc
+    try:
+        # Re-check mode in case umask cleared bits; restore intended mode.
+        os.fchmod(fd, mode)
+        os.write(fd, data)
+    finally:
+        os.close(fd)
+
+
+def _assert_regular_file(path: Path, *, label: str) -> None:
+    if path.is_symlink():
+        raise SigningError(f"{label} must not be a symlink: {path}")
+    if not path.is_file():
+        raise SigningError(f"{label} not found: {path}")
+    try:
+        st = path.lstat()
+    except OSError as exc:
+        raise SigningError(f"cannot stat {label}: {path}: {exc}") from exc
+    if stat.S_ISLNK(st.st_mode):
+        raise SigningError(f"{label} must not be a symlink: {path}")
+    if not stat.S_ISREG(st.st_mode):
+        raise SigningError(f"{label} must be a regular file: {path}")
+
+
+def _assert_private_key_permissions(path: Path) -> None:
+    """Refuse group/other-readable private key files."""
+    st = path.lstat()
+    if st.st_mode & 0o077:
+        raise SigningError(
+            f"Ed25519 private key permissions too open (want 0600): {path} "
+            f"mode={oct(st.st_mode & 0o777)}"
+        )
 
 
 @dataclass(frozen=True)
@@ -144,16 +230,34 @@ class Ed25519SignedCertificate:
 
 @dataclass(frozen=True)
 class Ed25519VerifyResult:
-    signature_valid: bool
+    """Result of Ed25519 verification with an explicit trust distinction.
+
+    ``signature_consistent`` means the signature verifies under the key used
+    for the crypto check (trusted key when supplied, otherwise the embedded
+    key). ``trusted`` is True only when an externally supplied trust anchor
+    was used and the signature verified under that key.
+
+    ``ok`` / trusted success requires ``trusted`` plus schema checks — never
+    embedded-key-only consistency.
+    """
+
+    signature_consistent: bool
     schema_valid: bool
     certificate_id_valid: bool
     public_key_match: bool
+    trusted: bool
     message: str
+
+    @property
+    def signature_valid(self) -> bool:
+        """Alias for signature_consistent (CLI / older callers)."""
+        return self.signature_consistent
 
     @property
     def ok(self) -> bool:
         return (
-            self.signature_valid
+            self.trusted
+            and self.signature_consistent
             and self.schema_valid
             and self.certificate_id_valid
             and self.public_key_match
@@ -166,39 +270,62 @@ def save_ed25519_keypair(
     *,
     overwrite: bool = False,
 ) -> tuple[Path, Path]:
-    """Persist private (0600) and public key files. Returns (private, public) paths."""
+    """Persist private (0600 from creation) and public key files.
+
+    Returns (private, public) paths. Refuses symlink paths and uses exclusive
+    create (O_EXCL|O_NOFOLLOW when available).
+    """
     require_ed25519()
-    kdir = keys_dir(workspace.resolve())
-    # Refuse symlink control-plane escape (same posture as HMAC keys).
-    rs = workspace.resolve() / ".runspecimen"
-    if rs.exists() and rs.is_symlink():
-        raise SigningError(".runspecimen must not be a symlink")
+    workspace = workspace.resolve()
+    kdir = _validate_keys_dir_security(workspace)
     ensure_dir(kdir)
-    if kdir.is_symlink():
-        raise SigningError("keys directory must not be a symlink")
+    _validate_keys_dir_security(workspace)
 
     priv = private_key_path(workspace, pair.key_id)
     pub = public_key_path(workspace, pair.key_id)
-    if (priv.exists() or pub.exists()) and not overwrite:
-        raise SigningError(
-            f"Ed25519 key {pair.key_id!r} already exists; pass overwrite to rotate"
-        )
 
-    priv.write_text(pair.private_hex() + "\n", encoding="utf-8")
-    os.chmod(priv, 0o600)
-    pub.write_text(pair.public_hex() + "\n", encoding="utf-8")
-    os.chmod(pub, 0o644)
+    for path, label in ((priv, "private key"), (pub, "public key")):
+        if path.is_symlink():
+            raise SigningError(f"refusing to write {label} through symlink: {path}")
+        if path.exists() and not overwrite:
+            raise SigningError(
+                f"Ed25519 key {pair.key_id!r} already exists; pass overwrite to rotate"
+            )
+        if path.exists() and overwrite:
+            if path.is_symlink():
+                raise SigningError(f"refusing to overwrite symlink {label}: {path}")
+            try:
+                path.unlink()
+            except OSError as exc:
+                raise SigningError(f"failed to remove existing {label}: {exc}") from exc
+
+    _write_exclusive_bytes(priv, (pair.private_hex() + "\n").encode("utf-8"), mode=0o600)
+    _write_exclusive_bytes(pub, (pair.public_hex() + "\n").encode("utf-8"), mode=0o644)
     return priv, pub
+
+
+def load_ed25519_public_key_bytes(workspace: Path, key_id: str) -> bytes:
+    """Load only the public key file (never opens the private seed)."""
+    require_ed25519()
+    workspace = workspace.resolve()
+    _validate_keys_dir_security(workspace)
+    pub = public_key_path(workspace, key_id)
+    _assert_regular_file(pub, label=f"Ed25519 public key {key_id!r}")
+    try:
+        return bytes.fromhex(pub.read_text(encoding="utf-8").strip())
+    except ValueError as exc:
+        raise SigningError(f"invalid Ed25519 public key encoding for {key_id}: {exc}") from exc
 
 
 def load_ed25519_keypair(workspace: Path, key_id: str) -> Ed25519KeyPair:
     require_ed25519()
+    workspace = workspace.resolve()
+    _validate_keys_dir_security(workspace)
     priv = private_key_path(workspace, key_id)
     pub = public_key_path(workspace, key_id)
-    if not priv.is_file():
-        raise SigningError(f"Ed25519 private key not found: {key_id}")
-    if not pub.is_file():
-        raise SigningError(f"Ed25519 public key not found: {key_id}")
+    _assert_regular_file(priv, label=f"Ed25519 private key {key_id!r}")
+    _assert_regular_file(pub, label=f"Ed25519 public key {key_id!r}")
+    _assert_private_key_permissions(priv)
     try:
         seed = bytes.fromhex(priv.read_text(encoding="utf-8").strip())
         public = bytes.fromhex(pub.read_text(encoding="utf-8").strip())
@@ -213,6 +340,7 @@ def load_ed25519_keypair(workspace: Path, key_id: str) -> Ed25519KeyPair:
 
 def load_ed25519_public_key_file(path: Path) -> bytes:
     require_ed25519()
+    _assert_regular_file(path, label="Ed25519 public key file")
     try:
         return bytes.fromhex(path.read_text(encoding="utf-8").strip())
     except (OSError, ValueError) as exc:
@@ -220,27 +348,37 @@ def load_ed25519_public_key_file(path: Path) -> bytes:
 
 
 def export_ed25519_public_key(workspace: Path, key_id: str, output: Path) -> Path:
-    pair = load_ed25519_keypair(workspace, key_id)
+    """Export the workspace public key file without reading the private seed."""
+    public = load_ed25519_public_key_bytes(workspace, key_id)
     output = output.resolve()
-    output.write_text(pair.public_hex() + "\n", encoding="utf-8")
-    os.chmod(output, 0o644)
+    if output.is_symlink():
+        raise SigningError(f"refusing to write public key through symlink: {output}")
+    if output.exists():
+        if output.is_symlink():
+            raise SigningError(f"refusing to overwrite symlink: {output}")
+        output.unlink()
+    _write_exclusive_bytes(output, (public.hex() + "\n").encode("utf-8"), mode=0o644)
     return output
 
 
 def list_ed25519_key_ids(workspace: Path) -> list[str]:
-    kdir = keys_dir(workspace.resolve())
+    workspace = workspace.resolve()
+    try:
+        kdir = _validate_keys_dir_security(workspace)
+    except SigningError:
+        raise
     if not kdir.is_dir() or kdir.is_symlink():
         return []
     ids: list[str] = []
     for path in kdir.iterdir():
-        if path.suffixes == [".ed25519"] or path.name.endswith(_PRIVATE_SUFFIX):
-            # stem of foo.ed25519 is foo
+        if path.name.endswith(_PRIVATE_SUFFIX) and not path.name.endswith(_PUBLIC_SUFFIX):
             key_id = path.name[: -len(_PRIVATE_SUFFIX)]
             try:
                 validate_key_id(key_id)
             except SigningError:
                 continue
-            if public_key_path(workspace, key_id).is_file():
+            pub = public_key_path(workspace, key_id)
+            if pub.is_file() and not pub.is_symlink() and not path.is_symlink():
                 ids.append(key_id)
     return sorted(ids)
 
@@ -270,7 +408,15 @@ def verify_certificate_ed25519(
     *,
     public_key: bytes | None = None,
 ) -> Ed25519VerifyResult:
-    """Verify Ed25519 signature using an explicit or embedded public key."""
+    """Verify Ed25519 signature with an explicit trust distinction.
+
+    When ``public_key`` is omitted, only **signature consistency** against the
+    embedded key is evaluated; ``trusted`` and ``ok`` remain False.
+
+    When ``public_key`` is supplied (externally trusted), trusted success
+    requires the signature to verify under that key and match the embedded
+    public key field.
+    """
     nacl_signing = require_ed25519()
 
     try:
@@ -278,18 +424,20 @@ def verify_certificate_ed25519(
         ok, msg = validate_certificate_schema(signed.certificate)
     except Exception as exc:  # noqa: BLE001 — surface as verify result
         return Ed25519VerifyResult(
-            signature_valid=False,
+            signature_consistent=False,
             schema_valid=False,
             certificate_id_valid=False,
             public_key_match=False,
+            trusted=False,
             message=str(exc),
         )
     if not ok:
         return Ed25519VerifyResult(
-            signature_valid=False,
+            signature_consistent=False,
             schema_valid=False,
             certificate_id_valid=False,
             public_key_match=False,
+            trusted=False,
             message=msg,
         )
 
@@ -297,13 +445,17 @@ def verify_certificate_ed25519(
         embedded = bytes.fromhex(signed.public_key)
     except ValueError:
         return Ed25519VerifyResult(
-            False, True, True, False, "embedded public_key is not valid hex"
+            False,
+            True,
+            True,
+            False,
+            False,
+            "embedded public_key is not valid hex",
         )
 
-    if public_key is None:
-        public_key = embedded
-        pub_match = True
-    else:
+    trusted_anchor = public_key is not None
+    if trusted_anchor:
+        assert public_key is not None
         pub_match = public_key == embedded
         if not pub_match:
             return Ed25519VerifyResult(
@@ -311,24 +463,48 @@ def verify_certificate_ed25519(
                 True,
                 True,
                 False,
-                "provided public key does not match signed document public_key",
+                False,
+                "trusted public key does not match signed document public_key",
             )
+        verify_bytes = public_key
+    else:
+        pub_match = True  # no external key to disagree with
+        verify_bytes = embedded
 
     try:
         sig = bytes.fromhex(signed.signature)
-        vk = nacl_signing.VerifyKey(public_key)
+        vk = nacl_signing.VerifyKey(verify_bytes)
         vk.verify(canonical_json_bytes(signed.certificate), sig)
     except Exception as exc:  # noqa: BLE001
         return Ed25519VerifyResult(
-            False, True, True, pub_match, f"signature verification failed: {exc}"
+            False,
+            True,
+            True,
+            pub_match,
+            False,
+            f"signature verification failed: {exc}",
+        )
+
+    if not trusted_anchor:
+        return Ed25519VerifyResult(
+            True,
+            True,
+            True,
+            True,
+            False,
+            "signature consistent with embedded public key only; "
+            "not trusted without an external trust anchor "
+            "(--public-key or workspace key id)",
         )
 
     return Ed25519VerifyResult(
         True,
         True,
         True,
-        pub_match,
-        "Ed25519 signature valid; certificate schema and certificate_id verified",
+        True,
+        True,
+        "Ed25519 signature valid under trusted public key; "
+        "certificate schema and certificate_id verified",
     )
 
 

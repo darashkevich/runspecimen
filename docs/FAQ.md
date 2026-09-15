@@ -68,12 +68,14 @@ recomputable. They detect casual tampering of the evidence set, but a
 privileged attacker who can rewrite the whole workspace can fabricate a new
 history.
 
-The `sign` command provides HMAC-SHA256 authentication (a shared-secret
+The default `sign` command provides HMAC-SHA256 authentication (a shared-secret
 Message Authentication Code), not digital signatures. Anyone with the key
-can both verify and forge authenticated certificates. This is useful for
-controlled sharing between parties who share the key, but does NOT provide
-non-repudiation or independent third-party verification. True asymmetric
-digital signatures (Ed25519/RSA) are planned for a future release.
+can both verify and forge authenticated certificates. Optional Ed25519 signing
+(`pip install 'runspecimen[ed25519]'`, `--scheme ed25519`) enables offline
+public-key verification without sharing the private key; trusted success still
+requires an externally trusted public key (not a key embedded only in the
+receipt). See [ED25519_RECEIPTS.md](ED25519_RECEIPTS.md). Soft keys on disk are
+not absolute non-repudiation, and Ed25519 is not an OS sandbox.
 
 ## How do I integrate with my research script?
 
@@ -110,6 +112,8 @@ or set `"schema_version": 1`. Unknown versions fail closed. See
 - **HMAC** (`keygen` / `sign` default): shared-secret MAC. Anyone with the key can
   forge. Useful for controlled sharing, not independent third-party trust.
 - **Ed25519** (optional `pip install 'runspecimen[ed25519]'`, `--scheme ed25519`):
-  offline public-key verification without sharing the private key. Trust equals
-  key custody; not absolute non-repudiation; not scientific proof. See
-  [ED25519_RECEIPTS.md](ED25519_RECEIPTS.md).
+  offline public-key verification without sharing the private key. Trusted
+  success requires an external trust anchor (`--public-key` or workspace
+  `--key-id`); a public key embedded only in the receipt proves consistency,
+  not trust. Soft-key custody ≠ absolute non-repudiation; not scientific proof;
+  not a sandbox. See [ED25519_RECEIPTS.md](ED25519_RECEIPTS.md).

@@ -606,6 +606,8 @@ def main(argv: list[str] | None = None) -> int:
                     }, indent=2, sort_keys=True))
                     return 1
 
+                # Trusted verify requires an external trust anchor — never the
+                # attacker-controlled embedded public key alone.
                 pub_bytes = None
                 if args.public_key is not None:
                     pub_path = args.public_key.resolve()
@@ -617,11 +619,25 @@ def main(argv: list[str] | None = None) -> int:
                     pub_bytes = load_ed25519_public_key_file(pub_path)
                 elif args.key_id:
                     pub_bytes = load_ed25519_public_key_file(public_key_path(workspace, args.key_id))
+                else:
+                    print(json.dumps({
+                        "ok": False,
+                        "scheme": "ed25519",
+                        "trusted": False,
+                        "signature_consistent": False,
+                        "message": (
+                            "trusted Ed25519 verify requires --public-key or --key-id "
+                            "(embedded receipt public key alone is not a trust anchor)"
+                        ),
+                    }, indent=2, sort_keys=True))
+                    return 1
 
                 ver_result = verify_certificate_ed25519(signed_cert, public_key=pub_bytes)
                 result = {
                     "ok": ver_result.ok,
                     "scheme": "ed25519",
+                    "trusted": ver_result.trusted,
+                    "signature_consistent": ver_result.signature_consistent,
                     "signature_valid": ver_result.signature_valid,
                     "schema_valid": ver_result.schema_valid,
                     "certificate_id_valid": ver_result.certificate_id_valid,
@@ -632,8 +648,9 @@ def main(argv: list[str] | None = None) -> int:
                     "algorithm": signed_cert.algorithm,
                     "offline": args.contract is None,
                     "note": (
-                        "Ed25519 verifies key custody for this public key; "
-                        "it does not prove scientific claims or absolute non-repudiation."
+                        "Trusted Ed25519 verify uses an external public key; "
+                        "embedded-key-only consistency is never ok:true. "
+                        "Does not prove scientific claims or absolute non-repudiation."
                     ),
                 }
                 if args.contract is not None and ver_result.ok:

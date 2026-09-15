@@ -165,6 +165,54 @@ def inspect_sdist(path: Path, destination: Path) -> Path:
     return destination / top
 
 
+# Optional extras may appear as Requires-Dist with an ``extra == "…"`` marker.
+# Hard (unconditional) dependencies remain forbidden so default installs stay
+# stdlib-only. Keep this list in sync with ``[project.optional-dependencies]``.
+VETTED_OPTIONAL_EXTRAS = frozenset({"ed25519", "signing"})
+_VETTED_OPTIONAL_REQUIREMENT_NAMES = frozenset({"pynacl"})
+_REQUIRES_DIST_RE = re.compile(r"^Requires-Dist:\s*(.+)$", re.MULTILINE)
+_EXTRA_MARKER_RE = re.compile(
+    r"""extra\s*==\s*(?P<q>['"])(?P<extra>[A-Za-z0-9._-]+)(?P=q)"""
+)
+_REQUIREMENT_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+
+def validate_requires_dist_metadata(metadata: str) -> None:
+    """Ensure METADATA declares no hard deps; only vetted optional extras.
+
+    Raises SystemExit with a clear message on policy violations.
+    """
+    for raw in _REQUIRES_DIST_RE.findall(metadata):
+        line = raw.strip()
+        if ";" not in line:
+            raise SystemExit(
+                "the dependency-free runtime unexpectedly declares a hard dependency: "
+                f"Requires-Dist: {line}"
+            )
+        requirement, marker = line.split(";", 1)
+        name_match = _REQUIREMENT_NAME_RE.match(requirement)
+        if name_match is None:
+            raise SystemExit(f"unparseable Requires-Dist requirement: {line}")
+        req_name = name_match.group(1).lower().replace("_", "-")
+        extras = {match.group("extra") for match in _EXTRA_MARKER_RE.finditer(marker)}
+        if not extras:
+            raise SystemExit(
+                "Requires-Dist marker must bind to an optional extra "
+                f"(got: Requires-Dist: {line})"
+            )
+        unknown = extras - VETTED_OPTIONAL_EXTRAS
+        if unknown:
+            raise SystemExit(
+                f"unvetted optional extra(s) in Requires-Dist: {sorted(unknown)} "
+                f"(allowed: {sorted(VETTED_OPTIONAL_EXTRAS)})"
+            )
+        if req_name not in _VETTED_OPTIONAL_REQUIREMENT_NAMES:
+            raise SystemExit(
+                f"unvetted optional dependency {req_name!r} for extras {sorted(extras)} "
+                f"(allowed packages: {sorted(_VETTED_OPTIONAL_REQUIREMENT_NAMES)})"
+            )
+
+
 def inspect_wheel(path: Path) -> None:
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
@@ -181,8 +229,7 @@ def inspect_wheel(path: Path) -> None:
         metadata = archive.read(f"{dist_info}/METADATA").decode("utf-8")
         if f"\nVersion: {EXPECTED_PYTHON_VERSION}\n" not in metadata:
             raise SystemExit("wheel metadata has the wrong version")
-        if "\nRequires-Dist:" in metadata:
-            raise SystemExit("the dependency-free runtime unexpectedly declares a dependency")
+        validate_requires_dist_metadata(metadata)
 
 
 def build_plugin(source: Path, output: Path) -> None:
