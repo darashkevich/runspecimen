@@ -141,6 +141,11 @@ cannot complete steps 2–5 here. Local smoke remains:
 Obtain a Developer ID Application certificate on the release Mac, then re-run
 `./Scripts/sign_and_notarize.sh all`.
 
+Short operator checklist (cert → signing.env → notarize → staple → zip/DMG → MAS):
+[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+
 When a helper is staged (`Helpers/payload/runspecimen`), `build_app.sh` copies it into
 `Contents/Helpers/`. Sign that child with `Entitlements/RunSpecimen.helper.entitlements`
 (same Team ID) before notarizing the whole bundle — see `Scripts/stage_helper.sh`.
+Optional freeze: `RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh --verify` or
+`./Scripts/build_app.sh --frozen-helper`.

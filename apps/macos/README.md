@@ -31,7 +31,8 @@ See **[APP_STORE.md](APP_STORE.md)**, **[NOTARIZATION.md](NOTARIZATION.md)**, an
 | Settings (CLI path, version, source, privacy, non-goals) | Done |
 | About panel (app/CLI version + privacy link) | Done |
 | Menu commands (Workspace, Lifecycle, Engine, Help, About) | Done |
-| Helpers staging (`--from-src` package tree) + `Contents/Helpers` in builds | Done for local/Target B; freeze deferred |
+| Helpers staging (`--from-src` package tree) + `Contents/Helpers` in builds | Done for local/Target B |
+| Optional PyInstaller freeze (`RS_FREEZE_HELPER=1` / `--frozen-helper`) | Local when PyInstaller installed; CI skips |
 | App Sandbox entitlements + PrivacyInfo + helper inherit entitlements | Done |
 | `swift test` + `Scripts/smoke_macos.sh` (no GUI, helper e2e) | Done |
 | Signing / notarization scripts (`Scripts/sign_and_notarize.sh`) | Ready when Developer ID cert present |
@@ -59,11 +60,14 @@ cd apps/macos
 open build/RunSpecimen.app
 ```
 
+Operator release steps (cert, notarize, freeze): **[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)**.
+
 ## Bundled helper (optional)
 
 ```bash
 ./Scripts/stage_helper.sh --from-src --verify   # Apache-2.0 package tree + launcher
 ./Scripts/build_app.sh                          # copies into Contents/Helpers/
+# Or: ./Scripts/build_app.sh --from-src
 # In-app: Engine → Prefer Bundled Helper  (Source = “Bundled Helpers”)
 ```
 
@@ -74,10 +78,19 @@ Dry-run copy of an installed CLI (may embed an absolute shebang):
 ./Scripts/build_app.sh
 ```
 
-`--from-src` needs host Python 3.9+ at runtime. An optional PyInstaller freeze is
-available via `RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh` (skips cleanly when
-PyInstaller is absent). See [Helpers/README.md](Helpers/README.md).
+`--from-src` needs host Python 3.9+ at runtime. Optional PyInstaller freeze:
 
+```bash
+# End-to-end (local; not CI-default)
+python3 -m pip install --user 'pyinstaller>=6'
+RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh --verify
+./Scripts/build_app.sh
+
+# Or one-shot (falls back to --from-src if PyInstaller missing):
+./Scripts/build_app.sh --frozen-helper
+```
+
+See [Helpers/README.md](Helpers/README.md). `smoke_macos.sh` always re-stages `--from-src`.
 ## Sign + notarize (Developer ID)
 
 ```bash
@@ -86,8 +99,8 @@ PyInstaller is absent). See [Helpers/README.md](Helpers/README.md).
 ./Scripts/sign_and_notarize.sh all    # sign → notarize → staple → zip
 ```
 
-Full operator checklist: **[NOTARIZATION.md](NOTARIZATION.md)**.
-
+Full operator checklist: **[NOTARIZATION.md](NOTARIZATION.md)** and
+**[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)**.
 ## Approval invariant
 
 Human approval remains interactive. The Approve sheet attaches `runspecimen approve` to a
