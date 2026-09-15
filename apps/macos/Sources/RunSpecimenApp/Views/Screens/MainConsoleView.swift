@@ -15,7 +15,11 @@ struct MainConsoleView: View {
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
                     .background(RSTheme.danger.opacity(0.08))
-                    .accessibilityLabel("CLI setup issue")
+                    .accessibilityLabel(
+                        issue.lowercased().contains("version mismatch")
+                            ? "CLI version mismatch"
+                            : "CLI setup issue"
+                    )
                     .accessibilityValue(issue)
             }
             if model.contractURL == nil {
@@ -51,6 +55,13 @@ struct TopBar: View {
 
             CapsuleLabel(text: model.cliIdentity?.version ?? "CLI missing", tone: model.hasCLI ? .signal : .amber)
                 .accessibilityLabel(model.hasCLI ? "CLI version \(model.cliIdentity?.version ?? "")" : "CLI missing")
+                .help(model.cliSourceLabel.map { "Source: \($0)" } ?? "Select or install runspecimen 0.2.0rc9+")
+
+            if model.dashboardRunning {
+                CapsuleLabel(text: "Dashboard", tone: .amber)
+                    .accessibilityLabel("Dashboard child process running")
+                    .help("Loopback dashboard is running; it stops on quit or Stop Dashboard")
+            }
 
             if let path = model.workspaceURL?.path {
                 Text(path)

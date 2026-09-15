@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(RunSpecimenCore)
+import RunSpecimenCore
+#endif
 
 struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
@@ -16,8 +19,13 @@ struct SettingsView: View {
                     Text(model.cliIdentity?.version ?? "—")
                         .font(RSTheme.monoSmall)
                 }
+                LabeledContent("Source") {
+                    Text(model.cliSourceLabel ?? model.cliIdentity?.source.label ?? "—")
+                        .font(RSTheme.monoSmall)
+                        .foregroundStyle(RSTheme.muted)
+                }
                 LabeledContent("Minimum") {
-                    Text("0.2.0rc9+")
+                    Text("\(CLIVersionGate.minimum.displayMinimum)+")
                         .font(RSTheme.monoSmall)
                         .foregroundStyle(RSTheme.muted)
                 }
@@ -35,7 +43,7 @@ struct SettingsView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(RSTheme.amber)
                 }
-                Text("Mac App Store builds must use a user-selected executable (security-scoped bookmark). See APP_STORE.md. Optional future: Contents/Helpers — see Helpers/README.md.")
+                Text("Discovery order: Open-panel bookmark → Contents/Helpers/runspecimen (if staged) → PATH/PyPI probe. MAS builds should use bookmark or bundled helper. See Helpers/README.md and ADR-002.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -66,6 +74,7 @@ struct SettingsView: View {
                     .textSelection(.enabled)
                 Link("User guide", destination: URL(string: "https://github.com/darashkevich/runspecimen/blob/main/docs/USER_GUIDE.md")!)
                 Link("Notarization steps", destination: URL(string: "https://github.com/darashkevich/runspecimen/blob/cursor/macos-native-app/apps/macos/NOTARIZATION.md")!)
+                Link("Helper packaging", destination: URL(string: "https://github.com/darashkevich/runspecimen/blob/cursor/macos-native-app/apps/macos/Helpers/README.md")!)
             }
         }
         .formStyle(.grouped)

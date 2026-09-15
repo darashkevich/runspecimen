@@ -13,7 +13,7 @@ struct ActionBar: View {
             HStack(spacing: 10) {
                 ForEach(actions) { action in
                     Button(action.title) {
-                        Task { await model.perform(action) }
+                        Task { await model.requestPerform(action) }
                     }
                     .buttonStyle(ActionChipStyle(
                         amber: action == .approve,
@@ -23,7 +23,18 @@ struct ActionBar: View {
                     .help(help(for: action))
                     .accessibilityHint(help(for: action))
                 }
+                if model.dashboardRunning {
+                    Button("Stop Dashboard") {
+                        Task { await model.stopDashboard() }
+                    }
+                    .buttonStyle(ActionChipStyle())
+                    .help("Terminate the loopback dashboard child process")
+                }
                 Spacer()
+                if model.dashboardRunning {
+                    CapsuleLabel(text: "Dashboard on", tone: .amber)
+                        .accessibilityLabel("Dashboard running")
+                }
                 if model.isBusy {
                     ProgressView()
                         .controlSize(.small)
@@ -39,13 +50,19 @@ struct ActionBar: View {
     private func help(for action: LifecycleAction) -> String {
         switch action {
         case .approve:
-            return "Opens an interactive PTY sheet. You must type APPROVE yourself."
+            return "Opens an interactive PTY sheet. You must type APPROVE yourself. Shortcut: ⇧⌘A"
         case .dashboard:
-            return "Opens the loopback read-only dashboard. It cannot approve or execute."
+            return "Opens the loopback read-only dashboard. It cannot approve or execute. Shortcut: ⇧⌘D"
         case .run:
-            return "Executes one bounded run under the workspace lease."
-        default:
-            return "Runs runspecimen \(action.rawValue) via the selected CLI."
+            return "Executes one bounded run under the workspace lease (asks for confirmation). Shortcut: ⌘3"
+        case .postflight:
+            return "Runs postflight assertions (asks for confirmation). Shortcut: ⌘4"
+        case .validate:
+            return "Runs runspecimen validate. Shortcut: ⌘1"
+        case .preflight:
+            return "Runs runspecimen preflight. Shortcut: ⌘2"
+        case .verify:
+            return "Runs runspecimen verify. Shortcut: ⌘5"
         }
     }
 }

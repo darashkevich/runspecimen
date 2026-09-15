@@ -21,23 +21,25 @@ See **[APP_STORE.md](APP_STORE.md)**, **[NOTARIZATION.md](NOTARIZATION.md)**, an
 | --- | --- |
 | Brand-first empty state, flight-ops theme | Done |
 | Workspace picker via Open panel + security-scoped bookmarks | Done |
-| CLI via Open panel + bookmark restore + PATH/PyPI location probe | Done |
-| Minimum CLI gate (`0.2.0rc9+`) with clear error banners | Done |
+| CLI via Open panel + bookmark → bundled Helpers → PATH probe | Done |
+| Minimum CLI gate (`0.2.0rc9+`) with version-mismatch banners | Done |
 | `doctor`, `--version`, `status`, `validate` integration | Done |
-| Lifecycle status + evidence / receipt inspector (read-only) | Done |
-| Action bar gating (approve / run / postflight / verify / dashboard) | Done |
-| Dashboard launch with child process tracked + killed on quit | Done |
+| Lifecycle status + evidence / receipt inspector (copy, empty/error) | Done |
+| Action bar gating + ⌘1–5 / ⇧⌘A / ⇧⌘D shortcuts (Run/Postflight confirm) | Done |
+| Dashboard launch tracked; stop on demand; killed sync on quit | Done |
 | Approve sheet with real PTY → `runspecimen approve` + VoiceOver labels | Done |
-| Settings (CLI path, version, privacy, non-goals) | Done |
-| App Sandbox entitlements + PrivacyInfo | Done |
+| Settings (CLI path, version, source, privacy, non-goals) | Done |
+| App Sandbox entitlements + PrivacyInfo + helper inherit entitlements | Done |
+| Helpers staging (`Scripts/stage_helper.sh`) + `Contents/Helpers` in builds | Wired; binary packaging deferred |
+| `swift test` + `Scripts/smoke_macos.sh` (no GUI) | Done |
 | Signing / notarization scripts (`Scripts/sign_and_notarize.sh`) | Ready when Developer ID cert present |
 | Notarized / MAS archive | Blocked without Developer ID identity + full Xcode |
 
 ## Requirements
 
 - macOS 14+
-- Xcode 15+ recommended for Archive (Command Line Tools can compile sources via `Scripts/build_app.sh`)
-- Installed `runspecimen` CLI **0.2.0rc9+** (PyPI or this repo’s `pip install .`)
+- Xcode 15+ / Swift 5.9+ (Command Line Tools can build via SwiftPM + `Scripts/build_app.sh`)
+- Installed `runspecimen` CLI **0.2.0rc9+** (PyPI or this repo’s `pip install .`), **or** a staged helper under `Helpers/payload/`
 
 ```bash
 python3 -m pip install 'runspecimen==0.2.0rc9'
@@ -50,9 +52,20 @@ runspecimen --version
 
 ```bash
 cd apps/macos
+./Scripts/smoke_macos.sh        # swift test + build + layout checks (+ CLI probe if on PATH)
 ./Scripts/build_app.sh          # produces build/RunSpecimen.app (ad-hoc signed)
 open build/RunSpecimen.app
 ```
+
+## Bundled helper (optional)
+
+```bash
+./Scripts/stage_helper.sh                 # prints exact packaging steps
+./Scripts/stage_helper.sh --from "$(command -v runspecimen)"  # local experiment only
+./Scripts/build_app.sh                    # copies into Contents/Helpers/
+```
+
+No frozen helper ships in-repo yet. See [Helpers/README.md](Helpers/README.md).
 
 ## Sign + notarize (Developer ID)
 
