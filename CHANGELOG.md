@@ -12,6 +12,10 @@
   markers; private keys use 0600 exclusive no-follow creates; public-key export
   never reads the private seed; trusted verify requires an external trust
   anchor (embedded-key-only consistency is never `ok: true`).
+- Key rotation (`overwrite`) stages exclusive no-follow temps, never removes the
+  live private key before the new public path is installed, and rolls back so a
+  failed rotation keeps the previous working pair. Key reads use `O_NOFOLLOW` +
+  `fstat` on the opened fd (private and public).
 
 ### Product direction
 
