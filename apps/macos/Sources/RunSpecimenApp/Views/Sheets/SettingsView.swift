@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 #if canImport(RunSpecimenCore)
 import RunSpecimenCore
 #endif
@@ -33,6 +34,14 @@ struct SettingsView: View {
                     Task { await model.chooseCLI() }
                 }
                 .accessibilityHint("Opens a file picker. Required for App Sandbox bookmark grants.")
+                Button("Prefer Bundled Helper") {
+                    Task { await model.preferBundledHelper() }
+                }
+                .accessibilityHint("Clears the saved CLI bookmark and uses Contents/Helpers/runspecimen when staged.")
+                Button("Clear CLI Bookmark & Rediscover") {
+                    Task { await model.clearCLIBookmarkAndRediscover() }
+                }
+                .accessibilityHint("Drops the Open-panel bookmark so discovery can use Helpers then PATH.")
                 if let issue = model.cliSetupIssue {
                     Text(issue)
                         .font(.system(size: 11))
@@ -56,7 +65,8 @@ struct SettingsView: View {
                 LabeledContent("App Privacy") {
                     Text("Data Not Collected")
                 }
-                Link("Security policy on GitHub", destination: URL(string: "https://github.com/darashkevich/runspecimen/blob/main/SECURITY.md")!)
+                Link("Privacy policy (runspecimen.darashkevich.com)", destination: AppLinks.privacyPolicy)
+                Link("Security policy on GitHub", destination: AppLinks.securityPolicy)
                 Text("No analytics SDKs. Docs links open in your browser. Workspace contents never leave this Mac via this app.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -72,7 +82,10 @@ struct SettingsView: View {
                 Text("python3 -m pip install 'runspecimen==0.2.0rc9'")
                     .font(RSTheme.monoSmall)
                     .textSelection(.enabled)
-                Link("User guide", destination: URL(string: "https://github.com/darashkevich/runspecimen/blob/main/docs/USER_GUIDE.md")!)
+                Text("Or stage a helper: ./Scripts/stage_helper.sh --from-src && ./Scripts/build_app.sh")
+                    .font(RSTheme.monoSmall)
+                    .textSelection(.enabled)
+                Link("User guide", destination: AppLinks.userGuide)
                 Link("Notarization steps", destination: URL(string: "https://github.com/darashkevich/runspecimen/blob/cursor/macos-native-app/apps/macos/NOTARIZATION.md")!)
                 Link("Helper packaging", destination: URL(string: "https://github.com/darashkevich/runspecimen/blob/cursor/macos-native-app/apps/macos/Helpers/README.md")!)
             }

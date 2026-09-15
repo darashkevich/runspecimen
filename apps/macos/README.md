@@ -29,9 +29,11 @@ See **[APP_STORE.md](APP_STORE.md)**, **[NOTARIZATION.md](NOTARIZATION.md)**, an
 | Dashboard launch tracked; stop on demand; killed sync on quit | Done |
 | Approve sheet with real PTY → `runspecimen approve` + VoiceOver labels | Done |
 | Settings (CLI path, version, source, privacy, non-goals) | Done |
+| About panel (app/CLI version + privacy link) | Done |
+| Menu commands (Workspace, Lifecycle, Engine, Help, About) | Done |
+| Helpers staging (`--from-src` package tree) + `Contents/Helpers` in builds | Done for local/Target B; freeze deferred |
 | App Sandbox entitlements + PrivacyInfo + helper inherit entitlements | Done |
-| Helpers staging (`Scripts/stage_helper.sh`) + `Contents/Helpers` in builds | Wired; binary packaging deferred |
-| `swift test` + `Scripts/smoke_macos.sh` (no GUI) | Done |
+| `swift test` + `Scripts/smoke_macos.sh` (no GUI, helper e2e) | Done |
 | Signing / notarization scripts (`Scripts/sign_and_notarize.sh`) | Ready when Developer ID cert present |
 | Notarized / MAS archive | Blocked without Developer ID identity + full Xcode |
 
@@ -60,12 +62,20 @@ open build/RunSpecimen.app
 ## Bundled helper (optional)
 
 ```bash
-./Scripts/stage_helper.sh                 # prints exact packaging steps
-./Scripts/stage_helper.sh --from "$(command -v runspecimen)"  # local experiment only
-./Scripts/build_app.sh                    # copies into Contents/Helpers/
+./Scripts/stage_helper.sh --from-src --verify   # Apache-2.0 package tree + launcher
+./Scripts/build_app.sh                          # copies into Contents/Helpers/
+# In-app: Engine → Prefer Bundled Helper  (Source = “Bundled Helpers”)
 ```
 
-No frozen helper ships in-repo yet. See [Helpers/README.md](Helpers/README.md).
+Dry-run copy of an installed CLI (may embed an absolute shebang):
+
+```bash
+./Scripts/stage_helper.sh --from "$(command -v runspecimen)"
+./Scripts/build_app.sh
+```
+
+`--from-src` needs host Python 3.9+ at runtime. A frozen PyInstaller helper is
+optional later for MAS self-containment. See [Helpers/README.md](Helpers/README.md).
 
 ## Sign + notarize (Developer ID)
 

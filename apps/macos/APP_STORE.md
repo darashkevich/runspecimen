@@ -82,9 +82,9 @@ Update this declaration immediately if any SDK or network call is added.
 ### In-app privacy policy
 
 MAS requires a privacy policy URL in metadata **and** an in-app accessible link
-(guideline 5.1.1). Ship Settings → Privacy with a link to the published policy
-(runspecimen site or GitHub `SECURITY.md` / privacy page).
-
+(guideline 5.1.1). Ship Settings → Privacy, Help → Privacy Policy, and the About
+panel with https://runspecimen.darashkevich.com/privacy/ (plus GitHub
+`SECURITY.md`).
 ### `PrivacyInfo.xcprivacy`
 
 Ship `Resources/PrivacyInfo.xcprivacy`:

@@ -5,9 +5,10 @@ bundle so Target A (Mac App Store) does not depend on a user-installed PyPI tool
 (guideline **2.4.5(viii)** risk).
 
 **Status (2026-09-15):** discovery order wired in `CLIService` / `AppModel`;
-`Scripts/build_app.sh` always creates `Contents/Helpers/`; staging helper via
-`Scripts/stage_helper.sh`. **No frozen helper binary ships in-repo yet** —
-packaging + Developer ID signing remain blocked without Apple certs.
+`Scripts/build_app.sh` always creates `Contents/Helpers/`; staging via
+`Scripts/stage_helper.sh --from-src` (Apache-2.0 stdlib-only package tree +
+host-Python launcher). **No frozen CPython/PyInstaller binary ships in-repo** —
+full self-containment + Developer ID signing remain blocked without Apple certs.
 
 ## Goals
 
@@ -25,7 +26,9 @@ packaging + Developer ID signing remain blocked without Apple certs.
 RunSpecimen.app/Contents/
   MacOS/RunSpecimen          # SwiftUI shell
   Helpers/
-    runspecimen              # signed executable entry (when staged)
+    runspecimen              # launcher (or frozen binary) when staged
+    lib/runspecimen/         # package tree when staged via --from-src
+    NOTICE.txt               # Apache-2.0 / packaging notes
     README.md                # placeholder when no helper staged
   Resources/…
 ```
@@ -47,29 +50,39 @@ Entitlement posture:
 3. PATH / PyPI common locations (Developer ID / local debug only).
 
 MAS builds should prefer (1) or (2) and not rely on (3). Settings shows the
-active **Source** label.
+active **Source** label. Use **Engine → Prefer Bundled Helper** (or Settings)
+to clear the bookmark and force (2) when testing a staged helper.
+
+## License / packaging decision
+
+| Option | License story | Status |
+| --- | --- | --- |
+| `--from-src` package tree + host Python 3.9+ launcher | Redistributes only Apache-2.0 project code (`dependencies = []`) | **Implemented** — preferred for local / Target B experiments |
+| `--from PATH` copy of installed CLI | Same code license; shebang may be machine-local | Dry-run only |
+| PyInstaller onefile (future) | Bootloader Apache-2.0; must attribute bundled CPython | Documented; not required until MAS self-containment |
 
 ## What this stub includes now
 
 - `Helpers/README.md` (this file)
 - `Helpers/.gitkeep` so the directory is tracked
 - `Helpers/payload/` gitignored — place local build artifacts here during experiments
-- `Scripts/stage_helper.sh` — layout + exact packaging steps; `--from PATH` to stage
-- `Scripts/build_app.sh` — copies `payload/runspecimen` → `Contents/Helpers/` when present
+- `Scripts/stage_helper.sh` — `--from-src`, `--from`, `--check`, `--verify`
+- `Scripts/build_app.sh` — copies launcher + `lib/` + NOTICE → `Contents/Helpers/`
 - `Entitlements/RunSpecimen.helper.entitlements` — inherit sandbox for child helper
-- App discovery + Settings source label (ADR-002)
+- App discovery + Settings / Engine menu source controls (ADR-002)
 
 ## Exact next packaging steps
 
-Run `./Scripts/stage_helper.sh` for the live checklist. Summary:
+```bash
+./Scripts/stage_helper.sh --from-src --verify
+./Scripts/build_app.sh
+# Confirm: build/RunSpecimen.app/Contents/Helpers/runspecimen --version
+# In-app: Engine → Prefer Bundled Helper → Source = “Bundled Helpers”
+```
 
-1. Choose packaging: PyInstaller / python-build-standalone + zipapp / future compiled helper.
-2. License audit of bundled runtime (Apache-2.0 app; runtime licenses must be redistributable).
-3. Place executable at `Helpers/payload/runspecimen` (or `--from`).
-4. codesign helper with `RunSpecimen.helper.entitlements` + same Team ID as the app.
-5. `./Scripts/build_app.sh` then `./Scripts/sign_and_notarize.sh all` (needs Developer ID).
-6. Confirm Settings → Source = “Bundled Helpers”.
-7. Update App Review notes in APP_STORE.md with helper path + demo instructions.
+For MAS freeze later: PyInstaller onefile named `runspecimen`, place under
+`Helpers/payload/`, codesign with inherit entitlements, then notarize (needs
+Developer ID).
 
 ## Non-goals for this stub
 
