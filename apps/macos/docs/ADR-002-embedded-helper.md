@@ -1,6 +1,6 @@
 # ADR-002 — Optional embedded engine helper (stretch)
 
-**Status:** Accepted for wiring; helper binary packaging deferred  
+**Status:** Accepted — package-tree staging implemented; frozen interpreter deferred  
 **Date:** 2026-09-15  
 **Related:** [ADR-001](ADR-001-architecture.md), [Helpers/README.md](../Helpers/README.md), [APP_STORE.md](../APP_STORE.md)
 
@@ -15,16 +15,25 @@ helper under `Contents/Helpers` is the long-term mitigation.
 - Keep the SwiftUI app as a thin shell; do not reimplement leases/approval/hash
   chains in Swift.
 - Ship discovery order now: Open-panel bookmark → bundled Helpers → PATH probe.
-- `build_app.sh` always materializes `Contents/Helpers/` (real binary when
-  `Helpers/payload/runspecimen` is staged; otherwise README placeholder).
+- Prefer `Scripts/stage_helper.sh --from-src`: copy the Apache-2.0 stdlib-only
+  `src/runspecimen` tree plus a host-Python launcher. Zero third-party Python
+  deps (`pyproject.toml` `dependencies = []`) keeps redistribution legally clear
+  without freezing CPython in this iteration.
+- `build_app.sh` materializes `Contents/Helpers/` (launcher + `lib/` + NOTICE when
+  staged; otherwise README placeholder).
 - Helper entitlements: `Entitlements/RunSpecimen.helper.entitlements` (inherit).
 - Approval remains PTY-gated; no auto-`APPROVE`; no telemetry.
-- Until a frozen helper ships and Developer ID certs exist, Target B
-  (Developer ID + notarization) remains the v1 channel with user-selected CLI.
+- PyInstaller (or equivalent) freeze remains optional for MAS self-containment
+  when Developer ID certs exist; until then Target B uses user-selected CLI or
+  the host-Python package-tree helper for local testing.
 
 ## Consequences
 
-- Larger notarized artifact once packaging lands; license/runtime work still open.
+- `--from-src` helpers require Python 3.9+ on PATH at runtime (honest limitation
+  until a freeze lands).
+- Larger notarized artifact once a freeze lands; CPython NOTICE attribution still
+  required for that path.
 - `Helpers/payload/` stays gitignored for local experiments.
-- App Settings surfaces CLI **Source** so operators can confirm bundled vs PATH.
+- App Settings / Engine menu surfaces CLI **Source** and “Prefer Bundled Helper”
+  so operators can confirm bundled vs bookmark vs PATH.
 - Exact packaging steps live in `Scripts/stage_helper.sh` and Helpers/README.md.

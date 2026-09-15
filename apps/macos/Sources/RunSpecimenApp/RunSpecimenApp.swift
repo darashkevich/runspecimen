@@ -1,5 +1,8 @@
 import SwiftUI
 import AppKit
+#if canImport(RunSpecimenCore)
+import RunSpecimenCore
+#endif
 
 @main
 struct RunSpecimenApp: App {
@@ -25,6 +28,17 @@ struct RunSpecimenApp: App {
         .defaultSize(width: 1180, height: 760)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(replacing: .appInfo) {
+                Button("About RunSpecimen") {
+                    model.showAbout = true
+                }
+            }
+            CommandGroup(after: .appInfo) {
+                Button("Privacy Policy…") {
+                    NSWorkspace.shared.open(AppLinks.privacyPolicy)
+                }
+                Divider()
+            }
             CommandMenu("Workspace") {
                 Button("Open Workspace…") {
                     Task { await model.chooseWorkspace() }
@@ -83,23 +97,42 @@ struct RunSpecimenApp: App {
                 .keyboardShortcut("d", modifiers: [.command, .option])
                 .disabled(!model.dashboardRunning)
             }
-            CommandMenu("RunSpecimen") {
-                Button("Approve…") {
-                    Task { await model.requestPerform(.approve) }
+            CommandMenu("Engine") {
+                Button("Select runspecimen CLI…") {
+                    Task { await model.chooseCLI() }
                 }
-                .keyboardShortcut("a", modifiers: [.command, .shift])
-                .disabled(!model.isActionEnabled(.approve))
+                Button("Prefer Bundled Helper") {
+                    Task { await model.preferBundledHelper() }
+                }
+                Button("Clear CLI Bookmark & Rediscover") {
+                    Task { await model.clearCLIBookmarkAndRediscover() }
+                }
+                Divider()
                 Button("Settings…") {
                     model.showSettings = true
                 }
                 .keyboardShortcut(",", modifiers: [.command])
+            }
+            CommandGroup(replacing: .help) {
+                Button("RunSpecimen Help") {
+                    NSWorkspace.shared.open(AppLinks.site)
+                }
+                Button("User Guide") {
+                    NSWorkspace.shared.open(AppLinks.userGuide)
+                }
+                Button("Privacy Policy") {
+                    NSWorkspace.shared.open(AppLinks.privacyPolicy)
+                }
+                Button("Security Policy") {
+                    NSWorkspace.shared.open(AppLinks.securityPolicy)
+                }
             }
         }
 
         Settings {
             SettingsView()
                 .environmentObject(model)
-                .frame(width: 540, height: 560)
+                .frame(width: 540, height: 620)
         }
     }
 }
@@ -115,6 +148,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         DashboardChild.shared.stop()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        true
     }
 }
 
@@ -157,6 +194,15 @@ struct RootView: View {
             ApproveSheet()
                 .environmentObject(model)
                 .frame(minWidth: 680, minHeight: 520)
+        }
+        .sheet(isPresented: $model.showAbout) {
+            AboutView()
+                .environmentObject(model)
+        }
+        .sheet(isPresented: $model.showSettings) {
+            SettingsView()
+                .environmentObject(model)
+                .frame(width: 540, height: 620)
         }
     }
 }

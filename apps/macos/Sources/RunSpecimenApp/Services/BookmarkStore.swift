@@ -30,6 +30,14 @@ final class BookmarkStore {
         try persist(url, key: cliKey, storing: &activeCLIURL, readOnly: true)
     }
 
+    /// Drops the saved CLI bookmark so discovery can fall through to
+    /// `Contents/Helpers` then PATH (ADR-002). Does not delete workspace.
+    func clearCLI() {
+        activeCLIURL?.stopAccessingSecurityScopedResource()
+        activeCLIURL = nil
+        defaults.removeObject(forKey: cliKey)
+    }
+
     func startAccessingWorkspace() -> URL? {
         guard let url = activeWorkspaceURL ?? loadWorkspace() else { return nil }
         _ = url.startAccessingSecurityScopedResource()

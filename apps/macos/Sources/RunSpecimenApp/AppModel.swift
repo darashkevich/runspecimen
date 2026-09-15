@@ -16,6 +16,7 @@ final class AppModel: ObservableObject {
     @Published var error: AppError?
     @Published var showApproveSheet = false
     @Published var showSettings = false
+    @Published var showAbout = false
     @Published var pathProbeNote: String?
     /// Persistent banner when CLI is missing, stale bookmark, or below 0.2.0rc9.
     @Published var cliSetupIssue: String?
@@ -132,6 +133,38 @@ final class AppModel: ObservableObject {
             await refreshCLIIdentity()
         } catch {
             self.error = AppError(message: error.localizedDescription)
+        }
+    }
+
+    /// Clear the Open-panel CLI bookmark and re-run ADR-002 discovery
+    /// (Helpers → PATH). Use this to confirm a staged Contents/Helpers engine.
+    func clearCLIBookmarkAndRediscover() async {
+        bookmarks.clearCLI()
+        await cli.setCLI(nil, source: .manual)
+        cliIdentity = nil
+        cliSourceLabel = nil
+        cliSetupIssue = nil
+        pathProbeNote = nil
+        await bootstrap()
+    }
+
+    /// Prefer a staged Contents/Helpers/runspecimen when present (skips bookmark).
+    func preferBundledHelper() async {
+        bookmarks.clearCLI()
+        await cli.setCLI(nil, source: .manual)
+        cliIdentity = nil
+        cliSourceLabel = nil
+        cliSetupIssue = nil
+        pathProbeNote = nil
+        if let bundled = cli.resolveBundledHelper() {
+            pathProbeNote = "Using bundled engine at \(bundled.path)."
+            await cli.setCLI(bundled, source: .bundledHelper)
+            await refreshCLIIdentity()
+            return
+        }
+        await bootstrap()
+        if cliIdentity == nil {
+            cliSetupIssue = "No executable under Contents/Helpers/runspecimen. Stage with Scripts/stage_helper.sh --from-src then rebuild."
         }
     }
 
