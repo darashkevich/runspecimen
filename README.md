@@ -32,6 +32,7 @@ No watchers, no recurring scheduler, no parallel workers.
 - [Marketing pitches](docs/MARKETING_PITCHES.md) — honest one-liners, elevators, CTAs
 - [Grok tandem](docs/GROK_TANDEM.md) — external xAI Grok review log (Composio `GROK_*`)
 - [Threat model](docs/THREAT_MODEL.md) — trusted boundary and residual risks
+- [macOS app](apps/macos/README.md) — native SwiftUI companion (sandbox-first; see `APP_STORE.md`)
 
 ## Install
 

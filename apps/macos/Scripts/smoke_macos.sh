@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+# Non-GUI smoke for the macOS companion app.
+# Runs version-gate checks + bundle layout checks + optional CLI --version probe.
+# Uses `swift test` when SwiftPM works (Xcode); otherwise a Python parity check.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO="$(cd "$ROOT/../.." && pwd)"
+cd "$ROOT"
+
+echo "==> CLIVersionGate checks"
+if swift package --package-path "$ROOT" describe >/dev/null 2>&1; then
+  echo "SwiftPM OK — running swift test"
+  swift test --package-path "$ROOT"
+else
+  echo "SwiftPM unavailable — running Python parity checks for CLIVersionGate"
+  python3 - <<'PY'
+import re
+
+def parse(text: str):
+    lowered = text.lower()
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)(?:[-.]?(?:rc|a|b|alpha|beta)\.?(\d+))?", lowered)
+    if not m:
+        return None
+    maj, minor, patch = map(int, m.group(1, 2, 3))
+    if m.group(4) is not None:
+        return (maj, minor, patch, 0, int(m.group(4)))
+    return (maj, minor, patch, 1, 0)
+
+minimum = (0, 2, 0, 0, 9)
+assert parse("runspecimen 0.2.0rc9") == minimum
+assert parse("0.2.0-rc.9") == minimum
+assert parse("0.2.0") == (0, 2, 0, 1, 0)
+assert parse("0.2.0rc9") >= minimum
+assert parse("0.2.0rc8") < minimum
+assert parse("0.2.0") > minimum
+assert parse("not-a-version") is None
+print("CLIVersionGate Python parity OK")
+PY
+fi
+
+echo "==> stage_helper (docs / layout)"
+./Scripts/stage_helper.sh >/tmp/rs-stage-helper.out
+grep -q "Exact next packaging steps" /tmp/rs-stage-helper.out
+grep -q "LICENSE NOTES" /tmp/rs-stage-helper.out
+
+echo "==> stage_helper --from-src + --verify (package-tree helper)"
+./Scripts/stage_helper.sh --from-src --verify
+./Scripts/stage_helper.sh --check
+
+echo "==> freeze_helper default skip (CI-safe without PyInstaller)"
+./Scripts/freeze_helper.sh >/tmp/rs-freeze.out
+grep -q "skipped (optional)" /tmp/rs-freeze.out
+grep -q "stage_helper.sh --from-src" /tmp/rs-freeze.out
+
+echo "==> build_app.sh --help documents --frozen-helper"
+./Scripts/build_app.sh -h >/tmp/rs-build-help.out
+grep -q -- "--frozen-helper" /tmp/rs-build-help.out
+grep -q -- "--from-src" /tmp/rs-build-help.out
+test -f "$ROOT/RELEASE_CHECKLIST.md"
+grep -q "RS_FREEZE_HELPER=1" "$ROOT/RELEASE_CHECKLIST.md"
+
+echo "==> build_app.sh (with staged helper)"
+./Scripts/build_app.sh
+
+APP="$ROOT/build/RunSpecimen.app"
+HELPER="$APP/Contents/Helpers/runspecimen"
+test -x "$APP/Contents/MacOS/RunSpecimen"
+test -f "$APP/Contents/Info.plist"
+test -f "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
+test -d "$APP/Contents/Helpers"
+test -x "$HELPER"
+test -d "$APP/Contents/Helpers/lib/runspecimen"
+test -f "$APP/Contents/Helpers/NOTICE.txt"
+
+echo "==> bundled helper --version (Contents/Helpers preferred path)"
+HELPER_VER="$("$HELPER" --version 2>&1)"
+echo "Helpers/runspecimen --version → $HELPER_VER"
+echo "$HELPER_VER" | grep -qi runspecimen
+python3 - <<'PY' "$HELPER_VER"
+import re, sys
+text = sys.argv[1].lower()
+m = re.search(r"(\d+)\.(\d+)\.(\d+)(?:[-.]?(?:rc|a|b|alpha|beta)\.?(\d+))?", text)
+assert m, f"unparseable helper version: {text!r}"
+maj, minor, patch = map(int, m.group(1, 2, 3))
+pre = m.group(4)
+pre_kind = 0 if pre is not None else 1
+pre_num = int(pre) if pre is not None else 0
+found = (maj, minor, patch, pre_kind, pre_num)
+minimum = (0, 2, 0, 0, 9)
+assert found >= minimum, f"helper CLI too old: {found} < {minimum}"
+print("Bundled helper version gate OK")
+PY
+
+echo "==> Prefer Bundled Helper e2e: doctor/status + host-python + spaces"
+SHOWCASE="$REPO/examples/showcase"
+python3 - "$HELPER" "$SHOWCASE" <<'PY'
+import json, os, subprocess, sys, tempfile
+from pathlib import Path
+
+helper, showcase = sys.argv[1:3]
+assert "/Contents/Helpers/runspecimen" in helper
+
+# Absolute /usr/bin/python3 must work even with stripped PATH (sandbox-ish).
+env = {"PATH": "/usr/bin:/bin", "HOME": os.path.expanduser("~")}
+r = subprocess.run([helper, "--version"], capture_output=True, text=True, env=env)
+assert r.returncode == 0 and "runspecimen" in (r.stdout + r.stderr).lower(), (r.stdout, r.stderr)
+
+# Explicit /bin/bash invocation (matches CLIService.processInvocation for scripts)
+r = subprocess.run(["/bin/bash", helper, "doctor", "--workspace", showcase], capture_output=True, text=True)
+assert r.returncode == 0, r.stderr
+doc = json.loads(r.stdout)
+assert doc.get("ok") is True, doc
+
+ws = Path(tempfile.mkdtemp(prefix="rs prefer bundled ")) / "ws"
+ws.mkdir()
+r = subprocess.run(
+    ["/bin/bash", helper, "doctor", "--workspace", str(ws)],
+    capture_output=True,
+    text=True,
+)
+assert r.returncode == 0, r.stderr
+assert json.loads(r.stdout).get("ok") is True
+
+r = subprocess.run(
+    ["/bin/bash", helper, "status", "--workspace", str(ws), "--campaign-id", "demo", "--run-id", "1"],
+    capture_output=True,
+    text=True,
+)
+assert r.returncode == 0, (r.stdout, r.stderr)
+print("Prefer Bundled Helper doctor/status OK")
+PY
+
+echo "==> discovery preference: Helpers path is executable under Contents/Helpers"
+# ADR-002: when no Open-panel bookmark, app resolves Contents/Helpers before PATH.
+# Non-GUI assertion: the built helper exists at the exact path CLIService probes.
+python3 - <<'PY' "$APP"
+import os, sys
+app = sys.argv[1]
+helper = os.path.join(app, "Contents", "Helpers", "runspecimen")
+assert os.path.isfile(helper) and os.access(helper, os.X_OK), helper
+# Refuse tiny stubs (< 64 bytes) the same way CLIService does.
+assert os.path.getsize(helper) >= 64, os.path.getsize(helper)
+print("Helpers discovery target OK:", helper)
+PY
+
+echo "==> Prefer Bundled vs bookmark race guards present in sources"
+grep -q 'never persist PATH probes as bookmarks' \
+  "$ROOT/Sources/RunSpecimenApp/AppModel.swift"
+grep -q 'Does not fall through to PATH' \
+  "$ROOT/Sources/RunSpecimenApp/AppModel.swift"
+grep -q 'isShellScript' \
+  "$ROOT/Sources/RunSpecimenApp/Services/CLIService.swift"
+grep -q 'isShellScript' \
+  "$ROOT/Sources/RunSpecimenApp/Services/PTYApprovalSession.swift"
+grep -q 'Copied' \
+  "$ROOT/Sources/RunSpecimenApp/Views/Screens/EvidenceInspectorView.swift"
+
+echo "==> Info.plist CFBundleIdentifier + About version keys"
+/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist" | grep -q .
+/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist" | grep -q .
+test -f "$ROOT/Sources/RunSpecimenApp/Views/Sheets/AboutView.swift"
+grep -q 'runspecimen.darashkevich.com/privacy' \
+  "$ROOT/Sources/RunSpecimenApp/Views/Sheets/AboutView.swift" \
+  "$ROOT/Sources/RunSpecimenApp/Views/Sheets/SettingsView.swift"
+
+echo "==> optional PATH CLI integration (no GUI)"
+if command -v runspecimen >/dev/null 2>&1; then
+  VER="$(runspecimen --version 2>&1 || true)"
+  echo "runspecimen --version → $VER"
+  python3 - <<'PY' "$VER"
+import re, sys
+text = sys.argv[1].lower()
+m = re.search(r"(\d+)\.(\d+)\.(\d+)(?:[-.]?(?:rc|a|b|alpha|beta)\.?(\d+))?", text)
+assert m, f"unparseable: {text!r}"
+maj, minor, patch = map(int, m.group(1, 2, 3))
+pre = m.group(4)
+pre_kind = 0 if pre is not None else 1
+pre_num = int(pre) if pre is not None else 0
+found = (maj, minor, patch, pre_kind, pre_num)
+minimum = (0, 2, 0, 0, 9)
+assert found >= minimum, f"CLI too old: {found} < {minimum}"
+print("CLI version gate OK")
+PY
+  SHOWCASE="$REPO/examples/showcase"
+  if [[ -d "$SHOWCASE" ]]; then
+    echo "==> helper doctor --workspace examples/showcase"
+    if "$HELPER" doctor --workspace "$SHOWCASE" >/tmp/rs-doctor.out 2>&1; then
+      if python3 -c 'import json; json.load(open("/tmp/rs-doctor.out"))' 2>/dev/null; then
+        echo "helper doctor JSON OK"
+      else
+        echo "helper doctor ran (non-JSON output acceptable for smoke)"
+      fi
+    else
+      echo "helper doctor exited non-zero (acceptable if workspace not initialized)"
+    fi
+  fi
+else
+  echo "runspecimen not on PATH — skipping live PATH probe (bundled helper already verified)."
+fi
+
+echo "==> build_app.sh --frozen-helper (freeze if PyInstaller else --from-src fallback)"
+# Runs after the --from-src Prefer Bundled e2e so a local freeze cannot break those checks.
+# Unset RS_FREEZE_HELPER so this invocation is driven only by --frozen-helper.
+env -u RS_FREEZE_HELPER ./Scripts/build_app.sh --frozen-helper >/tmp/rs-frozen-build.out 2>&1 || {
+  cat /tmp/rs-frozen-build.out >&2
+  exit 1
+}
+cat /tmp/rs-frozen-build.out
+grep -E "Using frozen helper payload|falling back to stage_helper" /tmp/rs-frozen-build.out
+test -x "$APP/Contents/Helpers/runspecimen"
+FROZEN_VER="$("$APP/Contents/Helpers/runspecimen" --version 2>&1)" || {
+  echo "Bundled helper after --frozen-helper failed (exit $?):" >&2
+  echo "$FROZEN_VER" >&2
+  exit 1
+}
+echo "post --frozen-helper --version → $FROZEN_VER"
+echo "$FROZEN_VER" | grep -qi runspecimen
+# Frozen path: no package-tree lib/. Fallback --from-src: lib/ present.
+if grep -q "Using frozen helper payload" /tmp/rs-frozen-build.out; then
+  test ! -d "$APP/Contents/Helpers/lib"
+  file "$APP/Contents/Helpers/runspecimen" | grep -q 'Mach-O'
+  echo "OK: frozen Mach-O helper in bundle (no lib/ tree)"
+else
+  test -d "$APP/Contents/Helpers/lib/runspecimen"
+  echo "OK: --frozen-helper fell back to --from-src package tree"
+fi
+
+# Restore CI-default package-tree helper so a subsequent local open matches smoke.
+./Scripts/stage_helper.sh --from-src --verify >/dev/null
+./Scripts/build_app.sh >/dev/null
+
+echo "SMOKE OK"

@@ -1,4 +1,9 @@
 .tools/
+apps/macos/build/
+apps/macos/.build/
+apps/macos/Config/signing.env
+apps/macos/Config/*.p8
+apps/macos/Helpers/payload/
 # Workspace run state (root + QA); examples/showcase/.runspecimen is intentionally tracked
 /.runspecimen/
 qa/**/.runspecimen/
