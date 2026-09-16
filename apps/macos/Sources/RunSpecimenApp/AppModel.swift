@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import AppKit
+import RunSpecimenCore
 
 @MainActor
 final class AppModel: ObservableObject {
