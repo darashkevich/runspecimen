@@ -850,5 +850,252 @@ except SigningError as exc:
                 hold_proc.communicate()
 
 
+@unittest.skipUnless(HAS_NACL, "PyNaCl not installed")
+class TestEd25519JournalPathTrust(RunSpecimenTestCase):
+    """Recovery must never unlink/replace paths outside the keys directory."""
+
+    def _keys_dir(self) -> Path:
+        return self.ws / ".runspecimen" / "keys"
+
+    def _write_journal(self, key_id: str, payload: dict) -> Path:
+        kdir = self._keys_dir()
+        kdir.mkdir(parents=True, exist_ok=True)
+        path = kdir / f".{key_id}.ed25519.rotate.journal"
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        return path
+
+    def test_forged_journal_does_not_touch_outside_victim(self) -> None:
+        from runspecimen.pubkey import (
+            Ed25519KeyPair,
+            load_ed25519_keypair,
+            recover_interrupted_ed25519_keys,
+            save_ed25519_keypair,
+        )
+
+        pair = Ed25519KeyPair.generate(key_id="safe1")
+        save_ed25519_keypair(self.ws, pair)
+        before = load_ed25519_keypair(self.ws, "safe1")
+
+        # Victim lives completely outside the workspace / keys dir.
+        with tempfile.TemporaryDirectory() as outside:
+            victim = Path(outside) / "victim-secret.txt"
+            victim.write_text("do-not-delete\n", encoding="utf-8")
+            victim_stat = victim.stat()
+
+            journal = self._write_journal(
+                "safe1",
+                {
+                    "version": 1,
+                    "key_id": "safe1",
+                    "phase": "priv_installed",
+                    "priv_tmp": str(victim),
+                    "pub_tmp": str(victim),
+                    "priv_bak": str(victim),
+                    "pub_bak": str(victim),
+                },
+            )
+            actions = recover_interrupted_ed25519_keys(self.ws)
+            self.assertTrue(
+                any(a.startswith("discarded_untrusted_journal:") for a in actions),
+                actions,
+            )
+            self.assertFalse(journal.exists())
+            self.assertTrue(victim.exists(), "outside victim must remain")
+            self.assertEqual(victim.read_text(encoding="utf-8"), "do-not-delete\n")
+            self.assertEqual(victim.stat().st_ino, victim_stat.st_ino)
+            self.assertEqual(victim.stat().st_size, victim_stat.st_size)
+
+            after = load_ed25519_keypair(self.ws, "safe1")
+            self.assertEqual(after.private_hex(), before.private_hex())
+            self.assertEqual(after.public_hex(), before.public_hex())
+
+    def test_malformed_journal_is_discarded_without_deleting_live_keys(self) -> None:
+        from runspecimen.pubkey import (
+            Ed25519KeyPair,
+            load_ed25519_keypair,
+            recover_interrupted_ed25519_keys,
+            save_ed25519_keypair,
+        )
+
+        pair = Ed25519KeyPair.generate(key_id="live1")
+        save_ed25519_keypair(self.ws, pair)
+        before = load_ed25519_keypair(self.ws, "live1")
+
+        kdir = self._keys_dir()
+        bad = kdir / ".live1.ed25519.rotate.journal"
+        bad.write_text("{not-json\n", encoding="utf-8")
+        actions = recover_interrupted_ed25519_keys(self.ws)
+        self.assertIn("discarded_corrupt_journal", actions)
+        self.assertFalse(bad.exists())
+        after = load_ed25519_keypair(self.ws, "live1")
+        self.assertEqual(after.private_hex(), before.private_hex())
+
+        # Empty / wrong-type body
+        bad.write_text("[]\n", encoding="utf-8")
+        actions = recover_interrupted_ed25519_keys(self.ws)
+        self.assertIn("discarded_corrupt_journal", actions)
+        after = load_ed25519_keypair(self.ws, "live1")
+        self.assertEqual(after.public_hex(), before.public_hex())
+
+    def test_symlink_sidecar_journal_is_rejected(self) -> None:
+        from runspecimen.pubkey import (
+            Ed25519KeyPair,
+            load_ed25519_keypair,
+            recover_interrupted_ed25519_keys,
+            save_ed25519_keypair,
+        )
+
+        pair = Ed25519KeyPair.generate(key_id="sym1")
+        save_ed25519_keypair(self.ws, pair)
+        before = load_ed25519_keypair(self.ws, "sym1")
+
+        with tempfile.TemporaryDirectory() as outside:
+            victim = Path(outside) / "link-target.txt"
+            victim.write_text("keep-me\n", encoding="utf-8")
+            kdir = self._keys_dir()
+            link_name = ".sym1.ed25519.rotating-priv.deadbeef"
+            link = kdir / link_name
+            link.symlink_to(victim)
+
+            journal = self._write_journal(
+                "sym1",
+                {
+                    "version": 1,
+                    "key_id": "sym1",
+                    "phase": "staged",
+                    "priv_tmp": str(link),
+                    "pub_tmp": None,
+                    "priv_bak": None,
+                    "pub_bak": None,
+                },
+            )
+            actions = recover_interrupted_ed25519_keys(self.ws)
+            self.assertTrue(
+                any("discarded_untrusted_journal:" in a and "symlink" in a for a in actions),
+                actions,
+            )
+            self.assertFalse(journal.exists())
+            self.assertTrue(victim.exists())
+            self.assertEqual(victim.read_text(encoding="utf-8"), "keep-me\n")
+            # Symlink may remain as an ignored orphan; must not have deleted target.
+            after = load_ed25519_keypair(self.ws, "sym1")
+            self.assertEqual(after.private_hex(), before.private_hex())
+
+    def test_foreign_key_journal_and_sidecar_names_are_rejected(self) -> None:
+        from runspecimen.pubkey import (
+            Ed25519KeyPair,
+            load_ed25519_keypair,
+            recover_interrupted_ed25519_keys,
+            save_ed25519_keypair,
+        )
+
+        a = Ed25519KeyPair.generate(key_id="alpha")
+        b = Ed25519KeyPair.generate(key_id="beta")
+        save_ed25519_keypair(self.ws, a)
+        save_ed25519_keypair(self.ws, b)
+        before_a = load_ed25519_keypair(self.ws, "alpha")
+        before_b = load_ed25519_keypair(self.ws, "beta")
+
+        # Filename says alpha, body says beta.
+        journal = self._write_journal(
+            "alpha",
+            {
+                "version": 1,
+                "key_id": "beta",
+                "phase": "staged",
+                "priv_tmp": None,
+                "pub_tmp": None,
+                "priv_bak": None,
+                "pub_bak": None,
+            },
+        )
+        actions = recover_interrupted_ed25519_keys(self.ws)
+        self.assertTrue(
+            any("key_id_mismatch" in a for a in actions),
+            actions,
+        )
+        self.assertFalse(journal.exists())
+
+        # Filename matches, but sidecar basenames belong to another key.
+        kdir = self._keys_dir()
+        foreign_tmp = kdir / ".beta.ed25519.rotating-priv.token1"
+        foreign_tmp.write_bytes(b"x")
+        journal = self._write_journal(
+            "alpha",
+            {
+                "version": 1,
+                "key_id": "alpha",
+                "phase": "priv_installed",
+                "priv_tmp": str(foreign_tmp),
+                "pub_tmp": None,
+                "priv_bak": None,
+                "pub_bak": None,
+            },
+        )
+        actions = recover_interrupted_ed25519_keys(self.ws)
+        self.assertTrue(
+            any(
+                "discarded_untrusted_journal:" in a and "basename" in a
+                for a in actions
+            ),
+            actions,
+        )
+        self.assertFalse(journal.exists())
+
+        after_a = load_ed25519_keypair(self.ws, "alpha")
+        after_b = load_ed25519_keypair(self.ws, "beta")
+        self.assertEqual(after_a.private_hex(), before_a.private_hex())
+        self.assertEqual(after_b.private_hex(), before_b.private_hex())
+        self.assertEqual(after_a.public_hex(), before_a.public_hex())
+        self.assertEqual(after_b.public_hex(), before_b.public_hex())
+
+    def test_relative_traversal_sidecar_is_rejected(self) -> None:
+        from runspecimen.pubkey import (
+            Ed25519KeyPair,
+            load_ed25519_keypair,
+            recover_interrupted_ed25519_keys,
+            save_ed25519_keypair,
+        )
+
+        pair = Ed25519KeyPair.generate(key_id="trav1")
+        save_ed25519_keypair(self.ws, pair)
+        before = load_ed25519_keypair(self.ws, "trav1")
+
+        with tempfile.TemporaryDirectory() as outside:
+            victim = Path(outside) / "escape.txt"
+            victim.write_text("untouched\n", encoding="utf-8")
+            # Absolute path with .. that lexically leaves keys dir.
+            kdir = self._keys_dir()
+            forged = str((kdir / ".." / ".." / "nope").resolve())
+            # Point at victim via absolute foreign path with plausible-looking name
+            # embedded only in a different directory.
+            forged_named = Path(outside) / ".trav1.ed25519.rotating-priv.escape"
+            forged_named.write_text("bait\n", encoding="utf-8")
+
+            journal = self._write_journal(
+                "trav1",
+                {
+                    "version": 1,
+                    "key_id": "trav1",
+                    "phase": "staged",
+                    "priv_tmp": str(forged_named),
+                    "pub_tmp": forged,
+                    "priv_bak": None,
+                    "pub_bak": None,
+                },
+            )
+            actions = recover_interrupted_ed25519_keys(self.ws)
+            self.assertTrue(
+                any(a.startswith("discarded_untrusted_journal:") for a in actions),
+                actions,
+            )
+            self.assertFalse(journal.exists())
+            self.assertTrue(victim.exists())
+            self.assertEqual(victim.read_text(encoding="utf-8"), "untouched\n")
+            self.assertTrue(forged_named.exists())
+            after = load_ed25519_keypair(self.ws, "trav1")
+            self.assertEqual(after.private_hex(), before.private_hex())
+
+
 if __name__ == "__main__":
     unittest.main()

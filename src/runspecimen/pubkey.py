@@ -341,6 +341,93 @@ def _rotation_journal_path(workspace: Path, key_id: str) -> Path:
     return keys_dir(workspace) / f".{key_id}{_JOURNAL_SUFFIX}"
 
 
+def _journal_key_id_from_filename(journal_path: Path) -> str | None:
+    """Parse ``.<key_id>.ed25519.rotate.journal`` → key_id, or None if malformed."""
+    name = journal_path.name
+    if not name.startswith(".") or not name.endswith(_JOURNAL_SUFFIX):
+        return None
+    # name = ".{key_id}.ed25519.rotate.journal"
+    key_id = name[1 : -len(_JOURNAL_SUFFIX)]
+    if not key_id or key_id.startswith("."):
+        return None
+    try:
+        validate_key_id(key_id)
+    except SigningError:
+        return None
+    return key_id
+
+
+# Expected basename prefixes for rotation sidecars produced by ``_unique_sidecar``.
+_SIDECAR_NAME_PREFIXES: dict[str, Callable[[str], str]] = {
+    "priv_tmp": lambda key_id: f".{key_id}{_PRIVATE_SUFFIX}{_ROTATE_TMP_MARK}-priv.",
+    "pub_tmp": lambda key_id: f".{key_id}{_PUBLIC_SUFFIX}{_ROTATE_TMP_MARK}-pub.",
+    "priv_bak": lambda key_id: f".{key_id}{_PRIVATE_SUFFIX}{_ROTATE_BAK_MARK}-priv.",
+    "pub_bak": lambda key_id: f".{key_id}{_PUBLIC_SUFFIX}{_ROTATE_BAK_MARK}-pub.",
+}
+
+
+def _trusted_keys_sidecar(
+    raw: object | None,
+    *,
+    kdir: Path,
+    key_id: str,
+    field: str,
+) -> Path | None:
+    """Map a journal sidecar field to a trusted child of ``kdir``, or None if absent.
+
+    Raises ``SigningError`` when the field is present but not a narrowly named,
+    non-symlink child of the keys directory for ``key_id``. Callers must only
+    ``unlink`` / ``os.replace`` the returned path — never the raw journal string.
+
+    Only the basename is trusted: absolute parents from the journal are ignored so
+    forged foreign paths cannot escape the keys directory, and macOS
+    ``/var`` vs ``/private/var`` spelling differences cannot break recovery.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw:
+        raise SigningError(f"rotation journal {field} must be a non-empty string or null")
+
+    prefix_fn = _SIDECAR_NAME_PREFIXES.get(field)
+    if prefix_fn is None:
+        raise SigningError(f"unknown rotation journal sidecar field: {field}")
+    expected_prefix = prefix_fn(key_id)
+
+    candidate = Path(raw)
+    # Reject traversal / multi-segment relative tricks before any I/O.
+    if ".." in candidate.parts or candidate.name in {"", ".", ".."}:
+        raise SigningError(f"rotation journal {field} path escapes keys directory")
+
+    name = candidate.name
+    if not name or "/" in name or "\\" in name:
+        raise SigningError(f"rotation journal {field} is not a single path segment")
+    if not name.startswith(expected_prefix):
+        raise SigningError(
+            f"rotation journal {field} basename is not a {key_id!r} rotation sidecar"
+        )
+    # Token after the fixed prefix must be non-empty and path-safe.
+    token = name[len(expected_prefix) :]
+    if not token or "/" in token or "\\" in token or ".." in token or token.startswith("."):
+        raise SigningError(f"rotation journal {field} has an invalid sidecar token")
+
+    # Reconstruct exclusively under kdir — never trust absolute foreign parents.
+    trusted = kdir / name
+
+    # Refuse symlink sidecars (lstat / is_symlink; do not follow).
+    try:
+        if trusted.is_symlink():
+            raise SigningError(f"rotation journal {field} must not be a symlink: {trusted}")
+    except OSError as exc:
+        raise SigningError(f"cannot stat rotation journal {field}: {trusted}: {exc}") from exc
+    return trusted
+
+
+def _discard_untrusted_journal(journal_path: Path, reason: str) -> str:
+    """Remove only the journal file; never touch live keys or foreign paths."""
+    _unlink_quiet(journal_path)
+    return f"discarded_untrusted_journal:{reason}"
+
+
 def _write_rotation_journal(path: Path, payload: dict[str, Any]) -> None:
     """Durably write the rotation journal (exclusive create or atomic replace)."""
     data = (json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode(
@@ -372,7 +459,11 @@ def _read_rotation_journal(path: Path) -> dict[str, Any] | None:
 
 
 def _restore_from_bak(bak: Path | None, final: Path) -> None:
+    """Restore ``final`` from a trusted bak sidecar (both must already be validated)."""
     if bak is None or not _path_is_present(bak):
+        return
+    if bak.is_symlink() or (final.exists() and final.is_symlink()):
+        # Never rename/replace through symlinks.
         return
     if _path_is_present(final) and not final.is_symlink():
         _unlink_quiet(final)
@@ -380,15 +471,47 @@ def _restore_from_bak(bak: Path | None, final: Path) -> None:
         _rename_nofollow(bak, final)
     except SigningError:
         # Last resort: replace if rename blocked by leftover final.
-        if _path_is_present(bak):
+        if _path_is_present(bak) and not bak.is_symlink():
             try:
+                if final.is_symlink():
+                    return
                 os.replace(str(bak), str(final))
             except OSError:
                 pass
 
 
+def _unlink_trusted_sidecar(path: Path | None) -> None:
+    """Unlink a previously validated keys-dir sidecar; never follow symlinks."""
+    if path is None:
+        return
+    try:
+        if path.is_symlink():
+            return
+    except OSError:
+        return
+    _unlink_quiet(path)
+
+
 def _recover_one_rotation_journal(workspace: Path, journal_path: Path) -> str:
-    """Recover a single interrupted rotation. Returns action taken."""
+    """Recover a single interrupted rotation. Returns action taken.
+
+    Fail-closed: forged/corrupt journals are discarded without unlinking or
+    replacing any path outside the expected keys directory, and without deleting
+    live key finals unless the journal is fully trusted for a fresh-create
+    rollback phase.
+    """
+    # Journal itself must be a direct child of the keys directory (caller scans
+    # kdir), and must not be a symlink.
+    try:
+        if journal_path.is_symlink():
+            return _discard_untrusted_journal(journal_path, "symlink_journal")
+    except OSError:
+        return _discard_untrusted_journal(journal_path, "unreadable_journal")
+
+    filename_key_id = _journal_key_id_from_filename(journal_path)
+    if filename_key_id is None:
+        return _discard_untrusted_journal(journal_path, "malformed_journal_name")
+
     data = _read_rotation_journal(journal_path)
     if data is None:
         _unlink_quiet(journal_path)
@@ -399,37 +522,56 @@ def _recover_one_rotation_journal(workspace: Path, journal_path: Path) -> str:
     try:
         validate_key_id(key_id)
     except SigningError:
-        _unlink_quiet(journal_path)
-        return "discarded_invalid_key_id"
+        return _discard_untrusted_journal(journal_path, "invalid_key_id")
+
+    if key_id != filename_key_id:
+        return _discard_untrusted_journal(
+            journal_path, f"key_id_mismatch:body={key_id}:file={filename_key_id}"
+        )
+
+    kdir = keys_dir(workspace)
+    # Sidecar fields: absent/null OK; present values must be narrow trusted children.
+    try:
+        priv_tmp = _trusted_keys_sidecar(
+            data.get("priv_tmp"), kdir=kdir, key_id=key_id, field="priv_tmp"
+        )
+        pub_tmp = _trusted_keys_sidecar(
+            data.get("pub_tmp"), kdir=kdir, key_id=key_id, field="pub_tmp"
+        )
+        priv_bak = _trusted_keys_sidecar(
+            data.get("priv_bak"), kdir=kdir, key_id=key_id, field="priv_bak"
+        )
+        pub_bak = _trusted_keys_sidecar(
+            data.get("pub_bak"), kdir=kdir, key_id=key_id, field="pub_bak"
+        )
+    except SigningError as exc:
+        return _discard_untrusted_journal(journal_path, f"sidecar:{exc}")
 
     priv = private_key_path(workspace, key_id)
     pub = public_key_path(workspace, key_id)
-    priv_tmp = Path(str(data["priv_tmp"])) if data.get("priv_tmp") else None
-    pub_tmp = Path(str(data["pub_tmp"])) if data.get("pub_tmp") else None
-    priv_bak = Path(str(data["priv_bak"])) if data.get("priv_bak") else None
-    pub_bak = Path(str(data["pub_bak"])) if data.get("pub_bak") else None
 
     # All-or-nothing: until both new finals are installed, roll back to the
     # previous working pair. After priv_installed, complete cleanup only.
     if phase in {"intent", "staged", ""}:
-        _unlink_quiet(priv_tmp)
-        _unlink_quiet(pub_tmp)
+        _unlink_trusted_sidecar(priv_tmp)
+        _unlink_trusted_sidecar(pub_tmp)
         _unlink_quiet(journal_path)
         return f"rolled_back_pre_commit:{key_id}"
 
     if phase == "fresh_priv_installed":
         # Fresh create crashed after private install — drop incomplete pair.
+        # Finals are derived from validated key_id, not journal path strings.
         _unlink_quiet(priv)
         _unlink_quiet(pub)
-        _unlink_quiet(priv_tmp)
-        _unlink_quiet(pub_tmp)
+        _unlink_trusted_sidecar(priv_tmp)
+        _unlink_trusted_sidecar(pub_tmp)
         _unlink_quiet(journal_path)
         return f"rolled_back_fresh_incomplete:{key_id}"
 
     if phase in {"pub_backed", "pub_installed", "priv_backed"}:
         # Prefer old pair from bak sidecars; never leave a mixed new/old pair.
-        _unlink_quiet(priv_tmp)
-        _unlink_quiet(pub_tmp)
+        _unlink_trusted_sidecar(priv_tmp)
+        _unlink_trusted_sidecar(pub_tmp)
         if phase == "priv_backed" or (
             phase == "pub_installed" and priv_bak is not None and _path_is_present(priv_bak)
         ):
@@ -445,27 +587,27 @@ def _recover_one_rotation_journal(workspace: Path, journal_path: Path) -> str:
             _restore_from_bak(pub_bak, pub)
         if not _path_is_present(priv) and priv_bak is not None:
             _restore_from_bak(priv_bak, priv)
-        _unlink_quiet(priv_bak)
-        _unlink_quiet(pub_bak)
+        _unlink_trusted_sidecar(priv_bak)
+        _unlink_trusted_sidecar(pub_bak)
         _unlink_quiet(journal_path)
         return f"rolled_back_to_previous:{key_id}:{phase}"
 
     if phase in {"priv_installed", "complete"}:
         # New pair is fully installed; drop leftovers and journal.
-        _unlink_quiet(priv_tmp)
-        _unlink_quiet(pub_tmp)
-        _unlink_quiet(priv_bak)
-        _unlink_quiet(pub_bak)
+        _unlink_trusted_sidecar(priv_tmp)
+        _unlink_trusted_sidecar(pub_tmp)
+        _unlink_trusted_sidecar(priv_bak)
+        _unlink_trusted_sidecar(pub_bak)
         _unlink_quiet(journal_path)
         return f"committed_cleanup:{key_id}"
 
     # Unknown phase: safest is roll back if baks exist, else drop temps.
-    _unlink_quiet(priv_tmp)
-    _unlink_quiet(pub_tmp)
+    _unlink_trusted_sidecar(priv_tmp)
+    _unlink_trusted_sidecar(pub_tmp)
     _restore_from_bak(priv_bak, priv)
     _restore_from_bak(pub_bak, pub)
-    _unlink_quiet(priv_bak)
-    _unlink_quiet(pub_bak)
+    _unlink_trusted_sidecar(priv_bak)
+    _unlink_trusted_sidecar(pub_bak)
     _unlink_quiet(journal_path)
     return f"rolled_back_unknown_phase:{key_id}:{phase}"
 
@@ -497,16 +639,26 @@ def _recover_interrupted_ed25519_keys_unlocked(workspace: Path) -> list[str]:
         p for p in kdir.iterdir() if p.name.startswith(".") and p.name.endswith(_JOURNAL_SUFFIX)
     )
     for journal_path in journals:
-        actions.append(_recover_one_rotation_journal(workspace, journal_path))
+        # Always recover against the reconstructed kdir child path.
+        actions.append(_recover_one_rotation_journal(workspace, kdir / journal_path.name))
 
     # Orphaned sidecars without a journal: restore bak when the live final is
     # missing; otherwise drop leftover rotating temps / committed baks.
+    # Only operate on non-symlink direct children of kdir.
     for path in sorted(kdir.iterdir()):
         name = path.name
         if not name.startswith("."):
             continue
         if name.endswith(_JOURNAL_SUFFIX):
             continue
+        trusted = kdir / name
+        try:
+            if trusted.is_symlink():
+                actions.append(f"ignored_symlink_sidecar:{name}")
+                continue
+        except OSError:
+            continue
+        path = trusted
         if _ROTATE_TMP_MARK in name:
             _unlink_quiet(path)
             actions.append(f"dropped_orphan_temp:{name}")
@@ -519,9 +671,15 @@ def _recover_interrupted_ed25519_keys_unlocked(workspace: Path) -> list[str]:
             # name = ".{final}.{kind}.{token}" → strip leading "." then split
             body = name[1:]
             final_name, _sep, _rest = body.partition(needle)
-            if not final_name:
+            if not final_name or "/" in final_name or ".." in final_name:
                 break
             final = kdir / final_name
+            try:
+                if final.is_symlink():
+                    actions.append(f"ignored_symlink_final:{final_name}")
+                    break
+            except OSError:
+                break
             if not _path_is_present(final):
                 _restore_from_bak(path, final)
                 actions.append(f"restored_orphan_bak:{final_name}")

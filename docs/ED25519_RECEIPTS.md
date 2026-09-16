@@ -53,6 +53,11 @@ MAC — not a digital signature.
   finishes cleanup once both new finals are installed). Concurrent
   create/list/rotate/load operations are serialized via
   `.runspecimen/keys.op.lock`.
+- Rotation journals are fail-closed on recovery: `key_id` must match the journal
+  filename; sidecar paths are accepted only as narrowly named non-symlink
+  children of the keys directory (basename reconstructed under that directory —
+  absolute parents from the journal are never used for `unlink`/`os.replace`).
+  Invalid journals are discarded without deleting live key finals.
 - Private and public key reads open with `O_NOFOLLOW` and validate the opened
   file descriptor (`fstat`) — not a separate path-based lstat-then-open race.
 - This does **not** prove a scientific or engineering claim is true.

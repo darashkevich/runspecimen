@@ -19,6 +19,12 @@
   every rotation and fresh-create transition (including `complete`). Concurrent
   key create/list/rotate/load ops are excluded via `fcntl` `keys.op.lock`.
   Key reads use `O_NOFOLLOW` + `fstat` on the opened fd.
+- **Security:** rotation recovery validates `key_id` against the journal
+  filename and only `unlink`/`os.replace`s narrowly named, non-symlink children
+  of the keys directory (basename reconstructed under the keys dir). Forged
+  journals with absolute foreign paths, `..` traversal, symlink sidecars, or
+  foreign-key sidecar names are discarded without deleting live keys or
+  touching files outside the keys directory.
 - `scripts/release_check.py` refuses packaging when setuptools≥77 is only in
   the user site: offline builds set `PYTHONNOUSERSITE=1` and previously could
   silently emit `UNKNOWN-0.0.0` sdists.

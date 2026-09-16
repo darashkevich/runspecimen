@@ -6,7 +6,7 @@
 **Baseline already published:** [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9) / PyPI `runspecimen==0.2.0rc9`  
 **Hard stops honored:** no merge, no PyPI publish, no website deploy, no notarization, no marketplace submit, no retag of rc9.
 
-**READY FOR CODEX QA: yes** (after CI green on this tip)
+**READY FOR CODEX QA: yes** (after CI green on this tip — includes journal path-trust CVE-class fix)
 
 This report is the decision packet for the next Python RC after rc9. PR #6 (macOS) remains a separate workstream.
 
@@ -29,11 +29,28 @@ This report is the decision packet for the next Python RC after rc9. PR #6 (macO
 - Key I/O: `0600` exclusive `O_EXCL|O_NOFOLLOW`; export never opens private seed; reads `O_NOFOLLOW`+`fstat`.
 - **Crash-safe key rotation:** durable journal + temps/backups; SIGKILL at every transition recovers automatically on next open/use; all-or-nothing (never lose both pairs).
 - **Key-dir exclusion:** `.runspecimen/keys.op.lock` (`fcntl`) serializes create/list/rotate/load.
+- **Journal path-trust hardening (CVE-class):** recovery no longer trusts absolute `priv_tmp`/`pub_tmp`/`priv_bak`/`pub_bak` strings from a writable journal for `unlink`/`os.replace`.
 
 ### Not in this Python RC
 
 - macOS `.app`, Apple signing, notarization, Mac App Store (PR #6 only).
 - Website production deploy / marketplace listings / PyPI publish.
+
+---
+
+## 1b. CVE-class finding: rotation journal path trust (fixed this tip)
+
+**Finding:** `_recover_one_rotation_journal` previously took `priv_tmp` / `pub_tmp` / `priv_bak` / `pub_bak` as absolute paths from the rotation journal (a file an attacker who can write the keys directory can forge) and passed them to `unlink` / `os.replace`. A forged journal could therefore delete or replace files **outside** the keys directory when the next key operation triggered recovery.
+
+**Fix (fail-closed):**
+
+1. Validate journal `key_id` against the journal filename (`.<key_id>.ed25519.rotate.journal`).
+2. Accept sidecar fields only when the **basename** matches the narrow rotation sidecar pattern for that key; reconstruct the path as `keys_dir / basename` (never use the journal’s absolute parent for I/O).
+3. Reject symlink sidecars (`is_symlink` / no-follow posture).
+4. On invalid journals: discard **only** the journal; do **not** delete live key finals; do **not** touch foreign paths.
+5. Regression coverage in `tests.test_ed25519.TestEd25519JournalPathTrust` (outside-victim, malformed, symlink sidecar, foreign-key / basename mismatch, traversal).
+
+**Evidence:** see §2 and `TestEd25519JournalPathTrust.test_forged_journal_does_not_touch_outside_victim`.
 
 ---
 
@@ -45,13 +62,18 @@ This report is the decision packet for the next Python RC after rc9. PR #6 (macO
 - Phases: `intent` → `staged` → `pub_backed` → `pub_installed` → `priv_backed` → `priv_installed` → `complete` (fresh create also journals `fresh_priv_installed`).
 - On next `save` / `load` / `list` / `export`: hold `keys.op.lock`, recover journals/orphaned sidecars.
 - Pre-`priv_installed`: roll back to previous working pair. At/after `priv_installed` (including `complete`): keep new pair and clean leftovers.
+- Recovery path-trust: basename-only reconstruction under keys dir; `key_id`↔filename match; symlink sidecars rejected.
 
-### Tests (independent re-validation 2026-09-16)
+### Tests (independent re-validation 2026-09-16, post path-trust fix)
 
 | Evidence | Result |
 | --- | --- |
-| `PYTHONPATH=src python3 -m unittest discover -s tests` | **220 OK** (2 skipped) |
-| `PYTHONPATH=src python3 -m unittest tests.test_ed25519 -v` | **28 OK** |
+| `PYTHONPATH=src python3 -m unittest discover -s tests` | **225 OK** (2 skipped) |
+| `PYTHONPATH=src python3 -m unittest tests.test_ed25519 -v` | includes JournalPathTrust |
+| Outside-victim forged journal | victim file **untouched**; live keys intact; journal discarded |
+| Malformed / wrong-type journals | discarded; live keys intact |
+| Symlink sidecar in journal | discarded as untrusted; target untouched |
+| Foreign-key journal (`key_id` mismatch / other-key basename) | discarded; both keys intact |
 | SIGKILL at `intent`,`staged`,`pub_backed`,`pub_installed`,`priv_backed` | recovers **previous** pair |
 | SIGKILL at `priv_installed`,`complete` | keeps **new** pair; cleans sidecars |
 | SIGKILL at fresh `intent`,`staged`,`fresh_priv_installed` | no half-pair left |
@@ -75,9 +97,12 @@ Interpreter: `.tools/python` 3.11.10 (offline builds require setuptools≥77 in 
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `runspecimen-0.2.0rc10-py3-none-any.whl` | `fcac250e60dc1327946ab6f62d8527cd4be72026d7cd34eba283f40619fc877c` |
-| `runspecimen-0.2.0rc10.tar.gz` | `631334a9ccef12af23b07ea43a3ecfdaede8d29f0c813b105ed7d705a072635a` |
+| `runspecimen-0.2.0rc10-py3-none-any.whl` | `87d01c10f12e0e72717c2c09782776bfada1913435dd6a86dd64ee3fef430e42` |
+| `runspecimen-0.2.0rc10.tar.gz` | `5b56016273635813f2c5bb16c672f327423fc1639c3047e99d87cb3f35b79f6d` |
 | `runspecimen-plugin-0.2.0-rc.10.zip` | `50b0f2a98b92f8d3d08c9c790adf65412fadba8c433eb4bc434f318a30178d55` |
+| `release-report.json` | `7b18cc3112062a1157b7793d691575375dbbf8f42811a2ea0e015859e9a73ed6` |
+
+Local artifacts path: `/tmp/runspecimen-release-check-rc10` (not published).
 
 | Install check | Result |
 | --- | --- |
@@ -85,7 +110,7 @@ Interpreter: `.tools/python` 3.11.10 (offline builds require setuptools≥77 in 
 | Fresh sdist install | `runspecimen 0.2.0rc10` |
 | Upgrade `0.2.0rc9` → local rc10 wheel | before `rc9`, after `rc10` |
 | `release_check.py` (`.tools/python`) | **passed** (`release-report.json` ok) |
-| Live PyPI / GitHub `v0.2.0-rc.10` | **absent** (confirmed 404 / release not found) |
+| Live PyPI / GitHub `v0.2.0-rc.10` | **absent** (do not publish in this session) |
 
 rc9 was **not** republished or retagged.
 
@@ -115,7 +140,7 @@ rc9 was **not** republished or retagged.
 
 | Surface | Status |
 | --- | --- |
-| README / CHANGELOG / FAQ / USER_GUIDE / ED25519_RECEIPTS / SUBMISSION | Aligned to **0.2.0rc10**; README + USER_GUIDE + SUBMISSION honest that PyPI/GitHub assets appear only after publish (SUBMISSION no longer marks rc10 as live) |
+| README / CHANGELOG / FAQ / USER_GUIDE / ED25519_RECEIPTS / SUBMISSION | Aligned to **0.2.0rc10**; README + USER_GUIDE + SUBMISSION honest that PyPI/GitHub assets appear only after publish (SUBMISSION no longer marks rc10 as live); CHANGELOG + ED25519 docs note journal path-trust fix |
 | Website SOURCE `astro-portfolio/sites/runspecimen/public` | Candidate wording for rc10 present in working tree; last-published assets still rc9; **not deployed**; **not committed** in astro-portfolio (separate repo decision) |
 | PR #6 macOS | Explicitly out of release scope |
 
@@ -164,6 +189,7 @@ External decisions only (engineering release blockers for Codex QA are cleared o
 | --- | --- |
 | Crash-safe rotation + SIGKILL fault tests (every transition) | Done |
 | Key-dir / concurrent exclusion + tests | Done |
+| Journal path-trust CVE-class fix + outside-victim regression | Done |
 | Distinct `0.2.0rc10` identity | Done |
 | Fresh + rc9→rc10 artifact checks | Done (local) |
 | Dashboard a11y (unnamed links fixed) + desktop/mobile keyboard/visual | Done |
@@ -174,3 +200,18 @@ External decisions only (engineering release blockers for Codex QA are cleared o
 ### READY FOR CODEX QA: **yes**
 
 Independent Codex QA can review PR #7 tip after CI is green. Do not merge or publish from QA alone.
+
+### Post-clearance release plan (Python / GitHub / site only — after “Codex QA cleared + approve release”)
+
+Do **not** execute until Yahor explicitly clears. Exact steps then:
+
+1. Merge PR #7 (includes #5). Keep PR #6 macOS separate; no notarization / marketplace claim.
+2. From a clean checkout of the merged tip, re-run `scripts/release_check.py --output-dir /tmp/runspecimen-release-check-rc10` and retain:
+   - `runspecimen-0.2.0rc10-py3-none-any.whl`
+   - `runspecimen-0.2.0rc10.tar.gz`
+   - `runspecimen-plugin-0.2.0-rc.10.zip`
+   - `SHA256SUMS` / `release-report.json`
+3. GitHub Release `v0.2.0-rc.10` attaching the three artifacts + checksums (do not retag/move rc9).
+4. PyPI: `twine upload` the rc10 wheel + sdist only (`runspecimen==0.2.0rc10`).
+5. Website: deploy `astro-portfolio` RunSpecimen SOURCE only on a separate explicit ask after tag/PyPI alignment.
+6. Verify: `pip install runspecimen==0.2.0rc10` → `runspecimen --version` shows `0.2.0rc10`; GitHub release assets 200; PyPI page lists rc10.
