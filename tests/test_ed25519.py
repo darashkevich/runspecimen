@@ -513,6 +513,14 @@ class TestEd25519CrashSafeRotation(RunSpecimenTestCase):
         "pub_installed",
         "priv_backed",
         "priv_installed",
+        "complete",
+    )
+
+    FRESH_CRASH_PHASES = (
+        "intent",
+        "staged",
+        "fresh_priv_installed",
+        "complete",
     )
 
     _CHILD_SCRIPT = r"""
@@ -593,7 +601,7 @@ save_ed25519_keypair(workspace, pair, overwrite=True)
                 )
 
                 loaded = load_ed25519_keypair(self.ws, "crashrot")
-                if phase == "priv_installed":
+                if phase in {"priv_installed", "complete"}:
                     # New pair fully installed; recovery only cleans sidecars.
                     self.assertEqual(loaded.public_hex(), second.public_hex())
                     self.assertEqual(loaded.private_hex(), second.private_hex())
@@ -602,7 +610,7 @@ save_ed25519_keypair(workspace, pair, overwrite=True)
                     self.assertEqual(loaded.public_hex(), first.public_hex())
                     self.assertEqual(loaded.private_hex(), first.private_hex())
 
-    def test_sigkill_during_fresh_create_does_not_leave_half_pair(self) -> None:
+    def test_sigkill_at_each_fresh_create_phase_leaves_no_half_pair(self) -> None:
         import subprocess
 
         from runspecimen.pubkey import (
@@ -622,9 +630,11 @@ sys.path.insert(0, sys.argv[1])
 from runspecimen.pubkey import Ed25519KeyPair, save_ed25519_keypair
 import runspecimen.pubkey as pubkey_mod
 
+phase = sys.argv[3]
+
 
 def crash(hit: str) -> None:
-    if hit == "fresh_priv_installed":
+    if hit == phase:
         os.kill(os.getpid(), signal.SIGKILL)
 
 
@@ -634,18 +644,45 @@ save_ed25519_keypair(Path(sys.argv[2]), pair)
 """
         env = os.environ.copy()
         env["PYTHONPATH"] = str(SRC) + os.pathsep + env.get("PYTHONPATH", "")
-        proc = subprocess.run(
-            [sys.executable, "-c", script, str(SRC), str(self.ws)],
-            env=env,
-            capture_output=True,
-            text=True,
-        )
-        self.assertIn(proc.returncode, {-signal.SIGKILL, -9, 128 + signal.SIGKILL, 137})
-        self.assertNotIn("freshkill", list_ed25519_key_ids(self.ws))
-        self.assertFalse(private_key_path(self.ws, "freshkill").exists())
-        self.assertFalse(public_key_path(self.ws, "freshkill").exists())
-        with self.assertRaises(SigningError):
-            load_ed25519_keypair(self.ws, "freshkill")
+        for phase in self.FRESH_CRASH_PHASES:
+            with self.subTest(phase=phase):
+                # Isolate each kill under a clean key id so prior cleanup cannot mask failures.
+                key_id = f"freshkill-{phase}"
+                script_phase = script.replace('key_id="freshkill"', f'key_id="{key_id}"')
+                proc = subprocess.run(
+                    [sys.executable, "-c", script_phase, str(SRC), str(self.ws), phase],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                )
+                if phase == "complete":
+                    # Journal committed complete then unlinked; crash hook fires after
+                    # both finals exist. Child may exit 0 if kill races past return.
+                    if proc.returncode == 0:
+                        loaded = load_ed25519_keypair(self.ws, key_id)
+                        self.assertEqual(len(loaded.public_hex()), 64)
+                        continue
+                self.assertIn(
+                    proc.returncode,
+                    {-signal.SIGKILL, -9, 128 + signal.SIGKILL, 137},
+                    f"expected SIGKILL for fresh {phase}, got rc={proc.returncode}",
+                )
+                if phase == "complete":
+                    loaded = load_ed25519_keypair(self.ws, key_id)
+                    self.assertEqual(len(loaded.public_hex()), 64)
+                    self.assertFalse(
+                        any(
+                            p.name.endswith(".ed25519.rotate.journal")
+                            for p in (self.ws / ".runspecimen" / "keys").iterdir()
+                            if key_id in p.name
+                        )
+                    )
+                else:
+                    self.assertNotIn(key_id, list_ed25519_key_ids(self.ws))
+                    self.assertFalse(private_key_path(self.ws, key_id).exists())
+                    self.assertFalse(public_key_path(self.ws, key_id).exists())
+                    with self.assertRaises(SigningError):
+                        load_ed25519_keypair(self.ws, key_id)
 
 
 @unittest.skipUnless(HAS_NACL, "PyNaCl not installed")
@@ -712,6 +749,53 @@ for _ in range(40):
         self.assertEqual(codes, [0, 0], f"rotator/loader failed: {errs}")
         final = load_ed25519_keypair(self.ws, "race1")
         self.assertEqual(len(final.public_hex()), 64)
+
+    def test_cross_process_concurrent_creates_of_distinct_keys(self) -> None:
+        import subprocess
+
+        from runspecimen.pubkey import list_ed25519_key_ids, load_ed25519_keypair
+
+        creator = r"""
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from runspecimen.pubkey import Ed25519KeyPair, save_ed25519_keypair
+ws = Path(sys.argv[2])
+key_id = sys.argv[3]
+for _ in range(8):
+    try:
+        save_ed25519_keypair(ws, Ed25519KeyPair.generate(key_id=key_id))
+        break
+    except Exception:
+        # Another process may briefly hold the keys dir lock.
+        pass
+else:
+    raise SystemExit("create never succeeded")
+"""
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(SRC) + os.pathsep + env.get("PYTHONPATH", "")
+        procs = [
+            subprocess.Popen(
+                [sys.executable, "-c", creator, str(SRC), str(self.ws), kid],
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            for kid in ("raceA", "raceB")
+        ]
+        codes = []
+        errs = []
+        for proc in procs:
+            _out, err = proc.communicate(timeout=60)
+            codes.append(proc.returncode)
+            errs.append(err)
+        self.assertEqual(codes, [0, 0], f"concurrent creates failed: {errs}")
+        ids = set(list_ed25519_key_ids(self.ws))
+        self.assertTrue({"raceA", "raceB"}.issubset(ids))
+        for kid in ("raceA", "raceB"):
+            pair = load_ed25519_keypair(self.ws, kid)
+            self.assertEqual(len(pair.public_hex()), 64)
 
     def test_nonblocking_lock_rejects_second_process(self) -> None:
         import subprocess

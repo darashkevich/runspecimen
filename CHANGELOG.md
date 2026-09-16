@@ -16,8 +16,12 @@
   exclusive temps/backups at each transition; a killed process automatically
   rolls back to the previous working pair (or finishes cleanup after both new
   finals are installed) on the next open/use. SIGKILL fault-injection covers
-  every transition. Concurrent key create/list/rotate/load ops are excluded via
-  `fcntl` `keys.op.lock`. Key reads use `O_NOFOLLOW` + `fstat` on the opened fd.
+  every rotation and fresh-create transition (including `complete`). Concurrent
+  key create/list/rotate/load ops are excluded via `fcntl` `keys.op.lock`.
+  Key reads use `O_NOFOLLOW` + `fstat` on the opened fd.
+- `scripts/release_check.py` refuses packaging when setuptools≥77 is only in
+  the user site: offline builds set `PYTHONNOUSERSITE=1` and previously could
+  silently emit `UNKNOWN-0.0.0` sdists.
 
 ### Product direction
 

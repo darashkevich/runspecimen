@@ -1,12 +1,12 @@
 # RunSpecimen release-candidate report (PRs #5 / #6 / #7)
 
-**Date:** 2026-09-15  
+**Date:** 2026-09-16  
 **Authoring branch:** `cursor/ed25519-pubkey-receipts`  
 **Package identity on this PR:** **`0.2.0rc10`** / plugin **`0.2.0-rc.10`**  
 **Baseline already published:** [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9) / PyPI `runspecimen==0.2.0rc9`  
 **Hard stops honored:** no merge, no PyPI publish, no website deploy, no notarization, no marketplace submit, no retag of rc9.
 
-**READY FOR CODEX QA: yes**
+**READY FOR CODEX QA: yes** (after CI green on this tip)
 
 This report is the decision packet for the next Python RC after rc9. PR #6 (macOS) remains a separate workstream.
 
@@ -44,18 +44,20 @@ This report is the decision packet for the next Python RC after rc9. PR #6 (macO
 - Journal file: `.runspecimen/keys/.<key_id>.ed25519.rotate.journal` (fsynced phase commits).
 - Phases: `intent` → `staged` → `pub_backed` → `pub_installed` → `priv_backed` → `priv_installed` → `complete` (fresh create also journals `fresh_priv_installed`).
 - On next `save` / `load` / `list` / `export`: hold `keys.op.lock`, recover journals/orphaned sidecars.
-- Pre-`priv_installed`: roll back to previous working pair. At/after `priv_installed`: keep new pair and clean leftovers.
+- Pre-`priv_installed`: roll back to previous working pair. At/after `priv_installed` (including `complete`): keep new pair and clean leftovers.
 
-### Tests
+### Tests (independent re-validation 2026-09-16)
 
 | Evidence | Result |
 | --- | --- |
-| `python3 -m unittest discover -s tests` | **219 OK** (2 skipped) |
-| `python3 -m unittest tests.test_ed25519 -v` | **27 OK** |
+| `PYTHONPATH=src python3 -m unittest discover -s tests` | **220 OK** (2 skipped) |
+| `PYTHONPATH=src python3 -m unittest tests.test_ed25519 -v` | **28 OK** |
 | SIGKILL at `intent`,`staged`,`pub_backed`,`pub_installed`,`priv_backed` | recovers **previous** pair |
-| SIGKILL at `priv_installed` | keeps **new** pair; cleans sidecars |
-| SIGKILL at `fresh_priv_installed` | no half-pair left |
+| SIGKILL at `priv_installed`,`complete` | keeps **new** pair; cleans sidecars |
+| SIGKILL at fresh `intent`,`staged`,`fresh_priv_installed` | no half-pair left |
+| SIGKILL at fresh `complete` | pair remains loadable |
 | Cross-process rotator∥loader | consistent loadable pair |
+| Cross-process concurrent creates (`raceA`/`raceB`) | both keys loadable |
 | Non-blocking second process lock | `SigningError` … busy |
 
 ---
@@ -68,12 +70,13 @@ This report is the decision packet for the next Python RC after rc9. PR #6 (macO
 | Codex/Cursor plugin manifests + marketplace.json | `0.2.0-rc.10` |
 | `scripts/release_check.py` EXPECTED_* | matches above |
 
-Local rebuild (not published): `/tmp/runspecimen-release-check-rc10`
+Local rebuild (not published): `/tmp/runspecimen-release-check-rc10`  
+Interpreter: `.tools/python` 3.11.10 (offline builds require setuptools≥77 in **non-user** site-packages; see release_check gate fix).
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `runspecimen-0.2.0rc10-py3-none-any.whl` | `09b854a04afac4161680f2b921231c4a6ddfa644f6c5f1c6cc15bbf0f3eb1877` |
-| `runspecimen-0.2.0rc10.tar.gz` | `510543d326c5c7df4380f9c7b8f4114d298f9baf91e828facb6c9969cd16748a` |
+| `runspecimen-0.2.0rc10-py3-none-any.whl` | `fcac250e60dc1327946ab6f62d8527cd4be72026d7cd34eba283f40619fc877c` |
+| `runspecimen-0.2.0rc10.tar.gz` | `631334a9ccef12af23b07ea43a3ecfdaede8d29f0c813b105ed7d705a072635a` |
 | `runspecimen-plugin-0.2.0-rc.10.zip` | `50b0f2a98b92f8d3d08c9c790adf65412fadba8c433eb4bc434f318a30178d55` |
 
 | Install check | Result |
@@ -81,9 +84,14 @@ Local rebuild (not published): `/tmp/runspecimen-release-check-rc10`
 | Fresh wheel install | `runspecimen 0.2.0rc10` |
 | Fresh sdist install | `runspecimen 0.2.0rc10` |
 | Upgrade `0.2.0rc9` → local rc10 wheel | before `rc9`, after `rc10` |
-| `release_check.py` | **passed** (`release-report.json` ok) |
+| `release_check.py` (`.tools/python`) | **passed** (`release-report.json` ok) |
+| Live PyPI / GitHub `v0.2.0-rc.10` | **absent** (confirmed 404 / release not found) |
 
 rc9 was **not** republished or retagged.
+
+### Release-check hardening in this tip
+
+`ensure_build_backend()` now probes setuptools under the same `PYTHONNOUSERSITE=1` offline env used for packaging, so a user-site-only setuptools≥77 cannot silently produce `UNKNOWN-0.0.0` sdists.
 
 ---
 
@@ -95,11 +103,11 @@ rc9 was **not** republished or retagged.
 | --- | --- |
 | `/tmp/runspecimen-dashboard-a11y/desktop.png` | 1280×800 visual |
 | `/tmp/runspecimen-dashboard-a11y/mobile.png` | 390×844 visual |
-| `/tmp/runspecimen-dashboard-a11y/desktop-keyboard.png` | Tab smoke |
-| `/tmp/runspecimen-dashboard-a11y/mobile-keyboard.png` | Tab smoke |
+| `/tmp/runspecimen-dashboard-a11y/desktop-keyboard.png` | focus/keyboard smoke |
+| `/tmp/runspecimen-dashboard-a11y/mobile-keyboard.png` | focus/keyboard smoke |
 | `/tmp/runspecimen-dashboard-a11y/rc_notes.json` | structured checks |
 
-**Checks (2026-09-15 refresh):** lang=en; H1 present; **unnamed interactive controls = 0** (was 3); cannot-approve copy; receipt vs LIVE VERIFICATION / NOT-CHECKED; keyboard Tab reaches named links/buttons on desktop and mobile.
+**Checks (2026-09-16 refresh):** lang=en; H1 present; **unnamed interactive controls = 0**; cannot-approve copy; receipt vs LIVE VERIFICATION / not-checked; keyboard focus reaches named links/buttons on desktop and mobile (13 tab stops each).
 
 ---
 
@@ -107,8 +115,8 @@ rc9 was **not** republished or retagged.
 
 | Surface | Status |
 | --- | --- |
-| README / CHANGELOG / FAQ / USER_GUIDE / ED25519_RECEIPTS / SUBMISSION | Aligned to **0.2.0rc10**; README honest that PyPI/GitHub assets appear only after publish |
-| Website SOURCE `astro-portfolio/sites/runspecimen/public` | Candidate wording for rc10; last-published assets still rc9; **not deployed** |
+| README / CHANGELOG / FAQ / USER_GUIDE / ED25519_RECEIPTS / SUBMISSION | Aligned to **0.2.0rc10**; README + USER_GUIDE + SUBMISSION honest that PyPI/GitHub assets appear only after publish (SUBMISSION no longer marks rc10 as live) |
+| Website SOURCE `astro-portfolio/sites/runspecimen/public` | Candidate wording for rc10 present in working tree; last-published assets still rc9; **not deployed**; **not committed** in astro-portfolio (separate repo decision) |
 | PR #6 macOS | Explicitly out of release scope |
 
 ---
@@ -129,11 +137,11 @@ Apple signing / notarization remain **Yahor-only** and are **not** part of Pytho
 
 ## 7. Remaining blockers needing Yahor
 
-External decisions only (engineering release blockers for Codex QA are cleared):
+External decisions only (engineering release blockers for Codex QA are cleared on this tip after CI):
 
 1. **Merge policy:** merge #7 (includes #5) vs merge #5 then #7; keep #6 separate.  
 2. **Publish:** GitHub Release `v0.2.0-rc.10` + PyPI `0.2.0rc10` only on explicit yes (do not touch rc9).  
-3. **Website deploy** after SOURCE/tag alignment — separate ask.  
+3. **Website deploy** after SOURCE/tag alignment — separate ask. Optionally commit SOURCE updates in `astro-portfolio`.  
 4. **Marketplace submits** — separate ask.  
 5. **Apple signing / notarization** for PR #6 — Yahor-only, separate track.  
 6. Soft-key custody remains the Ed25519 trust root (product limitation, not a bug).
@@ -144,7 +152,7 @@ External decisions only (engineering release blockers for Codex QA are cleared):
 
 **macOS:** [ ] B1 keep #6 open (recommended with this RC) · [ ] B2 ad-hoc only · [ ] B3 you notarize separately · [ ] B4 defer  
 
-**Website:** [ ] C1 SOURCE only until asked (done locally; not deployed) · [ ] C2 deploy later  
+**Website:** [ ] C1 SOURCE only until asked (local candidate; not deployed) · [ ] C2 deploy later  
 
 **Default recommendation:** **A1 + B1 + C1** after Codex QA sign-off.
 
@@ -154,12 +162,12 @@ External decisions only (engineering release blockers for Codex QA are cleared):
 
 | Gate | Status |
 | --- | --- |
-| Crash-safe rotation + SIGKILL fault tests | Done |
+| Crash-safe rotation + SIGKILL fault tests (every transition) | Done |
 | Key-dir / concurrent exclusion + tests | Done |
 | Distinct `0.2.0rc10` identity | Done |
 | Fresh + rc9→rc10 artifact checks | Done (local) |
 | Dashboard a11y (unnamed links fixed) + desktop/mobile keyboard/visual | Done |
-| Docs/SOURCE aligned; no deploy | Done |
+| Docs honest about unpublished rc10; SOURCE candidate; no deploy | Done |
 | CI green on push | Required after push of this update |
 | Merge / publish / notarize / marketplace | **Not done** (hard stop) |
 

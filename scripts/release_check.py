@@ -85,15 +85,41 @@ def check_versions() -> None:
 
 
 def ensure_build_backend() -> None:
-    try:
-        import setuptools
-        import wheel  # noqa: F401
-        import pip  # noqa: F401
-    except ImportError as exc:
-        raise SystemExit("pip, setuptools>=77, and wheel are required; run sh scripts/bootstrap_dev.sh first") from exc
-    match = re.match(r"(\d+)", setuptools.__version__)
-    if match is None or int(match.group(1)) < 77:
-        raise SystemExit("setuptools>=77 is required; run sh scripts/bootstrap_dev.sh first")
+    """Require pip/setuptools/wheel visible under the same env the build uses.
+
+    ``offline_env`` sets ``PYTHONNOUSERSITE=1``, so a user-site-only
+    ``setuptools>=77`` must not pass this check — that combination produces
+    ``UNKNOWN-0.0.0`` sdists when the system setuptools is too old for PEP 621.
+    """
+    probe = (
+        "import re\n"
+        "import setuptools\n"
+        "import wheel  # noqa: F401\n"
+        "import pip  # noqa: F401\n"
+        "match = re.match(r'(\\d+)', setuptools.__version__)\n"
+        "raise SystemExit(0 if match and int(match.group(1)) >= 77 else 2)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        env=offline_env(),
+        text=True,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        timeout=60,
+    )
+    if result.returncode == 0:
+        return
+    if result.returncode == 2:
+        raise SystemExit(
+            "setuptools>=77 must be installed in this interpreter's site-packages "
+            "(not only --user); offline release builds set PYTHONNOUSERSITE=1. "
+            "Use a venv / .tools Python, or: python3 -m pip install --upgrade 'setuptools>=77' wheel"
+        )
+    detail = (result.stderr or result.stdout or "").strip()
+    raise SystemExit(
+        "pip, setuptools>=77, and wheel are required under PYTHONNOUSERSITE=1; "
+        f"run sh scripts/bootstrap_dev.sh first ({detail})"
+    )
 
 
 def offline_env() -> dict[str, str]:

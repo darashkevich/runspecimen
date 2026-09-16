@@ -7,9 +7,11 @@ include docs/FAQ.md
 include docs/MARKET_AND_DISTRIBUTION.md
 include docs/NEXT_CHANGES.md
 include docs/PRODUCT_PLAN.md
+include docs/RELEASE_CANDIDATE_REPORT.md
 include docs/RELEASE_CHECKLIST.md
 include docs/ROADMAP_PHASED.md
 include docs/SCHEMA_COMPATIBILITY.md
+include docs/SUBMISSION.md
 include docs/THREAT_MODEL.md
 include docs/USER_GUIDE.md
 include examples/demo_contract.json
