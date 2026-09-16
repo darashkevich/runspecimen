@@ -4,19 +4,30 @@ This document lists the manual actions required to publish RunSpecimen to
 various distribution channels. Each section describes what must be done
 by a human with appropriate credentials.
 
-## Proposed release (not published yet)
+See also `docs/NEXT_DEV_STATUS.md` for post-rc10 blockers (including the
+GitHub ↔ PyPI digest split on rc10).
 
-Package / plugin identity on the release branch: **`0.2.0rc10`** / **`0.2.0-rc.10`**.
+## Live release: 0.2.0-rc.10
 
-**Last published:** [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9) / PyPI `runspecimen==0.2.0rc9`.
+Package / plugin identity: **`0.2.0rc10`** / **`0.2.0-rc.10`**.
 
-Prospective URLs (appear only after an explicit GitHub Release + PyPI publish — do not treat as live):
+**Published:** [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) / PyPI `runspecimen==0.2.0rc10`.
+
+Live URLs:
 
 - Release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10
 - Wheel: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10-py3-none-any.whl
 - Source: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10.tar.gz
 - Plugin archive: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-plugin-0.2.0-rc.10.zip
 - Checksums: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/SHA256SUMS
+
+**Integrity caveat:** GitHub Release asset digests and PyPI digests for rc10
+**do not match** (separate rebuilds). Prefer verifying against the channel you
+downloaded from. Next RC must attach GitHub assets and publish PyPI from the
+**same** validated build (see publish workflow). Do **not** republish rc10
+unless Yahor explicitly requests it.
+
+Install: `python3 -m pip install runspecimen==0.2.0rc10`
 
 ## 1. Cursor Marketplace
 
@@ -57,6 +68,8 @@ plugins/runspecimen/.cursor-plugin/plugin.json
 
 **MANUAL ACTION REQUIRED:** Human must submit at https://cursor.com/marketplace/publish
 
+Do **not** claim marketplace acceptance until the listing is live and searchable.
+
 ---
 
 ## 2. Codex/ChatGPT Plugin Directory
@@ -69,6 +82,7 @@ plugins/runspecimen/.cursor-plugin/plugin.json
 
 - Valid `.codex-plugin/plugin.json` manifest
 - Skills defined in `skills/` directory
+- `interface.logo` and `interface.composerIcon` assets present (brand pack)
 
 ### Prerequisites for MCP-backed submission (if applicable)
 
@@ -101,15 +115,11 @@ plugins/runspecimen/.codex-plugin/plugin.json
 
 ## 3. PyPI (Python Package Index)
 
-**Status:** Last published `0.2.0rc9`; **`0.2.0rc10` not published yet**
+**Status:** Live — `0.2.0rc10` (see integrity caveat above)
 
 **Registry URL:** https://pypi.org/project/runspecimen/
 
-### Proposed package (after Yahor publish approval)
-
-- **Version:** `0.2.0rc10`
-- **Install (after publish):** `python3 -m pip install runspecimen==0.2.0rc10`
-- **Until then:** `python3 -m pip install runspecimen==0.2.0rc9`
+- **Install:** `python3 -m pip install runspecimen==0.2.0rc10`
 - **Publishing:** GitHub Actions trusted publishing with OIDC; no PyPI API
   token is stored in GitHub.
 
@@ -127,22 +137,23 @@ The active PyPI trusted publisher has these values:
 
 The repository's `.github/workflows/publish-pypi.yml` runs automatically when
 a GitHub release is published. It checks out the immutable release tag,
-verifies that the tag matches the package version, reruns the complete release
-gate, transfers only the wheel and source distribution to a separate
-OIDC-enabled job, and uploads them to PyPI. The GitHub `pypi` environment is
+verifies that the tag matches the package version, runs the complete release
+gate **once**, attaches those exact artifacts to the GitHub Release, then
+uploads the same wheel/sdist to PyPI via OIDC. The GitHub `pypi` environment is
 restricted to `v*` tags.
 
 ---
 
 ## 4. Website (runspecimen.darashkevich.com)
 
-**Status:** Live but may need update
+**Status:** Live (rc10 product site; commit claimed `99c5c9c` on darashkevich.com)
 
-**Current content check:** Site mentions "Public marketplace availability is not yet confirmed."
+**Current content check:** Site correctly hedges that public marketplace
+availability is not yet confirmed.
 
 ### Update required
 
-After marketplace submissions are accepted (not just submitted), update the
+After marketplace submissions are **accepted** (not just submitted), update the
 website to reflect actual public availability with direct links.
 
 **Location:** Website is not in this repository. Hosted separately (Cloudflare).
@@ -156,10 +167,10 @@ listings are confirmed live (not pending review).
 
 | Channel | Submitted | Pending | Live | URL |
 | --- | --- | --- | --- | --- |
-| GitHub Release | ❌ | rc10 proposed | last live: [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9) | prospective [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) |
-| Cursor Marketplace | ❌ | - | - | - |
-| Codex Directory | ❌ | - | - | - |
-| PyPI | ❌ (rc10) | after GitHub Release | last live: `0.2.0rc9` | [runspecimen](https://pypi.org/project/runspecimen/) |
+| GitHub Release | ✅ | - | [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) | digests ≠ PyPI (known) |
+| Cursor Marketplace | ❌ | - | - | not submitted |
+| Codex Directory | ❌ | - | - | not submitted |
+| PyPI | ✅ | - | `0.2.0rc10` | [runspecimen](https://pypi.org/project/runspecimen/) |
 
 **Important:** Do not claim a listing is "public" or "available" until:
 1. Submission is accepted (not just submitted)
@@ -176,3 +187,4 @@ After each channel goes live, verify:
 2. **Codex:** Search "runspecimen" in ChatGPT/Codex Plugins Directory
 3. **PyPI:** `pip install runspecimen` works and `runspecimen --version` shows `0.2.0rc10`
 4. **Website:** Update with verified live links only
+5. **Digests:** GitHub Release SHA256SUMS match PyPI file digests for the same filenames

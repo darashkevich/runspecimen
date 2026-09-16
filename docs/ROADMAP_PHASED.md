@@ -29,8 +29,9 @@ hardware-backed identity.
 
 | PR | Role | Note |
 | --- | --- | --- |
-| [#5](https://github.com/darashkevich/runspecimen/pull/5) | Phase 0 — schema + dashboard IA | Preserve; do not overwrite. CI green ≠ production-ready. |
+| [#5](https://github.com/darashkevich/runspecimen/pull/5) | Phase 0 — schema + dashboard IA | **Closed as superseded** by merged rc10 (#7). Do not re-merge. |
 | [#6](https://github.com/darashkevich/runspecimen/pull/6) | Native macOS companion | Separate workstream. App Sandbox on the **UI process** does **not** by itself prove the externally launched CLI or its **payload** is confined. |
+| Post-rc10 | See `docs/NEXT_DEV_STATUS.md` | Release provenance, brand icons, isolation ADR; no merge/publish without Yahor. |
 
 ## rc9 reality vs plan (do not re-implement)
 
@@ -40,9 +41,9 @@ hardware-backed identity.
 | HMAC shared-secret auth | Shipped (rc9); not a digital signature |
 | Runtime provenance | Shipped (rc9); platform limits remain |
 | `init-demo`, `demo_rc.sh`, showcase | Shipped |
-| Contract `version` + receipt `schema_version` | Phase 0 (PR #5) |
-| Dashboard four-question IA | Phase 0 prototype (PR #5) |
-| Ed25519 offline pubkey receipts | **Next** (Phase 1) |
+| Contract `version` + receipt `schema_version` | Shipped (rc10; via #7 stack) |
+| Dashboard four-question IA | Shipped (rc10; via #7 stack) |
+| Ed25519 offline pubkey receipts | Shipped optional (rc10) |
 | Tested isolation integrations | Phase 2 (design → narrow slice) |
 | Fuzz / golden depth | Phase 3 |
 | Activation / adapters | Phase 4 |
@@ -60,55 +61,21 @@ read-only (no POST approve/run). Agents never type or pipe `APPROVE` / `ABANDON`
 
 ---
 
-## Phase 0 — Schema compatibility + dashboard IA *(PR #5)*
+## Phase 0 — Schema compatibility + dashboard IA *(shipped in rc10)*
 
-**Status:** Implemented on `cursor/schema-compat-dashboard-ia`; open for review.
+**Status:** Shipped in `v0.2.0-rc.10`. PR #5 closed as superseded (do not re-merge).
 
 **Acceptance:** Unknown versions fail closed; legacy receipts verify; new certs
 emit `schema_version: 1`; dashboard trust ladder never implies live verify;
 security regressions pass.
 
-**Release gate:** Reviewable only. Outstanding local `release_check` /
-dashboard manual smoke must be green before any merge *recommendation* — and
-merge still requires Yahor's later decision.
-
 ---
 
-## Phase 1 — Public-key signed receipts (Ed25519) *(next PR: `cursor/ed25519-pubkey-receipts`)*
+## Phase 1 — Public-key signed receipts (Ed25519) *(shipped in rc10)*
 
-**Priority:** Highest after Phase 0.
-
-**Status:** Implementation in progress on branch `cursor/ed25519-pubkey-receipts`
-(stacked on Phase 0 direction commit). Optional PyNaCl extra; offline pubkey
-verify; HMAC path preserved.
-
-**Scope**
-
-- Optional dependency (prefer well-maintained crypto lib, e.g. PyNaCl) so the
-  default Community install stays **stdlib-only**.
-- Ed25519 keygen, private-key sign, **offline public-key verify** without the
-  secret.
-- Canonical JSON serialization shared with HMAC path; key ID, rotation, export
-  of public keys; separate on-disk layout from HMAC secrets.
-- Tamper, wrong-key, missing-extra, and scheme-mismatch tests.
-- Precise docs: identity ≈ key custody; not absolute non-repudiation; HMAC
-  unchanged and clearly labeled.
-
-**Dependencies:** Phase 0 schema rules preferred (stack on #5 or merge #5 first).
-
-**Acceptance**
-
-- `pip install runspecimen` (no extras) still works; Ed25519 commands fail with
-  an actionable install hint when the extra is absent.
-- `pip install 'runspecimen[ed25519]'` enables sign + offline pubkey verify.
-- Forged HMAC MAC cannot satisfy the Ed25519 verify path.
-- Wrong public key / tampered body fails closed.
-
-**Release gate:** Unit + adversarial tests; release_check with and without
-extra; docs/FAQ honesty pass. No PyPI publish without Yahor.
-
-**Blocked on:** None for optional-dependency choice (direction approved:
-optional dep over handwritten crypto). Hardware-backed keys remain later.
+**Status:** Shipped on `main` / `v0.2.0-rc.10`. Optional PyNaCl extra; offline
+pubkey verify; HMAC path preserved. Soft keys ≠ hardware-backed identity.
+Hardware-backed keys remain later. See `docs/ED25519_RECEIPTS.md`.
 
 ---
 
