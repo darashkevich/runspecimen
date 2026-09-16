@@ -58,6 +58,8 @@ echo "==> Entitlements: MAS has sandbox; helper has inherit"
 grep -q 'com.apple.security.app-sandbox' "$ROOT/Entitlements/RunSpecimen.mas.entitlements"
 grep -q 'com.apple.security.inherit' "$ROOT/Entitlements/RunSpecimen.helper.entitlements"
 # Release entitlements must not enable get-task-allow
-! grep -q 'get-task-allow' "$ROOT/Entitlements/"*.entitlements || fail "get-task-allow present"
+if grep -q 'get-task-allow' "$ROOT/Entitlements/"*.entitlements 2>/dev/null; then
+  fail "get-task-allow present"
+fi
 
 pass "security boundary checks"

@@ -55,7 +55,7 @@ struct TopBar: View {
 
             CapsuleLabel(text: model.cliIdentity?.version ?? "CLI missing", tone: model.hasCLI ? .signal : .amber)
                 .accessibilityLabel(model.hasCLI ? "CLI version \(model.cliIdentity?.version ?? "")" : "CLI missing")
-                .help(model.cliSourceLabel.map { "Source: \($0)" } ?? "Select or install runspecimen 0.2.0rc9+")
+                .help(model.cliSourceLabel.map { "Source: \($0)" } ?? "Select or install runspecimen 0.2.0rc10+")
 
             if let source = model.cliSourceLabel ?? model.cliIdentity?.source.label {
                 CapsuleLabel(text: source, tone: source == "Bundled Helpers" ? .signal : .amber)

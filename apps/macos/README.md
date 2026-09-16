@@ -25,7 +25,7 @@ leases, approval binding, or receipt verification in Swift.
 | App icon (`AppIcon.icns` / iconset / 1024) | Done |
 | Workspace Open panel + security-scoped bookmarks | Done |
 | CLI discovery: bookmark → Helpers → PATH (PATH off on MAS) | Done |
-| Minimum CLI gate (`0.2.0rc9+`) | Done |
+| Minimum CLI gate (`0.2.0rc9+`; bundle `0.2.0rc10`) | Done |
 | `doctor` / `--version` / `status` / `validate` | Done |
 | Lifecycle + evidence inspector | Done |
 | Approve sheet with real PTY (never auto-`APPROVE`) | Done |
@@ -34,14 +34,15 @@ leases, approval binding, or receipt verification in Swift.
 | `--from-src` host-Python helper (local/CI) | Done |
 | `--mas` frozen helper (required for Store; fail closed) | Done when PyInstaller present |
 | `smoke_macos.sh` + security boundary tests | Done |
-| Xcode Archive / ASC upload | **Operator-only** (full Xcode + Apple Distribution) |
+| Xcode Archive (ad-hoc structural) | Done via `./Scripts/archive_mas.sh` (Xcode 27) |
+| ASC upload / Submit for Review | **Operator-only** (Apple Distribution + ASC) |
 
 ## Requirements
 
 - macOS 14+
-- Xcode 15+ / Swift 5.9+ (CLT can ad-hoc build via `Scripts/build_app.sh`)
+- Xcode 15+ / Swift 5.9+ (validated on Xcode 27; CLT can still ad-hoc `build_app.sh`)
 - For Store packaging: PyInstaller on the freeze machine
-- For Archive/upload: full Xcode.app + Apple Distribution + ASC access
+- For ASC upload: Apple Distribution + App Store Connect access
 
 ## Build
 
@@ -54,10 +55,11 @@ open build/RunSpecimen.app
 # Mac App Store packaging (primary):
 python3 -m pip install --user 'pyinstaller>=6'
 ./Scripts/build_app.sh --mas
+./Scripts/archive_mas.sh           # real xcodebuild archive (ad-hoc without certs)
 ```
 
-Archive/upload when certs exist: `./Scripts/open_xcode.sh` then Product → Archive
-(see APP_STORE.md). **Do not Submit for Review** without Codex QA + Yahor decision.
+Open in Xcode: `./Scripts/open_xcode.sh`. **Do not Submit for Review** without
+Codex QA + Yahor decision.
 
 ## Approval invariant
 

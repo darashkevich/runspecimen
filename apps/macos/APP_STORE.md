@@ -16,15 +16,16 @@ Consult current Apple docs before each submission:
 
 | Channel | Role | Verdict |
 | --- | --- | --- |
-| **Target A — Mac App Store** | **Primary** | Package with `./Scripts/build_app.sh --mas` (frozen helper, fail closed) → Archive in Xcode → App Store Connect |
+| **Target A — Mac App Store** | **Primary** | `./Scripts/build_app.sh --mas` (frozen **0.2.0rc10** helper) → `./Scripts/archive_mas.sh` / Xcode Archive → App Store Connect |
 | **Target B — Developer ID + notarization** | Secondary / direct download | Optional after MAS; same sandbox entitlements preferred |
 
 ### Why MAS-first now
 
 1. **Guideline 2.4.5(viii)** — Store builds embed a **frozen Mach-O** helper under
-   `Contents/Helpers` (PyInstaller onefile). No host Python / optionally installed
-   PyPI CLI is required for Store builds. `--from-src` host-Python launchers are
-   **local/CI only** and are rejected at runtime when `RSDistributionChannel=mas`.
+   `Contents/Helpers` (PyInstaller onefile) built from the current engine
+   (`0.2.0rc10` on this branch). No host Python / optionally installed PyPI CLI is
+   required for Store builds. `--from-src` host-Python launchers are **local/CI
+   only** and are rejected at runtime when `RSDistributionChannel=mas`.
 2. **Guideline 2.4.5(i)** — App Sandbox + justified entitlements
    (`Entitlements/RunSpecimen.mas.entitlements`).
 3. **Guideline 2.4.5(ii)** — Self-contained `.app`; never `pip install` into shared
@@ -36,20 +37,25 @@ Honest security copy (required): App Sandbox confines the UI (+ inherit helper).
 It does **not** OS-sandbox the payload under test. See
 [docs/SECURITY_BOUNDARY.md](docs/SECURITY_BOUNDARY.md).
 
-## Operator-only prerequisites (this agent Mac cannot do)
+## Operator-only prerequisites (remaining)
 
 | Prerequisite | Why |
 | --- | --- |
-| Full **Xcode.app** (not only CLT) | Archive / Organizer / Transporter / `altool`/`notarytool` MAS upload |
 | **Apple Developer Program** membership | Identifiers, profiles, App Store Connect |
-| **Apple Distribution** certificate + Mac App Store provisioning profile | Codesign for Store |
+| **Apple Distribution** certificate + Mac App Store provisioning profile | Codesign for Store upload |
 | App Store Connect **API key** (or Apple ID + app-specific password) | Upload / metadata |
 | ASC app record: bundle id `com.darashkevich.runspecimen`, screenshots, privacy URL | Review |
 
-On CLT-only Macs: `build_app.sh --mas` still produces an ad-hoc `.app` for local
-QA; Archive/upload remain blocked until Xcode + certs exist.
+**Xcode status (this Mac):** Xcode **27.0** is installed and selected
+(`xcode-select` → `/Applications/Xcode.app/...`). Ad-hoc Archive via
+`./Scripts/archive_mas.sh` proves the project is archivable. **Upload / Submit
+for Review** still need Yahor’s Apple Distribution identity + ASC.
 
-## Build / Archive / Upload (when Xcode + certs present)
+Optional local tool: `brew install xcodegen` to refresh `RunSpecimen.xcodeproj`
+from `project.yml` (`./Scripts/generate_xcodeproj.sh`). A generated project is
+committed so Archive works without regenerating.
+
+## Build / Archive / Upload
 
 ```bash
 cd apps/macos
@@ -57,22 +63,22 @@ python3 -m pip install --user 'pyinstaller>=6'   # freeze machine only
 ./Scripts/verify_app_icon.sh
 ./Scripts/test_security_boundary.sh
 ./Scripts/build_app.sh --mas
-# Confirm:
-#   Contents/Helpers/runspecimen is Mach-O
+# Confirm helper is current engine (rc10 on this branch):
+#   Contents/Helpers/runspecimen --version
 #   no Contents/Helpers/lib/
 #   Info.plist RSDistributionChannel == mas
 #   Resources/AppIcon.icns present
 
-# Then in full Xcode (see Xcode/project.yml + Scripts/open_xcode.sh):
-#   1. Open generated RunSpecimen.xcodeproj (or SPM package in Xcode)
-#  2. Signing & Capabilities: Team + App Sandbox + MAS entitlements
-#   3. Product → Archive
-#   4. Distribute App → App Store Connect → Upload
-#   Or: xcodebuild -scheme RunSpecimen -archivePath build/RunSpecimen.xcarchive archive
-#       xcodebuild -exportArchive -archivePath … -exportOptionsPlist Config/ExportOptions.mas.plist …
+# Structural Archive (ad-hoc when no Apple Distribution identity):
+./Scripts/archive_mas.sh
+# Or open Xcode:
+./Scripts/open_xcode.sh
+#   Signing & Capabilities: Team + App Sandbox + MAS entitlements (for ASC)
+#   Product → Archive → Distribute App → App Store Connect → Upload
 ```
 
-Export options template: [Config/ExportOptions.mas.plist](Config/ExportOptions.mas.plist).
+Export options template: [Config/ExportOptions.mas.plist](Config/ExportOptions.mas.plist)
+(replace `TEAMID` before export).
 
 ## Entitlements
 
@@ -126,6 +132,7 @@ Shipped under `Resources/PrivacyInfo.xcprivacy`:
 | Short version | `0.1.3` (bump per ship) |
 | Build | `4` (bump per upload) |
 | Min macOS | 14.0 |
+| Bundled engine | `0.2.0rc10` (must match `src/runspecimen/__version__`) |
 | Icon | `Resources/AppIcon.icns` (+ iconset / 1024 for Connect) |
 
 ## Review notes (paste into App Review)
@@ -176,13 +183,13 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 
 ## Packaging checklist (MAS)
 
-- [ ] `./Scripts/build_app.sh --mas` succeeds (Mach-O helper, no `lib/`)
+- [ ] `./Scripts/build_app.sh --mas` succeeds (Mach-O helper == repo `0.2.0rc10`, no `lib/`)
 - [ ] App Sandbox entitlements (`RunSpecimen.mas.entitlements`)
 - [ ] `PrivacyInfo.xcprivacy` present
 - [ ] `AppIcon.icns` in `Contents/Resources`
 - [ ] `RSDistributionChannel=mas`
 - [ ] No `get-task-allow`
-- [ ] Built/Archived with **full Xcode**
+- [ ] `./Scripts/archive_mas.sh` or Xcode Product → Archive succeeds
 - [ ] Apple Distribution signing + upload to App Store Connect
 - [ ] Privacy policy URL in Connect + in-app
 - [ ] Screenshots + reviewer demo notes
@@ -190,10 +197,11 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 
 ## Remaining Yahor-only blockers
 
-1. Install full Xcode.app; select it with `xcode-select -s /Applications/Xcode.app`.
-2. Create/download Apple Distribution cert + Mac App Store profile for
-   `com.darashkevich.runspecimen`.
-3. Create ASC app + API key; fill `Config/signing.env` locally (gitignored).
-4. Archive → Upload → metadata → Submit for Review (only after Codex QA sign-off).
+1. Create/download **Apple Distribution** cert + Mac App Store profile for
+   `com.darashkevich.runspecimen`; set Team in Xcode (replace ad-hoc Archive).
+2. Create ASC app + API key; fill `Config/signing.env` locally (gitignored); set
+   `TEAMID` in `Config/ExportOptions.mas.plist`.
+3. Archive → Upload → metadata → **Stop before Submit for Review** until Codex QA
+   + your release decision.
 
 Do **not** merge/publish/submit from agent automation without Yahor’s release decision.

@@ -9,9 +9,18 @@ REPO="$(cd "$ROOT/../.." && pwd)"
 cd "$ROOT"
 
 echo "==> CLIVersionGate checks"
+# Box/Finder xattrs break ad-hoc codesign of .xctest bundles on cloud-synced trees.
+xattr -cr "$ROOT/.build" 2>/dev/null || true
+find "$ROOT/.build" \( -name '._*' -o -name '.DS_Store' \) -delete 2>/dev/null || true
 if swift package --package-path "$ROOT" describe >/dev/null 2>&1; then
   echo "SwiftPM OK — running swift test"
-  swift test --package-path "$ROOT"
+  # Retry once after xattr clear if codesign detritus fails.
+  if ! swift test --package-path "$ROOT"; then
+    echo "swift test failed — clearing xattrs and retrying once"
+    rm -rf "$ROOT/.build"
+    xattr -cr "$ROOT" 2>/dev/null || true
+    swift test --package-path "$ROOT"
+  fi
 else
   echo "SwiftPM unavailable — running Python parity checks for CLIVersionGate"
   python3 - <<'PY'
@@ -251,7 +260,15 @@ if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/n
   MAS_VER="$("$APP/Contents/Helpers/runspecimen" --version 2>&1)"
   echo "MAS helper --version → $MAS_VER"
   echo "$MAS_VER" | grep -qi runspecimen
-  echo "OK: MAS frozen helper bundle"
+  REPO_VER=$(
+    python3 -c 'import pathlib,re,sys; t=pathlib.Path(sys.argv[1],"src/runspecimen/__init__.py").read_text(); m=re.search(r"__version__\s*=\s*\"([^\"]+)\"", t); assert m; print(m.group(1))' \
+      "$REPO"
+  )
+  echo "$MAS_VER" | grep -F "$REPO_VER" >/dev/null || {
+    echo "ERROR: MAS helper must match repo engine $REPO_VER (got: $MAS_VER)" >&2
+    exit 1
+  }
+  echo "OK: MAS frozen helper bundle matches repo $REPO_VER"
 else
   echo "PyInstaller absent — verifying --mas fails closed"
   if ./Scripts/build_app.sh --mas >/tmp/rs-mas-fail.out 2>&1; then

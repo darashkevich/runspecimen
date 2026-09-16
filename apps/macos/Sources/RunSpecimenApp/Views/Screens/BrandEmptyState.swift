@@ -168,7 +168,7 @@ struct CLISetupBanner: View {
 
 struct FooterHint: View {
     var body: some View {
-        Text("Install: python3 -m pip install 'runspecimen==0.2.0rc9'   ·   Local-only · Apache-2.0")
+        Text("Install: python3 -m pip install 'runspecimen==0.2.0rc10'   ·   Local-only · Apache-2.0")
             .font(RSTheme.monoSmall)
             .foregroundStyle(RSTheme.soft)
     }

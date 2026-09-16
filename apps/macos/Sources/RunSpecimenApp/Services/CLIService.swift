@@ -237,13 +237,13 @@ actor CLIService {
     func requireCLI() throws -> URL {
         guard let cliURL else {
             throw AppError(
-                message: "runspecimen CLI not selected. Use “Select runspecimen CLI” (Open panel), install 0.2.0rc9+, or stage a bundled helper under Contents/Helpers."
+                message: "runspecimen CLI not selected. Use “Select runspecimen CLI” (Open panel), install 0.2.0rc10+, or stage a bundled helper under Contents/Helpers."
             )
         }
         let fm = FileManager.default
         guard fm.isExecutableFile(atPath: cliURL.path) else {
             throw AppError(
-                message: "runspecimen CLI is missing or not executable at:\n\(cliURL.path)\nRe-select it via Open panel, or reinstall 0.2.0rc9+."
+                message: "runspecimen CLI is missing or not executable at:\n\(cliURL.path)\nRe-select it via Open panel, or reinstall 0.2.0rc10+."
             )
         }
         return cliURL

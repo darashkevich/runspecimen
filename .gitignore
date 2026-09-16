@@ -24,3 +24,9 @@ apps/ios/**/DerivedData/
 apps/ios/*.xcworkspace
 apps/macos-companion/.build/
 apps/macos-companion/.swiftpm/
+apps/macos/RunSpecimen.xcodeproj/xcuserdata/
+apps/macos/RunSpecimen.xcodeproj/project.xcworkspace/xcuserdata/
+apps/macos/build/
+apps/macos/RunSpecimen *.xcodeproj/
+apps/macos/*.xcworkspace/
+apps/macos/.swiftpm/

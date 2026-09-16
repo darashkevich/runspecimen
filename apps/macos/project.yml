@@ -1,55 +1,163 @@
-# XcodeGen project for Mac App Store Archive
+# XcodeGen project for Mac App Store Archive (Xcode 15+ / 27 validated).
 #
-# Generate (on a Mac with Xcode + xcodegen):
-#   brew install xcodegen
-#   cd apps/macos && xcodegen generate
+# Generate / refresh:
+#   brew install xcodegen   # optional if RunSpecimen.xcodeproj is already committed
+#   cd apps/macos && ./Scripts/generate_xcodeproj.sh
 #   open RunSpecimen.xcodeproj
 #
-# Without xcodegen: open Package.swift in Xcode and attach Resources manually,
-# or use Scripts/build_app.sh --mas for an ad-hoc .app then wrap via Organizer.
+# Pre-archive (required for Helpers embed):
+#   ./Scripts/freeze_helper.sh --enable --require --verify
+#   ./Scripts/archive_mas.sh
 name: RunSpecimen
 options:
   bundleIdPrefix: com.darashkevich
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
+  groupSortPosition: top
 settings:
   base:
-    PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen
-    MARKETING_VERSION: "0.1.3"
-    CURRENT_PROJECT_VERSION: "4"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     SWIFT_VERSION: "5.9"
-    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGNING_ALLOWED: "YES"
+    AD_HOC_CODE_SIGNING_ALLOWED: "YES"
+    DEVELOPMENT_TEAM: ""
     ENABLE_HARDENED_RUNTIME: YES
-    COMBINE_HIDPI_IMAGES: YES
+    ONLY_ACTIVE_ARCH: "NO"
 targets:
+  RunSpecimenCore:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: Sources/RunSpecimenCore
+    settings:
+      base:
+        PRODUCT_NAME: RunSpecimenCore
+        SKIP_INSTALL: YES
+        DEFINES_MODULE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen.core
   RunSpecimen:
     type: application
     platform: macOS
     sources:
       - path: Sources/RunSpecimenApp
-      - path: Sources/RunSpecimenCore
+    dependencies:
+      - target: RunSpecimenCore
+        embed: false
+        link: true
     resources:
-      - path: Resources/PrivacyInfo.xcprivacy
-      - path: Resources/AppIcon.icns
-      - path: Resources/AppIcon-1024.png
-      - path: Resources/AppIcon.iconset
-        type: folder
+      - path: Resources
+        excludes:
+          - Info.plist
+          - ICONS.md
     info:
-      path: Resources/Info.plist
+      path: Config/Info-mas.plist
       properties:
+        CFBundleDisplayName: RunSpecimen
+        CFBundleExecutable: RunSpecimen
         CFBundleIconFile: AppIcon
         CFBundleIconName: AppIcon
+        CFBundleIdentifier: com.darashkevich.runspecimen
+        CFBundleName: RunSpecimen
+        CFBundlePackageType: APPL
+        CFBundleShortVersionString: "0.1.3"
+        CFBundleVersion: "4"
         RSDistributionChannel: mas
         LSApplicationCategoryType: public.app-category.developer-tools
+        LSMinimumSystemVersion: "14.0"
+        NSHighResolutionCapable: true
+        NSSupportsAutomaticTermination: false
+        NSSupportsSuddenTermination: false
+        NSHumanReadableCopyright: "Copyright © RunSpecimen Contributors. Apache-2.0."
     entitlements:
       path: Entitlements/RunSpecimen.mas.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.files.user-selected.executable: true
+        com.apple.security.network.client: true
+        com.apple.security.network.server: true
     settings:
       base:
-        INFOPLIST_FILE: Resources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen
+        MARKETING_VERSION: "0.1.3"
+        CURRENT_PROJECT_VERSION: "4"
+        INFOPLIST_FILE: Config/Info-mas.plist
         PRODUCT_NAME: RunSpecimen
         ASSETCATALOG_COMPILER_APPICON_NAME: ""
         CODE_SIGN_ENTITLEMENTS: Entitlements/RunSpecimen.mas.entitlements
+        COMBINE_HIDPI_IMAGES: YES
+        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: NO
     scheme:
       testTargets: []
+      archive:
+        config: Release
+    postCompileScripts:
+      - name: Embed Frozen Helper
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          HELPER_SRC="${SRCROOT}/Helpers/payload/runspecimen"
+          HELPER_NOTICE="${SRCROOT}/Helpers/payload/NOTICE.txt"
+          DEST="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
+          RES_DEST="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources"
+          if [[ ! -x "$HELPER_SRC" ]]; then
+            echo "error: Missing frozen helper at Helpers/payload/runspecimen."
+            echo "error: Run: ./Scripts/freeze_helper.sh --enable --require --verify"
+            exit 1
+          fi
+          if ! file "$HELPER_SRC" | grep -q 'Mach-O'; then
+            echo "error: Helpers/payload/runspecimen must be a Mach-O freeze (MAS path)."
+            file "$HELPER_SRC" || true
+            exit 1
+          fi
+          mkdir -p "$DEST" "$RES_DEST"
+          # Always stage icon + privacy manifest (XcodeGen resource sync can miss on some hosts).
+          for f in AppIcon.icns AppIcon-1024.png PrivacyInfo.xcprivacy; do
+            if [[ -f "${SRCROOT}/Resources/$f" ]]; then
+              if cp -X /etc/hosts /tmp/.rs-cp-x-test 2>/dev/null; then
+                rm -f /tmp/.rs-cp-x-test
+                cp -X -f "${SRCROOT}/Resources/$f" "$RES_DEST/$f"
+              else
+                cp -f "${SRCROOT}/Resources/$f" "$RES_DEST/$f"
+              fi
+            fi
+          done
+          # Strip Finder/Box xattrs that break codesign ("resource fork … not allowed").
+          if cp -X /etc/hosts /tmp/.rs-cp-x-test 2>/dev/null; then
+            rm -f /tmp/.rs-cp-x-test
+            cp -X -f "$HELPER_SRC" "$DEST/runspecimen"
+            # NOTICE lives under Resources — loose files beside Helpers Mach-O confuse codesign.
+            [[ -f "$HELPER_NOTICE" ]] && cp -X -f "$HELPER_NOTICE" "$RES_DEST/HelperNOTICE.txt" || true
+          else
+            cp -f "$HELPER_SRC" "$DEST/runspecimen"
+            [[ -f "$HELPER_NOTICE" ]] && cp -f "$HELPER_NOTICE" "$RES_DEST/HelperNOTICE.txt" || true
+          fi
+          chmod +x "$DEST/runspecimen"
+          rm -rf "$DEST/lib"
+          rm -f "$DEST/NOTICE.txt" "$DEST/README.md"
+          xattr -cr "$DEST" 2>/dev/null || true
+          # Nested Mach-O must be signed before the outer .app seal.
+          codesign --force --sign - --options runtime --timestamp=none "$DEST/runspecimen" \
+            || codesign --force --sign - "$DEST/runspecimen"
+          echo "Embedded helper: $DEST/runspecimen"
+          "$DEST/runspecimen" --version || true
+      - name: Clear Codesign Xattrs
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          APP="${TARGET_BUILD_DIR}/${FULL_PRODUCT_NAME}"
+          if [[ -d "$APP" ]]; then
+            xattr -cr "$APP" 2>/dev/null || true
+            find "$APP" -exec xattr -c {} + 2>/dev/null || true
+            find "$APP" \( -name '._*' -o -name '.DS_Store' \) -delete 2>/dev/null || true
+            command -v dot_clean >/dev/null 2>&1 && dot_clean -m "$APP" 2>/dev/null || true
+            HELPER="$APP/Contents/Helpers/runspecimen"
+            if [[ -x "$HELPER" ]]; then
+              codesign --force --sign - --options runtime --timestamp=none "$HELPER" \
+                || codesign --force --sign - "$HELPER"
+            fi
+            echo "Cleared codesign xattrs on $APP"
+          fi

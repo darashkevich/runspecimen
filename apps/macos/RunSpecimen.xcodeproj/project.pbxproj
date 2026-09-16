@@ -1,0 +1,609 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		00FBAEA6B6DD45C4449D6E18 /* ApproveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F2CAAB7E3AD3F6FD10E723C /* ApproveSheet.swift */; };
+		0D0D6744F7E92B0102D34529 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D088609193CFD648FE7973A6 /* SettingsView.swift */; };
+		11D70B967766E55BFFF54C07 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AD6C443994D90F881291C9E /* AboutView.swift */; };
+		1C28BC134D4EB0FA328766FE /* CLIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F565B47A4AF145AFF0D32B /* CLIService.swift */; };
+		2C47316E44CE2A922CF15D1A /* RunSpecimenApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A67C161EC147254CE84D7C9 /* RunSpecimenApp.swift */; };
+		2EB57F1869DBF37A893A9F3F /* PTYApprovalSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36CDFCFCD215BA28614B65F0 /* PTYApprovalSession.swift */; };
+		448F074AD68DBF4196633D80 /* EvidenceInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F8548B718F4960684AD9F56 /* EvidenceInspectorView.swift */; };
+		483F4CF79A70E85661E22A61 /* BrandEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9E846019D6C07EC8472D3F /* BrandEmptyState.swift */; };
+		5012036C37C0F2FEF1A5793F /* RSTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23F6E6DCBD40F79418D2E40 /* RSTheme.swift */; };
+		6FB765924CD7E4CA44AE488C /* BookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FDFE20E65ED9BB091606F63 /* BookmarkStore.swift */; };
+		746E229F2860B82A9C618DA9 /* CLIVersionGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E843DB581C76C70E4D0B336 /* CLIVersionGate.swift */; };
+		818B7FFB5C52F411A645E33F /* ActionBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4980BD2EA2EB66E8B05E2589 /* ActionBar.swift */; };
+		9293289E610B5767F5069B8C /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 395F997B04A26C24E649B9F7 /* AppModel.swift */; };
+		C0EB2EB55853C627CBBC718A /* SecurityBoundary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7531B8780C3C9854D43D8CE4 /* SecurityBoundary.swift */; };
+		C243D9C8700F22A2B888FC13 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = E352B17C6C77A8BA98BACAF1 /* Models.swift */; };
+		CA561EC024C155FAB712DD64 /* libRunSpecimenCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 88F0F2985F5100DEBE7D43A3 /* libRunSpecimenCore.a */; };
+		E0D6392F303910C4B33ECC3F /* DistributionChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A08563FFD0AB533D32DFDC /* DistributionChannel.swift */; };
+		E5F6FE3C64619C36460B0D20 /* StatusLifecycleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ED625BA3F8017FA5CE6448D /* StatusLifecycleView.swift */; };
+		E6C9E64159AA99328093C70A /* MainConsoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2320608A61C637B03E76E723 /* MainConsoleView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		DED03698162D46879D053D14 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EF48C929C388A83B6B6A139B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5D21EB08290BEC433E0D6A8C;
+			remoteInfo = RunSpecimenCore;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		1E843DB581C76C70E4D0B336 /* CLIVersionGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIVersionGate.swift; sourceTree = "<group>"; };
+		1ED625BA3F8017FA5CE6448D /* StatusLifecycleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusLifecycleView.swift; sourceTree = "<group>"; };
+		1F2CAAB7E3AD3F6FD10E723C /* ApproveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApproveSheet.swift; sourceTree = "<group>"; };
+		2320608A61C637B03E76E723 /* MainConsoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainConsoleView.swift; sourceTree = "<group>"; };
+		29B721052ED4AA455B35AD09 /* RunSpecimen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RunSpecimen.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		36CDFCFCD215BA28614B65F0 /* PTYApprovalSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PTYApprovalSession.swift; sourceTree = "<group>"; };
+		395F997B04A26C24E649B9F7 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		3A67C161EC147254CE84D7C9 /* RunSpecimenApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunSpecimenApp.swift; sourceTree = "<group>"; };
+		3AD6C443994D90F881291C9E /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		3F8548B718F4960684AD9F56 /* EvidenceInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceInspectorView.swift; sourceTree = "<group>"; };
+		4980BD2EA2EB66E8B05E2589 /* ActionBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionBar.swift; sourceTree = "<group>"; };
+		7531B8780C3C9854D43D8CE4 /* SecurityBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityBoundary.swift; sourceTree = "<group>"; };
+		88F0F2985F5100DEBE7D43A3 /* libRunSpecimenCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libRunSpecimenCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		8FDFE20E65ED9BB091606F63 /* BookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStore.swift; sourceTree = "<group>"; };
+		A7A08563FFD0AB533D32DFDC /* DistributionChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DistributionChannel.swift; sourceTree = "<group>"; };
+		AA9E846019D6C07EC8472D3F /* BrandEmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandEmptyState.swift; sourceTree = "<group>"; };
+		C23F6E6DCBD40F79418D2E40 /* RSTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSTheme.swift; sourceTree = "<group>"; };
+		D088609193CFD648FE7973A6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E352B17C6C77A8BA98BACAF1 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		E6F565B47A4AF145AFF0D32B /* CLIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIService.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		89C26EB407079B5B563C9327 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CA561EC024C155FAB712DD64 /* libRunSpecimenCore.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		08A2725F7A55D9D6493ADF1E /* Sheets */ = {
+			isa = PBXGroup;
+			children = (
+				3AD6C443994D90F881291C9E /* AboutView.swift */,
+				1F2CAAB7E3AD3F6FD10E723C /* ApproveSheet.swift */,
+				D088609193CFD648FE7973A6 /* SettingsView.swift */,
+			);
+			path = Sheets;
+			sourceTree = "<group>";
+		};
+		53246B2511C258849CD2F997 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				88F0F2985F5100DEBE7D43A3 /* libRunSpecimenCore.a */,
+				29B721052ED4AA455B35AD09 /* RunSpecimen.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		578479CD3DCF266A6AFD3676 = {
+			isa = PBXGroup;
+			children = (
+				595094821B70AFB66DB69AF0 /* Sources */,
+				53246B2511C258849CD2F997 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		595094821B70AFB66DB69AF0 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				B1CF9EA9607F20B42C8BD39F /* RunSpecimenApp */,
+				848893725E33276E527EF7A4 /* RunSpecimenCore */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		633E686CBE898E3D1A14BA73 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				C23F6E6DCBD40F79418D2E40 /* RSTheme.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		6879B620D4442C7C71B91356 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				C7848CA611106C2026BB72A3 /* Screens */,
+				08A2725F7A55D9D6493ADF1E /* Sheets */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		848893725E33276E527EF7A4 /* RunSpecimenCore */ = {
+			isa = PBXGroup;
+			children = (
+				1E843DB581C76C70E4D0B336 /* CLIVersionGate.swift */,
+				A7A08563FFD0AB533D32DFDC /* DistributionChannel.swift */,
+				7531B8780C3C9854D43D8CE4 /* SecurityBoundary.swift */,
+			);
+			path = RunSpecimenCore;
+			sourceTree = "<group>";
+		};
+		A1F15FC4A414F8DEF9E8DFA0 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				8FDFE20E65ED9BB091606F63 /* BookmarkStore.swift */,
+				E6F565B47A4AF145AFF0D32B /* CLIService.swift */,
+				36CDFCFCD215BA28614B65F0 /* PTYApprovalSession.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		B1CF9EA9607F20B42C8BD39F /* RunSpecimenApp */ = {
+			isa = PBXGroup;
+			children = (
+				B8194BA1C57170B4D6C56770 /* Models */,
+				A1F15FC4A414F8DEF9E8DFA0 /* Services */,
+				633E686CBE898E3D1A14BA73 /* Theme */,
+				6879B620D4442C7C71B91356 /* Views */,
+				395F997B04A26C24E649B9F7 /* AppModel.swift */,
+				3A67C161EC147254CE84D7C9 /* RunSpecimenApp.swift */,
+			);
+			path = RunSpecimenApp;
+			sourceTree = "<group>";
+		};
+		B8194BA1C57170B4D6C56770 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				E352B17C6C77A8BA98BACAF1 /* Models.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		C7848CA611106C2026BB72A3 /* Screens */ = {
+			isa = PBXGroup;
+			children = (
+				4980BD2EA2EB66E8B05E2589 /* ActionBar.swift */,
+				AA9E846019D6C07EC8472D3F /* BrandEmptyState.swift */,
+				3F8548B718F4960684AD9F56 /* EvidenceInspectorView.swift */,
+				2320608A61C637B03E76E723 /* MainConsoleView.swift */,
+				1ED625BA3F8017FA5CE6448D /* StatusLifecycleView.swift */,
+			);
+			path = Screens;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		5D21EB08290BEC433E0D6A8C /* RunSpecimenCore */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A906FF374A274AD8286C9746 /* Build configuration list for PBXNativeTarget "RunSpecimenCore" */;
+			buildPhases = (
+				E41E09306BFB4E56D6CFB307 /* Sources */,
+				DEEE4498B6EDE08B01CB792A /* Copy Swift Objective-C Interface Header */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RunSpecimenCore;
+			packageProductDependencies = (
+			);
+			productName = RunSpecimenCore;
+			productReference = 88F0F2985F5100DEBE7D43A3 /* libRunSpecimenCore.a */;
+			productType = "com.apple.product-type.library.static";
+		};
+		DA2637095469A4C4B6C46E5F /* RunSpecimen */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DB63E751EC7D2985AAFED6B1 /* Build configuration list for PBXNativeTarget "RunSpecimen" */;
+			buildPhases = (
+				CAFA4E25B52800584DE93F32 /* Sources */,
+				F9040B7B5B9DE56E04FDB0AD /* Embed Frozen Helper */,
+				A0B22C4F814B186473E2FD87 /* Clear Codesign Xattrs */,
+				89C26EB407079B5B563C9327 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FC8B94D277B27F2B76D34941 /* PBXTargetDependency */,
+			);
+			name = RunSpecimen;
+			packageProductDependencies = (
+			);
+			productName = RunSpecimen;
+			productReference = 29B721052ED4AA455B35AD09 /* RunSpecimen.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		EF48C929C388A83B6B6A139B /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					5D21EB08290BEC433E0D6A8C = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+					};
+					DA2637095469A4C4B6C46E5F = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+					};
+				};
+			};
+			buildConfigurationList = 3E3B405142D6A85DB8030C96 /* Build configuration list for PBXProject "RunSpecimen" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 578479CD3DCF266A6AFD3676;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 53246B2511C258849CD2F997 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				5D21EB08290BEC433E0D6A8C /* RunSpecimenCore */,
+				DA2637095469A4C4B6C46E5F /* RunSpecimen */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A0B22C4F814B186473E2FD87 /* Clear Codesign Xattrs */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Clear Codesign Xattrs";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nAPP=\"${TARGET_BUILD_DIR}/${FULL_PRODUCT_NAME}\"\nif [[ -d \"$APP\" ]]; then\n  xattr -cr \"$APP\" 2>/dev/null || true\n  find \"$APP\" -exec xattr -c {} + 2>/dev/null || true\n  find \"$APP\" \\( -name '._*' -o -name '.DS_Store' \\) -delete 2>/dev/null || true\n  command -v dot_clean >/dev/null 2>&1 && dot_clean -m \"$APP\" 2>/dev/null || true\n  HELPER=\"$APP/Contents/Helpers/runspecimen\"\n  if [[ -x \"$HELPER\" ]]; then\n    codesign --force --sign - --options runtime --timestamp=none \"$HELPER\" \\\n      || codesign --force --sign - \"$HELPER\"\n  fi\n  echo \"Cleared codesign xattrs on $APP\"\nfi\n";
+		};
+		DEEE4498B6EDE08B01CB792A /* Copy Swift Objective-C Interface Header */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(DERIVED_SOURCES_DIR)/$(SWIFT_OBJC_INTERFACE_HEADER_NAME)",
+			);
+			name = "Copy Swift Objective-C Interface Header";
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/include/$(PRODUCT_MODULE_NAME)/$(SWIFT_OBJC_INTERFACE_HEADER_NAME)",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "ditto \"${SCRIPT_INPUT_FILE_0}\" \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+		};
+		F9040B7B5B9DE56E04FDB0AD /* Embed Frozen Helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed Frozen Helper";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nHELPER_SRC=\"${SRCROOT}/Helpers/payload/runspecimen\"\nHELPER_NOTICE=\"${SRCROOT}/Helpers/payload/NOTICE.txt\"\nDEST=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Helpers\"\nRES_DEST=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources\"\nif [[ ! -x \"$HELPER_SRC\" ]]; then\n  echo \"error: Missing frozen helper at Helpers/payload/runspecimen.\"\n  echo \"error: Run: ./Scripts/freeze_helper.sh --enable --require --verify\"\n  exit 1\nfi\nif ! file \"$HELPER_SRC\" | grep -q 'Mach-O'; then\n  echo \"error: Helpers/payload/runspecimen must be a Mach-O freeze (MAS path).\"\n  file \"$HELPER_SRC\" || true\n  exit 1\nfi\nmkdir -p \"$DEST\" \"$RES_DEST\"\n# Always stage icon + privacy manifest (XcodeGen resource sync can miss on some hosts).\nfor f in AppIcon.icns AppIcon-1024.png PrivacyInfo.xcprivacy; do\n  if [[ -f \"${SRCROOT}/Resources/$f\" ]]; then\n    if cp -X /etc/hosts /tmp/.rs-cp-x-test 2>/dev/null; then\n      rm -f /tmp/.rs-cp-x-test\n      cp -X -f \"${SRCROOT}/Resources/$f\" \"$RES_DEST/$f\"\n    else\n      cp -f \"${SRCROOT}/Resources/$f\" \"$RES_DEST/$f\"\n    fi\n  fi\ndone\n# Strip Finder/Box xattrs that break codesign (\"resource fork … not allowed\").\nif cp -X /etc/hosts /tmp/.rs-cp-x-test 2>/dev/null; then\n  rm -f /tmp/.rs-cp-x-test\n  cp -X -f \"$HELPER_SRC\" \"$DEST/runspecimen\"\n  # NOTICE lives under Resources — loose files beside Helpers Mach-O confuse codesign.\n  [[ -f \"$HELPER_NOTICE\" ]] && cp -X -f \"$HELPER_NOTICE\" \"$RES_DEST/HelperNOTICE.txt\" || true\nelse\n  cp -f \"$HELPER_SRC\" \"$DEST/runspecimen\"\n  [[ -f \"$HELPER_NOTICE\" ]] && cp -f \"$HELPER_NOTICE\" \"$RES_DEST/HelperNOTICE.txt\" || true\nfi\nchmod +x \"$DEST/runspecimen\"\nrm -rf \"$DEST/lib\"\nrm -f \"$DEST/NOTICE.txt\" \"$DEST/README.md\"\nxattr -cr \"$DEST\" 2>/dev/null || true\n# Nested Mach-O must be signed before the outer .app seal.\ncodesign --force --sign - --options runtime --timestamp=none \"$DEST/runspecimen\" \\\n  || codesign --force --sign - \"$DEST/runspecimen\"\necho \"Embedded helper: $DEST/runspecimen\"\n\"$DEST/runspecimen\" --version || true\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		CAFA4E25B52800584DE93F32 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				11D70B967766E55BFFF54C07 /* AboutView.swift in Sources */,
+				818B7FFB5C52F411A645E33F /* ActionBar.swift in Sources */,
+				9293289E610B5767F5069B8C /* AppModel.swift in Sources */,
+				00FBAEA6B6DD45C4449D6E18 /* ApproveSheet.swift in Sources */,
+				6FB765924CD7E4CA44AE488C /* BookmarkStore.swift in Sources */,
+				483F4CF79A70E85661E22A61 /* BrandEmptyState.swift in Sources */,
+				1C28BC134D4EB0FA328766FE /* CLIService.swift in Sources */,
+				448F074AD68DBF4196633D80 /* EvidenceInspectorView.swift in Sources */,
+				E6C9E64159AA99328093C70A /* MainConsoleView.swift in Sources */,
+				C243D9C8700F22A2B888FC13 /* Models.swift in Sources */,
+				2EB57F1869DBF37A893A9F3F /* PTYApprovalSession.swift in Sources */,
+				5012036C37C0F2FEF1A5793F /* RSTheme.swift in Sources */,
+				2C47316E44CE2A922CF15D1A /* RunSpecimenApp.swift in Sources */,
+				0D0D6744F7E92B0102D34529 /* SettingsView.swift in Sources */,
+				E5F6FE3C64619C36460B0D20 /* StatusLifecycleView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E41E09306BFB4E56D6CFB307 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				746E229F2860B82A9C618DA9 /* CLIVersionGate.swift in Sources */,
+				E0D6392F303910C4B33ECC3F /* DistributionChannel.swift in Sources */,
+				C0EB2EB55853C627CBBC718A /* SecurityBoundary.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		FC8B94D277B27F2B76D34941 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5D21EB08290BEC433E0D6A8C /* RunSpecimenCore */;
+			targetProxy = DED03698162D46879D053D14 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		18062508BCDCEC9A89B2DC75 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				AD_HOC_CODE_SIGNING_ALLOWED = YES;
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		232B275F3BA30390DD45A8B3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				DEFINES_MODULE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.darashkevich.runspecimen.core;
+				PRODUCT_NAME = RunSpecimenCore;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		441E999979A59A59C1ED22AF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				CODE_SIGN_ENTITLEMENTS = Entitlements/RunSpecimen.mas.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 4;
+				INFOPLIST_FILE = "Config/Info-mas.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.3;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.darashkevich.runspecimen;
+				PRODUCT_NAME = RunSpecimen;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		73FBB9737FCB1B75C312C2BF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				AD_HOC_CODE_SIGNING_ALLOWED = YES;
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		909B018E40E07C75CFCC7F44 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				CODE_SIGN_ENTITLEMENTS = Entitlements/RunSpecimen.mas.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 4;
+				INFOPLIST_FILE = "Config/Info-mas.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.3;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.darashkevich.runspecimen;
+				PRODUCT_NAME = RunSpecimen;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		9E46D5B5CF466EBBDB53C180 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				DEFINES_MODULE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.darashkevich.runspecimen.core;
+				PRODUCT_NAME = RunSpecimenCore;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3E3B405142D6A85DB8030C96 /* Build configuration list for PBXProject "RunSpecimen" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				18062508BCDCEC9A89B2DC75 /* Debug */,
+				73FBB9737FCB1B75C312C2BF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A906FF374A274AD8286C9746 /* Build configuration list for PBXNativeTarget "RunSpecimenCore" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9E46D5B5CF466EBBDB53C180 /* Debug */,
+				232B275F3BA30390DD45A8B3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		DB63E751EC7D2985AAFED6B1 /* Build configuration list for PBXNativeTarget "RunSpecimen" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				441E999979A59A59C1ED22AF /* Debug */,
+				909B018E40E07C75CFCC7F44 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = EF48C929C388A83B6B6A139B /* Project object */;
+}

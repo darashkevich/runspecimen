@@ -79,7 +79,7 @@ struct SettingsView: View {
             }
 
             Section("Install guidance") {
-                Text("python3 -m pip install 'runspecimen==0.2.0rc9'")
+                Text("python3 -m pip install 'runspecimen==0.2.0rc10'")
                     .font(RSTheme.monoSmall)
                     .textSelection(.enabled)
                 Text("Or stage a helper: ./Scripts/stage_helper.sh --from-src && ./Scripts/build_app.sh")
