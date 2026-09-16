@@ -13,6 +13,8 @@
     "longDescription": "RunSpecimen gives Codex a constrained workflow for contract validation, explicit TTY approval, bounded execution, mandatory postflight, and receipt verification.",
     "developerName": "RunSpecimen Contributors",
     "category": "Productivity",
+    "logo": "assets/logo.png",
+    "composerIcon": "assets/composer-icon.png",
     "capabilities": [
       "Bounded local execution",
       "Provenance receipts",

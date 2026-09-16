@@ -224,7 +224,8 @@ class TestDashboardPresentation(RunSpecimenTestCase):
                 self.assertNotIn(value, page)
                 self.assertIn(html.escape(value, quote=True), page)
         self.assertNotIn("<img", page)
-        self.assertNotIn("<svg", page)
+        self.assertNotIn('<svg onload', page)
+        self.assertIn('class="brand-mark"', page)
         self.assertEqual(page.count("<script>"), 1)
 
 
