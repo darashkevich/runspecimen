@@ -2,7 +2,7 @@
 
 Practical how-to for the local CLI. This guide matches the installed
 `runspecimen` commands and current release-candidate limits
-(`0.2.0rc9` at time of writing). For a short product overview see
+(`0.2.0rc10` at time of writing). For a short product overview see
 [ABOUT.md](ABOUT.md); for product intent see
 [PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
 
@@ -18,9 +18,11 @@ mandatory postflight before a successor; tamper-evident hash-chained receipts.
   orchestration controls, not a security boundary against a hostile payload.
 - A job scheduler. No cron, watchers, fan-out, or parallel workers in one
   workspace lease domain.
-- A digital signature service. Receipts are locally hash-chained. The `sign`
-  command provides shared-secret HMAC authentication (not digital signatures).
-  True asymmetric signing with non-repudiation is planned for a future release.
+- Absolute non-repudiation or scientific proof. Receipts are locally
+  hash-chained. Default `sign` is shared-secret HMAC. Optional Ed25519
+  (`pip install 'runspecimen[ed25519]'`) enables offline public-key verify, but
+  trusted success still needs an external trust anchor and soft-key custody is
+  not absolute non-repudiation. See [ED25519_RECEIPTS.md](ED25519_RECEIPTS.md).
 - Proof that a scientific or engineering claim is true. A green postflight
   means the approved contract ran under recorded provenance and assertions
   passed.
@@ -32,26 +34,29 @@ enter `APPROVE` for you.
 
 Requirements: Python 3.9+, POSIX (`fcntl` leases), stdlib only.
 
-### From PyPI (recommended)
+### From PyPI (after rc10 is published)
 
 ```bash
-python3 -m pip install runspecimen==0.2.0rc9
+python3 -m pip install runspecimen==0.2.0rc10
 runspecimen --version
 ```
 
+Until rc10 is published, install the last published candidate:
+`python3 -m pip install runspecimen==0.2.0rc9`.
+
 Project page: [runspecimen on PyPI](https://pypi.org/project/runspecimen/)
 
-### From GitHub release
+### From GitHub release (after the rc10 tag exists)
 
 ```bash
-# Install directly from the release
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/runspecimen-0.2.0rc9-py3-none-any.whl
+# Install directly from the release (prospective until published)
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10-py3-none-any.whl
 
 # Version check
 runspecimen --version
 ```
 
-Checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/SHA256SUMS)
+Checksums (after publish): [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/SHA256SUMS)
 
 ### From source clone
 
@@ -240,8 +245,10 @@ runspecimen dashboard --workspace . --contract path/to/contract.json --open
 ```
 
 - Binds **only** to `127.0.0.1` (loopback).
-- **Read-only**: shows phase, approval/lease/receipt evidence, and exact
-  lifecycle commands. It cannot approve or execute.
+- **Read-only**: first viewport answers what the run is, what happened, whether
+  it is safe to continue, and the next CLI step; shows contract review, a trust
+  ladder (recorded history ≠ live verification), and exact lifecycle commands.
+  It cannot approve or execute.
 - **Blocks** in the foreground (`serve_forever`). Background it (`&`), detach
   it, or use another terminal if you still need the shell for `approve` /
   lifecycle commands. Agents must not wait on it in the main turn.

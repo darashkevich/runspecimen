@@ -151,53 +151,105 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_keygen = sub.add_parser(
         "keygen",
-        help="Generate a shared-secret authentication key (HMAC-SHA256)",
+        help="Generate a receipt authentication or signing key",
         description=(
-            "Generate a new HMAC-SHA256 key for certificate authentication. "
-            "NOTE: This is a shared-secret scheme - anyone with the key can both "
-            "create and verify MACs. For true digital signatures, use asymmetric crypto."
+            "Generate a key for receipt authentication. "
+            "Default --scheme hmac is a shared-secret MAC (anyone with the key can "
+            "forge). --scheme ed25519 requires optional 'runspecimen[ed25519]' and "
+            "produces a private/public key pair for offline public-key verification. "
+            "Neither scheme proves scientific claims; Ed25519 trust equals key custody."
         ),
     )
     _add_workspace(p_keygen)
     p_keygen.add_argument("--key-id", default=None, help="Optional key ID (auto-generated if omitted)")
+    p_keygen.add_argument(
+        "--scheme",
+        choices=("hmac", "ed25519"),
+        default="hmac",
+        help="hmac (default, stdlib) or ed25519 (optional PyNaCl extra)",
+    )
+    p_keygen.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow rotating/replacing an existing Ed25519 key id",
+    )
 
     p_list_keys = sub.add_parser(
         "list-keys",
-        help="List available authentication keys in the workspace",
+        help="List available authentication/signing keys in the workspace",
     )
     _add_workspace(p_list_keys)
+    p_list_keys.add_argument(
+        "--scheme",
+        choices=("hmac", "ed25519", "all"),
+        default="all",
+        help="Filter listed keys (default: all)",
+    )
+
+    p_export_pub = sub.add_parser(
+        "export-public-key",
+        help="Export an Ed25519 public key for offline verification",
+        description=(
+            "Write the hex-encoded Ed25519 public key for a workspace key id. "
+            "Requires the optional ed25519 extra."
+        ),
+    )
+    _add_workspace(p_export_pub)
+    p_export_pub.add_argument("--key-id", required=True)
+    p_export_pub.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Destination path inside the workspace for the .pub hex file",
+    )
 
     p_sign = sub.add_parser(
         "sign",
-        help="Authenticate a certificate with a shared-secret MAC",
+        help="Authenticate or sign a certificate (HMAC MAC or Ed25519)",
         description=(
-            "Add an HMAC-SHA256 authentication tag to a certificate. "
-            "Requires the certificate to match the canonical receipt and "
-            "verifies live provenance against the contract. "
-            "NOTE: This uses shared-secret authentication, NOT digital signatures. "
-            "Anyone with the key can forge authenticated certificates."
+            "Authenticate (HMAC) or sign (Ed25519) a certificate that matches the "
+            "canonical receipt after live provenance checks. "
+            "HMAC is shared-secret only. Ed25519 enables offline public-key verify "
+            "without sharing the private key (optional dependency)."
         ),
     )
     _add_workspace(p_sign)
-    p_sign.add_argument("--key-id", required=True, help="ID of the authentication key to use")
+    p_sign.add_argument("--key-id", required=True, help="ID of the key to use")
     p_sign.add_argument("--certificate", type=Path, required=True, help="Path to certificate.json")
     p_sign.add_argument("--contract", type=Path, required=True, help="Path to contract.json for live provenance verification")
-    p_sign.add_argument("--output", type=Path, default=None, help="Output path (default: certificate.signed.json)")
+    p_sign.add_argument("--output", type=Path, default=None, help="Output path (default depends on scheme)")
+    p_sign.add_argument(
+        "--scheme",
+        choices=("hmac", "ed25519"),
+        default="hmac",
+        help="hmac (default) or ed25519",
+    )
 
     p_verify_sig = sub.add_parser(
         "verify-signature",
-        help="Verify an authenticated certificate's MAC",
+        help="Verify an HMAC MAC or Ed25519 signature on a certificate",
         description=(
-            "Verify the HMAC authentication tag on a certificate and validate "
-            "it matches the canonical receipt with full live provenance verification. "
-            "MAC validity proves the content wasn't modified after authentication, "
-            "but does NOT prove origin - anyone with the key could have created it."
+            "Verify HMAC authentication or an Ed25519 signature. "
+            "For Ed25519, pass --public-key for fully offline verify without the "
+            "private key (still optionally re-check the live receipt with --contract)."
         ),
     )
     _add_workspace(p_verify_sig)
-    p_verify_sig.add_argument("--key-id", required=True, help="ID of the key to verify against")
-    p_verify_sig.add_argument("--signed", type=Path, required=True, help="Path to authenticated certificate file")
-    p_verify_sig.add_argument("--contract", type=Path, required=True, help="Path to contract.json for live provenance verification")
+    p_verify_sig.add_argument("--key-id", default=None, help="Workspace key id (HMAC required; Ed25519 optional if --public-key set)")
+    p_verify_sig.add_argument("--signed", type=Path, required=True, help="Path to authenticated/signed certificate file")
+    p_verify_sig.add_argument("--contract", type=Path, default=None, help="Contract for live provenance (required for hmac; optional for ed25519 offline)")
+    p_verify_sig.add_argument(
+        "--scheme",
+        choices=("hmac", "ed25519"),
+        default="hmac",
+        help="hmac (default) or ed25519",
+    )
+    p_verify_sig.add_argument(
+        "--public-key",
+        type=Path,
+        default=None,
+        help="Ed25519 public key file (hex) for offline verify without private key",
+    )
 
     return parser
 
@@ -346,25 +398,66 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0 if not result.get("needs_recovery") else 1
         if args.command == "keygen":
+            if getattr(args, "scheme", "hmac") == "ed25519":
+                from runspecimen.pubkey import Ed25519KeyPair, save_ed25519_keypair
+
+                pair = Ed25519KeyPair.generate(key_id=args.key_id)
+                priv, pub = save_ed25519_keypair(
+                    workspace, pair, overwrite=bool(getattr(args, "overwrite", False))
+                )
+                result = {
+                    "ok": True,
+                    "scheme": "ed25519",
+                    "key_id": pair.key_id,
+                    "algorithm": pair.algorithm,
+                    "private_key_path": str(priv),
+                    "public_key_path": str(pub),
+                    "message": (
+                        "Ed25519 key pair generated. Keep the private .ed25519 file secret; "
+                        "distribute only the .ed25519.pub file for offline verify. "
+                        "Trust equals key custody — not absolute non-repudiation."
+                    ),
+                }
+                print(json.dumps(result, indent=2, sort_keys=True))
+                return 0
             key = SigningKey.generate(key_id=args.key_id)
             key_path = save_signing_key(workspace, key)
             result = {
                 "ok": True,
+                "scheme": "hmac",
                 "key_id": key.key_id,
                 "algorithm": key.algorithm,
                 "key_path": str(key_path),
-                "message": "key generated; keep the .key file secure",
+                "message": "HMAC key generated; keep the .key file secure (shared-secret MAC)",
             }
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0
         if args.command == "list-keys":
-            keys = list_signing_keys(workspace)
+            from runspecimen.pubkey import list_ed25519_key_ids
+
+            scheme = getattr(args, "scheme", "all")
+            hmac_ids = list_signing_keys(workspace) if scheme in ("hmac", "all") else []
+            ed_ids = list_ed25519_key_ids(workspace) if scheme in ("ed25519", "all") else []
             result = {
                 "ok": True,
                 "workspace": str(workspace),
-                "key_ids": keys,
+                "hmac_key_ids": hmac_ids,
+                "ed25519_key_ids": ed_ids,
+                "key_ids": hmac_ids if scheme != "ed25519" else ed_ids,
             }
             print(json.dumps(result, indent=2, sort_keys=True))
+            return 0
+        if args.command == "export-public-key":
+            from runspecimen.pubkey import export_ed25519_public_key
+
+            output_path = args.output.resolve()
+            try:
+                output_path.relative_to(workspace)
+            except ValueError:
+                print(f"{PRODUCT_NAME} error: --output must be inside the workspace", file=sys.stderr)
+                return 1
+            path_out = export_ed25519_public_key(workspace, args.key_id, output_path)
+            print(json.dumps({"ok": True, "key_id": args.key_id, "public_key_path": str(path_out)}, indent=2, sort_keys=True))
             return 0
         if args.command == "sign":
             from runspecimen.errors import CertificateError
@@ -372,7 +465,6 @@ def main(argv: list[str] | None = None) -> int:
             from runspecimen.paths import run_state_dir
             from runspecimen.hashutil import canonical_json_bytes
 
-            # Bound certificate path to workspace
             cert_path = args.certificate.resolve()
             try:
                 cert_path.relative_to(workspace)
@@ -380,26 +472,22 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{PRODUCT_NAME} error: --certificate must be inside the workspace", file=sys.stderr)
                 return 1
 
-            # Load the user-supplied certificate
             cert = read_json(cert_path)
             if not isinstance(cert, dict):
                 print(f"{PRODUCT_NAME} error: certificate file must be a JSON object", file=sys.stderr)
                 return 1
 
-            # Extract identity from certificate
             campaign_id = cert.get("campaign_id")
             run_id = cert.get("run_id")
             if not campaign_id or not run_id:
                 print(f"{PRODUCT_NAME} error: certificate missing campaign_id or run_id", file=sys.stderr)
                 return 1
 
-            # Load the contract for live provenance verification
             if not args.contract:
                 print(f"{PRODUCT_NAME} error: --contract is required for sign command", file=sys.stderr)
                 return 1
             contract = load_contract(args.contract)
 
-            # Verify the canonical receipt with full live provenance
             try:
                 verify_run_receipt(
                     workspace=workspace,
@@ -412,50 +500,68 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{PRODUCT_NAME} error: receipt verification failed: {e}", file=sys.stderr)
                 return 1
 
-            # Load the canonical certificate from state directory
             state_dir = run_state_dir(workspace, str(campaign_id), str(run_id))
             canonical_cert = load_certificate(state_dir)
             if canonical_cert is None:
                 print(f"{PRODUCT_NAME} error: canonical certificate not found in state directory", file=sys.stderr)
                 return 1
 
-            # CRITICAL: Compare user-supplied certificate to canonical certificate
-            # The exact document being signed must match the canonical receipt
-            user_cert_bytes = canonical_json_bytes(cert)
-            canonical_cert_bytes = canonical_json_bytes(canonical_cert)
-            if user_cert_bytes != canonical_cert_bytes:
+            if canonical_json_bytes(cert) != canonical_json_bytes(canonical_cert):
                 print(f"{PRODUCT_NAME} error: supplied certificate does not match canonical receipt", file=sys.stderr)
                 print(f"  certificate_id supplied: {cert.get('certificate_id')}", file=sys.stderr)
                 print(f"  certificate_id canonical: {canonical_cert.get('certificate_id')}", file=sys.stderr)
                 return 1
 
-            # Now sign the verified canonical certificate
-            key = load_signing_key(workspace, args.key_id)
+            scheme = getattr(args, "scheme", "hmac")
             output_path = args.output
+            if scheme == "ed25519":
+                from runspecimen.pubkey import load_ed25519_keypair, sign_certificate_ed25519
+
+                pair = load_ed25519_keypair(workspace, args.key_id)
+                if output_path is None:
+                    output_path = cert_path.parent / f"{cert_path.stem}.ed25519.json"
+                output_path = output_path.resolve()
+                try:
+                    output_path.relative_to(workspace)
+                except ValueError:
+                    print(f"{PRODUCT_NAME} error: --output must be inside the workspace", file=sys.stderr)
+                    return 1
+                signed = sign_certificate_ed25519(canonical_cert, pair)
+                atomic_write_json(output_path, signed.to_dict())
+                print(json.dumps({
+                    "ok": True,
+                    "scheme": "ed25519",
+                    "certificate": str(cert_path),
+                    "signed_output": str(output_path),
+                    "key_id": pair.key_id,
+                    "algorithm": pair.algorithm,
+                    "public_key": pair.public_hex(),
+                    "receipt_verified": True,
+                    "certificate_id": canonical_cert.get("certificate_id"),
+                }, indent=2, sort_keys=True))
+                return 0
+
+            key = load_signing_key(workspace, args.key_id)
             if output_path is None:
                 output_path = cert_path.parent / f"{cert_path.stem}.signed.json"
             output_path = output_path.resolve()
-
-            # Bound output path to workspace
             try:
                 output_path.relative_to(workspace)
             except ValueError:
                 print(f"{PRODUCT_NAME} error: --output must be inside the workspace", file=sys.stderr)
                 return 1
-
             signed = sign_certificate(canonical_cert, key)
             atomic_write_json(output_path, signed.to_dict())
-
-            result = {
+            print(json.dumps({
                 "ok": True,
+                "scheme": "hmac",
                 "certificate": str(cert_path),
                 "signed_output": str(output_path),
                 "key_id": key.key_id,
                 "algorithm": key.algorithm,
                 "receipt_verified": True,
                 "certificate_id": canonical_cert.get("certificate_id"),
-            }
-            print(json.dumps(result, indent=2, sort_keys=True))
+            }, indent=2, sort_keys=True))
             return 0
         if args.command == "verify-signature":
             from runspecimen.errors import CertificateError
@@ -464,7 +570,6 @@ def main(argv: list[str] | None = None) -> int:
             from runspecimen.paths import run_state_dir
             from runspecimen.hashutil import canonical_json_bytes
 
-            # Bound signed file path to workspace
             signed_path = args.signed.resolve()
             try:
                 signed_path.relative_to(workspace)
@@ -472,18 +577,121 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{PRODUCT_NAME} error: --signed must be inside the workspace", file=sys.stderr)
                 return 1
 
-            # Require contract for live provenance verification
+            scheme = getattr(args, "scheme", "hmac")
+            if scheme == "ed25519":
+                from runspecimen.pubkey import (
+                    Ed25519SignedCertificate,
+                    load_ed25519_public_key_file,
+                    public_key_path,
+                    verify_certificate_ed25519,
+                    verify_rejects_hmac_blob,
+                )
+
+                if not signed_path.exists():
+                    print(json.dumps({
+                        "ok": False,
+                        "scheme": "ed25519",
+                        "message": f"signed file not found: {signed_path}",
+                    }, indent=2, sort_keys=True))
+                    return 1
+                try:
+                    data = read_json(signed_path)
+                    verify_rejects_hmac_blob(data)
+                    signed_cert = Ed25519SignedCertificate.from_dict(data)
+                except Exception as e:
+                    print(json.dumps({
+                        "ok": False,
+                        "scheme": "ed25519",
+                        "message": f"failed to parse Ed25519 signed file: {e}",
+                    }, indent=2, sort_keys=True))
+                    return 1
+
+                # Trusted verify requires an external trust anchor — never the
+                # attacker-controlled embedded public key alone.
+                pub_bytes = None
+                if args.public_key is not None:
+                    pub_path = args.public_key.resolve()
+                    try:
+                        pub_path.relative_to(workspace)
+                    except ValueError:
+                        print(f"{PRODUCT_NAME} error: --public-key must be inside the workspace", file=sys.stderr)
+                        return 1
+                    pub_bytes = load_ed25519_public_key_file(pub_path)
+                elif args.key_id:
+                    pub_bytes = load_ed25519_public_key_file(public_key_path(workspace, args.key_id))
+                else:
+                    print(json.dumps({
+                        "ok": False,
+                        "scheme": "ed25519",
+                        "trusted": False,
+                        "signature_consistent": False,
+                        "message": (
+                            "trusted Ed25519 verify requires --public-key or --key-id "
+                            "(embedded receipt public key alone is not a trust anchor)"
+                        ),
+                    }, indent=2, sort_keys=True))
+                    return 1
+
+                ver_result = verify_certificate_ed25519(signed_cert, public_key=pub_bytes)
+                result = {
+                    "ok": ver_result.ok,
+                    "scheme": "ed25519",
+                    "trusted": ver_result.trusted,
+                    "signature_consistent": ver_result.signature_consistent,
+                    "signature_valid": ver_result.signature_valid,
+                    "schema_valid": ver_result.schema_valid,
+                    "certificate_id_valid": ver_result.certificate_id_valid,
+                    "public_key_match": ver_result.public_key_match,
+                    "message": ver_result.message,
+                    "signed_file": str(signed_path),
+                    "key_id": signed_cert.key_id,
+                    "algorithm": signed_cert.algorithm,
+                    "offline": args.contract is None,
+                    "note": (
+                        "Trusted Ed25519 verify uses an external public key; "
+                        "embedded-key-only consistency is never ok:true. "
+                        "Does not prove scientific claims or absolute non-repudiation."
+                    ),
+                }
+                if args.contract is not None and ver_result.ok:
+                    contract = load_contract(args.contract)
+                    cert = signed_cert.certificate
+                    try:
+                        verify_run_receipt(
+                            workspace=workspace,
+                            campaign_id=str(cert["campaign_id"]),
+                            run_id=str(cert["run_id"]),
+                            require_live_provenance=True,
+                            contract=contract,
+                        )
+                        state_dir = run_state_dir(workspace, str(cert["campaign_id"]), str(cert["run_id"]))
+                        canonical = load_certificate(state_dir)
+                        if canonical is None or canonical_json_bytes(cert) != canonical_json_bytes(canonical):
+                            result["ok"] = False
+                            result["receipt_valid"] = False
+                            result["message"] = "signature ok but signed certificate does not match canonical receipt"
+                        else:
+                            result["receipt_valid"] = True
+                    except CertificateError as e:
+                        result["ok"] = False
+                        result["receipt_valid"] = False
+                        result["message"] = f"signature ok but live receipt check failed: {e}"
+                print(json.dumps(result, indent=2, sort_keys=True))
+                return 0 if result["ok"] else 1
+
+            if not args.key_id:
+                print(f"{PRODUCT_NAME} error: --key-id is required for --scheme hmac", file=sys.stderr)
+                return 1
             if not args.contract:
-                print(f"{PRODUCT_NAME} error: --contract is required for verify-signature command", file=sys.stderr)
+                print(f"{PRODUCT_NAME} error: --contract is required for verify-signature --scheme hmac", file=sys.stderr)
                 return 1
             contract = load_contract(args.contract)
-
             key = load_signing_key(workspace, args.key_id)
 
-            # Load and verify MAC
             if not signed_path.exists():
                 result = {
                     "ok": False,
+                    "scheme": "hmac",
                     "mac_valid": False,
                     "schema_valid": False,
                     "receipt_valid": False,
@@ -495,10 +703,18 @@ def main(argv: list[str] | None = None) -> int:
 
             try:
                 data = read_json(signed_path)
+                if isinstance(data, dict) and data.get("algorithm") == "ed25519-v1":
+                    print(
+                        f"{PRODUCT_NAME} error: refusing to HMAC-verify an Ed25519 signed blob; "
+                        f"use --scheme ed25519",
+                        file=sys.stderr,
+                    )
+                    return 1
                 signed_cert = SignedCertificate.from_dict(data)
             except Exception as e:
                 result = {
                     "ok": False,
+                    "scheme": "hmac",
                     "mac_valid": False,
                     "schema_valid": False,
                     "receipt_valid": False,
@@ -508,11 +724,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(result, indent=2, sort_keys=True))
                 return 1
 
-            # Verify MAC and schema
             ver_result = verify_signature(signed_cert, key)
-
             result = {
                 "ok": False,
+                "scheme": "hmac",
                 "mac_valid": ver_result.mac_valid,
                 "schema_valid": ver_result.schema_valid,
                 "certificate_id_valid": ver_result.certificate_id_valid,
@@ -527,17 +742,14 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(result, indent=2, sort_keys=True))
                 return 1
 
-            # MAC valid - now verify the certificate matches canonical receipt
             cert = signed_cert.certificate
             campaign_id = cert.get("campaign_id")
             run_id = cert.get("run_id")
-
             if not campaign_id or not run_id:
                 result["message"] = "certificate missing campaign_id or run_id"
                 print(json.dumps(result, indent=2, sort_keys=True))
                 return 1
 
-            # Load canonical certificate
             state_dir = run_state_dir(workspace, str(campaign_id), str(run_id))
             canonical_cert = load_certificate(state_dir)
             if canonical_cert is None:
@@ -545,10 +757,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(result, indent=2, sort_keys=True))
                 return 1
 
-            # CRITICAL: Compare signed certificate to canonical receipt
-            signed_cert_bytes = canonical_json_bytes(cert)
-            canonical_cert_bytes = canonical_json_bytes(canonical_cert)
-            if signed_cert_bytes != canonical_cert_bytes:
+            if canonical_json_bytes(cert) != canonical_json_bytes(canonical_cert):
                 result["message"] = (
                     f"signed certificate does not match canonical receipt; "
                     f"signed_cert_id={cert.get('certificate_id')}, "
@@ -558,8 +767,6 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
 
             result["canonical_match"] = True
-
-            # Full receipt verification with live provenance
             try:
                 verify_run_receipt(
                     workspace=workspace,
@@ -574,11 +781,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(result, indent=2, sort_keys=True))
                 return 1
 
-            # All checks passed
             if ver_result.ok and result["receipt_valid"] and result["canonical_match"]:
                 result["certificate_id"] = cert.get("certificate_id")
                 result["ok"] = True
-                result["message"] = "MAC valid, certificate matches canonical receipt, live provenance verified"
+                result["message"] = (
+                    "MAC valid, certificate matches canonical receipt, live provenance verified"
+                )
 
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0 if result["ok"] else 1

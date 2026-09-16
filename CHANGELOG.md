@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.2.0rc10 - 2026-09-15
+
+### Optional Ed25519 public-key receipts (Phase 1)
+
+- Add optional extras `runspecimen[ed25519]` / `runspecimen[signing]` (PyNaCl)
+  with `keygen` / `sign` / `verify-signature --scheme ed25519`,
+  `export-public-key`, and offline public-key verification without the private
+  key. Default install stays stdlib-only. See `docs/ED25519_RECEIPTS.md`.
+- QA hardenings: release-check permits only vetted optional `Requires-Dist`
+  markers; private keys use 0600 exclusive no-follow creates; public-key export
+  never reads the private seed; trusted verify requires an external trust
+  anchor (embedded-key-only consistency is never `ok: true`).
+- Key rotation (`overwrite`) is crash-safe and all-or-nothing: durable journal +
+  exclusive temps/backups at each transition; a killed process automatically
+  rolls back to the previous working pair (or finishes cleanup after both new
+  finals are installed) on the next open/use. SIGKILL fault-injection covers
+  every rotation and fresh-create transition (including `complete`). Concurrent
+  key create/list/rotate/load ops are excluded via `fcntl` `keys.op.lock`.
+  Key reads use `O_NOFOLLOW` + `fstat` on the opened fd.
+- **Security:** rotation recovery validates `key_id` against the journal
+  filename and only `unlink`/`os.replace`s narrowly named, non-symlink children
+  of the keys directory (basename reconstructed under the keys dir). Forged
+  journals with absolute foreign paths, `..` traversal, symlink sidecars, or
+  foreign-key sidecar names are discarded without deleting live keys or
+  touching files outside the keys directory. A forged `fresh_priv_installed`
+  journal never wipes an already-complete live keypair — incomplete fresh-create
+  rollback requires a missing final (real SIGKILL half-pair window).
+- `scripts/release_check.py` refuses packaging when setuptools≥77 is only in
+  the user site: offline builds set `PYTHONNOUSERSITE=1` and previously could
+  silently emit `UNKNOWN-0.0.0` sdists.
+
+### Product direction
+
+- Refine the phased roadmap toward verifiable execution: prioritize optional
+  Ed25519 offline public-key receipts; prefer tested isolation integrations over
+  inventing an OS sandbox; keep the core engine free of schedulers; refuse
+  universal “scientifically proven” claims (`docs/ROADMAP_PHASED.md`,
+  `docs/THREAT_MODEL.md`).
+
+### Schema compatibility
+
+- Document contract and receipt schema versioning in
+  `docs/SCHEMA_COMPATIBILITY.md` with fail-closed unknown versions and
+  migration rules.
+- New certificates emit `schema_version: 1` bound into `certificate_id`.
+  Legacy certificates without the field remain valid as v1.
+- Add phased roadmap at `docs/ROADMAP_PHASED.md`.
+
+### Dashboard UX (prototype)
+
+- Redesign the local dashboard first viewport to answer: what run, what
+  happened, whether it is safe to continue, and what to do next.
+- Move About behind progressive disclosure; add an evidence trust ladder that
+  never presents a certificate as live-verified.
+- Keep the dashboard loopback-only and read-only (no approve/run APIs).
+- Name documentation links for assistive tech (including links inside closed
+  `<details>`); keep a always-visible footer docs nav on desktop and mobile.
+
 ## 0.2.0rc9 - 2026-09-13
 
 ### Security Hardening

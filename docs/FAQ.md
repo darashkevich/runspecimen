@@ -68,12 +68,14 @@ recomputable. They detect casual tampering of the evidence set, but a
 privileged attacker who can rewrite the whole workspace can fabricate a new
 history.
 
-The `sign` command provides HMAC-SHA256 authentication (a shared-secret
+The default `sign` command provides HMAC-SHA256 authentication (a shared-secret
 Message Authentication Code), not digital signatures. Anyone with the key
-can both verify and forge authenticated certificates. This is useful for
-controlled sharing between parties who share the key, but does NOT provide
-non-repudiation or independent third-party verification. True asymmetric
-digital signatures (Ed25519/RSA) are planned for a future release.
+can both verify and forge authenticated certificates. Optional Ed25519 signing
+(`pip install 'runspecimen[ed25519]'`, `--scheme ed25519`) enables offline
+public-key verification without sharing the private key; trusted success still
+requires an externally trusted public key (not a key embedded only in the
+receipt). See [ED25519_RECEIPTS.md](ED25519_RECEIPTS.md). Soft keys on disk are
+not absolute non-repudiation, and Ed25519 is not an OS sandbox.
 
 ## How do I integrate with my research script?
 
@@ -86,7 +88,7 @@ assertions, use a fresh `run_id` per attempt, and chain steps with
 
 - Repository: https://github.com/darashkevich/runspecimen
 - Check installed CLI: `runspecimen --version` (engine package version, e.g.
-  `0.2.0rc9`)
+  `0.2.0rc10`)
 
 ## Is the dashboard safe to leave open?
 
@@ -95,4 +97,23 @@ telemetry, and is **read-only** (no approve/run APIs). It still exposes local
 run evidence to anything that can reach that port on your machine—treat it like
 other localhost debug UIs. It **blocks** the foreground shell; background or
 detach it so approval and lifecycle commands stay usable. It does not replace
-TTY approval.
+TTY approval. A certificate shown as issued is recorded history only—the
+dashboard never marks live verification green; run `runspecimen verify` in a
+terminal.
+
+## How do contract and receipt versions work?
+
+Contracts require `"version": 1`. Receipts may omit `schema_version` (legacy v1)
+or set `"schema_version": 1`. Unknown versions fail closed. See
+[SCHEMA_COMPATIBILITY.md](SCHEMA_COMPATIBILITY.md).
+
+## HMAC vs Ed25519 — what do authenticated receipts prove?
+
+- **HMAC** (`keygen` / `sign` default): shared-secret MAC. Anyone with the key can
+  forge. Useful for controlled sharing, not independent third-party trust.
+- **Ed25519** (optional `pip install 'runspecimen[ed25519]'`, `--scheme ed25519`):
+  offline public-key verification without sharing the private key. Trusted
+  success requires an external trust anchor (`--public-key` or workspace
+  `--key-id`); a public key embedded only in the receipt proves consistency,
+  not trust. Soft-key custody ≠ absolute non-repudiation; not scientific proof;
+  not a sandbox. See [ED25519_RECEIPTS.md](ED25519_RECEIPTS.md).
