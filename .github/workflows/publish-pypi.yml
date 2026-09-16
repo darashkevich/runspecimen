@@ -1,5 +1,11 @@
 name: Publish Python package to PyPI
 
+# Single validated build → GitHub Release assets + PyPI (same bytes).
+# Do not attach hand-built release assets before this workflow runs; it
+# uploads/clobbers assets from the release_check output so digests match.
+# PEP 740 attestations come from gh-action-pypi-publish; SLSA provenance is
+# also attached to the GitHub Release for the same subjects.
+
 on:
   release:
     types: [published]
@@ -60,33 +66,122 @@ jobs:
       - name: Run the complete release gate
         run: python scripts/release_check.py --output-dir "${{ runner.temp }}/validated-release"
 
-      - name: Select PyPI distributions
+      - name: Stage release assets (one build)
         run: |
-          mkdir pypi-dist
+          set -euo pipefail
+          mkdir -p release-assets pypi-dist
+          cp "${{ runner.temp }}"/validated-release/* release-assets/
           cp "${{ runner.temp }}"/validated-release/runspecimen-*.whl pypi-dist/
           cp "${{ runner.temp }}"/validated-release/runspecimen-*.tar.gz pypi-dist/
           python - <<'PY'
           from pathlib import Path
+          import subprocess
+          import sys
 
-          files = sorted(path.name for path in Path("pypi-dist").iterdir())
-          if len(files) != 2 or not any(name.endswith(".whl") for name in files) or not any(
-              name.endswith(".tar.gz") for name in files
+          pypi = sorted(Path("pypi-dist").iterdir())
+          names = [path.name for path in pypi]
+          if len(names) != 2 or not any(n.endswith(".whl") for n in names) or not any(
+              n.endswith(".tar.gz") for n in names
           ):
-              raise SystemExit(f"expected exactly one wheel and one source distribution, got {files}")
-          print("PyPI distributions:", *files, sep="\n- ")
+              raise SystemExit(f"expected exactly one wheel and one source distribution, got {names}")
+          cmd = [
+              sys.executable,
+              "scripts/verify_release_digests.py",
+              "--sums",
+              "release-assets/SHA256SUMS",
+              "--dir",
+              "release-assets",
+              "--require-names",
+              *names,
+          ]
+          subprocess.check_call(cmd)
+          print("PyPI distributions:", *names, sep="\n- ")
+          print("Release assets:", *[p.name for p in sorted(Path("release-assets").iterdir())], sep="\n- ")
           PY
 
       - name: Upload validated distributions
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
-          name: pypi-distributions-${{ github.run_id }}
-          path: pypi-dist/
+          name: validated-release-${{ github.run_id }}
+          path: |
+            release-assets/
+            pypi-dist/
           if-no-files-found: error
           retention-days: 7
 
+  attest-and-attach:
+    name: Attest and attach GitHub Release assets
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download validated distributions
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: validated-release-${{ github.run_id }}
+          path: artifacts/
+
+      - name: Verify SHA256SUMS before attach
+        run: |
+          python - <<'PY'
+          # Lightweight inline check so attach never races a corrupted download.
+          import hashlib
+          from pathlib import Path
+
+          root = Path("artifacts/release-assets")
+          sums = {}
+          for line in (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+              digest, name = line.split(None, 1)
+              sums[name.strip()] = digest.strip()
+          for path in sorted(root.iterdir()):
+              if path.name == "SHA256SUMS":
+                  continue
+              got = hashlib.sha256(path.read_bytes()).hexdigest()
+              expected = sums.get(path.name)
+              if expected is None:
+                  raise SystemExit(f"missing SHA256SUMS entry for {path.name}")
+              if got != expected:
+                  raise SystemExit(f"digest mismatch for {path.name}: {got} != {expected}")
+          print("SHA256SUMS ok for", len(sums), "entries")
+          PY
+
+      - name: Generate SLSA build provenance
+        id: attest
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: |
+            artifacts/release-assets/*.whl
+            artifacts/release-assets/*.tar.gz
+            artifacts/release-assets/*.zip
+
+      - name: Stage provenance bundle
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BUNDLE_PATH}" ] || [ ! -f "${BUNDLE_PATH}" ]; then
+            echo "::error::Attestation bundle missing: '${BUNDLE_PATH}'"
+            exit 1
+          fi
+          cp "${BUNDLE_PATH}" "artifacts/release-assets/runspecimen-${GITHUB_REF_NAME#v}.intoto.jsonl"
+
+      - name: Attach the same build to the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          # Clobber any pre-uploaded hand builds so Release digests match PyPI.
+          gh release upload "${TAG}" artifacts/release-assets/* \
+            --repo "${GITHUB_REPOSITORY}" --clobber
+
   publish:
     name: Publish to PyPI with OIDC
-    needs: build
+    needs: [build, attest-and-attach]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -98,10 +193,30 @@ jobs:
       - name: Download validated distributions
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
-          name: pypi-distributions-${{ github.run_id }}
-          path: pypi-dist/
+          name: validated-release-${{ github.run_id }}
+          path: artifacts/
+
+      - name: Confirm PyPI bytes match release-assets digests
+        run: |
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+
+          release = Path("artifacts/release-assets")
+          pypi = Path("artifacts/pypi-dist")
+          sums = {}
+          for line in (release / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+              digest, name = line.split(None, 1)
+              sums[name.strip()] = digest.strip()
+          for path in sorted(pypi.iterdir()):
+              got = hashlib.sha256(path.read_bytes()).hexdigest()
+              expected = sums[path.name]
+              if got != expected:
+                  raise SystemExit(f"PyPI staging digest mismatch for {path.name}")
+              print(path.name, got)
+          PY
 
       - name: Publish distributions
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
-          packages-dir: pypi-dist/
+          packages-dir: artifacts/pypi-dist/
