@@ -61,5 +61,13 @@ grep -q 'com.apple.security.inherit' "$ROOT/Entitlements/RunSpecimen.helper.enti
 if grep -q 'get-task-allow' "$ROOT/Entitlements/"*.entitlements 2>/dev/null; then
   fail "get-task-allow present"
 fi
+# Nested sign must not hard-code ad-hoc identity in Xcode phases.
+if grep -E 'codesign --force --sign -' "$ROOT/project.yml" >/dev/null 2>&1; then
+  fail "project.yml hard-codes codesign --sign - (use sign_nested_helper.sh)"
+fi
+grep -q 'sign_nested_helper.sh' "$ROOT/project.yml" || fail "project.yml must call sign_nested_helper.sh"
+test -x "$ROOT/Scripts/sign_nested_helper.sh"
+test -x "$ROOT/Scripts/resolve_codesign_identity.sh"
+test -x "$ROOT/Scripts/assert_archive_signing.sh"
 
 pass "security boundary checks"

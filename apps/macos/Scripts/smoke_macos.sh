@@ -228,19 +228,26 @@ env -u RS_FREEZE_HELPER ./Scripts/build_app.sh --frozen-helper >/tmp/rs-frozen-b
 cat /tmp/rs-frozen-build.out
 grep -E "Using frozen helper payload|falling back to stage_helper" /tmp/rs-frozen-build.out
 test -x "$APP/Contents/Helpers/runspecimen"
-FROZEN_VER="$("$APP/Contents/Helpers/runspecimen" --version 2>&1)" || {
-  echo "Bundled helper after --frozen-helper failed (exit $?):" >&2
-  echo "$FROZEN_VER" >&2
-  exit 1
-}
-echo "post --frozen-helper --version → $FROZEN_VER"
-echo "$FROZEN_VER" | grep -qi runspecimen
 # Frozen path: no package-tree lib/. Fallback --from-src: lib/ present.
 if grep -q "Using frozen helper payload" /tmp/rs-frozen-build.out; then
   test ! -d "$APP/Contents/Helpers/lib"
   file "$APP/Contents/Helpers/runspecimen" | grep -q 'Mach-O'
-  echo "OK: frozen Mach-O helper in bundle (no lib/ tree)"
+  # Inherit-signed Mach-O must not be shell-exec'd; gate version via payload + entitlements.
+  PAYLOAD_VER="$("$ROOT/Helpers/payload/runspecimen" --version 2>&1)"
+  echo "post --frozen-helper payload --version → $PAYLOAD_VER"
+  echo "$PAYLOAD_VER" | grep -qi runspecimen
+  HELP_ENT="$(codesign -d --entitlements - "$APP/Contents/Helpers/runspecimen" 2>/dev/null || true)"
+  echo "$HELP_ENT" | grep -q 'com.apple.security.app-sandbox'
+  echo "$HELP_ENT" | grep -q 'com.apple.security.inherit'
+  echo "OK: frozen Mach-O helper in bundle (sandbox+inherit; no lib/ tree)"
 else
+  FROZEN_VER="$("$APP/Contents/Helpers/runspecimen" --version 2>&1)" || {
+    echo "Bundled helper after --frozen-helper fallback failed (exit $?):" >&2
+    echo "$FROZEN_VER" >&2
+    exit 1
+  }
+  echo "post --frozen-helper --version → $FROZEN_VER"
+  echo "$FROZEN_VER" | grep -qi runspecimen
   test -d "$APP/Contents/Helpers/lib/runspecimen"
   echo "OK: --frozen-helper fell back to --from-src package tree"
 fi
@@ -257,18 +264,36 @@ if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/n
   test ! -d "$APP/Contents/Helpers/lib"
   file "$APP/Contents/Helpers/runspecimen" | grep -q 'Mach-O'
   /usr/libexec/PlistBuddy -c 'Print :RSDistributionChannel' "$APP/Contents/Info.plist" | grep -qx mas
-  MAS_VER="$("$APP/Contents/Helpers/runspecimen" --version 2>&1)"
-  echo "MAS helper --version → $MAS_VER"
-  echo "$MAS_VER" | grep -qi runspecimen
   REPO_VER=$(
     python3 -c 'import pathlib,re,sys; t=pathlib.Path(sys.argv[1],"src/runspecimen/__init__.py").read_text(); m=re.search(r"__version__\s*=\s*\"([^\"]+)\"", t); assert m; print(m.group(1))' \
       "$REPO"
   )
-  echo "$MAS_VER" | grep -F "$REPO_VER" >/dev/null || {
-    echo "ERROR: MAS helper must match repo engine $REPO_VER (got: $MAS_VER)" >&2
+  PAYLOAD_VER="$("$ROOT/Helpers/payload/runspecimen" --version 2>&1)"
+  echo "MAS payload --version → $PAYLOAD_VER"
+  echo "$PAYLOAD_VER" | grep -F "$REPO_VER" >/dev/null || {
+    echo "ERROR: MAS helper must match repo engine $REPO_VER (got: $PAYLOAD_VER)" >&2
     exit 1
   }
-  echo "OK: MAS frozen helper bundle matches repo $REPO_VER"
+  HELP_ENT="$(codesign -d --entitlements - "$APP/Contents/Helpers/runspecimen" 2>/dev/null || true)"
+  echo "$HELP_ENT" | grep -q 'com.apple.security.app-sandbox' || {
+    echo "ERROR: MAS helper missing app-sandbox entitlement" >&2
+    exit 1
+  }
+  echo "$HELP_ENT" | grep -q 'com.apple.security.inherit' || {
+    echo "ERROR: MAS helper missing inherit entitlement" >&2
+    exit 1
+  }
+  # Runtime sandbox probe: inherit helper must fail from unsandboxed shell.
+  set +e
+  "$APP/Contents/Helpers/runspecimen" --version >/tmp/rs-mas-helper-shell.out 2>&1
+  MAS_HELPER_RC=$?
+  set -e
+  if [[ "$MAS_HELPER_RC" -eq 0 ]]; then
+    echo "ERROR: inherit-signed MAS helper ran from shell (expected non-zero)" >&2
+    cat /tmp/rs-mas-helper-shell.out >&2
+    exit 1
+  fi
+  echo "OK: MAS frozen helper bundle matches repo $REPO_VER (sandbox+inherit; shell rc=$MAS_HELPER_RC)"
 else
   echo "PyInstaller absent — verifying --mas fails closed"
   if ./Scripts/build_app.sh --mas >/tmp/rs-mas-fail.out 2>&1; then

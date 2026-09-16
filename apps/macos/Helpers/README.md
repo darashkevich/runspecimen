@@ -34,7 +34,11 @@ RunSpecimen.app/Contents/
 Entitlements:
 
 - App: `Entitlements/RunSpecimen.mas.entitlements` (Store) or developer-id twin
-- Helper: `Entitlements/RunSpecimen.helper.entitlements` (`inherit`)
+- Helper: `Entitlements/RunSpecimen.helper.entitlements` (`app-sandbox` + `inherit`)
+  — applied by `Scripts/sign_nested_helper.sh` using the real Xcode/keychain
+  identity when present; ad-hoc `-` only for local smoke (TeamIdentifier unset).
+  Inherit-signed helpers intentionally fail when launched from an unsandboxed
+  shell; gate `--version` on `Helpers/payload/` before nested sign.
 
 ## Discovery order
 

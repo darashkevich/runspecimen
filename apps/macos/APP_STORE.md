@@ -47,9 +47,12 @@ It does **not** OS-sandbox the payload under test. See
 | ASC app record: bundle id `com.darashkevich.runspecimen`, screenshots, privacy URL | Review |
 
 **Xcode status (this Mac):** Xcode **27.0** is installed and selected
-(`xcode-select` → `/Applications/Xcode.app/...`). Ad-hoc Archive via
-`./Scripts/archive_mas.sh` proves the project is archivable. **Upload / Submit
-for Review** still need Yahor’s Apple Distribution identity + ASC.
+(`xcode-select` → `/Applications/Xcode.app/...`). `./Scripts/archive_mas.sh`
+produces a real Archive. When no Apple identity is in the keychain, nested
+helper + app signing is **ad-hoc** (TeamIdentifier unset) but still applies
+`RunSpecimen.helper.entitlements` (App Sandbox + inherit) — labeled as local
+structural smoke only. **Upload / Submit for Review** still need Yahor’s Apple
+Distribution identity + ASC (nested sign then uses that identity/team).
 
 Optional local tool: `brew install xcodegen` to refresh `RunSpecimen.xcodeproj`
 from `project.yml` (`./Scripts/generate_xcodeproj.sh`). A generated project is
@@ -64,13 +67,18 @@ python3 -m pip install --user 'pyinstaller>=6'   # freeze machine only
 ./Scripts/test_security_boundary.sh
 ./Scripts/build_app.sh --mas
 # Confirm helper is current engine (rc10 on this branch):
-#   Contents/Helpers/runspecimen --version
+#   Helpers/payload/runspecimen --version   # gate BEFORE inherit sign
+#   codesign -d --entitlements - Contents/Helpers/runspecimen  # must show sandbox+inherit
+#   # Do NOT expect Contents/Helpers/runspecimen --version from a normal shell —
+#   # inherit-signed helpers exit non-zero outside the parent app sandbox (by design).
 #   no Contents/Helpers/lib/
 #   Info.plist RSDistributionChannel == mas
 #   Resources/AppIcon.icns present
 
-# Structural Archive (ad-hoc when no Apple Distribution identity):
+# Archive (ad-hoc when no Apple Distribution identity; real identity when present):
 ./Scripts/archive_mas.sh
+# Fail-closed assertions (signature, entitlements, team/adhoc, sandbox probe, PTY):
+#   ./Scripts/assert_archive_signing.sh /path/to/RunSpecimen.app [--expect-adhoc|--expect-team TEAM]
 # Or open Xcode:
 ./Scripts/open_xcode.sh
 #   Signing & Capabilities: Team + App Sandbox + MAS entitlements (for ASC)
@@ -79,6 +87,19 @@ python3 -m pip install --user 'pyinstaller>=6'   # freeze machine only
 
 Export options template: [Config/ExportOptions.mas.plist](Config/ExportOptions.mas.plist)
 (replace `TEAMID` before export).
+
+## Nested signing (helper)
+
+`Contents/Helpers/runspecimen` is signed **inside-out** before the outer `.app` seal:
+
+| Mode | Identity | Helper entitlements | TeamIdentifier |
+| --- | --- | --- | --- |
+| Local structural smoke (no certs) | ad-hoc `-` (labeled) | `app-sandbox` + `inherit` | not set |
+| Apple Distribution / Development | Xcode / `RS_SIGN_IDENTITY` / keychain | same | team from identity |
+
+Scripts: `Scripts/resolve_codesign_identity.sh`, `Scripts/sign_nested_helper.sh`.
+Xcode build phases **Embed Frozen Helper** and **Clear Codesign Xattrs** call
+`sign_nested_helper.sh` — they must **not** hard-code `codesign --sign -`.
 
 ## Entitlements
 
@@ -93,6 +114,7 @@ Export options template: [Config/ExportOptions.mas.plist](Config/ExportOptions.m
 | `com.apple.security.network.server` | Loopback `dashboard` only |
 
 Helper child: `Entitlements/RunSpecimen.helper.entitlements` (`app-sandbox` + `inherit`).
+Applied on every MAS / frozen Mach-O nested sign (including ad-hoc local archives).
 
 Do **not** enable: camera, mic, contacts, location, Apple Events automation,
 `get-task-allow` in release.
@@ -184,13 +206,14 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 ## Packaging checklist (MAS)
 
 - [ ] `./Scripts/build_app.sh --mas` succeeds (Mach-O helper == repo `0.2.0rc10`, no `lib/`)
+- [ ] Helper entitlements: `codesign -d --entitlements - …/Helpers/runspecimen` shows sandbox+inherit
 - [ ] App Sandbox entitlements (`RunSpecimen.mas.entitlements`)
 - [ ] `PrivacyInfo.xcprivacy` present
 - [ ] `AppIcon.icns` in `Contents/Resources`
 - [ ] `RSDistributionChannel=mas`
 - [ ] No `get-task-allow`
-- [ ] `./Scripts/archive_mas.sh` or Xcode Product → Archive succeeds
-- [ ] Apple Distribution signing + upload to App Store Connect
+- [ ] `./Scripts/archive_mas.sh` + `assert_archive_signing.sh` succeed
+- [ ] Apple Distribution signing + upload to App Store Connect (Yahor)
 - [ ] Privacy policy URL in Connect + in-app
 - [ ] Screenshots + reviewer demo notes
 - [ ] Codex QA + Yahor release decision **before** Submit for Review

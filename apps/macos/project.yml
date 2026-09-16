@@ -103,6 +103,7 @@ targets:
           HELPER_NOTICE="${SRCROOT}/Helpers/payload/NOTICE.txt"
           DEST="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
           RES_DEST="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources"
+          REPO="$(cd "${SRCROOT}/../.." && pwd)"
           if [[ ! -x "$HELPER_SRC" ]]; then
             echo "error: Missing frozen helper at Helpers/payload/runspecimen."
             echo "error: Run: ./Scripts/freeze_helper.sh --enable --require --verify"
@@ -113,6 +114,21 @@ targets:
             file "$HELPER_SRC" || true
             exit 1
           fi
+          # Fail-closed version gate BEFORE inherit entitlements (shell cannot exec after).
+          REPO_VER=$(
+            python3 -c 'import pathlib,re,sys; t=pathlib.Path(sys.argv[1],"src/runspecimen/__init__.py").read_text(); m=re.search(r"__version__\s*=\s*\"([^\"]+)\"", t); assert m; print(m.group(1))' \
+              "$REPO"
+          )
+          HELPER_VER="$("$HELPER_SRC" --version 2>&1)" || {
+            echo "error: Helpers/payload/runspecimen --version failed" >&2
+            echo "$HELPER_VER" >&2
+            exit 1
+          }
+          echo "Frozen helper pre-sign --version → $HELPER_VER (repo=$REPO_VER)"
+          echo "$HELPER_VER" | grep -F "$REPO_VER" >/dev/null || {
+            echo "error: helper version mismatch (want $REPO_VER, got $HELPER_VER)" >&2
+            exit 1
+          }
           mkdir -p "$DEST" "$RES_DEST"
           # Always stage icon + privacy manifest (XcodeGen resource sync can miss on some hosts).
           for f in AppIcon.icns AppIcon-1024.png PrivacyInfo.xcprivacy; do
@@ -139,11 +155,10 @@ targets:
           rm -rf "$DEST/lib"
           rm -f "$DEST/NOTICE.txt" "$DEST/README.md"
           xattr -cr "$DEST" 2>/dev/null || true
-          # Nested Mach-O must be signed before the outer .app seal.
-          codesign --force --sign - --options runtime --timestamp=none "$DEST/runspecimen" \
-            || codesign --force --sign - "$DEST/runspecimen"
-          echo "Embedded helper: $DEST/runspecimen"
-          "$DEST/runspecimen" --version || true
+          # Nested Mach-O: real Xcode identity when present; ad-hoc only for local smoke.
+          # Always apply helper sandbox+inherit entitlements (never bare codesign --sign -).
+          "${SRCROOT}/Scripts/sign_nested_helper.sh" "$DEST/runspecimen"
+          echo "Embedded helper: $DEST/runspecimen (engine $REPO_VER)"
       - name: Clear Codesign Xattrs
         basedOnDependencyAnalysis: false
         script: |
@@ -155,9 +170,10 @@ targets:
             find "$APP" \( -name '._*' -o -name '.DS_Store' \) -delete 2>/dev/null || true
             command -v dot_clean >/dev/null 2>&1 && dot_clean -m "$APP" 2>/dev/null || true
             HELPER="$APP/Contents/Helpers/runspecimen"
-            if [[ -x "$HELPER" ]]; then
-              codesign --force --sign - --options runtime --timestamp=none "$HELPER" \
-                || codesign --force --sign - "$HELPER"
+            if [[ -x "$HELPER" ]] && file "$HELPER" | grep -q 'Mach-O'; then
+              # Re-seal nested helper with the SAME identity resolution + inherit entitlements.
+              # Never hard-code codesign --sign - here (breaks Apple Distribution archives).
+              "${SRCROOT}/Scripts/sign_nested_helper.sh" "$HELPER"
             fi
             echo "Cleared codesign xattrs on $APP"
           fi

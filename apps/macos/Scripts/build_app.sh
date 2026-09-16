@@ -256,38 +256,79 @@ clear_codesign_xattrs() {
 }
 clear_codesign_xattrs
 
-# Ad-hoc sign.
-# - --from-src (package tree under Helpers/lib): use --deep so nested files seal.
-# - Frozen Mach-O helper: --deep alone stamps *app* sandbox entitlements onto the
-#   helper and breaks shell smoke (exit 133). Sign deep, then re-sign the helper
-#   without sandbox entitlements, then reseal the .app (no --deep).
-# Developer ID / MAS shipping uses inside-out signing in Scripts/sign_and_notarize.sh
-# (or Xcode Organizer for App Store Connect).
-adhoc_sign() {
+# Nested / outer signing.
+# - --from-src (package tree under Helpers/lib): --deep seals nested files; shell
+#   launcher stays shell-smoke runnable.
+# - Frozen Mach-O helper (MAS / --frozen-helper): NEVER stamp app entitlements onto
+#   the helper via --deep. Sign helper first with RunSpecimen.helper.entitlements
+#   (app-sandbox + inherit) via sign_nested_helper.sh, then seal the .app (no --deep).
+#   Inherit-signed helpers exit non-zero when launched from an unsandboxed shell —
+#   version gates run on Helpers/payload BEFORE this step.
+# - Identity: resolve_codesign_identity.sh (Apple Distribution when present; ad-hoc
+#   "-" only for local smoke, clearly labeled). Store export still needs Yahor's certs.
+sign_bundle() {
   local helper="$HELPERS_OUT/runspecimen"
   clear_codesign_xattrs
   if [[ -x "$helper" ]] && file "$helper" | grep -q 'Mach-O'; then
-    codesign --force --deep --sign - --entitlements "$ENTITLEMENTS" "$APP"
-    codesign --force --sign - "$helper"
-    codesign --force --sign - --entitlements "$ENTITLEMENTS" "$APP"
-    echo "Ad-hoc signed frozen helper (sandbox stamp cleared; shell-smoke safe)."
+    # Pre-sign version gate (fail closed) against the staged payload / helper copy.
+    local ver
+    ver="$("$helper" --version 2>&1)" || {
+      # If already inherit-signed from a prior run, gate via payload instead.
+      ver="$("$ROOT/Helpers/payload/runspecimen" --version 2>&1)" || {
+        echo "ERROR: cannot read helper version (helper + payload both failed)" >&2
+        exit 1
+      }
+    }
+    echo "Helper pre-sign --version → $ver"
+    if [[ "$MAS_MODE" -eq 1 ]]; then
+      local repo_ver
+      repo_ver="$(
+        python3 -c 'import pathlib,re,sys; t=pathlib.Path(sys.argv[1],"src/runspecimen/__init__.py").read_text(); m=re.search(r"__version__\s*=\s*\"([^\"]+)\"", t); assert m; print(m.group(1))' \
+          "$(cd "$ROOT/../.." && pwd)"
+      )"
+      echo "$ver" | grep -F "$repo_ver" >/dev/null || {
+        echo "ERROR: MAS helper version must match repo $repo_ver (got: $ver)" >&2
+        exit 1
+      }
+    fi
+    "$ROOT/Scripts/sign_nested_helper.sh" "$helper"
+    # Seal app without --deep so helper keeps inherit entitlements.
+    local resolve_out identity mode
+    resolve_out="$("$ROOT/Scripts/resolve_codesign_identity.sh")"
+    identity="$(printf '%s\n' "$resolve_out" | awk -F= '/^IDENTITY=/{print substr($0,10); exit}')"
+    mode="$(printf '%s\n' "$resolve_out" | awk -F= '/^MODE=/{print $2; exit}')"
+    if [[ "$mode" == "adhoc" || "$identity" == "-" ]]; then
+      echo "AD-HOC app signing (local smoke only; TeamIdentifier unset)." >&2
+      codesign --force --sign - --entitlements "$ENTITLEMENTS" "$APP"
+    else
+      echo "Signing app with identity ($mode): $identity"
+      codesign --force --options runtime --timestamp \
+        --entitlements "$ENTITLEMENTS" \
+        --sign "$identity" \
+        "$APP"
+    fi
+    echo "Signed frozen helper with sandbox+inherit; app sealed ($mode)."
   else
     codesign --force --deep --sign - --entitlements "$ENTITLEMENTS" "$APP"
   fi
 }
 
 if command -v codesign >/dev/null 2>&1; then
-  if adhoc_sign 2>/tmp/rs-codesign.err; then
-    echo "Ad-hoc signed with entitlements."
+  if sign_bundle 2>/tmp/rs-codesign.err; then
+    echo "Signed with entitlements."
   else
     echo "Entitlements sign failed; retrying after xattr clear…"
     cat /tmp/rs-codesign.err >&2 || true
     clear_codesign_xattrs
-    if adhoc_sign; then
-      echo "Ad-hoc signed with entitlements (retry)."
+    if sign_bundle; then
+      echo "Signed with entitlements (retry)."
     else
+      if [[ "$MAS_MODE" -eq 1 ]]; then
+        echo "ERROR: MAS signing failed closed (no bare ad-hoc fallback)." >&2
+        exit 1
+      fi
       clear_codesign_xattrs
-      codesign --force --deep --sign - "$APP" && echo "Ad-hoc signed without entitlements (fallback)." || true
+      codesign --force --deep --sign - "$APP" && echo "Ad-hoc signed without entitlements (local non-MAS fallback)." || true
     fi
   fi
 fi

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Produce a real xcodebuild Archive for the MAS path.
 # Without Apple Distribution identities, archives with ad-hoc signing (-) to prove
-# the project is structurally archivable. Does not upload or Submit for Review.
+# the project is structurally archivable — clearly labeled, with helper sandbox+inherit.
+# Does not upload or Submit for Review.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$ROOT/../.." && pwd)"
@@ -22,7 +23,10 @@ xcode-select -p
 
 echo "==> Ensure frozen Mach-O helper (rc engine from this tree)"
 RS_FREEZE_HELPER=1 RS_MAS_BUILD=1 ./Scripts/freeze_helper.sh --enable --require --verify
-HELPER_VER="$(Helpers/payload/runspecimen --version 2>&1)"
+HELPER_VER="$(Helpers/payload/runspecimen --version 2>&1)" || {
+  echo "ERROR: Helpers/payload/runspecimen --version failed" >&2
+  exit 1
+}
 echo "Frozen helper: $HELPER_VER"
 REPO_VER=$(
   python3 -c 'import pathlib,re,sys; t=pathlib.Path(sys.argv[1],"src/runspecimen/__init__.py").read_text(); m=re.search(r"__version__\s*=\s*\"([^\"]+)\"", t); assert m; print(m.group(1))' \
@@ -38,6 +42,7 @@ echo "$HELPER_VER" | grep -F "$REPO_VER" >/dev/null || {
 echo "==> Ensure Xcode project"
 ./Scripts/generate_xcodeproj.sh
 test -d "$ROOT/RunSpecimen.xcodeproj"
+chmod +x "$ROOT/Scripts/"*.sh
 
 mkdir -p "$ROOT/build"
 # Box/cloud sync can leave sticky dirs; force-remove archive + derived data.
@@ -61,18 +66,40 @@ IDENTITIES="$(security find-identity -v -p codesigning 2>/dev/null || true)"
 echo "==> Codesigning identities:"
 echo "$IDENTITIES"
 
-SIGN_ARGS=(
-  CODE_SIGN_STYLE=Manual
-  CODE_SIGN_IDENTITY=-
-  CODE_SIGNING_ALLOWED=YES
-  AD_HOC_CODE_SIGNING_ALLOWED=YES
-  DEVELOPMENT_TEAM=
-)
-SIGNING_MODE="ad-hoc"
-if echo "$IDENTITIES" | grep -Eq 'Apple Distribution|3rd Party Mac Developer Application|Apple Development'; then
+RESOLVE_OUT="$("$ROOT/Scripts/resolve_codesign_identity.sh")"
+IDENTITY="$(printf '%s\n' "$RESOLVE_OUT" | awk -F= '/^IDENTITY=/{print substr($0,10); exit}')"
+MODE="$(printf '%s\n' "$RESOLVE_OUT" | awk -F= '/^MODE=/{print $2; exit}')"
+echo "Resolved nested/app identity: IDENTITY=$IDENTITY MODE=$MODE"
+
+SIGN_ARGS=()
+SIGNING_MODE="$MODE"
+ASSERT_ARGS=(--expected-version "$REPO_VER")
+if [[ "$MODE" == "adhoc" || "$IDENTITY" == "-" ]]; then
+  echo "AD-HOC ARCHIVE (local structural smoke only — TeamIdentifier unset)."
+  echo "Apple Distribution identity not found; Store export still Yahor-only."
+  SIGN_ARGS=(
+    CODE_SIGN_STYLE=Manual
+    CODE_SIGN_IDENTITY=-
+    CODE_SIGNING_ALLOWED=YES
+    AD_HOC_CODE_SIGNING_ALLOWED=YES
+    DEVELOPMENT_TEAM=
+  )
+  SIGNING_MODE="ad-hoc"
+  ASSERT_ARGS+=(--expect-adhoc)
+elif echo "$IDENTITIES" | grep -Eq 'Apple Distribution|3rd Party Mac Developer Application|Apple Development'; then
   # Prefer Automatic when any Apple identity exists; operator still needs MAS profile for export.
   SIGN_ARGS=(CODE_SIGN_STYLE=Automatic)
-  SIGNING_MODE="Automatic"
+  SIGNING_MODE="Automatic ($MODE)"
+  if [[ -n "${RS_NOTARY_TEAM_ID:-}" ]]; then
+    ASSERT_ARGS+=(--expect-team "$RS_NOTARY_TEAM_ID")
+  fi
+else
+  SIGN_ARGS=(
+    CODE_SIGN_STYLE=Manual
+    "CODE_SIGN_IDENTITY=$IDENTITY"
+    CODE_SIGNING_ALLOWED=YES
+  )
+  SIGNING_MODE="$MODE"
 fi
 
 echo "==> xcodebuild archive ($SIGNING_MODE)"
@@ -100,16 +127,23 @@ APP_IN_ARCHIVE="$ARCHIVE_PATH/Products/Applications/RunSpecimen.app"
 test -x "$APP_IN_ARCHIVE/Contents/MacOS/RunSpecimen"
 test -x "$APP_IN_ARCHIVE/Contents/Helpers/runspecimen"
 file "$APP_IN_ARCHIVE/Contents/Helpers/runspecimen" | grep -q 'Mach-O'
-ARCH_HELPER_VER="$("$APP_IN_ARCHIVE/Contents/Helpers/runspecimen" --version 2>&1)"
-echo "Archive helper --version → $ARCH_HELPER_VER"
-echo "$ARCH_HELPER_VER" | grep -F "$REPO_VER" >/dev/null
 CHANNEL="$(/usr/libexec/PlistBuddy -c "Print :RSDistributionChannel" "$APP_IN_ARCHIVE/Contents/Info.plist" 2>/dev/null || true)"
 echo "RSDistributionChannel=${CHANNEL}"
 test -f "$APP_IN_ARCHIVE/Contents/Resources/AppIcon.icns"
 test -f "$APP_IN_ARCHIVE/Contents/Resources/PrivacyInfo.xcprivacy"
 
-echo "==> codesign -dv (archive app)"
-codesign -dv --verbose=2 "$APP_IN_ARCHIVE" 2>&1 | head -40 || true
+echo "==> fail-closed archive signing / entitlement / sandbox assertions"
+./Scripts/assert_archive_signing.sh "$APP_IN_ARCHIVE" "${ASSERT_ARGS[@]}"
+
+echo "==> codesign evidence (verbose)"
+echo "----- APP codesign -dv --verbose=4 -----"
+codesign -dv --verbose=4 "$APP_IN_ARCHIVE" 2>&1
+echo "----- APP entitlements -----"
+codesign -d --entitlements - "$APP_IN_ARCHIVE" 2>&1
+echo "----- HELPER codesign -dv --verbose=4 -----"
+codesign -dv --verbose=4 "$APP_IN_ARCHIVE/Contents/Helpers/runspecimen" 2>&1
+echo "----- HELPER entitlements -----"
+codesign -d --entitlements - "$APP_IN_ARCHIVE/Contents/Helpers/runspecimen" 2>&1
 
 # Convenience symlink inside apps/macos/build for operators (best-effort).
 mkdir -p "$ROOT/build"
@@ -140,8 +174,8 @@ cat <<EOF
 ARCHIVE OK
   archive:  $ARCHIVE_PATH
   link:     $LOCAL_ARCHIVE_LINK
-  signing:  $SIGNING_MODE (adhoc / Sign to Run Locally when no Apple identity)
-  helper:   $ARCH_HELPER_VER
+  signing:  $SIGNING_MODE
+  helper:   engine $REPO_VER (payload-gated; inherit-signed — not shell-exec'd)
   channel:  ${CHANNEL:-unknown}
   export:   exit $EXPORT_RC (upload still Yahor-only with Apple Distribution + ASC)
 

@@ -111,5 +111,6 @@ See NOTARIZATION.md.
 | Security boundary docs + tests | Done |
 | `./Scripts/build_app.sh --mas` frozen helper fail-closed | Done; must report **rc10** |
 | PrivacyInfo + MAS entitlements | Done |
-| `RunSpecimen.xcodeproj` + `archive_mas.sh` | Done (Xcode 27 ad-hoc Archive) |
+| `RunSpecimen.xcodeproj` + `archive_mas.sh` | Done (Xcode 27; nested helper sandbox+inherit) |
+| Nested helper signing (`sign_nested_helper.sh`) | Done — identity-aware; ad-hoc only when no certs |
 | ASC upload / Submit for Review | **Blocked** — Apple Distribution + Yahor decision after Codex QA |

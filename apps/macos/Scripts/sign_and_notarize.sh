@@ -64,13 +64,11 @@ cmd_sign() {
 
   # Sign nested helper first (if staged), then the app bundle.
   HELPER="$APP/Contents/Helpers/runspecimen"
-  HELPER_ENTITLEMENTS="$ROOT/Entitlements/RunSpecimen.helper.entitlements"
-  if [[ -x "$HELPER" ]]; then
-    echo "Signing bundled helper: $HELPER"
-    codesign --force --options runtime --timestamp \
-      --entitlements "$HELPER_ENTITLEMENTS" \
-      --sign "$identity" \
-      "$HELPER"
+  if [[ -x "$HELPER" ]] && file "$HELPER" | grep -q 'Mach-O'; then
+    echo "Signing bundled helper via sign_nested_helper.sh: $HELPER"
+    RS_SIGN_IDENTITY="$identity" "$ROOT/Scripts/sign_nested_helper.sh" "$HELPER" --require-distribution
+  elif [[ -x "$HELPER" ]]; then
+    echo "WARNING: helper is not Mach-O; skipping nested inherit sign ($HELPER)" >&2
   fi
 
   codesign --force --deep --options runtime --timestamp \
