@@ -561,6 +561,19 @@ def _recover_one_rotation_journal(workspace: Path, journal_path: Path) -> str:
     if phase == "fresh_priv_installed":
         # Fresh create crashed after private install — drop incomplete pair.
         # Finals are derived from validated key_id, not journal path strings.
+        #
+        # Matching filename/key_id is NOT proof of a genuine fresh-create: an
+        # attacker who can write the keys dir can forge this phase. If both
+        # live finals already form a complete pair, provenance is insufficient
+        # to treat this as an interrupted fresh create — discard the journal
+        # and preserve the pair (also covers the narrow window after both
+        # installs but before phase advances to complete).
+        if _path_is_present(priv) and _path_is_present(pub):
+            _unlink_trusted_sidecar(priv_tmp)
+            _unlink_trusted_sidecar(pub_tmp)
+            return _discard_untrusted_journal(
+                journal_path, "fresh_priv_installed_complete_pair_preserved"
+            )
         _unlink_quiet(priv)
         _unlink_quiet(pub)
         _unlink_trusted_sidecar(priv_tmp)

@@ -57,7 +57,9 @@ MAC — not a digital signature.
   filename; sidecar paths are accepted only as narrowly named non-symlink
   children of the keys directory (basename reconstructed under that directory —
   absolute parents from the journal are never used for `unlink`/`os.replace`).
-  Invalid journals are discarded without deleting live key finals.
+  Invalid journals are discarded without deleting live key finals. A forged
+  `fresh_priv_installed` journal never deletes an already-complete live pair —
+  incomplete fresh-create rollback requires missing public (or private) final.
 - Private and public key reads open with `O_NOFOLLOW` and validate the opened
   file descriptor (`fstat`) — not a separate path-based lstat-then-open race.
 - This does **not** prove a scientific or engineering claim is true.

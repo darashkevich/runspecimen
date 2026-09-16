@@ -24,7 +24,9 @@
   of the keys directory (basename reconstructed under the keys dir). Forged
   journals with absolute foreign paths, `..` traversal, symlink sidecars, or
   foreign-key sidecar names are discarded without deleting live keys or
-  touching files outside the keys directory.
+  touching files outside the keys directory. A forged `fresh_priv_installed`
+  journal never wipes an already-complete live keypair — incomplete fresh-create
+  rollback requires a missing final (real SIGKILL half-pair window).
 - `scripts/release_check.py` refuses packaging when setuptools≥77 is only in
   the user site: offline builds set `PYTHONNOUSERSITE=1` and previously could
   silently emit `UNKNOWN-0.0.0` sdists.

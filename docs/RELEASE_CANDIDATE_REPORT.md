@@ -6,7 +6,7 @@
 **Baseline already published:** [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9) / PyPI `runspecimen==0.2.0rc9`  
 **Hard stops honored:** no merge, no PyPI publish, no website deploy, no notarization, no marketplace submit, no retag of rc9.
 
-**READY FOR CODEX QA: yes** (after CI green on this tip — includes journal path-trust CVE-class fix)
+**READY FOR CODEX QA: yes** (after CI green on this tip — includes forged `fresh_priv_installed` complete-pair wipe fix)
 
 This report is the decision packet for the next Python RC after rc9. PR #6 (macOS) remains a separate workstream.
 
@@ -30,6 +30,7 @@ This report is the decision packet for the next Python RC after rc9. PR #6 (macO
 - **Crash-safe key rotation:** durable journal + temps/backups; SIGKILL at every transition recovers automatically on next open/use; all-or-nothing (never lose both pairs).
 - **Key-dir exclusion:** `.runspecimen/keys.op.lock` (`fcntl`) serializes create/list/rotate/load.
 - **Journal path-trust hardening (CVE-class):** recovery no longer trusts absolute `priv_tmp`/`pub_tmp`/`priv_bak`/`pub_bak` strings from a writable journal for `unlink`/`os.replace`.
+- **Forged fresh-create journal wipe (CVE-class):** recovery no longer treats filename/`key_id` match alone as proof of an in-progress fresh create; a complete live pair is preserved when `fresh_priv_installed` provenance is insufficient.
 
 ### Not in this Python RC
 
@@ -38,7 +39,7 @@ This report is the decision packet for the next Python RC after rc9. PR #6 (macO
 
 ---
 
-## 1b. CVE-class finding: rotation journal path trust (fixed this tip)
+## 1b. CVE-class finding: rotation journal path trust (fixed)
 
 **Finding:** `_recover_one_rotation_journal` previously took `priv_tmp` / `pub_tmp` / `priv_bak` / `pub_bak` as absolute paths from the rotation journal (a file an attacker who can write the keys directory can forge) and passed them to `unlink` / `os.replace`. A forged journal could therefore delete or replace files **outside** the keys directory when the next key operation triggered recovery.
 
@@ -54,6 +55,26 @@ This report is the decision packet for the next Python RC after rc9. PR #6 (macO
 
 ---
 
+## 1c. CVE-class finding: forged `fresh_priv_installed` wipes complete pair (fixed this tip)
+
+**Finding:** Matching journal filename/`key_id` is **not** proof of a genuine fresh-create transaction. An attacker who can write `.runspecimen/keys/` could plant:
+
+```json
+{"version":1,"key_id":"forged","phase":"fresh_priv_installed","priv_tmp":null,"pub_tmp":null,"priv_bak":null,"pub_bak":null}
+```
+
+Recovery previously treated `fresh_priv_installed` as an incomplete fresh create and unlinked both live finals — wiping a complete working keypair (`rolled_back_fresh_incomplete`).
+
+**Fix (fail-closed):**
+
+1. For `fresh_priv_installed`, if both `*.ed25519` and `*.ed25519.pub` finals are already present, discard the journal **without** deleting finals (`discarded_untrusted_journal:fresh_priv_installed_complete_pair_preserved`).
+2. Incomplete fresh creates (public final missing after private install — the real SIGKILL window) still roll back correctly.
+3. Regression: `TestEd25519JournalPathTrust.test_forged_fresh_priv_installed_journal_does_not_wipe_complete_pair`.
+
+**Evidence:** exact QA repro now preserves the pair; prior path-trust / outside-victim / symlink / foreign-key tests remain green.
+
+---
+
 ## 2. Crash-safe rotation + concurrency (evidence)
 
 ### Design
@@ -64,13 +85,14 @@ This report is the decision packet for the next Python RC after rc9. PR #6 (macO
 - Pre-`priv_installed`: roll back to previous working pair. At/after `priv_installed` (including `complete`): keep new pair and clean leftovers.
 - Recovery path-trust: basename-only reconstruction under keys dir; `key_id`↔filename match; symlink sidecars rejected.
 
-### Tests (independent re-validation 2026-09-16, post path-trust fix)
+### Tests (independent re-validation 2026-09-16, post forged-fresh wipe fix)
 
 | Evidence | Result |
 | --- | --- |
-| `PYTHONPATH=src python3 -m unittest discover -s tests` | **225 OK** (2 skipped) |
+| `PYTHONPATH=src python3 -m unittest discover -s tests` | **226 OK** (2 skipped) |
 | `PYTHONPATH=src python3 -m unittest tests.test_ed25519 -v` | includes JournalPathTrust |
 | Outside-victim forged journal | victim file **untouched**; live keys intact; journal discarded |
+| Forged `fresh_priv_installed` + complete live pair | pair **preserved**; journal discarded (`complete_pair_preserved`) |
 | Malformed / wrong-type journals | discarded; live keys intact |
 | Symlink sidecar in journal | discarded as untrusted; target untouched |
 | Foreign-key journal (`key_id` mismatch / other-key basename) | discarded; both keys intact |
@@ -92,17 +114,17 @@ This report is the decision packet for the next Python RC after rc9. PR #6 (macO
 | Codex/Cursor plugin manifests + marketplace.json | `0.2.0-rc.10` |
 | `scripts/release_check.py` EXPECTED_* | matches above |
 
-Local rebuild (not published): `/tmp/runspecimen-release-check-rc10`  
+Local rebuild (not published): `/tmp/runspecimen-release-check-rc10-20260916120713`  
 Interpreter: `.tools/python` 3.11.10 (offline builds require setuptools≥77 in **non-user** site-packages; see release_check gate fix).
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `runspecimen-0.2.0rc10-py3-none-any.whl` | `87d01c10f12e0e72717c2c09782776bfada1913435dd6a86dd64ee3fef430e42` |
-| `runspecimen-0.2.0rc10.tar.gz` | `5b56016273635813f2c5bb16c672f327423fc1639c3047e99d87cb3f35b79f6d` |
+| `runspecimen-0.2.0rc10-py3-none-any.whl` | `c9e538f61ea358e22d0407594022c99e18e0bde47a7b07c45a1de3363e0cab1e` |
+| `runspecimen-0.2.0rc10.tar.gz` | `f207a246bde4507bf3e4389f49f067c46b07d2c321e12045694361c0882287a4` |
 | `runspecimen-plugin-0.2.0-rc.10.zip` | `50b0f2a98b92f8d3d08c9c790adf65412fadba8c433eb4bc434f318a30178d55` |
-| `release-report.json` | `7b18cc3112062a1157b7793d691575375dbbf8f42811a2ea0e015859e9a73ed6` |
+| `release-report.json` | a9d0ab0ad798a531825b3a33532a797d0273f4f39aa530bcd9e8d388dca608a9 |
 
-Local artifacts path: `/tmp/runspecimen-release-check-rc10` (not published).
+Local artifacts path: `/tmp/runspecimen-release-check-rc10-20260916120713` (not published).
 
 | Install check | Result |
 | --- | --- |
@@ -190,6 +212,7 @@ External decisions only (engineering release blockers for Codex QA are cleared o
 | Crash-safe rotation + SIGKILL fault tests (every transition) | Done |
 | Key-dir / concurrent exclusion + tests | Done |
 | Journal path-trust CVE-class fix + outside-victim regression | Done |
+| Forged `fresh_priv_installed` complete-pair wipe fix + regression | Done |
 | Distinct `0.2.0rc10` identity | Done |
 | Fresh + rc9→rc10 artifact checks | Done (local) |
 | Dashboard a11y (unnamed links fixed) + desktop/mobile keyboard/visual | Done |

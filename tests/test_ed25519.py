@@ -909,6 +909,57 @@ class TestEd25519JournalPathTrust(RunSpecimenTestCase):
             self.assertEqual(after.private_hex(), before.private_hex())
             self.assertEqual(after.public_hex(), before.public_hex())
 
+    def test_forged_fresh_priv_installed_journal_does_not_wipe_complete_pair(self) -> None:
+        """Forged fresh_priv_installed must not delete an already-complete live pair."""
+        from runspecimen.pubkey import (
+            Ed25519KeyPair,
+            load_ed25519_keypair,
+            private_key_path,
+            public_key_path,
+            recover_interrupted_ed25519_keys,
+            save_ed25519_keypair,
+        )
+
+        pair = Ed25519KeyPair.generate(key_id="forged")
+        save_ed25519_keypair(self.ws, pair)
+        before = load_ed25519_keypair(self.ws, "forged")
+        priv = private_key_path(self.ws, "forged")
+        pub = public_key_path(self.ws, "forged")
+        self.assertTrue(priv.is_file())
+        self.assertTrue(pub.is_file())
+
+        journal = self._write_journal(
+            "forged",
+            {
+                "version": 1,
+                "key_id": "forged",
+                "phase": "fresh_priv_installed",
+                "priv_tmp": None,
+                "pub_tmp": None,
+                "priv_bak": None,
+                "pub_bak": None,
+            },
+        )
+        actions = recover_interrupted_ed25519_keys(self.ws)
+        self.assertTrue(
+            any(
+                a.startswith("discarded_untrusted_journal:")
+                and "fresh_priv_installed_complete_pair_preserved" in a
+                for a in actions
+            ),
+            actions,
+        )
+        self.assertFalse(
+            any(a.startswith("rolled_back_fresh_incomplete:") for a in actions),
+            actions,
+        )
+        self.assertFalse(journal.exists())
+        self.assertTrue(priv.is_file(), "complete private final must remain")
+        self.assertTrue(pub.is_file(), "complete public final must remain")
+        after = load_ed25519_keypair(self.ws, "forged")
+        self.assertEqual(after.private_hex(), before.private_hex())
+        self.assertEqual(after.public_hex(), before.public_hex())
+
     def test_malformed_journal_is_discarded_without_deleting_live_keys(self) -> None:
         from runspecimen.pubkey import (
             Ed25519KeyPair,
