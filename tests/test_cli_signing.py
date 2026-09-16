@@ -130,20 +130,11 @@ class TestSignCommand(unittest.TestCase):
             fabricated["source_hash"] = "f" * 64
 
             # Recompute certificate_id to make it self-consistent
-            material = {
-                "approval_expires_at_unix": fabricated.get("approval_expires_at_unix"),
-                "campaign_id": fabricated["campaign_id"],
-                "contract_hash": fabricated["contract_hash"],
-                "event_head": fabricated["event_head"],
-                "exit_code": fabricated.get("exit_code"),
-                "issued_at": fabricated["issued_at"],
-                "output_digests": fabricated["output_digests"],
-                "run_id": fabricated["run_id"],
-                "run_result": fabricated.get("run_result"),
-                "source_hash": fabricated["source_hash"],
-                "runtime": fabricated["runtime"],
-            }
-            fabricated["certificate_id"] = sha256_bytes(canonical_json_bytes(material))
+            from runspecimen.schema import certificate_id_material
+
+            fabricated["certificate_id"] = sha256_bytes(
+                canonical_json_bytes(certificate_id_material(fabricated))
+            )
 
             # Save the fabricated certificate
             fabricated_path = workspace / "fabricated.json"

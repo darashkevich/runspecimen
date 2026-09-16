@@ -359,26 +359,16 @@ _REQUIRED_CERT_FIELDS = frozenset({
 
 def _recompute_certificate_id(cert: dict[str, Any]) -> str:
     """Recompute the certificate_id from the certificate body."""
-    material = {
-        "approval_expires_at_unix": cert.get("approval_expires_at_unix"),
-        "campaign_id": cert["campaign_id"],
-        "contract_hash": cert["contract_hash"],
-        "event_head": cert["event_head"],
-        "exit_code": cert.get("exit_code"),
-        "issued_at": cert["issued_at"],
-        "output_digests": cert["output_digests"],
-        "run_id": cert["run_id"],
-        "run_result": cert.get("run_result"),
-        "source_hash": cert["source_hash"],
-        "runtime": cert["runtime"],
-    }
-    return sha256_bytes(canonical_json_bytes(material))
+    from runspecimen.schema import certificate_id_material
+
+    return sha256_bytes(canonical_json_bytes(certificate_id_material(cert)))
 
 
 def validate_certificate_schema(cert: dict[str, Any]) -> tuple[bool, str]:
     """Validate that a certificate has the required schema.
 
     Checks:
+    - Receipt schema_version is supported (absent ≡ legacy 1)
     - All required fields are present
     - certificate_id matches recomputed value
 
@@ -386,6 +376,14 @@ def validate_certificate_schema(cert: dict[str, Any]) -> tuple[bool, str]:
     """
     if not isinstance(cert, dict):
         return False, "certificate must be a JSON object"
+
+    from runspecimen.errors import CertificateError
+    from runspecimen.schema import assert_supported_receipt_schema
+
+    try:
+        assert_supported_receipt_schema(cert)
+    except CertificateError as exc:
+        return False, str(exc)
 
     missing = _REQUIRED_CERT_FIELDS - set(cert.keys())
     if missing:

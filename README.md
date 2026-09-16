@@ -3,7 +3,9 @@
 RunSpecimen is a local safety and evidence layer for consequential agent-driven
 research and engineering commands.
 
-**Current release:** [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9)
+**Current package version (this branch / proposed RC):** `0.2.0rc10`  
+**Last published:** [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9) / PyPI `runspecimen==0.2.0rc9`  
+GitHub Release assets and PyPI for rc10 appear only after an explicit publish (not done on this PR).
 
 ## Core promise
 
@@ -32,33 +34,40 @@ No watchers, no recurring scheduler, no parallel workers.
 - [Marketing pitches](docs/MARKETING_PITCHES.md) — honest one-liners, elevators, CTAs
 - [Grok tandem](docs/GROK_TANDEM.md) — external xAI Grok review log (Composio `GROK_*`)
 - [Threat model](docs/THREAT_MODEL.md) — trusted boundary and residual risks
+- [Schema compatibility](docs/SCHEMA_COMPATIBILITY.md) — contract/receipt versions
+- [Ed25519 receipts (optional)](docs/ED25519_RECEIPTS.md) — offline public-key verify
+- [Phased roadmap](docs/ROADMAP_PHASED.md) — feature and UX pipeline
 
 ## Install
 
-### From PyPI (recommended)
+### From PyPI (after rc10 is published)
 
 ```bash
-python3 -m pip install runspecimen==0.2.0rc9
+python3 -m pip install runspecimen==0.2.0rc10
 runspecimen --version
 ```
 
+Until rc10 is published, install the last published candidate with
+`python3 -m pip install runspecimen==0.2.0rc9`, or install this branch from a
+local clone (below).
+
 PyPI project: [runspecimen](https://pypi.org/project/runspecimen/)
 
-### From GitHub release
+### From GitHub release (after rc10 tag exists)
 
-Install directly from the v0.2.0-rc.9 release:
+Install directly from the v0.2.0-rc.10 release:
 
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/runspecimen-0.2.0rc9-py3-none-any.whl
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10-py3-none-any.whl
 ```
 
 Or from source tarball:
 
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/runspecimen-0.2.0rc9.tar.gz
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10.tar.gz
 ```
 
-Verify checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.9/SHA256SUMS)
+Verify checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/SHA256SUMS)
 
 ### From local clone
 
@@ -239,13 +248,19 @@ into the certificate's `runtime_id`.
 
 ## Release-candidate limitations
 
-- Authenticated receipts use HMAC-SHA256 shared-secret MACs (MVP). This provides
-  tamper detection but NOT digital signatures: anyone with the key can forge
-  certificates. Production deployments should upgrade to Ed25519/RSA via
-  optional dependencies for true asymmetric signatures with non-repudiation.
-- The executed payload is not sandboxed and CPU, memory, network, filesystem,
-  and child-process limits are not yet enforced. The current hard bounds are one
-  workspace run, wall-clock duration, and captured output size.
+- Default authenticated receipts use HMAC-SHA256 shared-secret MACs. Anyone with
+  the key can forge certificates. Optional Ed25519 offline public-key
+  verification is available via `pip install 'runspecimen[ed25519]'` (see
+  `docs/ED25519_RECEIPTS.md`). Trusted Ed25519 verify requires an external
+  public-key trust anchor; a key embedded only in the receipt is never enough
+  for `ok: true`. Soft keys on disk are not absolute non-repudiation.
+- The executed payload is not sandboxed. Optional Ed25519 ≠ OS sandbox. CPU,
+  memory, network, filesystem, and child-process limits are not yet enforced via
+  tested isolation backends. The current hard bounds are one workspace run,
+  wall-clock duration, and captured output size. A companion app’s UI sandbox
+  (if any) does not imply payload confinement.
+
+- RunSpecimen does not schedule work and does not prove scientific claims.
 - The resolved executable or interpreter is automatically hashed. Native
   libraries, environment variables, and input datasets still need to be placed
   in `source.roots` or otherwise asserted by the workload.

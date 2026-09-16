@@ -38,7 +38,11 @@ class TestDashboard(RunSpecimenTestCase):
         )
         self.assertIn("Safety boundary", page)
         self.assertIn("Approve in a terminal", page)
-        self.assertIn("Command and limits", page)
+        self.assertIn("Contract review", page)
+        self.assertIn("What happened?", page)
+        self.assertIn("Is it safe to continue?", page)
+        self.assertIn("What do I do next?", page)
+        self.assertIn("Evidence trust ladder", page)
         self.assertIn("Guided lifecycle", page)
         self.assertIn("About RunSpecimen", page)
         self.assertIn('id="about"', page)
@@ -52,6 +56,7 @@ class TestDashboard(RunSpecimenTestCase):
         self.assertIn('class="copy-button"', page)
         self.assertIn("Auto-refresh every 5s", page)
         self.assertNotIn("/api/run", page)
+        self.assertNotIn('method="post"', page.lower())
 
     def test_dashboard_lifecycle_states_follow_evidence(self) -> None:
         self.assertEqual(
@@ -164,6 +169,12 @@ class TestDashboardPresentation(RunSpecimenTestCase):
         self.assertIn("Live verification required", view["cards"]["certificate"][1])
         self.assertNotEqual(view["cards"]["certificate"][2], "good")
         self.assertIn("has not performed", view["next_action"])
+        self.assertEqual(view["continue_tone"], "warn")
+        self.assertIn("not yet live-verified", view["continue_label"].lower())
+        ladder = {rung["label"]: rung for rung in view["trust_ladder"]}
+        self.assertEqual(ladder["Receipt issued"]["state"], "issued")
+        self.assertEqual(ladder["Live verification"]["state"], "not-checked")
+        self.assertNotEqual(ladder["Live verification"]["state"], "recorded")
 
     def test_empty_history_is_neutral_and_invalid_history_demands_attention(self) -> None:
         empty = _presentation({
