@@ -1,44 +1,78 @@
-# APP_STORE.md — Mac App Store & notarization compliance
+# APP_STORE.md — Mac App Store submission (primary)
 
-Checklist and review posture for the RunSpecimen macOS app
-(`apps/macos`). Consult current Apple docs before each submission:
+Primary ship target for the RunSpecimen macOS companion (`apps/macos`) is the
+**Mac App Store**. Developer ID notarization remains a secondary / direct-download
+path — see [NOTARIZATION.md](NOTARIZATION.md).
+
+Consult current Apple docs before each submission:
 
 - [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) (esp. **2.4.5**, **2.5.1**, **4.2**, **5.1**)
 - [App Sandbox](https://developer.apple.com/documentation/security/app_sandbox)
 - [Accessing files from the macOS App Sandbox](https://developer.apple.com/documentation/security/accessing-files-from-the-macos-app-sandbox)
-- [Hardened Runtime](https://developer.apple.com/documentation/security/hardened-runtime)
 - [Privacy manifest files](https://developer.apple.com/documentation/bundleresources/privacy_manifest_files)
-- [Notarizing macOS software](https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution)
+- [Uploading apps](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds)
 
-## Recommendation (v1)
+## Recommendation (current)
 
 | Channel | Role | Verdict |
 | --- | --- | --- |
-| **Target B — Developer ID + notarization** | Primary ship for v1 | **Recommended now** |
-| **Target A — Mac App Store** | Stretch / follow-on | Architecture ready; submit after review-risk mitigation |
+| **Target A — Mac App Store** | **Primary** | Package with `./Scripts/build_app.sh --mas` (frozen helper, fail closed) → Archive in Xcode → App Store Connect |
+| **Target B — Developer ID + notarization** | Secondary / direct download | Optional after MAS; same sandbox entitlements preferred |
 
-### Why Developer ID first
+### Why MAS-first now
 
-1. **Guideline 2.4.5(i)** — MAS requires App Sandbox. The enforcement engine is an
-   external Python CLI. Sandbox-compatible access needs
-   `NSOpenPanel` + security-scoped bookmarks +
-   `com.apple.security.files.user-selected.executable`.
-2. **Guideline 2.4.5(viii)** — MAS apps “may not use deprecated or optionally installed
-   technologies (e.g. Java).” A hard dependency on a user-installed PyPI tool is a
-   realistic rejection risk unless the binary is user-selected *and* review notes explain
-   the security boundary clearly — or the engine is embedded.
-3. **Guideline 2.4.5(ii)** — Self-contained single-app bundle; cannot install code into
-   shared locations. We must not `pip install` into system/user site-packages from the app.
-4. **Guideline 4.2** — Minimum functionality. The app is a substantial native control
-   surface (status, evidence, lifecycle gating), not a web clipping — but reviewers may
-   still question “wrapper around CLI” framing. Copy and screenshots must lead with
-   native UX, not Terminal.
+1. **Guideline 2.4.5(viii)** — Store builds embed a **frozen Mach-O** helper under
+   `Contents/Helpers` (PyInstaller onefile). No host Python / optionally installed
+   PyPI CLI is required for Store builds. `--from-src` host-Python launchers are
+   **local/CI only** and are rejected at runtime when `RSDistributionChannel=mas`.
+2. **Guideline 2.4.5(i)** — App Sandbox + justified entitlements
+   (`Entitlements/RunSpecimen.mas.entitlements`).
+3. **Guideline 2.4.5(ii)** — Self-contained `.app`; never `pip install` into shared
+   locations from the app.
+4. **Guideline 4.2** — Native SwiftUI control surface (status, evidence, PTY approve),
+   not a web clipping. Screenshots must lead with native UX.
 
-Store stretch plan: embed a signed `runspecimen` helper (Python runtime + package, or a
-future compiled helper) under `Contents/Helpers` with `com.apple.security.inherit`, then
-re-submit Target A. Discovery + `Contents/Helpers` build wiring are implemented
-([Helpers/README.md](Helpers/README.md), [ADR-002](docs/ADR-002-embedded-helper.md));
-frozen helper packaging still needs a packaging choice + Developer ID signing.
+Honest security copy (required): App Sandbox confines the UI (+ inherit helper).
+It does **not** OS-sandbox the payload under test. See
+[docs/SECURITY_BOUNDARY.md](docs/SECURITY_BOUNDARY.md).
+
+## Operator-only prerequisites (this agent Mac cannot do)
+
+| Prerequisite | Why |
+| --- | --- |
+| Full **Xcode.app** (not only CLT) | Archive / Organizer / Transporter / `altool`/`notarytool` MAS upload |
+| **Apple Developer Program** membership | Identifiers, profiles, App Store Connect |
+| **Apple Distribution** certificate + Mac App Store provisioning profile | Codesign for Store |
+| App Store Connect **API key** (or Apple ID + app-specific password) | Upload / metadata |
+| ASC app record: bundle id `com.darashkevich.runspecimen`, screenshots, privacy URL | Review |
+
+On CLT-only Macs: `build_app.sh --mas` still produces an ad-hoc `.app` for local
+QA; Archive/upload remain blocked until Xcode + certs exist.
+
+## Build / Archive / Upload (when Xcode + certs present)
+
+```bash
+cd apps/macos
+python3 -m pip install --user 'pyinstaller>=6'   # freeze machine only
+./Scripts/verify_app_icon.sh
+./Scripts/test_security_boundary.sh
+./Scripts/build_app.sh --mas
+# Confirm:
+#   Contents/Helpers/runspecimen is Mach-O
+#   no Contents/Helpers/lib/
+#   Info.plist RSDistributionChannel == mas
+#   Resources/AppIcon.icns present
+
+# Then in full Xcode (see Xcode/project.yml + Scripts/open_xcode.sh):
+#   1. Open generated RunSpecimen.xcodeproj (or SPM package in Xcode)
+#  2. Signing & Capabilities: Team + App Sandbox + MAS entitlements
+#   3. Product → Archive
+#   4. Distribute App → App Store Connect → Upload
+#   Or: xcodebuild -scheme RunSpecimen -archivePath build/RunSpecimen.xcarchive archive
+#       xcodebuild -exportArchive -archivePath … -exportOptionsPlist Config/ExportOptions.mas.plist …
+```
+
+Export options template: [Config/ExportOptions.mas.plist](Config/ExportOptions.mas.plist).
 
 ## Entitlements
 
@@ -48,103 +82,118 @@ frozen helper packaging still needs a packaging choice + Developer ID signing.
 | --- | --- |
 | `com.apple.security.app-sandbox` | Required for MAS (2.4.5(i)) |
 | `com.apple.security.files.user-selected.read-write` | Workspace + evidence via Open panel |
-| `com.apple.security.files.user-selected.executable` | Execute user-picked `runspecimen` binary |
-| `com.apple.security.network.client` | Optional docs links (GitHub) opened in browser; no telemetry |
-| `com.apple.security.network.server` | Only if launching loopback `dashboard` from the app |
+| `com.apple.security.files.user-selected.executable` | Execute user-picked CLI override (optional; Store prefers bundled helper) |
+| `com.apple.security.network.client` | Optional docs links (GitHub / privacy) in browser; no telemetry |
+| `com.apple.security.network.server` | Loopback `dashboard` only |
 
-Do **not** enable: camera, mic, contacts, location, Apple Events automation (unless
-Terminal handoff requires it — prefer `open`/`NSWorkspace` with a `.command` file the
-user double-clicks, or in-app PTY).
+Helper child: `Entitlements/RunSpecimen.helper.entitlements` (`app-sandbox` + `inherit`).
 
-### Target B — Developer ID (`Entitlements/RunSpecimen.developer-id.entitlements`)
+Do **not** enable: camera, mic, contacts, location, Apple Events automation,
+`get-task-allow` in release.
 
-- Same sandbox entitlements preferred for parity and safer defaults.
-- Hardened Runtime **required** for notarization — enable at codesign time with
-  `--options runtime` (see `Scripts/sign_and_notarize.sh` and `NOTARIZATION.md`).
-  It is not a boolean key inside the entitlements plist.
-- Avoid Hardened Runtime *exception* entitlements (`allow-unsigned-executable-memory`,
-  `disable-library-validation`, etc.) unless a future embedded interpreter forces them —
-  document any exception in this file before enabling.
-- Never ship `get-task-allow` in release entitlements.
+### Target B — Developer ID
+
+Same sandbox entitlements preferred. Hardened Runtime via
+`codesign --options runtime` (see NOTARIZATION.md). Not the primary path.
 
 ## Privacy
 
-### App Privacy (App Store Connect) / nutrition labels
+### App Privacy (App Store Connect)
 
-Declare **Data Not Collected** while the following remain true:
+Declare **Data Not Collected** while true: no analytics, crash uploaders, ads,
+accounts, or phone-home.
 
-- No analytics, crash reporters that upload PII, advertising, or accounts
-- No phone-home; local-only product invariant
-- Docs links open in the system browser; the app does not scrape or transmit workspace contents
+### In-app privacy policy (5.1.1)
 
-Update this declaration immediately if any SDK or network call is added.
+Settings → Privacy, Help → Privacy Policy, About →
+https://runspecimen.darashkevich.com/privacy/ (+ GitHub `SECURITY.md`).
 
-### In-app privacy policy
-
-MAS requires a privacy policy URL in metadata **and** an in-app accessible link
-(guideline 5.1.1). Ship Settings → Privacy, Help → Privacy Policy, and the About
-panel with https://runspecimen.darashkevich.com/privacy/ (plus GitHub
-`SECURITY.md`).
 ### `PrivacyInfo.xcprivacy`
 
-Ship `Resources/PrivacyInfo.xcprivacy`:
+Shipped under `Resources/PrivacyInfo.xcprivacy`:
 
 - `NSPrivacyTracking` = false
 - `NSPrivacyCollectedDataTypes` = []
-- Required-reason APIs: declare only what the binary actually uses
-  (commonly `UserDefaults` → `CA92.1` for app preferences such as bookmark blobs /
-  last workspace). Audit with each Xcode SDK bump.
+- Required-reason APIs: `UserDefaults` → `CA92.1` (bookmarks / last workspace)
 
-## Review notes (draft for App Review)
+## Identity / version
 
-> RunSpecimen is a local safety/evidence control surface for one human-approved bounded
-> run at a time. The Mac app is a native SwiftUI shell; enforcement remains the
-> user-selected `runspecimen` CLI (Apache-2.0). Approval requires an interactive PTY
-> and the human typing APPROVE — the app does not auto-approve and has no agent API.
-> The optional dashboard is loopback-only and read-only. No telemetry. Workspace and
-> CLI paths are granted via NSOpenPanel security-scoped bookmarks.
+| Key | Value |
+| --- | --- |
+| Bundle ID | `com.darashkevich.runspecimen` |
+| Display name | RunSpecimen |
+| Category | Developer Tools |
+| Short version | `0.1.3` (bump per ship) |
+| Build | `4` (bump per upload) |
+| Min macOS | 14.0 |
+| Icon | `Resources/AppIcon.icns` (+ iconset / 1024 for Connect) |
 
-Demo path for reviewers:
+## Review notes (paste into App Review)
 
-1. Install `runspecimen` via PyPI (or provide a notarized helper build in Notes).
-2. Open the app → Choose CLI → Choose workspace (`examples/showcase`).
+> RunSpecimen is a local safety/evidence control surface for one human-approved
+> bounded run at a time. The Mac app is a sandboxed SwiftUI shell. Enforcement is
+> the **bundled** `Contents/Helpers/runspecimen` CLI (Apache-2.0, frozen Mach-O —
+> no host Python). Approval requires an interactive PTY and the human typing
+> APPROVE — the app never auto-approves and has no agent API. App Sandbox
+> confines the UI (+ inherit helper); it does **not** claim to OS-sandbox the
+> payload under test. Certificates are hash-chained receipts, not asymmetric
+> digital signatures. The optional dashboard is loopback-only and read-only.
+> No telemetry. Workspace paths use NSOpenPanel security-scoped bookmarks.
+
+### Demo path for reviewers
+
+1. Launch RunSpecimen (bundled helper resolves automatically — Source = “Bundled Helpers”).
+2. Choose workspace → `examples/showcase` (or attach a sample workspace in Review notes).
 3. Refresh status / inspect certificate (read-only).
-4. Show Approve sheet prompts for human `APPROVE` on a PTY (do not automate).
+4. Open Approve sheet — type `APPROVE` yourself on the PTY (do not automate).
+5. Quit — confirm dashboard child is gone.
+
+Provide a sample workspace zip in Review notes if the showcase tree is not in the build.
+
+## Screenshots / metadata checklist
+
+- [ ] 1280×800 (or current ASC sizes) showing Main Console with brand + status (not Terminal)
+- [ ] Approve sheet visible (human PTY, no auto-fill)
+- [ ] Settings / Privacy link visible
+- [ ] App icon: opaque `#070A0F` field, **not** pre-rounded (`AppIcon-1024.png`)
+- [ ] Subtitle / description: local evidence control — not “OS sandbox for malware”
+- [ ] Support URL: https://runspecimen.darashkevich.com/support/
+- [ ] Privacy URL: https://runspecimen.darashkevich.com/privacy/
+- [ ] Export compliance: HTTPS docs links only → standard answers
 
 ## Rejection risks & mitigations
 
 | Risk | Guideline | Mitigation |
 | --- | --- | --- |
-| “Requires optionally installed Python/CLI” | 2.4.5(viii) | User-selected executable + install guidance; long-term embed helper |
-| “Thin wrapper / minimal functionality” | 4.2 | Lead with native status/evidence UX; not a WKWebView of the dashboard |
-| Executing arbitrary user binaries | Sandbox / safety | Restrict to basename `runspecimen` + `--version` probe; show hash/path |
-| Misleading security claims | 2.3 / honesty | Copy states: not an OS sandbox; receipts ≠ digital signatures |
-| Background dashboard after quit | 2.4.5(iii) | Kill dashboard child on terminate; never launch agents at login |
+| Optionally installed Python/CLI | 2.4.5(viii) | Frozen helper required for `--mas`; fail closed |
+| Thin wrapper | 4.2 | Lead with native status/evidence/Approve UX |
+| Arbitrary executable | Sandbox | Basename `runspecimen` + version gate; Store prefers bundled helper |
+| Misleading security claims | 2.3 | SECURITY_BOUNDARY.md; honest copy |
+| Background dashboard after quit | 2.4.5(iii) | Kill dashboard child on terminate |
 | Private APIs | 2.5.1 | Public AppKit/SwiftUI/Foundation/Darwin PTY only |
-| Telemetry contradiction | 5.1 | Keep Data Not Collected honest; no analytics SDKs |
-| Installing tools into shared paths | 2.4.5(ii) | Never `pip install` from the app; link to docs only |
+| Telemetry contradiction | 5.1 | Data Not Collected; no analytics SDKs |
+| Installing into shared paths | 2.4.5(ii) | Never `pip install` from the app |
 
-## Packaging checklist
+## Packaging checklist (MAS)
 
-- [ ] Built with Xcode (MAS packaging requirement 2.4.5(ii))
-- [ ] App Sandbox enabled (Target A)
-- [ ] Hardened Runtime enabled via `codesign --options runtime` (Target B)
-- [ ] `PrivacyInfo.xcprivacy` present and audited
-- [ ] App Privacy answers = Data Not Collected (while true)
+- [ ] `./Scripts/build_app.sh --mas` succeeds (Mach-O helper, no `lib/`)
+- [ ] App Sandbox entitlements (`RunSpecimen.mas.entitlements`)
+- [ ] `PrivacyInfo.xcprivacy` present
+- [ ] `AppIcon.icns` in `Contents/Resources`
+- [ ] `RSDistributionChannel=mas`
+- [ ] No `get-task-allow`
+- [ ] Built/Archived with **full Xcode**
+- [ ] Apple Distribution signing + upload to App Store Connect
 - [ ] Privacy policy URL in Connect + in-app
-- [ ] No `get-task-allow` in release
-- [ ] Notarize (`notarytool`) + staple for direct download — see **[NOTARIZATION.md](NOTARIZATION.md)**
-- [ ] Screenshots show native UI, honest non-goals
-- [ ] Export compliance / encryption: HTTPS docs links only → standard answers
-- [ ] Dashboard child terminated on app quit (implemented in `CLIService.stopDashboard`)
+- [ ] Screenshots + reviewer demo notes
+- [ ] Codex QA + Yahor release decision **before** Submit for Review
 
-## Remaining blockers (engineering)
+## Remaining Yahor-only blockers
 
-- Developer ID Application certificate + Apple Team ID (operator keychain — not in-repo).
-- Notarization credentials (App Store Connect API key) — operator-held secrets in
-  `Config/signing.env` (gitignored). Run `./Scripts/check_signing_identity.sh`.
-- Full Xcode recommended for Archive / Organizer / MAS upload (CLT builds via `build_app.sh`).
-- Optional: embed signed engine helper for clean Target A — discovery +
-  `Contents/Helpers` staging wired (`Helpers/`, `Scripts/stage_helper.sh`, ADR-002);
-  frozen binary + notarized helper still require packaging work and Developer ID certs.
+1. Install full Xcode.app; select it with `xcode-select -s /Applications/Xcode.app`.
+2. Create/download Apple Distribution cert + Mac App Store profile for
+   `com.darashkevich.runspecimen`.
+3. Create ASC app + API key; fill `Config/signing.env` locally (gitignored).
+4. Archive → Upload → metadata → Submit for Review (only after Codex QA sign-off).
 
+Do **not** merge/publish/submit from agent automation without Yahor’s release decision.

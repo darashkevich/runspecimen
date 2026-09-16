@@ -1,0 +1,55 @@
+# XcodeGen project for Mac App Store Archive
+#
+# Generate (on a Mac with Xcode + xcodegen):
+#   brew install xcodegen
+#   cd apps/macos && xcodegen generate
+#   open RunSpecimen.xcodeproj
+#
+# Without xcodegen: open Package.swift in Xcode and attach Resources manually,
+# or use Scripts/build_app.sh --mas for an ad-hoc .app then wrap via Organizer.
+name: RunSpecimen
+options:
+  bundleIdPrefix: com.darashkevich
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen
+    MARKETING_VERSION: "0.1.3"
+    CURRENT_PROJECT_VERSION: "4"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    SWIFT_VERSION: "5.9"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: YES
+    COMBINE_HIDPI_IMAGES: YES
+targets:
+  RunSpecimen:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/RunSpecimenApp
+      - path: Sources/RunSpecimenCore
+    resources:
+      - path: Resources/PrivacyInfo.xcprivacy
+      - path: Resources/AppIcon.icns
+      - path: Resources/AppIcon-1024.png
+      - path: Resources/AppIcon.iconset
+        type: folder
+    info:
+      path: Resources/Info.plist
+      properties:
+        CFBundleIconFile: AppIcon
+        CFBundleIconName: AppIcon
+        RSDistributionChannel: mas
+        LSApplicationCategoryType: public.app-category.developer-tools
+    entitlements:
+      path: Entitlements/RunSpecimen.mas.entitlements
+    settings:
+      base:
+        INFOPLIST_FILE: Resources/Info.plist
+        PRODUCT_NAME: RunSpecimen
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        CODE_SIGN_ENTITLEMENTS: Entitlements/RunSpecimen.mas.entitlements
+    scheme:
+      testTargets: []

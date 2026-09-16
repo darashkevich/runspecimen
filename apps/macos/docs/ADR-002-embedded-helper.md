@@ -1,47 +1,39 @@
-# ADR-002 — Optional embedded engine helper (stretch)
+# ADR-002 — Embedded engine helper (MAS-first)
 
-**Status:** Accepted — package-tree staging implemented; optional PyInstaller freeze
-wired (`RS_FREEZE_HELPER=1` / `build_app.sh --frozen-helper`); shipping freeze still
-needs Developer ID + NOTICE audit  
-**Date:** 2026-09-15  
+**Status:** Accepted — MAS path requires frozen Mach-O helper (`build_app.sh --mas`,
+fail closed); `--from-src` host-Python remains local/CI only  
+**Date:** 2026-09-16  
 **Related:** [ADR-001](ADR-001-architecture.md), [Helpers/README.md](../Helpers/README.md),
-[APP_STORE.md](../APP_STORE.md), [RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md)
+[APP_STORE.md](../APP_STORE.md), [SECURITY_BOUNDARY.md](SECURITY_BOUNDARY.md),
+[RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md)
 
 ## Context
 
-Target A (Mac App Store) risks rejection when the app depends on an optionally
-installed PyPI/`runspecimen` CLI (guideline 2.4.5(viii)). Embedding a signed
-helper under `Contents/Helpers` is the long-term mitigation.
+Mac App Store guideline **2.4.5(viii)** risks rejection when the app depends on
+optionally installed Python/PyPI tools. Embedding a self-contained helper under
+`Contents/Helpers` is required for the primary Store submission path.
 
 ## Decision
 
 - Keep the SwiftUI app as a thin shell; do not reimplement leases/approval/hash
   chains in Swift.
-- Ship discovery order now: Open-panel bookmark → bundled Helpers → PATH probe.
-- Prefer `Scripts/stage_helper.sh --from-src`: copy the Apache-2.0 stdlib-only
-  `src/runspecimen` tree plus a host-Python launcher. Zero third-party Python
-  deps (`pyproject.toml` `dependencies = []`) keeps redistribution legally clear
-  without freezing CPython in this iteration.
-- `build_app.sh` materializes `Contents/Helpers/` (launcher + `lib/` + NOTICE when
-  staged; otherwise README placeholder).
-- Helper entitlements: `Entitlements/RunSpecimen.helper.entitlements` (inherit).
+- **Primary Store packaging:** `./Scripts/build_app.sh --mas`
+  - `Entitlements/RunSpecimen.mas.entitlements`
+  - `RSDistributionChannel=mas` in Info.plist
+  - PyInstaller onefile freeze into `Contents/Helpers/runspecimen` (**required**)
+  - Fail closed if freeze fails or helper is a host-Python shell launcher
+  - No `Contents/Helpers/lib/` package tree in MAS builds
+- **Local/CI convenience:** `stage_helper.sh --from-src` (host Python 3.9+) remains
+  supported for Prefer Bundled Helper smoke without PyInstaller.
+- Discovery: bookmark → bundled Helpers → PATH (PATH disabled on MAS channel).
 - Approval remains PTY-gated; no auto-`APPROVE`; no telemetry.
-- PyInstaller (or equivalent) freeze remains optional for MAS self-containment.
-  Gate: `RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh` or
-  `./Scripts/build_app.sh --frozen-helper` (falls back to `--from-src` when
-  PyInstaller is absent). Shipping still needs Developer ID + CPython NOTICE.
-- `Scripts/freeze_helper.sh` exits 0 when PyInstaller is missing so CI stays green.
+- App Sandbox confines UI (+ inherit helper). Payload under test is **not**
+  claimed to be OS-sandboxed by the UI sandbox alone.
 
 ## Consequences
 
-- `--from-src` helpers require Python 3.9+ on PATH at runtime (honest limitation
-  until a freeze lands).
-- Larger notarized artifact once a freeze lands; CPython NOTICE attribution still
-  required for that path.
-- `Helpers/payload/` stays gitignored for local experiments.
-- App Settings / Engine menu surfaces CLI **Source** and “Prefer Bundled Helper”
-  so operators can confirm bundled vs bookmark vs PATH.
-- PATH probes are session-only (not auto-bookmarked) so Prefer Bundled / Clear
-  Bookmark cannot race with a silently re-saved Open-panel override.
-- Exact packaging steps live in `Scripts/stage_helper.sh`, `Scripts/freeze_helper.sh`,
-  `Scripts/build_app.sh`, Helpers/README.md, and RELEASE_CHECKLIST.md.
+- Store builds need PyInstaller on the packaging machine and Apple Distribution
+  + full Xcode for Archive/upload (operator-only on cert-less agent Macs).
+- Frozen artifacts need CPython / PyInstaller NOTICE attribution.
+- `Helpers/payload/` stays gitignored.
+- Runtime MAS builds reject host-Python launchers even if somehow staged.

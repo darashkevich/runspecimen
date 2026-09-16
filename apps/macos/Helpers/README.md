@@ -1,114 +1,80 @@
-# Embedded helper (optional — Mac App Store stretch)
+# Embedded helper — Mac App Store primary path
 
-Stub + build wiring for shipping a signed `runspecimen` engine inside the app
-bundle so Target A (Mac App Store) does not depend on a user-installed PyPI tool
-(guideline **2.4.5(viii)** risk).
+Ship a **self-contained** `runspecimen` engine inside
+`RunSpecimen.app/Contents/Helpers/` so Mac App Store builds do not depend on a
+user-installed PyPI/Python tool (guideline **2.4.5(viii)**).
 
-**Status (2026-09-15):** discovery order wired in `CLIService` / `AppModel`;
-`Scripts/build_app.sh` always creates `Contents/Helpers/`; staging via
-`Scripts/stage_helper.sh --from-src` (Apache-2.0 stdlib-only package tree +
-host-Python launcher). **No frozen CPython/PyInstaller binary ships in-repo** —
-full self-containment + Developer ID signing remain blocked without Apple certs.
+**Status:** MAS packaging is **`./Scripts/build_app.sh --mas`** — PyInstaller
+freeze into a Mach-O helper, **fail closed** if freeze is impossible. Host-Python
+`--from-src` remains for local/CI Prefer Bundled Helper tests only.
 
 ## Goals
 
 | Goal | Constraint |
 | --- | --- |
-| Self-contained MAS submission | Helper lives under `RunSpecimen.app/Contents/Helpers/` |
-| Same enforcement boundary | Helper is the real CLI (or a thin launcher to it), not a Swift reimplementation |
+| Self-contained MAS submission | Frozen Mach-O under `Contents/Helpers/runspecimen` |
+| Same enforcement boundary | Helper is the real CLI, not a Swift reimplementation |
 | Preserve TTY approval | Approve still uses a real PTY; **never** auto-type `APPROVE` |
 | No telemetry | Helper inherits local-only invariant |
-| Honest crypto copy | Receipts remain hash-chained / HMAC — not asymmetric “digital signatures” |
+| Honest crypto / sandbox copy | Receipts ≠ digital signatures; UI sandbox ≠ payload OS sandbox |
 
 ## Layout
 
 ```
 RunSpecimen.app/Contents/
   MacOS/RunSpecimen          # SwiftUI shell
+  Resources/AppIcon.icns
   Helpers/
-    runspecimen              # launcher (or frozen binary) when staged
-    lib/runspecimen/         # package tree when staged via --from-src
-    NOTICE.txt               # Apache-2.0 / packaging notes
-    README.md                # placeholder when no helper staged
-  Resources/…
+    runspecimen              # MAS: frozen Mach-O; local: launcher or freeze
+    lib/runspecimen/         # ONLY for --from-src (forbidden in --mas)
+    NOTICE.txt
+  Resources/PrivacyInfo.xcprivacy
 ```
 
-Entitlement posture:
+Entitlements:
 
-- App keeps App Sandbox + `user-selected.*` for workspaces.
-- Helper uses `Entitlements/RunSpecimen.helper.entitlements`
-  (`com.apple.security.inherit`) when spawned as a child.
-- Avoid Hardened Runtime exceptions unless the embedded interpreter requires
-  them — any exception must be listed in APP_STORE.md before enablement.
+- App: `Entitlements/RunSpecimen.mas.entitlements` (Store) or developer-id twin
+- Helper: `Entitlements/RunSpecimen.helper.entitlements` (`inherit`)
 
-## Discovery order (implemented)
+## Discovery order
 
-`CLIService` / bootstrap resolve in this order:
+1. Security-scoped bookmark from Open panel (user override).
+2. Bundled `Contents/Helpers/runspecimen` if executable (size ≥ 64 bytes).
+3. PATH / PyPI locations — **Developer ID / local only** (disabled when
+   `RSDistributionChannel=mas`).
 
-1. Security-scoped bookmark from Open panel (always valid; user override).
-2. Bundled `Contents/Helpers/runspecimen` if present **and executable** (size ≥ 64 bytes).
-3. PATH / PyPI common locations (Developer ID / local debug only).
+MAS runtime **rejects** shell-script host-Python launchers and fails closed if
+the frozen helper is missing.
 
-MAS builds should prefer (1) or (2) and not rely on (3). Settings shows the
-active **Source** label. Use **Engine → Prefer Bundled Helper** (or Settings)
-to clear the bookmark and force (2) when testing a staged helper.
+## Packaging modes
 
-## License / packaging decision
-
-| Option | License story | Status |
-| --- | --- | --- |
-| `--from-src` package tree + host Python 3.9+ launcher | Redistributes only Apache-2.0 project code (`dependencies = []`) | **Implemented** — preferred for local / Target B experiments |
-| `--from PATH` copy of installed CLI | Same code license; shebang may be machine-local | Dry-run only |
-| PyInstaller onefile (optional) | Bootloader Apache-2.0; must attribute bundled CPython | `Scripts/freeze_helper.sh` behind `RS_FREEZE_HELPER=1` — **local unsigned freeze verified** on this Mac; skips cleanly if PyInstaller absent. Shipping still needs Developer ID + NOTICE audit |
-
-## What this stub includes now
-
-- `Helpers/README.md` (this file)
-- `Helpers/.gitkeep` so the directory is tracked
-- `Helpers/payload/` gitignored — place local build artifacts here during experiments
-- `Scripts/stage_helper.sh` — `--from-src`, `--from`, `--check`, `--verify`
-- `Scripts/freeze_helper.sh` — optional PyInstaller onefile (`RS_FREEZE_HELPER=1`); exit 0 when absent
-- `Scripts/build_app.sh` — copies launcher + `lib/` + NOTICE → `Contents/Helpers/`
-- `Entitlements/RunSpecimen.helper.entitlements` — inherit sandbox for child helper
-- App discovery + Settings / Engine menu source controls (ADR-002)
-- Prefer Bundled Helper clears the CLI bookmark without re-persisting PATH probes
-
-## Exact next packaging steps
+| Mode | Command | Host Python? | MAS? |
+| --- | --- | --- | --- |
+| Frozen (required for Store) | `./Scripts/build_app.sh --mas` | No | **Yes** |
+| Frozen (optional local) | `./Scripts/build_app.sh --frozen-helper` | No if freeze works | Prep |
+| Package tree | `./Scripts/build_app.sh --from-src` | **Yes** | No |
 
 ```bash
+# Mac App Store packaging (fail closed without PyInstaller)
+python3 -m pip install --user 'pyinstaller>=6'
+./Scripts/build_app.sh --mas
+build/RunSpecimen.app/Contents/Helpers/runspecimen --version
+test ! -d build/RunSpecimen.app/Contents/Helpers/lib
+
+# Local Prefer Bundled Helper (CI default)
 ./Scripts/stage_helper.sh --from-src --verify
 ./Scripts/build_app.sh
-# Confirm: build/RunSpecimen.app/Contents/Helpers/runspecimen --version
-# In-app: Engine → Prefer Bundled Helper → Source = “Bundled Helpers”
 ```
 
-Or one-shot: `./Scripts/build_app.sh --from-src`
+## License notes
 
-### Optional freeze end-to-end (`RS_FREEZE_HELPER=1`)
+- RunSpecimen package: Apache-2.0, `dependencies = []`.
+- PyInstaller bootloader: Apache-2.0; bundled CPython needs NOTICE attribution
+  (written into `Helpers/payload/NOTICE.txt` / `Contents/Helpers/NOTICE.txt`).
+- Never commit `Helpers/payload/`.
 
-Not CI-default. Local experiment / MAS stretch prep. Still needs Developer ID to ship.
+## Non-goals
 
-```bash
-python3 -m pip install --user 'pyinstaller>=6'   # local only
-RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh --verify
-./Scripts/build_app.sh
-build/RunSpecimen.app/Contents/Helpers/runspecimen --version
-# Expect Mach-O helper; no Contents/Helpers/lib/ tree
-```
-
-One-shot with automatic fallback when PyInstaller is missing:
-
-```bash
-./Scripts/build_app.sh --frozen-helper
-# Logs “Using frozen helper…” or “falling back to stage_helper.sh --from-src”
-```
-
-Without PyInstaller or without `RS_FREEZE_HELPER=1` / `--frozen-helper`, freeze is skipped
-(exit 0) so CI stays green. Operator checklist: [RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md).
-Codesign the frozen Mach-O with inherit entitlements, then notarize (needs Developer ID).
-## Non-goals for this stub
-
-- Do not weaken interactive approval.
-- Do not add analytics, crash uploaders, or network “phone home.”
-- Do not `pip install` into shared site-packages from the app (2.4.5(ii)).
-- Do not claim the helper is an OS sandbox or that receipts are digital signatures.
+- Do not weaken interactive approval or add telemetry.
+- Do not `pip install` into shared site-packages from the app.
+- Do not claim the helper or UI sandbox is an OS sandbox for arbitrary payloads.
