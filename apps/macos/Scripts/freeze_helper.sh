@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Optional PyInstaller freeze of the RunSpecimen CLI into Helpers/payload/.
+# PyInstaller freeze of the RunSpecimen CLI into Helpers/payload/.
 #
-# Default: no-op / skip when PyInstaller is missing (CI-safe).
+# Default: no-op / skip when PyInstaller is missing (CI-safe) unless --require / RS_MAS_BUILD=1.
 # Enable explicitly:
 #   RS_FREEZE_HELPER=1 ./Scripts/freeze_helper.sh
 #   ./Scripts/freeze_helper.sh --enable
+#   ./Scripts/freeze_helper.sh --enable --require   # MAS: fail if freeze impossible
+#   ./Scripts/build_app.sh --mas                    # primary Store path (calls --require)
 #
-# Without Developer ID signing the frozen binary is local-smoke only.
-# Prefer ./Scripts/stage_helper.sh --from-src for daily Prefer Bundled Helper tests.
+# MAS Store builds MUST use a frozen Mach-O (no host Python). Local/CI may use --from-src.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,23 +21,27 @@ DIST="$SPEC_DIR/dist"
 
 ENABLE="${RS_FREEZE_HELPER:-0}"
 VERIFY=0
+REQUIRE=0
+if [[ "${RS_MAS_BUILD:-0}" == "1" ]]; then
+  REQUIRE=1
+  ENABLE=1
+fi
 
 usage() {
   cat <<'EOF'
-Usage: ./Scripts/freeze_helper.sh [--enable] [--verify] [-h]
+Usage: ./Scripts/freeze_helper.sh [--enable] [--verify] [--require] [-h]
 
   --enable   Attempt a PyInstaller onefile freeze (or set RS_FREEZE_HELPER=1).
   --verify   After freeze, run payload/runspecimen --version.
+  --require  Fail (exit 1) if PyInstaller is missing or freeze fails (MAS path).
+             Also set by RS_MAS_BUILD=1.
   -h         Show help.
 
 Without --enable / RS_FREEZE_HELPER=1 this script exits 0 after printing blockers
-so CI and default smoke stay green when PyInstaller is absent.
+so CI and default smoke stay green when PyInstaller is absent — unless --require.
 
-Blockers (current):
-  - PyInstaller not bundled as a repo dependency (optional local install only)
-  - Frozen Mach-O still needs Developer ID + helper inherit entitlements to ship
-  - CPython NOTICE attribution required before redistributing a freeze
-  - --from-src package tree remains the supported Prefer Bundled Helper path
+MAS Store builds (./Scripts/build_app.sh --mas) always --require a Mach-O freeze.
+Local Prefer Bundled Helper may still use --from-src (host Python).
 EOF
 }
 
@@ -44,6 +49,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --enable) ENABLE=1; shift ;;
     --verify) VERIFY=1; shift ;;
+    --require) REQUIRE=1; ENABLE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -79,11 +85,20 @@ EOF
 }
 
 if [[ "$ENABLE" != "1" ]]; then
+  if [[ "$REQUIRE" == "1" ]]; then
+    echo "freeze_helper: --require needs --enable / RS_FREEZE_HELPER=1 / RS_MAS_BUILD=1" >&2
+    exit 1
+  fi
   print_blockers
   exit 0
 fi
 
 if ! PYI="$(find_pyinstaller)"; then
+  if [[ "$REQUIRE" == "1" ]]; then
+    echo "freeze_helper: PyInstaller required for MAS / --require but not installed." >&2
+    print_blockers
+    exit 1
+  fi
   echo "freeze_helper: PyInstaller not installed; skipping (exit 0)." >&2
   print_blockers
   exit 0
@@ -139,16 +154,30 @@ Frozen on: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 Host: $(uname -srm)
 Tool: $PYI
 
-This binary embeds a CPython runtime via PyInstaller. Before redistribution:
+This binary embeds a CPython runtime via PyInstaller. Before Mac App Store /
+redistribution:
   - Attribute PyInstaller bootloader (Apache-2.0) and bundled CPython licenses
-  - Codesign with Entitlements/RunSpecimen.helper.entitlements (inherit)
-  - Notarize with Developer ID (see NOTARIZATION.md)
+    (ship Helpers/NOTICE.txt inside the .app; keep CPython license texts with the build)
+  - Codesign helper with Entitlements/RunSpecimen.helper.entitlements (inherit)
+  - Sign the app with Apple Distribution (MAS) or Developer ID (direct)
+  - App Sandbox confines the UI + inherit helper — it does NOT OS-sandbox the payload
+  - Never auto-type APPROVE; approval stays on a real human PTY
 
-Local Prefer Bundled Helper smoke does not require notarization.
+Local Prefer Bundled Helper smoke does not require Store signing.
 EOF
 
 echo "Staged frozen helper: $DEST"
 ls -la "$DEST"
+if ! file "$DEST" | grep -q 'Mach-O'; then
+  echo "freeze_helper: expected Mach-O at $DEST" >&2
+  file "$DEST" >&2 || true
+  exit 1
+fi
+# Ensure no leftover package-tree lib/ for MAS self-containment.
+if [[ -d "$PAYLOAD/lib" ]]; then
+  echo "freeze_helper: refusing mixed payload (lib/ present after freeze)" >&2
+  exit 1
+fi
 
 if [[ "$VERIFY" -eq 1 ]]; then
   echo "==> $DEST --version"

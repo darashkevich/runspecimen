@@ -61,7 +61,9 @@ final class AppModel: ObservableObject {
         // Discovery order (ADR-002):
         // 1) Security-scoped bookmark (sandbox / MAS / user override)
         // 2) Bundled Contents/Helpers/runspecimen when staged
-        // 3) PATH / common PyPI install locations (Developer ID / local convenience)
+        // 3) PATH / common PyPI install locations (Developer ID / local only — never MAS)
+
+        let channel = DistributionChannel.current
 
         if let cliURL = bookmarks.loadCLI() {
             let fm = FileManager.default
@@ -74,16 +76,21 @@ final class AppModel: ObservableObject {
         }
 
         if cliIdentity == nil, let bundled = cli.resolveBundledHelper() {
-            pathProbeNote = "Using bundled engine at \(bundled.path)."
-            await cli.setCLI(bundled, source: .bundledHelper)
-            await refreshCLIIdentity()
+            if channel.requiresBundledHelper, CLIService.isShellScript(at: bundled) {
+                // MAS Store builds must ship a frozen Mach-O helper — host Python is not allowed.
+                cliSetupIssue = "Mac App Store build requires a self-contained frozen helper under Contents/Helpers (Mach-O). Host-Python package-tree launchers are not permitted. Rebuild with ./Scripts/build_app.sh --mas."
+            } else {
+                pathProbeNote = "Using bundled engine at \(bundled.path)."
+                await cli.setCLI(bundled, source: .bundledHelper)
+                await refreshCLIIdentity()
+            }
         }
 
-        if cliIdentity == nil {
+        if cliIdentity == nil, channel.allowsPATHProbe {
             if let probed = cli.resolveFromPATH() {
                 // Session-only — never persist PATH probes as bookmarks. Auto-saving
                 // fought “Prefer Bundled Helper” / “Clear CLI Bookmark” (next launch
-                // looked like an Open-panel override). MAS still needs Open panel.
+                // looked like an Open-panel override).
                 pathProbeNote = "Found runspecimen at \(probed.path). For App Store sandbox, select it via Open panel so a security-scoped bookmark is stored."
                 await cli.setCLI(probed, source: .pathProbe)
                 await refreshCLIIdentity()
@@ -91,7 +98,11 @@ final class AppModel: ObservableObject {
         }
 
         if cliIdentity == nil && cliSetupIssue == nil {
-            cliSetupIssue = "runspecimen CLI not found. Install 0.2.0rc9+ then select the binary:\npython3 -m pip install 'runspecimen==0.2.0rc9'\n\nOptional: stage a helper into Contents/Helpers (see Helpers/README.md)."
+            if channel.requiresBundledHelper {
+                cliSetupIssue = "Mac App Store build: bundled runspecimen helper missing or not executable under Contents/Helpers. This build fails closed — no host Python / PATH fallback."
+            } else {
+                cliSetupIssue = "runspecimen CLI not found. Install 0.2.0rc9+ then select the binary:\npython3 -m pip install 'runspecimen==0.2.0rc9'\n\nOr stage a helper into Contents/Helpers (see Helpers/README.md)."
+            }
         }
 
         if let ws = bookmarks.loadWorkspace() {
@@ -157,7 +168,15 @@ final class AppModel: ObservableObject {
         cliSetupIssue = nil
         pathProbeNote = nil
         guard let bundled = cli.resolveBundledHelper() else {
-            cliSetupIssue = "No executable under Contents/Helpers/runspecimen. Stage with Scripts/stage_helper.sh --from-src then rebuild."
+            if DistributionChannel.current.requiresBundledHelper {
+                cliSetupIssue = "No executable under Contents/Helpers/runspecimen. MAS builds fail closed — rebuild with ./Scripts/build_app.sh --mas (frozen helper required)."
+            } else {
+                cliSetupIssue = "No executable under Contents/Helpers/runspecimen. Stage with Scripts/stage_helper.sh --from-src or ./Scripts/build_app.sh --frozen-helper, then rebuild."
+            }
+            return
+        }
+        if DistributionChannel.current.requiresBundledHelper, CLIService.isShellScript(at: bundled) {
+            cliSetupIssue = "Bundled helper is a host-Python launcher. Mac App Store builds require a frozen Mach-O helper (./Scripts/build_app.sh --mas)."
             return
         }
         pathProbeNote = "Using bundled engine at \(bundled.path)."

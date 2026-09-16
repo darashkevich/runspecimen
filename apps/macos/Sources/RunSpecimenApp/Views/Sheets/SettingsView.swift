@@ -52,7 +52,7 @@ struct SettingsView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(RSTheme.amber)
                 }
-                Text("Discovery order: Open-panel bookmark → Contents/Helpers/runspecimen (if staged) → PATH/PyPI probe. MAS builds should use bookmark or bundled helper. See Helpers/README.md and ADR-002.")
+                Text("Discovery order: Open-panel bookmark → Contents/Helpers/runspecimen → PATH/PyPI (PATH disabled for Mac App Store builds). Store builds require a frozen Mach-O helper (./Scripts/build_app.sh --mas). See Helpers/README.md, SECURITY_BOUNDARY.md, and ADR-002.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }

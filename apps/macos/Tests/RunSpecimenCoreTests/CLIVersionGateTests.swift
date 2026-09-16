@@ -56,4 +56,23 @@ final class CLIVersionGateTests: XCTestCase {
         XCTAssertFalse(CLIResolutionSource.bundledHelper.label.isEmpty)
         XCTAssertEqual(CLIResolutionSource.bookmark.label, "Saved bookmark")
     }
+
+    func testDistributionChannelParse() {
+        XCTAssertEqual(DistributionChannel.parse("mas"), .mas)
+        XCTAssertEqual(DistributionChannel.parse("app-store"), .mas)
+        XCTAssertEqual(DistributionChannel.parse("developer-id"), .developerID)
+        XCTAssertEqual(DistributionChannel.parse(nil), .local)
+        XCTAssertEqual(DistributionChannel.parse("local"), .local)
+        XCTAssertTrue(DistributionChannel.mas.requiresBundledHelper)
+        XCTAssertFalse(DistributionChannel.mas.allowsPATHProbe)
+        XCTAssertTrue(DistributionChannel.local.allowsPATHProbe)
+    }
+
+    func testSecurityBoundaryInvariants() {
+        XCTAssertTrue(SecurityBoundary.assertsInvariants())
+        XCTAssertTrue(SecurityBoundary.neverAutoApprove)
+        XCTAssertTrue(SecurityBoundary.notConfinedByAppUISandboxAlone.contains(where: {
+            $0.localizedCaseInsensitiveContains("payload")
+        }))
+    }
 }

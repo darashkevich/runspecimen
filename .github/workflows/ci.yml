@@ -38,8 +38,13 @@ jobs:
 
   macos-app:
     runs-on: macos-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - name: macOS companion smoke (swift test + build, no GUI)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyInstaller (MAS freeze path)
+        run: python -m pip install --upgrade pip 'pyinstaller>=6'
+      - name: macOS companion smoke (swift test + build + MAS freeze, no GUI)
         run: bash apps/macos/Scripts/smoke_macos.sh

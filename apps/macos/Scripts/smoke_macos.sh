@@ -39,6 +39,12 @@ print("CLIVersionGate Python parity OK")
 PY
 fi
 
+echo "==> App icon assets"
+./Scripts/verify_app_icon.sh
+
+echo "==> security boundary + PTY never-auto-APPROVE"
+./Scripts/test_security_boundary.sh
+
 echo "==> stage_helper (docs / layout)"
 ./Scripts/stage_helper.sh >/tmp/rs-stage-helper.out
 grep -q "Exact next packaging steps" /tmp/rs-stage-helper.out
@@ -53,12 +59,13 @@ echo "==> freeze_helper default skip (CI-safe without PyInstaller)"
 grep -q "skipped (optional)" /tmp/rs-freeze.out
 grep -q "stage_helper.sh --from-src" /tmp/rs-freeze.out
 
-echo "==> build_app.sh --help documents --frozen-helper"
+echo "==> build_app.sh --help documents --frozen-helper and --mas"
 ./Scripts/build_app.sh -h >/tmp/rs-build-help.out
 grep -q -- "--frozen-helper" /tmp/rs-build-help.out
 grep -q -- "--from-src" /tmp/rs-build-help.out
+grep -q -- "--mas" /tmp/rs-build-help.out
 test -f "$ROOT/RELEASE_CHECKLIST.md"
-grep -q "RS_FREEZE_HELPER=1" "$ROOT/RELEASE_CHECKLIST.md"
+grep -qi "Mac App Store" "$ROOT/RELEASE_CHECKLIST.md"
 
 echo "==> build_app.sh (with staged helper)"
 ./Scripts/build_app.sh
@@ -156,9 +163,12 @@ grep -q 'isShellScript' \
 grep -q 'Copied' \
   "$ROOT/Sources/RunSpecimenApp/Views/Screens/EvidenceInspectorView.swift"
 
-echo "==> Info.plist CFBundleIdentifier + About version keys"
+echo "==> Info.plist CFBundleIdentifier + About version keys + icon + channel"
 /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist" | grep -q .
 /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist" | grep -q .
+/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$APP/Contents/Info.plist" | grep -q AppIcon
+test -f "$APP/Contents/Resources/AppIcon.icns"
+/usr/libexec/PlistBuddy -c 'Print :RSDistributionChannel' "$APP/Contents/Info.plist" | grep -Eq 'local|developer-id|mas'
 test -f "$ROOT/Sources/RunSpecimenApp/Views/Sheets/AboutView.swift"
 grep -q 'runspecimen.darashkevich.com/privacy' \
   "$ROOT/Sources/RunSpecimenApp/Views/Sheets/AboutView.swift" \
@@ -224,6 +234,33 @@ if grep -q "Using frozen helper payload" /tmp/rs-frozen-build.out; then
 else
   test -d "$APP/Contents/Helpers/lib/runspecimen"
   echo "OK: --frozen-helper fell back to --from-src package tree"
+fi
+
+echo "==> MAS packaging path (frozen helper required; fail closed)"
+if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/null 2>&1; then
+  ./Scripts/build_app.sh --mas >/tmp/rs-mas-build.out 2>&1 || {
+    cat /tmp/rs-mas-build.out >&2
+    exit 1
+  }
+  cat /tmp/rs-mas-build.out
+  grep -q "Using frozen helper payload for MAS" /tmp/rs-mas-build.out
+  test -x "$APP/Contents/Helpers/runspecimen"
+  test ! -d "$APP/Contents/Helpers/lib"
+  file "$APP/Contents/Helpers/runspecimen" | grep -q 'Mach-O'
+  /usr/libexec/PlistBuddy -c 'Print :RSDistributionChannel' "$APP/Contents/Info.plist" | grep -qx mas
+  MAS_VER="$("$APP/Contents/Helpers/runspecimen" --version 2>&1)"
+  echo "MAS helper --version → $MAS_VER"
+  echo "$MAS_VER" | grep -qi runspecimen
+  echo "OK: MAS frozen helper bundle"
+else
+  echo "PyInstaller absent — verifying --mas fails closed"
+  if ./Scripts/build_app.sh --mas >/tmp/rs-mas-fail.out 2>&1; then
+    echo "ERROR: --mas should fail without PyInstaller" >&2
+    cat /tmp/rs-mas-fail.out >&2
+    exit 1
+  fi
+  grep -Eiq 'requires a frozen|PyInstaller required|ERROR' /tmp/rs-mas-fail.out
+  echo "OK: --mas fail-closed without PyInstaller"
 fi
 
 # Restore CI-default package-tree helper so a subsequent local open matches smoke.
