@@ -10,11 +10,12 @@ Last packaging tip should match PR #6 / `cursor/macos-native-app`.
 | Positive sandboxed e2e (bookmark / dashboard / PTY wait) | Done via `Scripts/test_mas_sandbox_e2e.sh` — requires **actual** `Type 'APPROVE' to bind…` prompt + session still waiting; never types APPROVE |
 | Store export fail-closed without Apple Distribution | Done — `Scripts/assert_store_export_ready.sh` parses profile fields (exact app id, team, Mac platform, MAS type); `Scripts/test_store_export_gate.sh` negatives |
 | Metadata / reviewer demo copy | Ready in this kit |
-| ASC screenshot PNGs | **Pending** — 0 PNGs under `screenshots/` (see [screenshots/README.md](screenshots/README.md)) |
+| ASC screenshot PNGs | **Captured** — 4 real app PNGs under [screenshots/](screenshots/) (ad-hoc MAS; e2e demo path; see caveats in screenshots README) |
 | Local e2e / gate evidence | [evidence/](evidence/) — PTY + store-export negatives (not Connect media) |
 | Apple Distribution cert + MAS profile | **Pending** Yahor |
 | `ExportOptions.mas.plist` teamID ≠ `TEAMID` | **Pending** Yahor |
 | ASC app record + Upload | **Pending** Yahor |
+| Optional prettier showcase-path reshoot | Optional Yahor |
 | Submit for Review | **Blocked** until Codex QA + Yahor decision |
 | App Review approval | **Not claimed** |
 

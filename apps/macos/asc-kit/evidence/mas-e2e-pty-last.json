@@ -1,27 +1,27 @@
 {
-  "channel": "mas",
-  "checks": [
+  "channel" : "mas",
+  "checks" : [
     {
-      "detail": "runspecimen 0.2.0rc10 channel=mas probe=runspecimen 0.2.0rc10",
-      "name": "bundled_helper_version",
-      "ok": true
+      "detail" : "runspecimen 0.2.0rc10 channel=mas probe=runspecimen 0.2.0rc10",
+      "name" : "bundled_helper_version",
+      "ok" : true
     },
     {
-      "detail": "/Users/yahor/Library/Containers/com.darashkevich.runspecimen/Data/tmp/rs-mas-e2e-2026-09-17T131717Z/demo",
-      "name": "workspace_bookmark",
-      "ok": true
+      "detail" : "\/Users\/yahor\/Library\/Containers\/com.darashkevich.runspecimen\/Data\/tmp\/rs-mas-e2e-2026-09-17T134312Z\/demo",
+      "name" : "workspace_bookmark",
+      "ok" : true
     },
     {
-      "detail": "launched then stopped",
-      "name": "dashboard_cleanup",
-      "ok": true
+      "detail" : "launched then stopped",
+      "name" : "dashboard_cleanup",
+      "ok" : true
     },
     {
-      "detail": "prompt observed; still waiting; no APPROVE sent; no approval written",
-      "name": "pty_approval_waits_for_human",
-      "ok": true
+      "detail" : "prompt observed; still waiting; no APPROVE sent; no approval written",
+      "name" : "pty_approval_waits_for_human",
+      "ok" : true
     }
   ],
-  "note": "Never types APPROVE; Store upload still Yahor-only.",
-  "ok": true
+  "note" : "Never types APPROVE; Store upload still Yahor-only.",
+  "ok" : true
 }

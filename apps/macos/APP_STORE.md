@@ -191,9 +191,9 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 
 ## Screenshots / metadata checklist
 
-- [ ] 1280×800 (or current ASC sizes) showing Main Console with brand + status (not Terminal)
-- [ ] Approve sheet visible (human PTY, no auto-fill)
-- [ ] Settings / Privacy link visible
+- [x] 1280×800 (or current ASC sizes) showing Main Console with brand + status (not Terminal) — [asc-kit/screenshots/01-main-console-1280x800.png](asc-kit/screenshots/01-main-console-1280x800.png)
+- [x] Approve sheet visible (human PTY, no auto-fill) — [asc-kit/screenshots/02-approve-sheet-pty-1280x800.png](asc-kit/screenshots/02-approve-sheet-pty-1280x800.png)
+- [x] Settings / Privacy + About privacy-policy link — [asc-kit/screenshots/03-settings-privacy.png](asc-kit/screenshots/03-settings-privacy.png), [04-about-privacy-links-1280x800.png](asc-kit/screenshots/04-about-privacy-links-1280x800.png)
 - [ ] App icon: opaque `#070A0F` field, **not** pre-rounded (`AppIcon-1024.png`)
 - [ ] Subtitle / description: local evidence control — not “OS sandbox for malware”
 - [ ] Support URL: https://runspecimen.darashkevich.com/support/
@@ -227,7 +227,7 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 - [x] Store export fail-closed (`assert_store_export_ready.sh` + `test_store_export_gate.sh` negatives)
 - [ ] Apple Distribution signing + upload to App Store Connect (Yahor) — **pending**
 - [x] Privacy policy URL in-app (Connect field **pending** Yahor)
-- [ ] Screenshots in Connect — **pending** (see [asc-kit/screenshots/](asc-kit/screenshots/))
+- [ ] Screenshots uploaded into Connect Media — **pending Yahor** (local PNGs ready in [asc-kit/screenshots/](asc-kit/screenshots/))
 - [x] Reviewer demo notes paste-ready ([asc-kit/reviewer-demo.md](asc-kit/reviewer-demo.md))
 - [ ] Codex QA + Yahor release decision **before** Submit for Review
 
