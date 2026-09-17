@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Negative + positive fixtures for assert_store_export_ready.sh profile parsing.
+# Negative + positive fixtures for assert_store_export_ready.sh / export_mas.sh.
 #
 # Proves the gate fails closed on: wrong bundle, wrong team, wrong type,
 # Developer ID, development, ad-hoc, and malformed profiles — and accepts only
 # a Mac App Store–shaped profile with exact application-identifier + team.
+# Also requires RS_ARCHIVE_APP (app + nested helper) and proves export_mas
+# refuses ad-hoc / Developer ID archives before xcodebuild -exportArchive.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -211,6 +213,65 @@ expect_reject_decoded "substring-bundle-bait" "$TMP/substring-bait.plist"
 printf 'not-a-plist{{' >"$TMP/malformed.plist"
 expect_reject_decoded "malformed" "$TMP/malformed.plist"
 
+# --- Archived .app fixtures (required RS_ARCHIVE_APP) -------------------------------
+
+make_min_app() {
+  local app="$1"
+  mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/RunSpecimenEngine"
+  cat >"$app/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleIdentifier</key><string>com.darashkevich.runspecimen</string>
+  <key>CFBundleName</key><string>RunSpecimen</string>
+  <key>CFBundleExecutable</key><string>RunSpecimen</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+</dict></plist>
+PLIST
+  printf '#!/bin/sh\nexit 0\n' >"$app/Contents/MacOS/RunSpecimen"
+  printf '#!/bin/sh\nexit 0\n' >"$app/Contents/Resources/RunSpecimenEngine/runspecimen"
+  chmod +x "$app/Contents/MacOS/RunSpecimen" "$app/Contents/Resources/RunSpecimenEngine/runspecimen"
+}
+
+write_dv_fixture() {
+  local path="$1" authority="$2" team="$3"
+  cat >"$path" <<EOF
+Executable=/tmp/fixture
+Identifier=com.darashkevich.runspecimen
+Format=app bundle with Mach-O thin (arm64)
+Authority=$authority
+Authority=Apple Worldwide Developer Relations Certification Authority
+Authority=Apple Root CA
+TeamIdentifier=$team
+Signature=standard
+EOF
+}
+
+ADHOC_APP="$TMP/adhoc-app/RunSpecimen.app"
+make_min_app "$ADHOC_APP"
+codesign --force --sign - "$ADHOC_APP/Contents/Resources/RunSpecimenEngine/runspecimen" >/dev/null 2>&1
+codesign --force --sign - "$ADHOC_APP" >/dev/null 2>&1
+
+DIST_APP="$TMP/dist-app/RunSpecimen.app"
+make_min_app "$DIST_APP"
+write_dv_fixture "$TMP/dv-app-dist.txt" "Apple Distribution: Fixture ($TEAM)" "$TEAM"
+write_dv_fixture "$TMP/dv-helper-dist.txt" "Apple Distribution: Fixture ($TEAM)" "$TEAM"
+
+DEVID_APP="$TMP/devid-app/RunSpecimen.app"
+make_min_app "$DEVID_APP"
+write_dv_fixture "$TMP/dv-app-devid.txt" "Developer ID Application: Fixture ($TEAM)" "$TEAM"
+write_dv_fixture "$TMP/dv-helper-devid.txt" "Developer ID Application: Fixture ($TEAM)" "$TEAM"
+
+HELPER_BAD_APP="$TMP/helper-bad-app/RunSpecimen.app"
+make_min_app "$HELPER_BAD_APP"
+cat >"$TMP/dv-helper-adhoc.txt" <<'EOF'
+Executable=/tmp/fixture-helper
+Identifier=runspecimen
+Format=Mach-O thin (arm64)
+Signature=adhoc
+TeamIdentifier=not set
+EOF
+
 echo "==> CMS-signed profile discovery (RS_PROFILE_SEARCH_DIRS)"
 PROFILES="$TMP/profiles"
 mkdir -p "$PROFILES"
@@ -229,12 +290,31 @@ cat >"$EXPORT_PLIST" <<EOF
 </dict></plist>
 EOF
 
+echo "==> RS_ARCHIVE_APP required (fail closed)"
 set +e
 OUT="$(
   RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
   RS_NOTARY_TEAM_ID="$TEAM" \
   RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
   RS_PROFILE_SEARCH_DIRS="$PROFILES" \
+  env -u RS_ARCHIVE_APP "$GATE" 2>&1
+)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || { echo "FAIL: gate opened without RS_ARCHIVE_APP" >&2; echo "$OUT" >&2; exit 1; }
+echo "$OUT" | grep -q 'RS_ARCHIVE_APP is required' \
+  || { echo "FAIL: expected RS_ARCHIVE_APP required message" >&2; echo "$OUT" >&2; exit 1; }
+echo "OK: missing RS_ARCHIVE_APP blocked"
+
+set +e
+OUT="$(
+  RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
+  RS_NOTARY_TEAM_ID="$TEAM" \
+  RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
+  RS_PROFILE_SEARCH_DIRS="$PROFILES" \
+  RS_ARCHIVE_APP="$DIST_APP" \
+  RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
+  RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-dist.txt" \
   "$GATE" 2>&1
 )"
 RC=$?
@@ -244,18 +324,23 @@ echo "$OUT" | grep -q 'STORE EXPORT BLOCKED' \
   || { echo "FAIL: expected BLOCKED with bad CMS profiles" >&2; echo "$OUT" >&2; exit 1; }
 echo "OK: full gate blocked on wrong/dev/Developer ID CMS profiles"
 
-# Add good profile → should open (mocked Apple Distribution; no keychain needed).
+# Add good profile → should open (mocked Apple Distribution + Distribution-signed archive fixtures).
 sign_profile "$TMP/good.plist" "$PROFILES/good.mobileprovision"
 OUT="$(
   RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
   RS_NOTARY_TEAM_ID="$TEAM" \
   RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
   RS_PROFILE_SEARCH_DIRS="$PROFILES" \
+  RS_ARCHIVE_APP="$DIST_APP" \
+  RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
+  RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-dist.txt" \
   "$GATE" 2>&1
 )"
 echo "$OUT" | grep -q 'READY_TEAM=' \
   || { echo "FAIL: expected READY with good CMS profile" >&2; echo "$OUT" >&2; exit 1; }
-echo "OK: full gate accepts good MAS CMS profile"
+echo "$OUT" | grep -q 'archive helper TeamIdentifier' \
+  || { echo "FAIL: expected helper archive check" >&2; echo "$OUT" >&2; exit 1; }
+echo "OK: full gate accepts good MAS CMS profile + Distribution archive/helper"
 
 echo "==> Developer ID identity rejected"
 set +e
@@ -264,6 +349,9 @@ OUT="$(
   RS_NOTARY_TEAM_ID="$TEAM" \
   RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
   RS_PROFILE_SEARCH_DIRS="$PROFILES" \
+  RS_ARCHIVE_APP="$DIST_APP" \
+  RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
+  RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-dist.txt" \
   "$GATE" 2>&1
 )"
 RC=$?
@@ -273,19 +361,141 @@ echo "$OUT" | grep -Eqi 'Developer ID' \
   || { echo "FAIL: expected Developer ID message" >&2; echo "$OUT" >&2; exit 1; }
 echo "OK: Developer ID identity blocked"
 
-echo "==> default host gate still fail-closed without Apple Distribution"
+echo "==> ad-hoc archive refused (real codesign -)"
+set +e
+OUT="$(
+  RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
+  RS_NOTARY_TEAM_ID="$TEAM" \
+  RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
+  RS_PROFILE_SEARCH_DIRS="$PROFILES" \
+  RS_ARCHIVE_APP="$ADHOC_APP" \
+  "$GATE" 2>&1
+)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || { echo "FAIL: ad-hoc archive should block" >&2; echo "$OUT" >&2; exit 1; }
+echo "$OUT" | grep -Eqi 'ad-hoc|TeamIdentifier unset' \
+  || { echo "FAIL: expected ad-hoc archive block" >&2; echo "$OUT" >&2; exit 1; }
+echo "OK: ad-hoc archive blocked"
+
+echo "==> Developer ID archive Authority refused (app + helper fixtures)"
+set +e
+OUT="$(
+  RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
+  RS_NOTARY_TEAM_ID="$TEAM" \
+  RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
+  RS_PROFILE_SEARCH_DIRS="$PROFILES" \
+  RS_ARCHIVE_APP="$DEVID_APP" \
+  RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-devid.txt" \
+  RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-devid.txt" \
+  "$GATE" 2>&1
+)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || { echo "FAIL: Developer ID archive should block" >&2; echo "$OUT" >&2; exit 1; }
+echo "$OUT" | grep -Eqi 'Developer ID' \
+  || { echo "FAIL: expected Developer ID archive Authority block" >&2; echo "$OUT" >&2; exit 1; }
+echo "OK: Developer ID archive Authority blocked"
+
+echo "==> nested helper ad-hoc refused even when app fixture looks Distribution"
+set +e
+OUT="$(
+  RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
+  RS_NOTARY_TEAM_ID="$TEAM" \
+  RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
+  RS_PROFILE_SEARCH_DIRS="$PROFILES" \
+  RS_ARCHIVE_APP="$HELPER_BAD_APP" \
+  RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
+  RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-adhoc.txt" \
+  "$GATE" 2>&1
+)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || { echo "FAIL: helper ad-hoc should block" >&2; echo "$OUT" >&2; exit 1; }
+echo "$OUT" | grep -Eqi 'helper.*ad-hoc|helper.*TeamIdentifier unset' \
+  || { echo "FAIL: expected helper ad-hoc block" >&2; echo "$OUT" >&2; exit 1; }
+echo "OK: nested helper ad-hoc blocked"
+
+# --- export_mas.sh refuses before xcodebuild -exportArchive ------------------------
+
+EXPORT_SH=./Scripts/export_mas.sh
+chmod +x "$EXPORT_SH"
+STUB_BIN="$TMP/stub-bin"
+mkdir -p "$STUB_BIN"
+XCODEBUILD_MARKER="$TMP/xcodebuild-invoked"
+cat >"$STUB_BIN/xcodebuild" <<EOF
+#!/bin/bash
+echo "INVOKED \$*" >>"$XCODEBUILD_MARKER"
+exit 0
+EOF
+chmod +x "$STUB_BIN/xcodebuild"
+
+make_archive_tree() {
+  local archive="$1" src_app="$2"
+  rm -rf "$archive"
+  mkdir -p "$archive/Products/Applications"
+  cp -R "$src_app" "$archive/Products/Applications/RunSpecimen.app"
+}
+
+run_export_expect_block() {
+  local label="$1"
+  shift
+  rm -f "$XCODEBUILD_MARKER"
+  set +e
+  # Use env(1): VAR=val from "$@" are not assignments after expansion.
+  OUT="$(
+    env PATH="$STUB_BIN:$PATH" "$@" "$EXPORT_SH" 2>&1
+  )"
+  RC=$?
+  set -e
+  [[ "$RC" -ne 0 ]] || { echo "FAIL: export_mas should block ($label)" >&2; echo "$OUT" >&2; exit 1; }
+  [[ ! -f "$XCODEBUILD_MARKER" ]] \
+    || { echo "FAIL: xcodebuild -exportArchive was invoked before gate failure ($label)" >&2; cat "$XCODEBUILD_MARKER" >&2; exit 1; }
+  echo "$OUT" | grep -Eqi 'STORE EXPORT BLOCKED|ERROR:|ad-hoc|Developer ID|TeamIdentifier unset|RS_ARCHIVE_APP' \
+    || { echo "FAIL: $label missing block evidence" >&2; echo "$OUT" >&2; exit 1; }
+  echo "OK export_mas pre-xcodebuild refuse: $label"
+}
+
+echo "==> export_mas refuses ad-hoc archive before xcodebuild -exportArchive"
+ADHOC_ARCHIVE="$TMP/adhoc.xcarchive"
+make_archive_tree "$ADHOC_ARCHIVE" "$ADHOC_APP"
+# Re-sign after copy (cp can invalidate).
+codesign --force --sign - "$ADHOC_ARCHIVE/Products/Applications/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/runspecimen" >/dev/null 2>&1
+codesign --force --sign - "$ADHOC_ARCHIVE/Products/Applications/RunSpecimen.app" >/dev/null 2>&1
+run_export_expect_block "ad-hoc-archive" \
+  RS_ARCHIVE_PATH="$ADHOC_ARCHIVE" \
+  RS_EXPORT_DIR="$TMP/export-out-adhoc" \
+  RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
+  RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
+  RS_NOTARY_TEAM_ID="$TEAM" \
+  RS_PROFILE_SEARCH_DIRS="$PROFILES"
+
+echo "==> export_mas refuses Developer ID archive before xcodebuild -exportArchive"
+DEVID_ARCHIVE="$TMP/devid.xcarchive"
+make_archive_tree "$DEVID_ARCHIVE" "$DEVID_APP"
+run_export_expect_block "developer-id-archive" \
+  RS_ARCHIVE_PATH="$DEVID_ARCHIVE" \
+  RS_EXPORT_DIR="$TMP/export-out-devid" \
+  RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
+  RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
+  RS_NOTARY_TEAM_ID="$TEAM" \
+  RS_PROFILE_SEARCH_DIRS="$PROFILES" \
+  RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-devid.txt" \
+  RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-devid.txt"
+
+echo "==> default host gate still fail-closed without Apple Distribution / RS_ARCHIVE_APP"
 set +e
 OUT="$("$GATE" 2>&1)"
 RC=$?
 set -e
-# Host has no Apple Distribution (typical CI / this machine) OR may open if Yahor installs certs.
+# Host typically lacks RS_ARCHIVE_APP and/or Apple Distribution.
 if [[ "$RC" -eq 0 ]]; then
-  echo "NOTE: host has Apple Distribution — gate opened (acceptable on operator machine)"
-  echo "$OUT" | tail -5
-else
-  echo "$OUT" | grep -q 'STORE EXPORT BLOCKED' \
-    || { echo "FAIL: default gate should BLOCK without Distribution" >&2; echo "$OUT" >&2; exit 1; }
-  echo "OK: default gate blocked without Apple Distribution"
+  echo "NOTE: host gate opened (unexpected without archive+certs) — inspect:" >&2
+  echo "$OUT" | tail -10 >&2
+  exit 1
 fi
+echo "$OUT" | grep -q 'STORE EXPORT BLOCKED' \
+  || { echo "FAIL: default gate should BLOCK" >&2; echo "$OUT" >&2; exit 1; }
+echo "OK: default gate blocked"
 
 echo "STORE EXPORT GATE TESTS OK"

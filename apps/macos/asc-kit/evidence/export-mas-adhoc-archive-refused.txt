@@ -1,0 +1,7 @@
+=== real ad-hoc xcarchive refused by export_mas before xcodebuild -exportArchive ===
+archive=/tmp/runspecimen-mas/RunSpecimen.xcarchive
+exit=1
+xcodebuild_invoked=NO
+--- stdout/stderr ---
+==> assert_store_export_ready (fail closed; RS_ARCHIVE_APP=/tmp/runspecimen-mas/RunSpecimen.xcarchive/Products/Applications/RunSpecimen.app)
+STORE EXPORT BLOCKED: archive app TeamIdentifier unset (ad-hoc) — Store export requires Apple Distribution–signed archive matching team ABCD123456

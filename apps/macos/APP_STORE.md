@@ -92,7 +92,8 @@ python3 -m pip install --user 'pyinstaller>=6'   # freeze machine only
 Export options template: [Config/ExportOptions.mas.plist](Config/ExportOptions.mas.plist)
 (replace `TEAMID` before export). **Fail-closed export:**
 `./Scripts/assert_store_export_ready.sh` then `./Scripts/export_mas.sh` —
-Apple Distribution + matching team + MAS profile required; **Developer ID is not
+Apple Distribution + matching team + MAS profile + **`RS_ARCHIVE_APP`** (app + nested
+helper Distribution-signed) required; **Developer ID / ad-hoc archives are not
 sufficient**.
 
 ASC paste pack (metadata / screenshots checklist / reviewer demo):

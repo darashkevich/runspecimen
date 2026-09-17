@@ -10,10 +10,22 @@ OK reject: absent-teamidentifier
 OK reject: substring-bundle-bait
 OK reject: malformed
 ==> CMS-signed profile discovery (RS_PROFILE_SEARCH_DIRS)
+==> RS_ARCHIVE_APP required (fail closed)
+OK: missing RS_ARCHIVE_APP blocked
 OK: full gate blocked on wrong/dev/Developer ID CMS profiles
-OK: full gate accepts good MAS CMS profile
+OK: full gate accepts good MAS CMS profile + Distribution archive/helper
 ==> Developer ID identity rejected
 OK: Developer ID identity blocked
-==> default host gate still fail-closed without Apple Distribution
-OK: default gate blocked without Apple Distribution
+==> ad-hoc archive refused (real codesign -)
+OK: ad-hoc archive blocked
+==> Developer ID archive Authority refused (app + helper fixtures)
+OK: Developer ID archive Authority blocked
+==> nested helper ad-hoc refused even when app fixture looks Distribution
+OK: nested helper ad-hoc blocked
+==> export_mas refuses ad-hoc archive before xcodebuild -exportArchive
+OK export_mas pre-xcodebuild refuse: ad-hoc-archive
+==> export_mas refuses Developer ID archive before xcodebuild -exportArchive
+OK export_mas pre-xcodebuild refuse: developer-id-archive
+==> default host gate still fail-closed without Apple Distribution / RS_ARCHIVE_APP
+OK: default gate blocked
 STORE EXPORT GATE TESTS OK

@@ -9,7 +9,20 @@ ARCHIVE_PATH="${RS_ARCHIVE_PATH:-/tmp/runspecimen-mas/RunSpecimen.xcarchive}"
 EXPORT_DIR="${RS_EXPORT_DIR:-/tmp/runspecimen-mas/export-mas}"
 EXPORT_PLIST="${RS_EXPORT_OPTIONS_PLIST:-$ROOT/Config/ExportOptions.mas.plist}"
 
-echo "==> assert_store_export_ready (fail closed)"
+[[ -d "$ARCHIVE_PATH" ]] || {
+  echo "ERROR: archive missing at $ARCHIVE_PATH — run ./Scripts/archive_mas.sh first" >&2
+  exit 1
+}
+
+# Require archived .app into the store-export gate (fail closed if missing).
+ARCHIVE_APP="${RS_ARCHIVE_APP:-$ARCHIVE_PATH/Products/Applications/RunSpecimen.app}"
+export RS_ARCHIVE_APP="$ARCHIVE_APP"
+[[ -d "$RS_ARCHIVE_APP" ]] || {
+  echo "ERROR: archived app missing at $RS_ARCHIVE_APP" >&2
+  exit 1
+}
+
+echo "==> assert_store_export_ready (fail closed; RS_ARCHIVE_APP=$RS_ARCHIVE_APP)"
 READY_OUT="$(./Scripts/assert_store_export_ready.sh)"
 echo "$READY_OUT"
 TEAM="$(printf '%s\n' "$READY_OUT" | awk -F= '/^READY_TEAM=/{print $2; exit}')"
@@ -20,11 +33,6 @@ if [[ "$PLIST_TEAM" == "TEAMID" && -n "$TEAM" ]]; then
   echo "Updating local ExportOptions.mas.plist teamID → $TEAM (operator machine only)"
   /usr/libexec/PlistBuddy -c "Set :teamID $TEAM" "$EXPORT_PLIST"
 fi
-
-[[ -d "$ARCHIVE_PATH" ]] || {
-  echo "ERROR: archive missing at $ARCHIVE_PATH — run ./Scripts/archive_mas.sh first" >&2
-  exit 1
-}
 
 rm -rf "$EXPORT_DIR"
 mkdir -p "$EXPORT_DIR"

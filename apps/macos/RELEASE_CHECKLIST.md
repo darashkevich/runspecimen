@@ -114,6 +114,6 @@ See NOTARIZATION.md.
 | `RunSpecimen.xcodeproj` + `archive_mas.sh` | Done (Xcode 27; nested helper sandbox+inherit) |
 | Nested helper signing (`sign_nested_helper.sh`) | Done — identity-aware; ad-hoc only when no certs |
 | Sandboxed e2e (`test_mas_sandbox_e2e.sh`) | Done — requires actual APPROVE prompt + still waiting (never types APPROVE) |
-| Store export fail-closed (`assert_store_export_ready.sh`) | Done — exact profile fields; Developer ID insufficient; negatives in `test_store_export_gate.sh` |
+| Store export fail-closed (`assert_store_export_ready.sh`) | Done — requires `RS_ARCHIVE_APP` (app+helper); exact profile fields; Developer ID/ad-hoc refused before export; negatives in `test_store_export_gate.sh` |
 | ASC kit (`asc-kit/`) | Metadata + reviewer demo ready; 4 real ad-hoc MAS screenshots captured (Connect upload still Yahor) |
 | ASC upload / Submit for Review | **Blocked** — Apple Distribution + Yahor decision after Codex QA |

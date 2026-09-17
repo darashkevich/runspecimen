@@ -14,11 +14,15 @@
 #
 # Exit 0 only when export may proceed. Exit 1 with a clear reason otherwise.
 #
+# Required:
+#   RS_ARCHIVE_APP           — archived .app path (fail closed if unset / missing)
+#
 # Test hooks (optional):
-#   RS_PROFILE_SEARCH_DIRS   — colon-separated dirs of *.mobileprovision / *.provisionprofile
-#   RS_ARCHIVE_APP           — .app to require codesign TeamIdentifier == TEAM
-#   RS_SIGN_IDENTITY         — force identity string (still must be Apple Distribution)
-#   RS_EXPORT_OPTIONS_PLIST  — ExportOptions plist path
+#   RS_PROFILE_SEARCH_DIRS          — colon-separated dirs of *.mobileprovision / *.provisionprofile
+#   RS_SIGN_IDENTITY                — force identity string (still must be Apple Distribution)
+#   RS_EXPORT_OPTIONS_PLIST         — ExportOptions plist path
+#   RS_TEST_CODESIGN_DV_APP_FILE    — fixture codesign -dv text for the .app (unit tests)
+#   RS_TEST_CODESIGN_DV_HELPER_FILE — fixture codesign -dv text for nested helper (unit tests)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -253,28 +257,50 @@ if [[ -n "$ID_TEAM" && "$ID_TEAM" != "$TEAM" ]]; then
 fi
 pass "Team ID matches: $TEAM"
 
-# Optional: archive / .app TeamIdentifier must match (when operator points at it).
+# Required: archived .app + nested helper must be Apple Distribution for TEAM.
 ARCHIVE_APP="${RS_ARCHIVE_APP:-}"
-if [[ -n "$ARCHIVE_APP" ]]; then
-  [[ -d "$ARCHIVE_APP" ]] || fail "RS_ARCHIVE_APP not a directory: $ARCHIVE_APP"
-  APP_DV="$(codesign -dv --verbose=4 "$ARCHIVE_APP" 2>&1 || true)"
-  APP_TEAM="$(printf '%s\n' "$APP_DV" | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
-  APP_AUTH="$(printf '%s\n' "$APP_DV" | awk -F= '/^Authority=/{print $2; exit}')"
-  if [[ -z "$APP_TEAM" || "$APP_TEAM" == "not set" ]]; then
-    fail "archive TeamIdentifier unset (ad-hoc) — Store export requires Apple Distribution–signed archive matching team $TEAM"
+[[ -n "$ARCHIVE_APP" ]] || fail "RS_ARCHIVE_APP is required (path to archived RunSpecimen.app). Export must not proceed without an archive signing check."
+[[ -d "$ARCHIVE_APP" ]] || fail "RS_ARCHIVE_APP not a directory: $ARCHIVE_APP"
+
+HELPER="$ARCHIVE_APP/Contents/Resources/RunSpecimenEngine/runspecimen"
+if [[ ! -e "$HELPER" ]]; then
+  HELPER="$ARCHIVE_APP/Contents/Helpers/runspecimen"
+fi
+[[ -e "$HELPER" ]] || fail "nested helper missing under RS_ARCHIVE_APP (checked RunSpecimenEngine + Helpers): $ARCHIVE_APP"
+
+codesign_dv_for() {
+  local path="$1" fixture="$2"
+  if [[ -n "$fixture" && -f "$fixture" ]]; then
+    cat "$fixture"
+    return 0
   fi
-  [[ "$APP_TEAM" == "$TEAM" ]] || fail "archive TeamIdentifier=$APP_TEAM != team $TEAM"
-  case "$APP_AUTH" in
+  codesign -dv --verbose=4 "$path" 2>&1 || true
+}
+
+assert_distribution_signed() {
+  local label="$1" path="$2" fixture="${3:-}"
+  local dv team auth
+  dv="$(codesign_dv_for "$path" "$fixture")"
+  team="$(printf '%s\n' "$dv" | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+  auth="$(printf '%s\n' "$dv" | awk -F= '/^Authority=/{print $2; exit}')"
+  if [[ -z "$team" || "$team" == "not set" ]]; then
+    fail "$label TeamIdentifier unset (ad-hoc) — Store export requires Apple Distribution–signed archive matching team $TEAM"
+  fi
+  [[ "$team" == "$TEAM" ]] || fail "$label TeamIdentifier=$team != team $TEAM"
+  case "$auth" in
     *"Apple Distribution"*|*"3rd Party Mac Developer Application"*) ;;
     *"Developer ID"*)
-      fail "archive Authority is Developer ID — not valid for Mac App Store: $APP_AUTH"
+      fail "$label Authority is Developer ID — not valid for Mac App Store: $auth"
       ;;
     *)
-      fail "archive Authority must be Apple Distribution; got: ${APP_AUTH:-empty}"
+      fail "$label Authority must be Apple Distribution; got: ${auth:-empty}"
       ;;
   esac
-  pass "Archive TeamIdentifier + Apple Distribution Authority match ($APP_TEAM)"
-fi
+  pass "$label TeamIdentifier + Apple Distribution Authority match ($team)"
+}
+
+assert_distribution_signed "archive app" "$ARCHIVE_APP" "${RS_TEST_CODESIGN_DV_APP_FILE:-}"
+assert_distribution_signed "archive helper" "$HELPER" "${RS_TEST_CODESIGN_DV_HELPER_FILE:-}"
 
 # Provisioning profile discovery + strict validation.
 PROFILE_DIRS=()

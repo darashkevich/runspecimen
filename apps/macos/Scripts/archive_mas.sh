@@ -157,20 +157,20 @@ mkdir -p "$ROOT/build"
 rm -rf "$LOCAL_ARCHIVE_LINK" 2>/dev/null || true
 ln -sfn "$ARCHIVE_PATH" "$LOCAL_ARCHIVE_LINK" 2>/dev/null || true
 
-echo "==> Store export gate (fail closed — Apple Distribution required)"
+echo "==> Store export gate (fail closed — Apple Distribution + archived app required)"
 EXPORT_DIR="${RS_EXPORT_DIR:-/tmp/runspecimen-mas/export-mas}"
 EXPORT_PLIST="$ROOT/Config/ExportOptions.mas.plist"
 EXPORT_GATE_LOG="/tmp/runspecimen-mas/export-gate.log"
 set +e
-./Scripts/assert_store_export_ready.sh >"$EXPORT_GATE_LOG" 2>&1
+RS_ARCHIVE_APP="$APP_IN_ARCHIVE" ./Scripts/assert_store_export_ready.sh >"$EXPORT_GATE_LOG" 2>&1
 EXPORT_GATE_RC=$?
 set -e
 if [[ "$EXPORT_GATE_RC" -eq 0 ]]; then
   echo "Store export prerequisites present — running export_mas.sh"
-  RS_ARCHIVE_PATH="$ARCHIVE_PATH" RS_EXPORT_DIR="$EXPORT_DIR" ./Scripts/export_mas.sh
+  RS_ARCHIVE_PATH="$ARCHIVE_PATH" RS_ARCHIVE_APP="$APP_IN_ARCHIVE" RS_EXPORT_DIR="$EXPORT_DIR" ./Scripts/export_mas.sh
   EXPORT_RC=0
 else
-  echo "Store export BLOCKED (fail closed) without Apple Distribution + matching team + profile:"
+  echo "Store export BLOCKED (fail closed) without Apple Distribution + matching team + profile + Distribution-signed archive:"
   cat "$EXPORT_GATE_LOG" || true
   # Prove we refuse even if someone forces xcodebuild -exportArchive with Developer ID / placeholder team.
   rm -rf "$EXPORT_DIR"
