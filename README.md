@@ -37,6 +37,9 @@ No watchers, no recurring scheduler, no parallel workers.
 - [Schema compatibility](docs/SCHEMA_COMPATIBILITY.md) — contract/receipt versions
 - [Ed25519 receipts (optional)](docs/ED25519_RECEIPTS.md) — offline public-key verify
 - [Phased roadmap](docs/ROADMAP_PHASED.md) — feature and UX pipeline
+- [ADR-003 iOS companion observation](docs/ADR-003-ios-companion-observation.md) — remote observe / attention only (no remote approve)
+- [iOS Observe app](apps/ios/README.md) — SwiftUI scaffold
+- [macOS companion helper](apps/macos-companion/README.md) — CLI preview UI (not MAS packaging)
 
 ## Install
 

@@ -35,6 +35,7 @@ Those child-process boundaries must be tested and documented before any
 - Treating resource-limit wrappers alone as an OS-sandbox claim
 - Cron, watchers, fan-out workers, or parallel execution inside one lease domain
 - Remote scheduling, distributed consensus, or exactly-once effects outside the workspace
+- Remote approve / run / preflight / postflight (see `docs/ADR-003-ios-companion-observation.md`)
 - Protection from root, kernel, hypervisor, or full-workspace rewrite attacks
 - Proof that a scientific or engineering claim is true
 - Equating HMAC shared-secret authentication with digital signatures or absolute

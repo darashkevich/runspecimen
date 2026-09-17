@@ -132,6 +132,36 @@ def build_parser() -> argparse.ArgumentParser:
     p_dashboard.add_argument("--port", type=int, default=0, help="Loopback port (default: choose one)")
     p_dashboard.add_argument("--open", action="store_true", help="Open the dashboard in the default browser")
 
+    p_companion = sub.add_parser(
+        "companion",
+        help="Opt-in observation endpoint for the iOS companion (cannot approve/execute)",
+        description=(
+            "Start a fail-closed companion listener for remote observation. "
+            "Requires an explicit pairing token. Does not expose approve/run/preflight/"
+            "postflight. Default bind is loopback; --allow-lan requires a private or "
+            "Tailscale address. See docs/ADR-003-ios-companion-observation.md."
+        ),
+    )
+    _add_workspace(p_companion)
+    _add_contract(p_companion)
+    p_companion.add_argument(
+        "--pairing-token",
+        default=None,
+        help="Bearer token shared with the iOS app (auto-generated if omitted)",
+    )
+    p_companion.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
+    p_companion.add_argument("--port", type=int, default=0, help="Bind port (default: choose one)")
+    p_companion.add_argument(
+        "--allow-lan",
+        action="store_true",
+        help="Allow private/link-local/Tailscale bind (still refuses public/unspecified)",
+    )
+    p_companion.add_argument(
+        "--print-token",
+        action="store_true",
+        help="Print the pairing token once on stdout (needed when auto-generated)",
+    )
+
     p_abandon = sub.add_parser(
         "abandon",
         help="Abandon a crashed run after TTY confirmation (marks run as failed)",
@@ -376,6 +406,73 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 if args.open:
                     webbrowser.open(url)
+                server.serve_forever()
+            finally:
+                server.server_close()
+            return 0
+        if args.command == "companion":
+            from runspecimen.companion import generate_pairing_token, start_companion
+
+            token = args.pairing_token or generate_pairing_token()
+            if args.pairing_token is None and not args.print_token:
+                raise RunSpecimenError(
+                    "companion auto-generated a pairing token; re-run with --print-token "
+                    "to display it, or pass --pairing-token explicitly"
+                )
+
+            def _on_attention(entry: dict) -> None:
+                print(
+                    json.dumps({"event": "attention", **entry}, sort_keys=True),
+                    flush=True,
+                )
+
+            def _on_open_dashboard() -> None:
+                from runspecimen.dashboard import start_dashboard
+
+                # Fire-and-forget local dashboard helper thread so the companion
+                # remains observation-only and does not block on browser UI.
+                dash_server, dash_url = start_dashboard(
+                    workspace=workspace, contract_path=args.contract, port=0
+                )
+
+                def _serve() -> None:
+                    try:
+                        webbrowser.open(dash_url)
+                        dash_server.serve_forever()
+                    finally:
+                        dash_server.server_close()
+
+                import threading
+
+                threading.Thread(target=_serve, name="rs-companion-dashboard", daemon=True).start()
+                print(
+                    json.dumps(
+                        {
+                            "event": "open-dashboard",
+                            "url": dash_url,
+                            "loopback_only": True,
+                            "mutates_lifecycle": False,
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
+
+            server, url, meta = start_companion(
+                workspace=workspace,
+                contract_path=args.contract,
+                pairing_token=token,
+                host=args.host,
+                port=args.port,
+                allow_lan=bool(args.allow_lan),
+                on_attention=_on_attention,
+                on_open_dashboard=_on_open_dashboard,
+            )
+            payload = dict(meta)
+            if args.print_token:
+                payload["pairing_token"] = token
+            print(json.dumps(payload, sort_keys=True), flush=True)
+            try:
                 server.serve_forever()
             finally:
                 server.server_close()
