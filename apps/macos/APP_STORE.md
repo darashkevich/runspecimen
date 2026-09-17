@@ -92,9 +92,11 @@ python3 -m pip install --user 'pyinstaller>=6'   # freeze machine only
 Export options template: [Config/ExportOptions.mas.plist](Config/ExportOptions.mas.plist)
 (replace `TEAMID` before export). **Fail-closed export:**
 `./Scripts/assert_store_export_ready.sh` then `./Scripts/export_mas.sh` —
-Apple Distribution + matching team + MAS profile + **`RS_ARCHIVE_APP`** (app + nested
-helper Distribution-signed) required; **Developer ID / ad-hoc archives are not
-sufficient**.
+Apple Distribution + matching team + MAS profile + **app inside `RS_ARCHIVE_PATH`**
+(app + nested helper Distribution-signed via real `codesign -dv`) required;
+**`RS_ARCHIVE_APP` must match that archive path** (mismatched overrides refused);
+**Developer ID / ad-hoc archives and `RS_TEST_CODESIGN_DV_*` fixtures are not
+sufficient** for production export.
 
 ASC paste pack (metadata / screenshots checklist / reviewer demo):
 [asc-kit/](asc-kit/) — mark screenshot PNGs and Connect record as **pending** until Yahor fills them.

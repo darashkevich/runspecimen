@@ -1,0 +1,5 @@
+=== RS_TEST_CODESIGN_DV_* refused on production export_mas path ===
+exit=1
+xcodebuild_invoked=NO
+--- stdout/stderr ---
+ERROR: RS_TEST_CODESIGN_DV_* / RS_ALLOW_TEST_CODESIGN_DV are test-only and are refused by export_mas.sh

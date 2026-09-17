@@ -14,16 +14,45 @@ EXPORT_PLIST="${RS_EXPORT_OPTIONS_PLIST:-$ROOT/Config/ExportOptions.mas.plist}"
   exit 1
 }
 
-# Require archived .app into the store-export gate (fail closed if missing).
-ARCHIVE_APP="${RS_ARCHIVE_APP:-$ARCHIVE_PATH/Products/Applications/RunSpecimen.app}"
-export RS_ARCHIVE_APP="$ARCHIVE_APP"
-[[ -d "$RS_ARCHIVE_APP" ]] || {
-  echo "ERROR: archived app missing at $RS_ARCHIVE_APP" >&2
+# Test-only codesign fixtures must never satisfy production export.
+if [[ -n "${RS_TEST_CODESIGN_DV_APP_FILE:-}" \
+   || -n "${RS_TEST_CODESIGN_DV_HELPER_FILE:-}" \
+   || -n "${RS_ALLOW_TEST_CODESIGN_DV:-}" ]]; then
+  echo "ERROR: RS_TEST_CODESIGN_DV_* / RS_ALLOW_TEST_CODESIGN_DV are test-only and are refused by export_mas.sh" >&2
   exit 1
+fi
+
+canon_dir() {
+  (cd "$1" && pwd -P)
 }
 
-echo "==> assert_store_export_ready (fail closed; RS_ARCHIVE_APP=$RS_ARCHIVE_APP)"
-READY_OUT="$(./Scripts/assert_store_export_ready.sh)"
+# App path is derived exclusively from the archive being exported.
+# A separate RS_ARCHIVE_APP override cannot satisfy the gate for a different archive.
+DERIVED_APP="$ARCHIVE_PATH/Products/Applications/RunSpecimen.app"
+[[ -d "$DERIVED_APP" ]] || {
+  echo "ERROR: archived app missing at $DERIVED_APP (under RS_ARCHIVE_PATH=$ARCHIVE_PATH)" >&2
+  exit 1
+}
+DERIVED_CANON="$(canon_dir "$DERIVED_APP")"
+
+if [[ -n "${RS_ARCHIVE_APP:-}" ]]; then
+  [[ -d "$RS_ARCHIVE_APP" ]] || {
+    echo "ERROR: RS_ARCHIVE_APP is not a directory: $RS_ARCHIVE_APP" >&2
+    exit 1
+  }
+  OVERRIDE_CANON="$(canon_dir "$RS_ARCHIVE_APP")"
+  if [[ "$OVERRIDE_CANON" != "$DERIVED_CANON" ]]; then
+    echo "ERROR: RS_ARCHIVE_APP ($OVERRIDE_CANON) must equal app inside RS_ARCHIVE_PATH ($DERIVED_CANON). Refusing mismatched override (export-gate bypass)." >&2
+    exit 1
+  fi
+fi
+
+export RS_ARCHIVE_APP="$DERIVED_APP"
+# Belt-and-suspenders: never leak test fixtures into the store-export gate.
+unset RS_TEST_CODESIGN_DV_APP_FILE RS_TEST_CODESIGN_DV_HELPER_FILE RS_ALLOW_TEST_CODESIGN_DV
+
+echo "==> assert_store_export_ready (fail closed; RS_ARCHIVE_PATH=$ARCHIVE_PATH RS_ARCHIVE_APP=$RS_ARCHIVE_APP)"
+READY_OUT="$(RS_ARCHIVE_PATH="$ARCHIVE_PATH" ./Scripts/assert_store_export_ready.sh)"
 echo "$READY_OUT"
 TEAM="$(printf '%s\n' "$READY_OUT" | awk -F= '/^READY_TEAM=/{print $2; exit}')"
 

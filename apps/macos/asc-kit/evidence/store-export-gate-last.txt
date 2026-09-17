@@ -13,6 +13,7 @@ OK reject: malformed
 ==> RS_ARCHIVE_APP required (fail closed)
 OK: missing RS_ARCHIVE_APP blocked
 OK: full gate blocked on wrong/dev/Developer ID CMS profiles
+OK: codesign fixtures refused without RS_ALLOW_TEST_CODESIGN_DV=1
 OK: full gate accepts good MAS CMS profile + Distribution archive/helper
 ==> Developer ID identity rejected
 OK: Developer ID identity blocked
@@ -22,10 +23,16 @@ OK: ad-hoc archive blocked
 OK: Developer ID archive Authority blocked
 ==> nested helper ad-hoc refused even when app fixture looks Distribution
 OK: nested helper ad-hoc blocked
+==> gate refuses RS_ARCHIVE_APP that does not match RS_ARCHIVE_PATH
+OK: gate refused mismatched RS_ARCHIVE_APP vs RS_ARCHIVE_PATH
 ==> export_mas refuses ad-hoc archive before xcodebuild -exportArchive
 OK export_mas pre-xcodebuild refuse: ad-hoc-archive
-==> export_mas refuses Developer ID archive before xcodebuild -exportArchive
-OK export_mas pre-xcodebuild refuse: developer-id-archive
+==> export_mas refuses unsigned/Developer ID–shaped archive via real codesign (no fixtures)
+OK export_mas pre-xcodebuild refuse: developer-id-archive-real-codesign
+==> export_mas refuses Distribution-looking RS_ARCHIVE_APP override with ad-hoc archive (bypass)
+OK export_mas pre-xcodebuild refuse: mismatched-archive-app-bypass
+==> export_mas refuses RS_TEST_CODESIGN_DV_* on production export path
+OK export_mas pre-xcodebuild refuse: test-codesign-fixtures-refused
 ==> default host gate still fail-closed without Apple Distribution / RS_ARCHIVE_APP
 OK: default gate blocked
 STORE EXPORT GATE TESTS OK

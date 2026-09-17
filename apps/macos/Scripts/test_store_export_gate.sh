@@ -6,6 +6,8 @@
 # a Mac App Store–shaped profile with exact application-identifier + team.
 # Also requires RS_ARCHIVE_APP (app + nested helper) and proves export_mas
 # refuses ad-hoc / Developer ID archives before xcodebuild -exportArchive.
+# Proves RS_ARCHIVE_APP cannot bypass the gate for a different RS_ARCHIVE_PATH,
+# and that RS_TEST_CODESIGN_DV_* fixtures are refused on the production export path.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -313,6 +315,7 @@ OUT="$(
   RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
   RS_PROFILE_SEARCH_DIRS="$PROFILES" \
   RS_ARCHIVE_APP="$DIST_APP" \
+  RS_ALLOW_TEST_CODESIGN_DV=1 \
   RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
   RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-dist.txt" \
   "$GATE" 2>&1
@@ -324,6 +327,25 @@ echo "$OUT" | grep -q 'STORE EXPORT BLOCKED' \
   || { echo "FAIL: expected BLOCKED with bad CMS profiles" >&2; echo "$OUT" >&2; exit 1; }
 echo "OK: full gate blocked on wrong/dev/Developer ID CMS profiles"
 
+# Fixtures without RS_ALLOW_TEST_CODESIGN_DV must not stub production-like gate calls.
+set +e
+OUT="$(
+  RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
+  RS_NOTARY_TEAM_ID="$TEAM" \
+  RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
+  RS_PROFILE_SEARCH_DIRS="$PROFILES" \
+  RS_ARCHIVE_APP="$DIST_APP" \
+  RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
+  RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-dist.txt" \
+  env -u RS_ALLOW_TEST_CODESIGN_DV "$GATE" 2>&1
+)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || { echo "FAIL: fixtures without allow flag should block" >&2; echo "$OUT" >&2; exit 1; }
+echo "$OUT" | grep -Eqi 'RS_ALLOW_TEST_CODESIGN_DV|test harness only' \
+  || { echo "FAIL: expected fixture-allow refusal" >&2; echo "$OUT" >&2; exit 1; }
+echo "OK: codesign fixtures refused without RS_ALLOW_TEST_CODESIGN_DV=1"
+
 # Add good profile → should open (mocked Apple Distribution + Distribution-signed archive fixtures).
 sign_profile "$TMP/good.plist" "$PROFILES/good.mobileprovision"
 OUT="$(
@@ -332,6 +354,7 @@ OUT="$(
   RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
   RS_PROFILE_SEARCH_DIRS="$PROFILES" \
   RS_ARCHIVE_APP="$DIST_APP" \
+  RS_ALLOW_TEST_CODESIGN_DV=1 \
   RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
   RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-dist.txt" \
   "$GATE" 2>&1
@@ -350,6 +373,7 @@ OUT="$(
   RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
   RS_PROFILE_SEARCH_DIRS="$PROFILES" \
   RS_ARCHIVE_APP="$DIST_APP" \
+  RS_ALLOW_TEST_CODESIGN_DV=1 \
   RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
   RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-dist.txt" \
   "$GATE" 2>&1
@@ -386,6 +410,7 @@ OUT="$(
   RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
   RS_PROFILE_SEARCH_DIRS="$PROFILES" \
   RS_ARCHIVE_APP="$DEVID_APP" \
+  RS_ALLOW_TEST_CODESIGN_DV=1 \
   RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-devid.txt" \
   RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-devid.txt" \
   "$GATE" 2>&1
@@ -405,6 +430,7 @@ OUT="$(
   RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
   RS_PROFILE_SEARCH_DIRS="$PROFILES" \
   RS_ARCHIVE_APP="$HELPER_BAD_APP" \
+  RS_ALLOW_TEST_CODESIGN_DV=1 \
   RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
   RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-adhoc.txt" \
   "$GATE" 2>&1
@@ -451,10 +477,35 @@ run_export_expect_block() {
   [[ "$RC" -ne 0 ]] || { echo "FAIL: export_mas should block ($label)" >&2; echo "$OUT" >&2; exit 1; }
   [[ ! -f "$XCODEBUILD_MARKER" ]] \
     || { echo "FAIL: xcodebuild -exportArchive was invoked before gate failure ($label)" >&2; cat "$XCODEBUILD_MARKER" >&2; exit 1; }
-  echo "$OUT" | grep -Eqi 'STORE EXPORT BLOCKED|ERROR:|ad-hoc|Developer ID|TeamIdentifier unset|RS_ARCHIVE_APP' \
+  echo "$OUT" | grep -Eqi 'STORE EXPORT BLOCKED|ERROR:|ad-hoc|Developer ID|TeamIdentifier unset|RS_ARCHIVE_APP|export-gate bypass|test-only' \
     || { echo "FAIL: $label missing block evidence" >&2; echo "$OUT" >&2; exit 1; }
   echo "OK export_mas pre-xcodebuild refuse: $label"
 }
+
+echo "==> gate refuses RS_ARCHIVE_APP that does not match RS_ARCHIVE_PATH"
+MISMATCH_ARCHIVE="$TMP/mismatch-gate.xcarchive"
+make_archive_tree "$MISMATCH_ARCHIVE" "$ADHOC_APP"
+codesign --force --sign - "$MISMATCH_ARCHIVE/Products/Applications/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/runspecimen" >/dev/null 2>&1
+codesign --force --sign - "$MISMATCH_ARCHIVE/Products/Applications/RunSpecimen.app" >/dev/null 2>&1
+set +e
+OUT="$(
+  RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
+  RS_NOTARY_TEAM_ID="$TEAM" \
+  RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
+  RS_PROFILE_SEARCH_DIRS="$PROFILES" \
+  RS_ARCHIVE_PATH="$MISMATCH_ARCHIVE" \
+  RS_ARCHIVE_APP="$DIST_APP" \
+  RS_ALLOW_TEST_CODESIGN_DV=1 \
+  RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
+  RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-dist.txt" \
+  "$GATE" 2>&1
+)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || { echo "FAIL: mismatched RS_ARCHIVE_APP should block gate" >&2; echo "$OUT" >&2; exit 1; }
+echo "$OUT" | grep -Eqi 'export-gate bypass|!= app in RS_ARCHIVE_PATH' \
+  || { echo "FAIL: expected bypass refusal" >&2; echo "$OUT" >&2; exit 1; }
+echo "OK: gate refused mismatched RS_ARCHIVE_APP vs RS_ARCHIVE_PATH"
 
 echo "==> export_mas refuses ad-hoc archive before xcodebuild -exportArchive"
 ADHOC_ARCHIVE="$TMP/adhoc.xcarchive"
@@ -470,18 +521,38 @@ run_export_expect_block "ad-hoc-archive" \
   RS_NOTARY_TEAM_ID="$TEAM" \
   RS_PROFILE_SEARCH_DIRS="$PROFILES"
 
-echo "==> export_mas refuses Developer ID archive before xcodebuild -exportArchive"
+echo "==> export_mas refuses unsigned/Developer ID–shaped archive via real codesign (no fixtures)"
 DEVID_ARCHIVE="$TMP/devid.xcarchive"
 make_archive_tree "$DEVID_ARCHIVE" "$DEVID_APP"
-run_export_expect_block "developer-id-archive" \
+run_export_expect_block "developer-id-archive-real-codesign" \
   RS_ARCHIVE_PATH="$DEVID_ARCHIVE" \
   RS_EXPORT_DIR="$TMP/export-out-devid" \
   RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
   RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
   RS_NOTARY_TEAM_ID="$TEAM" \
+  RS_PROFILE_SEARCH_DIRS="$PROFILES"
+
+echo "==> export_mas refuses Distribution-looking RS_ARCHIVE_APP override with ad-hoc archive (bypass)"
+# Good/fixture-looking app path + bad archive must not reach xcodebuild.
+run_export_expect_block "mismatched-archive-app-bypass" \
+  RS_ARCHIVE_PATH="$ADHOC_ARCHIVE" \
+  RS_ARCHIVE_APP="$DIST_APP" \
+  RS_EXPORT_DIR="$TMP/export-out-bypass" \
+  RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
+  RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
+  RS_NOTARY_TEAM_ID="$TEAM" \
+  RS_PROFILE_SEARCH_DIRS="$PROFILES"
+
+echo "==> export_mas refuses RS_TEST_CODESIGN_DV_* on production export path"
+run_export_expect_block "test-codesign-fixtures-refused" \
+  RS_ARCHIVE_PATH="$ADHOC_ARCHIVE" \
+  RS_EXPORT_DIR="$TMP/export-out-fixtures" \
+  RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
+  RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
+  RS_NOTARY_TEAM_ID="$TEAM" \
   RS_PROFILE_SEARCH_DIRS="$PROFILES" \
-  RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-devid.txt" \
-  RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-devid.txt"
+  RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
+  RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-dist.txt"
 
 echo "==> default host gate still fail-closed without Apple Distribution / RS_ARCHIVE_APP"
 set +e

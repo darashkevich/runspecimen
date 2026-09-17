@@ -16,13 +16,21 @@
 #
 # Required:
 #   RS_ARCHIVE_APP           — archived .app path (fail closed if unset / missing)
+#                            When RS_ARCHIVE_PATH is also set, RS_ARCHIVE_APP must resolve to
+#                            the same path as $RS_ARCHIVE_PATH/Products/Applications/RunSpecimen.app
+#                            (canonicalized). Prevents checking a Distribution-signed app while
+#                            exporting a different archive.
 #
-# Test hooks (optional):
+# Optional:
+#   RS_ARCHIVE_PATH          — .xcarchive being exported; when set, binds signing checks to it
+#
+# Test hooks (optional; never for production export_mas.sh):
 #   RS_PROFILE_SEARCH_DIRS          — colon-separated dirs of *.mobileprovision / *.provisionprofile
 #   RS_SIGN_IDENTITY                — force identity string (still must be Apple Distribution)
 #   RS_EXPORT_OPTIONS_PLIST         — ExportOptions plist path
 #   RS_TEST_CODESIGN_DV_APP_FILE    — fixture codesign -dv text for the .app (unit tests)
 #   RS_TEST_CODESIGN_DV_HELPER_FILE — fixture codesign -dv text for nested helper (unit tests)
+#   RS_ALLOW_TEST_CODESIGN_DV=1     — required to honor the fixture files above (harness only)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -258,7 +266,26 @@ fi
 pass "Team ID matches: $TEAM"
 
 # Required: archived .app + nested helper must be Apple Distribution for TEAM.
+# Prefer binding to RS_ARCHIVE_PATH when present so a separate RS_ARCHIVE_APP cannot
+# satisfy the gate while a different archive is exported.
+canon_dir() {
+  (cd "$1" && pwd -P)
+}
+
 ARCHIVE_APP="${RS_ARCHIVE_APP:-}"
+if [[ -n "${RS_ARCHIVE_PATH:-}" ]]; then
+  [[ -d "$RS_ARCHIVE_PATH" ]] || fail "RS_ARCHIVE_PATH is not a directory: $RS_ARCHIVE_PATH"
+  DERIVED_APP="$RS_ARCHIVE_PATH/Products/Applications/RunSpecimen.app"
+  [[ -d "$DERIVED_APP" ]] || fail "archived app missing under RS_ARCHIVE_PATH: $DERIVED_APP"
+  DERIVED_CANON="$(canon_dir "$DERIVED_APP")"
+  if [[ -n "$ARCHIVE_APP" ]]; then
+    [[ -d "$ARCHIVE_APP" ]] || fail "RS_ARCHIVE_APP not a directory: $ARCHIVE_APP"
+    OVERRIDE_CANON="$(canon_dir "$ARCHIVE_APP")"
+    [[ "$OVERRIDE_CANON" == "$DERIVED_CANON" ]] \
+      || fail "RS_ARCHIVE_APP ($OVERRIDE_CANON) != app in RS_ARCHIVE_PATH ($DERIVED_CANON) — refusing export-gate bypass"
+  fi
+  ARCHIVE_APP="$DERIVED_APP"
+fi
 [[ -n "$ARCHIVE_APP" ]] || fail "RS_ARCHIVE_APP is required (path to archived RunSpecimen.app). Export must not proceed without an archive signing check."
 [[ -d "$ARCHIVE_APP" ]] || fail "RS_ARCHIVE_APP not a directory: $ARCHIVE_APP"
 
@@ -268,12 +295,17 @@ if [[ ! -e "$HELPER" ]]; then
 fi
 [[ -e "$HELPER" ]] || fail "nested helper missing under RS_ARCHIVE_APP (checked RunSpecimenEngine + Helpers): $ARCHIVE_APP"
 
+# Fixture codesign -dv text is harness-only. Production export_mas refuses these env vars.
 codesign_dv_for() {
   local path="$1" fixture="$2"
   if [[ -n "$fixture" && -f "$fixture" ]]; then
+    if [[ "${RS_ALLOW_TEST_CODESIGN_DV:-}" != "1" ]]; then
+      fail "RS_TEST_CODESIGN_DV_* fixtures require RS_ALLOW_TEST_CODESIGN_DV=1 (test harness only); refusing stub signature for $path"
+    fi
     cat "$fixture"
     return 0
   fi
+  # Always verify the real binary under the archive path (not metadata stubs).
   codesign -dv --verbose=4 "$path" 2>&1 || true
 }
 

@@ -1,0 +1,7 @@
+=== RS_ARCHIVE_APP override (Distribution-looking path) + ad-hoc RS_ARCHIVE_PATH refused before xcodebuild ===
+RS_ARCHIVE_APP=/var/folders/nb/gwgrnsjx7d5ftv5rz0nz1vkh0000gn/T/rs-bypass-ev.Q4U4oYU5Ov/dist-app/RunSpecimen.app
+RS_ARCHIVE_PATH=/var/folders/nb/gwgrnsjx7d5ftv5rz0nz1vkh0000gn/T/rs-bypass-ev.Q4U4oYU5Ov/adhoc.xcarchive
+exit=1
+xcodebuild_invoked=NO
+--- stdout/stderr ---
+ERROR: RS_ARCHIVE_APP (/private/var/folders/nb/gwgrnsjx7d5ftv5rz0nz1vkh0000gn/T/rs-bypass-ev.Q4U4oYU5Ov/dist-app/RunSpecimen.app) must equal app inside RS_ARCHIVE_PATH (/private/var/folders/nb/gwgrnsjx7d5ftv5rz0nz1vkh0000gn/T/rs-bypass-ev.Q4U4oYU5Ov/adhoc.xcarchive/Products/Applications/RunSpecimen.app). Refusing mismatched override (export-gate bypass).
