@@ -118,7 +118,7 @@ prepare_helper_payload() {
     cat "$freeze_log"
     if [[ "$freeze_rc" -eq 0 ]] && grep -q "Staged frozen helper:" "$freeze_log"; then
       rm -f "$freeze_log"
-      echo "==> Using frozen helper payload (PyInstaller onefile)"
+      echo "==> Using frozen helper payload (PyInstaller onedir)"
       return 0
     fi
     rm -f "$freeze_log"
@@ -192,12 +192,18 @@ if [[ -f "$ROOT/Resources/AppIcon-1024.png" ]]; then
   cp -f "$ROOT/Resources/AppIcon-1024.png" "$RES/AppIcon-1024.png" 2>/dev/null || true
 fi
 
-# ADR-002: stage Helpers into the bundle when a payload exists.
+# ADR-002: stage helper into the bundle when a payload exists.
+# MAS frozen onedir → Contents/Resources/RunSpecimenEngine/ (Helpers cannot hold
+# PyInstaller data files — Xcode app codesign treats them as unsigned nested code).
+# Local --from-src → Contents/Helpers/runspecimen + lib/ (unchanged).
 STAGED="$ROOT/Helpers/payload/runspecimen"
 STAGED_LIB="$ROOT/Helpers/payload/lib"
 STAGED_NOTICE="$ROOT/Helpers/payload/NOTICE.txt"
+STAGED_INTERNAL="$ROOT/Helpers/payload/_internal"
+ENGINE_OUT="$RES/RunSpecimenEngine"
 # Clear previous helper artifacts so a README-only build cannot leave a stale binary.
-rm -rf "$HELPERS_OUT/runspecimen" "$HELPERS_OUT/lib" "$HELPERS_OUT/NOTICE.txt" "$HELPERS_OUT/README.md"
+rm -rf "$HELPERS_OUT/runspecimen" "$HELPERS_OUT/lib" "$HELPERS_OUT/_internal" \
+  "$HELPERS_OUT/NOTICE.txt" "$HELPERS_OUT/README.md" "$HELPERS_OUT/README.txt" "$ENGINE_OUT"
 # Prefer cp -X to avoid copying Finder/Box xattrs that break codesign.
 if cp -X /etc/hosts /tmp/.rs-cp-x-test 2>/dev/null; then
   CP=(cp -X)
@@ -206,9 +212,34 @@ else
   CP=(cp)
 fi
 if [[ -x "$STAGED" ]]; then
-  "${CP[@]}" -f "$STAGED" "$HELPERS_OUT/runspecimen"
-  chmod +x "$HELPERS_OUT/runspecimen"
-  if [[ -d "$STAGED_LIB" ]]; then
+  # MAS always uses onedir engine under Resources. Local builds prefer package-tree
+  # (lib/) when present so a leftover _internal cannot hijack --from-src.
+  if [[ "$MAS_MODE" -eq 1 || ( ! -d "$STAGED_LIB" && -d "$STAGED_INTERNAL" ) ]]; then
+    if [[ ! -d "$STAGED_INTERNAL" ]]; then
+      echo "ERROR: MAS/onedir freeze missing Helpers/payload/_internal" >&2
+      exit 1
+    fi
+    mkdir -p "$ENGINE_OUT/_internal"
+    "${CP[@]}" -f "$STAGED" "$ENGINE_OUT/runspecimen"
+    chmod +x "$ENGINE_OUT/runspecimen"
+    if rsync -a --delete --exclude '__pycache__' --exclude '*.pyc' --no-xattrs \
+         "$STAGED_INTERNAL/" "$ENGINE_OUT/_internal/" 2>/dev/null; then
+      :
+    else
+      rsync -a --delete --exclude '__pycache__' --exclude '*.pyc' \
+        "$STAGED_INTERNAL/" "$ENGINE_OUT/_internal/" \
+        || cp -R "$STAGED_INTERNAL/." "$ENGINE_OUT/_internal/"
+    fi
+    if [[ -f "$STAGED_NOTICE" ]]; then
+      "${CP[@]}" -f "$STAGED_NOTICE" "$RES/HelperNOTICE.txt"
+    fi
+    # Leave Helpers empty for MAS — any loose file there breaks app codesign.
+    rm -rf "$HELPERS_OUT"
+    mkdir -p "$HELPERS_OUT"
+    echo "Bundled onedir engine: $ENGINE_OUT/runspecimen"
+  elif [[ -d "$STAGED_LIB" ]]; then
+    "${CP[@]}" -f "$STAGED" "$HELPERS_OUT/runspecimen"
+    chmod +x "$HELPERS_OUT/runspecimen"
     mkdir -p "$HELPERS_OUT/lib"
     if rsync -a --delete --exclude '__pycache__' --exclude '*.pyc' --no-xattrs \
          "$STAGED_LIB/" "$HELPERS_OUT/lib/" 2>/dev/null; then
@@ -216,13 +247,20 @@ if [[ -x "$STAGED" ]]; then
     else
       rsync -a --delete --exclude '__pycache__' --exclude '*.pyc' "$STAGED_LIB/" "$HELPERS_OUT/lib/"
     fi
-  fi
-  if [[ -f "$STAGED_NOTICE" ]]; then
-    "${CP[@]}" -f "$STAGED_NOTICE" "$HELPERS_OUT/NOTICE.txt"
-  fi
-  echo "Bundled helper: $HELPERS_OUT/runspecimen"
-  if [[ -d "$HELPERS_OUT/lib/runspecimen" ]]; then
-    echo "Bundled package tree: $HELPERS_OUT/lib/runspecimen"
+    if [[ -f "$STAGED_NOTICE" ]]; then
+      "${CP[@]}" -f "$STAGED_NOTICE" "$HELPERS_OUT/NOTICE.txt"
+    fi
+    echo "Bundled helper: $HELPERS_OUT/runspecimen"
+    if [[ -d "$HELPERS_OUT/lib/runspecimen" ]]; then
+      echo "Bundled package tree: $HELPERS_OUT/lib/runspecimen"
+    fi
+  else
+    "${CP[@]}" -f "$STAGED" "$HELPERS_OUT/runspecimen"
+    chmod +x "$HELPERS_OUT/runspecimen"
+    if [[ -f "$STAGED_NOTICE" ]]; then
+      "${CP[@]}" -f "$STAGED_NOTICE" "$HELPERS_OUT/NOTICE.txt"
+    fi
+    echo "Bundled helper: $HELPERS_OUT/runspecimen"
   fi
 else
   "${CP[@]}" "$ROOT/Helpers/README.md" "$HELPERS_OUT/README.md"
@@ -230,20 +268,27 @@ else
 fi
 
 if [[ "$REQUIRE_HELPER" -eq 1 ]]; then
-  if [[ ! -x "$HELPERS_OUT/runspecimen" ]]; then
-    echo "ERROR: helper required but missing at $HELPERS_OUT/runspecimen (fail closed)." >&2
-    exit 1
-  fi
   if [[ "$MAS_MODE" -eq 1 ]]; then
+    if [[ ! -x "$ENGINE_OUT/runspecimen" ]]; then
+      echo "ERROR: MAS helper required but missing at $ENGINE_OUT/runspecimen (fail closed)." >&2
+      exit 1
+    fi
     if [[ -d "$HELPERS_OUT/lib" ]]; then
       echo "ERROR: MAS build must not ship host-Python package-tree lib/ — freeze failed?" >&2
       exit 1
     fi
-    if ! file "$HELPERS_OUT/runspecimen" | grep -q 'Mach-O'; then
-      echo "ERROR: MAS helper must be a Mach-O frozen binary, not a shell launcher." >&2
-      file "$HELPERS_OUT/runspecimen" >&2 || true
+    if [[ ! -d "$ENGINE_OUT/_internal" ]]; then
+      echo "ERROR: MAS onedir freeze must ship Contents/Resources/RunSpecimenEngine/_internal." >&2
       exit 1
     fi
+    if ! file "$ENGINE_OUT/runspecimen" | grep -q 'Mach-O'; then
+      echo "ERROR: MAS helper must be a Mach-O frozen binary, not a shell launcher." >&2
+      file "$ENGINE_OUT/runspecimen" >&2 || true
+      exit 1
+    fi
+  elif [[ ! -x "$HELPERS_OUT/runspecimen" ]]; then
+    echo "ERROR: helper required but missing at $HELPERS_OUT/runspecimen (fail closed)." >&2
+    exit 1
   fi
 fi
 
@@ -268,18 +313,23 @@ clear_codesign_xattrs
 #   "-" only for local smoke, clearly labeled). Store export still needs Yahor's certs.
 sign_bundle() {
   local helper="$HELPERS_OUT/runspecimen"
+  local engine="$RES/RunSpecimenEngine/runspecimen"
   clear_codesign_xattrs
+  if [[ -x "$engine" ]] && file "$engine" | grep -q 'Mach-O'; then
+    helper="$engine"
+  fi
   if [[ -x "$helper" ]] && file "$helper" | grep -q 'Mach-O'; then
-    # Pre-sign version gate (fail closed) against the staged payload / helper copy.
+    # Pre-sign version gate (fail closed) against the staged payload (pre-inherit).
     local ver
-    ver="$("$helper" --version 2>&1)" || {
-      # If already inherit-signed from a prior run, gate via payload instead.
-      ver="$("$ROOT/Helpers/payload/runspecimen" --version 2>&1)" || {
-        echo "ERROR: cannot read helper version (helper + payload both failed)" >&2
-        exit 1
-      }
+    ver="$("$ROOT/Helpers/payload/runspecimen" --version 2>&1)" || {
+      echo "ERROR: payload --version failed before nested sign" >&2
+      exit 1
     }
     echo "Helper pre-sign --version → $ver"
+    echo "$ver" | grep -qi runspecimen || {
+      echo "ERROR: helper version gate failed: $ver" >&2
+      exit 1
+    }
     if [[ "$MAS_MODE" -eq 1 ]]; then
       local repo_ver
       repo_ver="$(
@@ -291,22 +341,42 @@ sign_bundle() {
         exit 1
       }
     fi
-    "$ROOT/Scripts/sign_nested_helper.sh" "$helper"
-    # Seal app without --deep so helper keeps inherit entitlements.
+    # Seal under /tmp so Box/Finder cannot re-inject resource forks mid-codesign.
+    local seal_parent seal_app
+    seal_parent="$(mktemp -d /tmp/rs-seal-app.XXXXXX)"
+    seal_app="$seal_parent/RunSpecimen.app"
+    ditto --norsrc --noextattr "$APP" "$seal_app"
+    local seal_helper="$seal_app/Contents/Resources/RunSpecimenEngine/runspecimen"
+    if [[ ! -x "$seal_helper" ]]; then
+      seal_helper="$seal_app/Contents/Helpers/runspecimen"
+    fi
+    "$ROOT/Scripts/sign_nested_helper.sh" "$seal_helper"
     local resolve_out identity mode
     resolve_out="$("$ROOT/Scripts/resolve_codesign_identity.sh")"
     identity="$(printf '%s\n' "$resolve_out" | awk -F= '/^IDENTITY=/{print substr($0,10); exit}')"
     mode="$(printf '%s\n' "$resolve_out" | awk -F= '/^MODE=/{print $2; exit}')"
     if [[ "$mode" == "adhoc" || "$identity" == "-" ]]; then
       echo "AD-HOC app signing (local smoke only; TeamIdentifier unset)." >&2
-      codesign --force --sign - --entitlements "$ENTITLEMENTS" "$APP"
+      codesign --force --sign - --options runtime --timestamp=none \
+        --entitlements "$ENTITLEMENTS" \
+        "$seal_app"
     else
       echo "Signing app with identity ($mode): $identity"
       codesign --force --options runtime --timestamp \
         --entitlements "$ENTITLEMENTS" \
         --sign "$identity" \
-        "$APP"
+        "$seal_app"
     fi
+    codesign --verify --verbose=2 "$seal_app" 2>&1 | tail -8
+    codesign -d --entitlements - "$seal_app" 2>/dev/null | grep -q 'com.apple.security.app-sandbox' || {
+      echo "ERROR: app missing app-sandbox after seal" >&2
+      rm -rf "$seal_parent"
+      exit 1
+    }
+    rm -rf "$APP"
+    mkdir -p "$(dirname "$APP")"
+    ditto "$seal_app" "$APP"
+    rm -rf "$seal_parent"
     echo "Signed frozen helper with sandbox+inherit; app sealed ($mode)."
   else
     codesign --force --deep --sign - --entitlements "$ENTITLEMENTS" "$APP"

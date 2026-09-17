@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Sign Contents/Helpers/runspecimen with App Sandbox + inherit entitlements.
+# For PyInstaller onedir, also ad-hoc/distribution-signs nested Mach-Os under
+# Contents/Helpers/_internal (inside-out) before sealing the entrypoint.
 #
 # Usage:
 #   ./Scripts/sign_nested_helper.sh <helper-path> [--require-distribution]
 #
 # - Resolves identity via resolve_codesign_identity.sh (Xcode env / keychain / ad-hoc).
-# - Always applies Entitlements/RunSpecimen.helper.entitlements (app-sandbox + inherit).
+# - Always applies Entitlements/RunSpecimen.helper.entitlements (app-sandbox + inherit)
+#   to the entrypoint helper.
 # - Ad-hoc ("-") is allowed only for local structural smoke; labeled on stderr.
 # - Does NOT execute the helper after signing: inherit-signed Mach-Os fail when
 #   launched from an unsandboxed shell (exit 133) — version gates must run pre-sign.
@@ -50,19 +53,54 @@ if [[ "$REQUIRE_DIST" -eq 1 && "$MODE" == "adhoc" ]]; then
 fi
 
 xattr -cr "$HELPER" 2>/dev/null || true
+HELPER_DIR="$(cd "$(dirname "$HELPER")" && pwd)"
+INTERNAL="$HELPER_DIR/_internal"
+
+sign_file() {
+  local path="$1"
+  local with_entitlements="${2:-0}"
+  xattr -cr "$path" 2>/dev/null || true
+  if [[ "$MODE" == "adhoc" || "$IDENTITY" == "-" ]]; then
+    if [[ "$with_entitlements" == "1" ]]; then
+      codesign --force --sign - --options runtime --timestamp=none \
+        --entitlements "$HELPER_ENTITLEMENTS" \
+        "$path"
+    else
+      codesign --force --sign - --options runtime --timestamp=none "$path"
+    fi
+  else
+    if [[ "$with_entitlements" == "1" ]]; then
+      codesign --force --sign "$IDENTITY" --options runtime --timestamp \
+        --entitlements "$HELPER_ENTITLEMENTS" \
+        "$path"
+    else
+      codesign --force --sign "$IDENTITY" --options runtime --timestamp "$path"
+    fi
+  fi
+}
+
+# Inside-out: sign nested dylibs / .so / Mach-O bins under _internal first.
+# Non-Mach-O files must NOT keep the executable bit — Xcode's outer app codesign
+# otherwise treats them as unsigned nested code (e.g. py.typed) and fails Archive.
+if [[ -d "$INTERNAL" ]]; then
+  echo "Signing onedir _internal runtime under $INTERNAL"
+  xattr -cr "$INTERNAL" 2>/dev/null || true
+  while IFS= read -r -d '' f; do
+    if file "$f" 2>/dev/null | grep -q 'Mach-O'; then
+      sign_file "$f" 0
+    else
+      chmod a-x "$f" 2>/dev/null || true
+    fi
+  done < <(find "$INTERNAL" -type f -print0)
+fi
 
 if [[ "$MODE" == "adhoc" || "$IDENTITY" == "-" ]]; then
   echo "AD-HOC nested helper signing (local smoke only; TeamIdentifier will be unset)." >&2
   echo "Store export requires Apple Distribution — nested sign will then use that identity." >&2
-  codesign --force --sign - --options runtime --timestamp=none \
-    --entitlements "$HELPER_ENTITLEMENTS" \
-    "$HELPER"
 else
   echo "Signing nested helper with identity ($MODE): $IDENTITY"
-  codesign --force --sign "$IDENTITY" --options runtime --timestamp \
-    --entitlements "$HELPER_ENTITLEMENTS" \
-    "$HELPER"
 fi
+sign_file "$HELPER" 1
 
 # Fail-closed entitlement assertions
 ENT_XML="$(codesign -d --entitlements - "$HELPER" 2>/dev/null || true)"

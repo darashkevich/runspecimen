@@ -130,6 +130,7 @@ targets:
             exit 1
           }
           mkdir -p "$DEST" "$RES_DEST"
+          ENGINE_DEST="${RES_DEST}/RunSpecimenEngine"
           # Always stage icon + privacy manifest (XcodeGen resource sync can miss on some hosts).
           for f in AppIcon.icns AppIcon-1024.png PrivacyInfo.xcprivacy; do
             if [[ -f "${SRCROOT}/Resources/$f" ]]; then
@@ -142,23 +143,36 @@ targets:
             fi
           done
           # Strip Finder/Box xattrs that break codesign ("resource fork … not allowed").
+          INTERNAL_SRC="${SRCROOT}/Helpers/payload/_internal"
+          if [[ ! -d "$INTERNAL_SRC" ]]; then
+            echo "error: Missing Helpers/payload/_internal (onedir freeze required for MAS sandbox)." >&2
+            echo "error: Run: ./Scripts/freeze_helper.sh --enable --require --verify" >&2
+            exit 1
+          fi
+          rm -rf "$ENGINE_DEST" "$DEST/runspecimen" "$DEST/_internal" "$DEST/lib"
+          mkdir -p "$ENGINE_DEST"
           if cp -X /etc/hosts /tmp/.rs-cp-x-test 2>/dev/null; then
             rm -f /tmp/.rs-cp-x-test
-            cp -X -f "$HELPER_SRC" "$DEST/runspecimen"
-            # NOTICE lives under Resources — loose files beside Helpers Mach-O confuse codesign.
+            cp -X -f "$HELPER_SRC" "$ENGINE_DEST/runspecimen"
             [[ -f "$HELPER_NOTICE" ]] && cp -X -f "$HELPER_NOTICE" "$RES_DEST/HelperNOTICE.txt" || true
           else
-            cp -f "$HELPER_SRC" "$DEST/runspecimen"
+            cp -f "$HELPER_SRC" "$ENGINE_DEST/runspecimen"
             [[ -f "$HELPER_NOTICE" ]] && cp -f "$HELPER_NOTICE" "$RES_DEST/HelperNOTICE.txt" || true
           fi
-          chmod +x "$DEST/runspecimen"
-          rm -rf "$DEST/lib"
-          rm -f "$DEST/NOTICE.txt" "$DEST/README.md"
-          xattr -cr "$DEST" 2>/dev/null || true
-          # Nested Mach-O: real Xcode identity when present; ad-hoc only for local smoke.
-          # Always apply helper sandbox+inherit entitlements (never bare codesign --sign -).
-          "${SRCROOT}/Scripts/sign_nested_helper.sh" "$DEST/runspecimen"
-          echo "Embedded helper: $DEST/runspecimen (engine $REPO_VER)"
+          chmod +x "$ENGINE_DEST/runspecimen"
+          mkdir -p "$ENGINE_DEST/_internal"
+          if rsync -a --delete --exclude '__pycache__' --exclude '*.pyc' "$INTERNAL_SRC/" "$ENGINE_DEST/_internal/" 2>/dev/null; then
+            :
+          else
+            cp -R "$INTERNAL_SRC/." "$ENGINE_DEST/_internal/"
+          fi
+          # Do not place loose files under Helpers — Xcode treats Contents/Helpers/*
+          # as nested code that must be signed. Engine lives only under Resources.
+          rm -rf "$DEST"
+          mkdir -p "$DEST"
+          xattr -cr "$ENGINE_DEST" 2>/dev/null || true
+          "${SRCROOT}/Scripts/sign_nested_helper.sh" "$ENGINE_DEST/runspecimen"
+          echo "Embedded helper engine: $ENGINE_DEST/runspecimen (engine $REPO_VER, onedir _internal)"
       - name: Clear Codesign Xattrs
         basedOnDependencyAnalysis: false
         script: |
@@ -169,7 +183,7 @@ targets:
             find "$APP" -exec xattr -c {} + 2>/dev/null || true
             find "$APP" \( -name '._*' -o -name '.DS_Store' \) -delete 2>/dev/null || true
             command -v dot_clean >/dev/null 2>&1 && dot_clean -m "$APP" 2>/dev/null || true
-            HELPER="$APP/Contents/Helpers/runspecimen"
+            HELPER="$APP/Contents/Resources/RunSpecimenEngine/runspecimen"
             if [[ -x "$HELPER" ]] && file "$HELPER" | grep -q 'Mach-O'; then
               # Re-seal nested helper with the SAME identity resolution + inherit entitlements.
               # Never hard-code codesign --sign - here (breaks Apple Distribution archives).

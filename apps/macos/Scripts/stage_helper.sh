@@ -149,6 +149,7 @@ stage_from_src() {
   fi
 
   rm -rf "$LIB"
+  rm -rf "$PAYLOAD/_internal"
   mkdir -p "$LIB"
   # Copy package without caches / junk.
   rsync -a --delete \
@@ -184,6 +185,7 @@ stage_from_path() {
   rm -f "$DEST"
   # Drop any previous package tree so build_app does not mix modes.
   rm -rf "$LIB"
+  rm -rf "$PAYLOAD/_internal"
   cp -f "$FROM" "$DEST"
   chmod +x "$DEST"
   cat >"$NOTICE" <<EOF

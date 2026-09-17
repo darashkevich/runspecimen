@@ -21,11 +21,13 @@ Consult current Apple docs before each submission:
 
 ### Why MAS-first now
 
-1. **Guideline 2.4.5(viii)** — Store builds embed a **frozen Mach-O** helper under
-   `Contents/Helpers` (PyInstaller onefile) built from the current engine
-   (`0.2.0rc10` on this branch). No host Python / optionally installed PyPI CLI is
-   required for Store builds. `--from-src` host-Python launchers are **local/CI
-   only** and are rejected at runtime when `RSDistributionChannel=mas`.
+1. **Guideline 2.4.5(viii)** — Store builds embed a **frozen Mach-O** helper
+   (`Contents/Resources/RunSpecimenEngine/`, PyInstaller **onedir** + `_internal/`)
+   built from the current engine (`0.2.0rc10` on this branch). **Onefile is not used**
+   — its bootloader needs SysV semaphores denied by App Sandbox. No host Python /
+   optionally installed PyPI CLI is required for Store builds. `--from-src`
+   host-Python launchers are **local/CI only** and are rejected at runtime when
+   `RSDistributionChannel=mas`.
 2. **Guideline 2.4.5(i)** — App Sandbox + justified entitlements
    (`Entitlements/RunSpecimen.mas.entitlements`).
 3. **Guideline 2.4.5(ii)** — Self-contained `.app`; never `pip install` into shared
@@ -68,10 +70,12 @@ python3 -m pip install --user 'pyinstaller>=6'   # freeze machine only
 ./Scripts/build_app.sh --mas
 # Confirm helper is current engine (rc10 on this branch):
 #   Helpers/payload/runspecimen --version   # gate BEFORE inherit sign
-#   codesign -d --entitlements - Contents/Helpers/runspecimen  # must show sandbox+inherit
-#   # Do NOT expect Contents/Helpers/runspecimen --version from a normal shell —
+#   codesign -d --entitlements - Contents/Resources/RunSpecimenEngine/runspecimen
+#   # Do NOT expect engine --version from a normal shell —
 #   # inherit-signed helpers exit non-zero outside the parent app sandbox (by design).
-#   no Contents/Helpers/lib/
+#   Contents/Resources/RunSpecimenEngine/_internal/ present (onedir)
+#   no Contents/Helpers/lib/ (host-Python tree)
+#   no Contents/Helpers/_internal (data must not live under Helpers — breaks codesign)
 #   Info.plist RSDistributionChannel == mas
 #   Resources/AppIcon.icns present
 
@@ -86,7 +90,13 @@ python3 -m pip install --user 'pyinstaller>=6'   # freeze machine only
 ```
 
 Export options template: [Config/ExportOptions.mas.plist](Config/ExportOptions.mas.plist)
-(replace `TEAMID` before export).
+(replace `TEAMID` before export). **Fail-closed export:**
+`./Scripts/assert_store_export_ready.sh` then `./Scripts/export_mas.sh` —
+Apple Distribution + matching team + MAS profile required; **Developer ID is not
+sufficient**.
+
+ASC paste pack (metadata / screenshots checklist / reviewer demo):
+[asc-kit/](asc-kit/) — mark screenshot PNGs and Connect record as **pending** until Yahor fills them.
 
 ## Nested signing (helper)
 
@@ -205,17 +215,20 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 
 ## Packaging checklist (MAS)
 
-- [ ] `./Scripts/build_app.sh --mas` succeeds (Mach-O helper == repo `0.2.0rc10`, no `lib/`)
-- [ ] Helper entitlements: `codesign -d --entitlements - …/Helpers/runspecimen` shows sandbox+inherit
-- [ ] App Sandbox entitlements (`RunSpecimen.mas.entitlements`)
-- [ ] `PrivacyInfo.xcprivacy` present
-- [ ] `AppIcon.icns` in `Contents/Resources`
-- [ ] `RSDistributionChannel=mas`
-- [ ] No `get-task-allow`
-- [ ] `./Scripts/archive_mas.sh` + `assert_archive_signing.sh` succeed
-- [ ] Apple Distribution signing + upload to App Store Connect (Yahor)
-- [ ] Privacy policy URL in Connect + in-app
-- [ ] Screenshots + reviewer demo notes
+- [x] `./Scripts/build_app.sh --mas` succeeds (Mach-O onedir engine == repo `0.2.0rc10`, `RunSpecimenEngine/_internal`, no `Helpers/lib/`)
+- [x] Helper entitlements: `codesign -d --entitlements - …/RunSpecimenEngine/runspecimen` shows sandbox+inherit
+- [x] App Sandbox entitlements (`RunSpecimen.mas.entitlements`)
+- [x] `PrivacyInfo.xcprivacy` present
+- [x] `AppIcon.icns` in `Contents/Resources`
+- [x] `RSDistributionChannel=mas`
+- [x] No `get-task-allow`
+- [x] `./Scripts/archive_mas.sh` + `assert_archive_signing.sh` succeed (ad-hoc when no certs)
+- [x] `./Scripts/test_mas_sandbox_e2e.sh` (bookmark / dashboard cleanup / PTY wait — never types APPROVE)
+- [x] Store export fail-closed without Apple Distribution (`assert_store_export_ready.sh`)
+- [ ] Apple Distribution signing + upload to App Store Connect (Yahor) — **pending**
+- [x] Privacy policy URL in-app (Connect field **pending** Yahor)
+- [ ] Screenshots in Connect — **pending** (see [asc-kit/screenshots/](asc-kit/screenshots/))
+- [x] Reviewer demo notes paste-ready ([asc-kit/reviewer-demo.md](asc-kit/reviewer-demo.md))
 - [ ] Codex QA + Yahor release decision **before** Submit for Review
 
 ## Remaining Yahor-only blockers

@@ -125,8 +125,15 @@ fi
 test -d "$ARCHIVE_PATH"
 APP_IN_ARCHIVE="$ARCHIVE_PATH/Products/Applications/RunSpecimen.app"
 test -x "$APP_IN_ARCHIVE/Contents/MacOS/RunSpecimen"
-test -x "$APP_IN_ARCHIVE/Contents/Helpers/runspecimen"
-file "$APP_IN_ARCHIVE/Contents/Helpers/runspecimen" | grep -q 'Mach-O'
+ENGINE="$APP_IN_ARCHIVE/Contents/Resources/RunSpecimenEngine/runspecimen"
+test -x "$ENGINE"
+file "$ENGINE" | grep -q 'Mach-O'
+test -d "$APP_IN_ARCHIVE/Contents/Resources/RunSpecimenEngine/_internal" || {
+  echo "ERROR: archived app missing onedir _internal (onefile is not App Sandbox–safe)" >&2
+  exit 1
+}
+test ! -d "$APP_IN_ARCHIVE/Contents/Helpers/lib"
+test ! -d "$APP_IN_ARCHIVE/Contents/Helpers/_internal"
 CHANNEL="$(/usr/libexec/PlistBuddy -c "Print :RSDistributionChannel" "$APP_IN_ARCHIVE/Contents/Info.plist" 2>/dev/null || true)"
 echo "RSDistributionChannel=${CHANNEL}"
 test -f "$APP_IN_ARCHIVE/Contents/Resources/AppIcon.icns"
@@ -141,32 +148,46 @@ codesign -dv --verbose=4 "$APP_IN_ARCHIVE" 2>&1
 echo "----- APP entitlements -----"
 codesign -d --entitlements - "$APP_IN_ARCHIVE" 2>&1
 echo "----- HELPER codesign -dv --verbose=4 -----"
-codesign -dv --verbose=4 "$APP_IN_ARCHIVE/Contents/Helpers/runspecimen" 2>&1
+codesign -dv --verbose=4 "$ENGINE" 2>&1
 echo "----- HELPER entitlements -----"
-codesign -d --entitlements - "$APP_IN_ARCHIVE/Contents/Helpers/runspecimen" 2>&1
+codesign -d --entitlements - "$ENGINE" 2>&1
 
 # Convenience symlink inside apps/macos/build for operators (best-effort).
 mkdir -p "$ROOT/build"
 rm -rf "$LOCAL_ARCHIVE_LINK" 2>/dev/null || true
 ln -sfn "$ARCHIVE_PATH" "$LOCAL_ARCHIVE_LINK" 2>/dev/null || true
 
-echo "==> exportArchive probe (expected to fail without ASC/team)"
+echo "==> Store export gate (fail closed — Apple Distribution required)"
 EXPORT_DIR="${RS_EXPORT_DIR:-/tmp/runspecimen-mas/export-mas}"
 EXPORT_PLIST="$ROOT/Config/ExportOptions.mas.plist"
-rm -rf "$EXPORT_DIR"
+EXPORT_GATE_LOG="/tmp/runspecimen-mas/export-gate.log"
 set +e
-xcodebuild -exportArchive \
-  -archivePath "$ARCHIVE_PATH" \
-  -exportPath "$EXPORT_DIR" \
-  -exportOptionsPlist "$EXPORT_PLIST" \
-  >"/tmp/runspecimen-mas/export-mas.log" 2>&1
-EXPORT_RC=$?
+./Scripts/assert_store_export_ready.sh >"$EXPORT_GATE_LOG" 2>&1
+EXPORT_GATE_RC=$?
 set -e
-if [[ "$EXPORT_RC" -eq 0 ]]; then
-  echo "exportArchive succeeded unexpectedly — inspect $EXPORT_DIR"
+if [[ "$EXPORT_GATE_RC" -eq 0 ]]; then
+  echo "Store export prerequisites present — running export_mas.sh"
+  RS_ARCHIVE_PATH="$ARCHIVE_PATH" RS_EXPORT_DIR="$EXPORT_DIR" ./Scripts/export_mas.sh
+  EXPORT_RC=0
 else
-  echo "exportArchive failed as expected without distribution certs/team (exit $EXPORT_RC)."
-  tail -30 "/tmp/runspecimen-mas/export-mas.log" || true
+  echo "Store export BLOCKED (fail closed) without Apple Distribution + matching team + profile:"
+  cat "$EXPORT_GATE_LOG" || true
+  # Prove we refuse even if someone forces xcodebuild -exportArchive with Developer ID / placeholder team.
+  rm -rf "$EXPORT_DIR"
+  set +e
+  xcodebuild -exportArchive \
+    -archivePath "$ARCHIVE_PATH" \
+    -exportPath "$EXPORT_DIR" \
+    -exportOptionsPlist "$EXPORT_PLIST" \
+    >"/tmp/runspecimen-mas/export-mas.log" 2>&1
+  EXPORT_RC=$?
+  set -e
+  if [[ "$EXPORT_RC" -eq 0 ]]; then
+    echo "ERROR: exportArchive succeeded despite assert_store_export_ready failure — refuse to treat as OK" >&2
+    exit 1
+  fi
+  echo "exportArchive also failed (exit $EXPORT_RC) — consistent with fail-closed policy."
+  EXPORT_RC="$EXPORT_GATE_RC"
 fi
 
 cat <<EOF
@@ -177,7 +198,7 @@ ARCHIVE OK
   signing:  $SIGNING_MODE
   helper:   engine $REPO_VER (payload-gated; inherit-signed — not shell-exec'd)
   channel:  ${CHANNEL:-unknown}
-  export:   exit $EXPORT_RC (upload still Yahor-only with Apple Distribution + ASC)
+  export:   gate_rc=$EXPORT_GATE_RC (upload still Yahor-only with Apple Distribution + ASC)
 
 Do not Submit for Review or distribute this archive as production.
 EOF

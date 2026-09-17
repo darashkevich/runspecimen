@@ -8,13 +8,16 @@
 #   ./Scripts/freeze_helper.sh --enable --require   # MAS: fail if freeze impossible
 #   ./Scripts/build_app.sh --mas                    # primary Store path (calls --require)
 #
-# MAS Store builds MUST use a frozen Mach-O (no host Python). Local/CI may use --from-src.
+# MAS uses **onedir** (not onefile): App Sandbox denies SysV semaphores that the
+# onefile bootloader needs (`semctl: Operation not permitted`). onedir keeps a
+# Mach-O entrypoint + `_internal/` runtime next to it — still no host Python.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$ROOT/../.." && pwd)"
 PAYLOAD="$ROOT/Helpers/payload"
 DEST="$PAYLOAD/runspecimen"
+DEST_INTERNAL="$PAYLOAD/_internal"
 SPEC_DIR="$ROOT/build/pyinstaller"
 WORKDIR="$SPEC_DIR/work"
 DIST="$SPEC_DIR/dist"
@@ -31,7 +34,7 @@ usage() {
   cat <<'EOF'
 Usage: ./Scripts/freeze_helper.sh [--enable] [--verify] [--require] [-h]
 
-  --enable   Attempt a PyInstaller onefile freeze (or set RS_FREEZE_HELPER=1).
+  --enable   Attempt a PyInstaller onedir freeze (or set RS_FREEZE_HELPER=1).
   --verify   After freeze, run payload/runspecimen --version.
   --require  Fail (exit 1) if PyInstaller is missing or freeze fails (MAS path).
              Also set by RS_MAS_BUILD=1.
@@ -42,6 +45,9 @@ so CI and default smoke stay green when PyInstaller is absent — unless --requi
 
 MAS Store builds (./Scripts/build_app.sh --mas) always --require a Mach-O freeze.
 Local Prefer Bundled Helper may still use --from-src (host Python).
+
+Note: onefile is intentionally NOT used — its bootloader needs ipc-sysv-sem,
+which App Sandbox denies. onedir is the sandbox-compatible layout.
 EOF
 }
 
@@ -113,9 +119,8 @@ mkdir -p "$PAYLOAD" "$WORKDIR" "$DIST"
 rm -rf "$DIST" "$WORKDIR"
 mkdir -p "$DIST" "$WORKDIR"
 
-echo "==> PyInstaller onefile freeze (local experiment)"
+echo "==> PyInstaller onedir freeze (App Sandbox–compatible; not onefile)"
 echo "    tool: $PYI"
-# Entry via -m runspecimen requires a tiny trampoline for onefile.
 TRAMPOLINE="$WORKDIR/runspecimen_main.py"
 cat >"$TRAMPOLINE" <<'PY'
 from runspecimen.cli import main
@@ -128,7 +133,7 @@ PY
 $PYI \
   --noconfirm \
   --clean \
-  --onefile \
+  --onedir \
   --name runspecimen \
   --paths "$REPO/src" \
   --distpath "$DIST" \
@@ -137,28 +142,44 @@ $PYI \
   --console \
   "$TRAMPOLINE"
 
-if [[ ! -x "$DIST/runspecimen" ]]; then
-  echo "PyInstaller did not produce $DIST/runspecimen" >&2
+ONEDIR_APP="$DIST/runspecimen/runspecimen"
+ONEDIR_INTERNAL="$DIST/runspecimen/_internal"
+if [[ ! -x "$ONEDIR_APP" ]]; then
+  echo "PyInstaller did not produce $ONEDIR_APP" >&2
+  exit 1
+fi
+if [[ ! -d "$ONEDIR_INTERNAL" ]]; then
+  echo "PyInstaller onedir missing _internal at $ONEDIR_INTERNAL" >&2
   exit 1
 fi
 
-# Drop any previous package-tree payload so build_app does not mix modes.
-rm -rf "$PAYLOAD/lib"
-cp -f "$DIST/runspecimen" "$DEST"
+# Drop any previous package-tree / onefile payload so build_app does not mix modes.
+rm -rf "$PAYLOAD/lib" "$DEST_INTERNAL"
+rm -f "$DEST"
+cp -f "$ONEDIR_APP" "$DEST"
 chmod +x "$DEST"
+# Preserve _internal next to the Mach-O (PyInstaller layout).
+if command -v rsync >/dev/null 2>&1; then
+  rsync -a --delete "$ONEDIR_INTERNAL/" "$DEST_INTERNAL/"
+else
+  cp -R "$ONEDIR_INTERNAL" "$DEST_INTERNAL"
+fi
 cat >"$PAYLOAD/NOTICE.txt" <<EOF
-RunSpecimen helper payload (PyInstaller freeze)
-===============================================
+RunSpecimen helper payload (PyInstaller onedir freeze)
+======================================================
 
 Frozen on: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 Host: $(uname -srm)
 Tool: $PYI
+Layout: onedir (runspecimen + _internal/) — required for App Sandbox
 
-This binary embeds a CPython runtime via PyInstaller. Before Mac App Store /
-redistribution:
+Onefile is intentionally avoided: the onefile bootloader uses SysV semaphores
+(semctl) which macOS App Sandbox denies. This onedir layout keeps a self-contained
+Mach-O entrypoint with a private CPython runtime under _internal/ (no host Python).
+
+Before Mac App Store / redistribution:
   - Attribute PyInstaller bootloader (Apache-2.0) and bundled CPython licenses
-    (ship Helpers/NOTICE.txt inside the .app; keep CPython license texts with the build)
-  - Codesign helper with Entitlements/RunSpecimen.helper.entitlements (inherit)
+  - Codesign helper + nested Mach-Os (see sign_nested_helper.sh)
   - Sign the app with Apple Distribution (MAS) or Developer ID (direct)
   - App Sandbox confines the UI + inherit helper — it does NOT OS-sandbox the payload
   - Never auto-type APPROVE; approval stays on a real human PTY
@@ -167,13 +188,14 @@ Local Prefer Bundled Helper smoke does not require Store signing.
 EOF
 
 echo "Staged frozen helper: $DEST"
+echo "Staged runtime:       $DEST_INTERNAL"
 ls -la "$DEST"
+du -sh "$DEST_INTERNAL" | awk '{print " _internal size: "$1}'
 if ! file "$DEST" | grep -q 'Mach-O'; then
   echo "freeze_helper: expected Mach-O at $DEST" >&2
   file "$DEST" >&2 || true
   exit 1
 fi
-# Ensure no leftover package-tree lib/ for MAS self-containment.
 if [[ -d "$PAYLOAD/lib" ]]; then
   echo "freeze_helper: refusing mixed payload (lib/ present after freeze)" >&2
   exit 1

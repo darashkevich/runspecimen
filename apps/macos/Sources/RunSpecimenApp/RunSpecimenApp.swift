@@ -140,6 +140,13 @@ struct RunSpecimenApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var model: AppModel?
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard MasSandboxE2E.isRequested else { return }
+        Task { @MainActor in
+            await MasSandboxE2E.runAndExit()
+        }
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Ensure loopback dashboard is dead before quit (2.4.5(iii)).
         DashboardChild.shared.stop()

@@ -72,9 +72,10 @@ actor CLIService {
     func version() async throws -> CLIIdentity {
         let url = try requireCLI()
         let output = try await run(arguments: ["--version"], expectJSON: false)
-        let version = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        let version = (output.stdout + "\n" + output.stderr)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard version.lowercased().contains("runspecimen") || version.contains(".") else {
-            throw AppError(message: "Selected binary did not report a RunSpecimen version:\n\(version)")
+            throw AppError(message: "Selected binary did not report a RunSpecimen version:\n\(version)\n(exit \(output.exitCode))")
         }
         let evaluation = CLIVersionGate.evaluate(versionOutput: version)
         if let message = CLIVersionGate.failureMessage(for: evaluation) {
@@ -192,9 +193,12 @@ actor CLIService {
             args = [
                 "dashboard",
                 "--workspace", workspace.path,
-                "--contract", contract.path,
-                "--open"
+                "--contract", contract.path
             ]
+            // GUI opens the browser; the MAS e2e harness must not.
+            if !MasSandboxE2E.isRequested {
+                args.append("--open")
+            }
         case .approve:
             args = []
         }
@@ -257,7 +261,12 @@ actor CLIService {
         let candidates: [URL] = {
             var urls: [URL] = []
             if let resourceURL = Bundle.main.resourceURL {
-                // …/Contents/Resources → …/Contents/Helpers/runspecimen
+                // PyInstaller onedir lives under Resources (sandbox-safe; Helpers cannot
+                // hold unsigned data like base_library.zip next to nested code).
+                urls.append(
+                    resourceURL.appendingPathComponent("RunSpecimenEngine/runspecimen")
+                )
+                // Legacy / ADR-002: …/Contents/Resources → …/Contents/Helpers/runspecimen
                 urls.append(
                     resourceURL
                         .deletingLastPathComponent()
@@ -265,7 +274,11 @@ actor CLIService {
                 )
             }
             if let exe = Bundle.main.executableURL {
-                // …/Contents/MacOS/RunSpecimen → …/Contents/Helpers/runspecimen
+                urls.append(
+                    exe.deletingLastPathComponent()
+                        .deletingLastPathComponent()
+                        .appendingPathComponent("Resources/RunSpecimenEngine/runspecimen")
+                )
                 urls.append(
                     exe.deletingLastPathComponent()
                         .deletingLastPathComponent()
@@ -273,6 +286,7 @@ actor CLIService {
                 )
             }
             let bundleURL = Bundle.main.bundleURL
+            urls.append(bundleURL.appendingPathComponent("Contents/Resources/RunSpecimenEngine/runspecimen"))
             urls.append(bundleURL.appendingPathComponent("Contents/Helpers/runspecimen"))
             urls.append(bundleURL.appendingPathComponent("Helpers/runspecimen"))
             return urls
@@ -337,7 +351,7 @@ actor CLIService {
                     process.arguments = invocation.arguments
                     process.environment = Self.augmentedEnvironment()
                     // Bundled Helpers live next to the launcher; keep cwd stable for relative paths.
-                    if url.path.contains("/Contents/Helpers/") {
+                    if url.path.contains("/Contents/Helpers/") || url.path.contains("/RunSpecimenEngine/") {
                         process.currentDirectoryURL = url.deletingLastPathComponent()
                     }
 
@@ -374,7 +388,7 @@ actor CLIService {
         process.executableURL = invocation.executable
         process.arguments = invocation.arguments
         process.environment = Self.augmentedEnvironment()
-        if url.path.contains("/Contents/Helpers/") {
+        if url.path.contains("/Contents/Helpers/") || url.path.contains("/RunSpecimenEngine/") {
             process.currentDirectoryURL = url.deletingLastPathComponent()
         }
         process.standardOutput = FileHandle.nullDevice

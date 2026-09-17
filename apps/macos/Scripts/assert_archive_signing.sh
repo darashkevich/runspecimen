@@ -36,9 +36,16 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "OK: $*"; }
 
 [[ -n "$APP" && -d "$APP" ]] || fail "app bundle required: $APP"
-HELPER="$APP/Contents/Helpers/runspecimen"
-[[ -x "$HELPER" ]] || fail "missing helper: $HELPER"
+HELPER="$APP/Contents/Resources/RunSpecimenEngine/runspecimen"
+if [[ ! -x "$HELPER" ]]; then
+  HELPER="$APP/Contents/Helpers/runspecimen"
+fi
+[[ -x "$HELPER" ]] || fail "missing helper: $HELPER (checked RunSpecimenEngine + Helpers)"
 file "$HELPER" | grep -q 'Mach-O' || fail "helper must be Mach-O"
+if [[ "$HELPER" == *"/RunSpecimenEngine/"* ]]; then
+  [[ -d "$APP/Contents/Resources/RunSpecimenEngine/_internal" ]] \
+    || fail "missing onedir _internal next to engine helper"
+fi
 
 if [[ -z "$EXPECTED_VERSION" ]]; then
   EXPECTED_VERSION="$(

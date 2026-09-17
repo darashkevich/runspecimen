@@ -81,13 +81,18 @@ echo "==> build_app.sh (with staged helper)"
 
 APP="$ROOT/build/RunSpecimen.app"
 HELPER="$APP/Contents/Helpers/runspecimen"
+if [[ ! -x "$HELPER" ]]; then
+  HELPER="$APP/Contents/Resources/RunSpecimenEngine/runspecimen"
+fi
 test -x "$APP/Contents/MacOS/RunSpecimen"
 test -f "$APP/Contents/Info.plist"
 test -f "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
 test -d "$APP/Contents/Helpers"
 test -x "$HELPER"
-test -d "$APP/Contents/Helpers/lib/runspecimen"
-test -f "$APP/Contents/Helpers/NOTICE.txt"
+if [[ "$HELPER" == *"/Helpers/runspecimen" ]]; then
+  test -d "$APP/Contents/Helpers/lib/runspecimen"
+  test -f "$APP/Contents/Helpers/NOTICE.txt"
+fi
 
 echo "==> bundled helper --version (Contents/Helpers preferred path)"
 HELPER_VER="$("$HELPER" --version 2>&1)"
@@ -115,7 +120,7 @@ import json, os, subprocess, sys, tempfile
 from pathlib import Path
 
 helper, showcase = sys.argv[1:3]
-assert "/Contents/Helpers/runspecimen" in helper
+assert "/Contents/Helpers/runspecimen" in helper or "/RunSpecimenEngine/runspecimen" in helper
 
 # Absolute /usr/bin/python3 must work even with stripped PATH (sandbox-ish).
 env = {"PATH": "/usr/bin:/bin", "HOME": os.path.expanduser("~")}
@@ -227,19 +232,29 @@ env -u RS_FREEZE_HELPER ./Scripts/build_app.sh --frozen-helper >/tmp/rs-frozen-b
 }
 cat /tmp/rs-frozen-build.out
 grep -E "Using frozen helper payload|falling back to stage_helper" /tmp/rs-frozen-build.out
-test -x "$APP/Contents/Helpers/runspecimen"
+# Frozen onedir lives under Resources/RunSpecimenEngine; --from-src fallback under Helpers.
+if [[ -x "$APP/Contents/Resources/RunSpecimenEngine/runspecimen" ]]; then
+  HELPER="$APP/Contents/Resources/RunSpecimenEngine/runspecimen"
+elif [[ -x "$APP/Contents/Helpers/runspecimen" ]]; then
+  HELPER="$APP/Contents/Helpers/runspecimen"
+else
+  echo "ERROR: no bundled helper after --frozen-helper" >&2
+  exit 1
+fi
+test -x "$HELPER"
 # Frozen path: no package-tree lib/. Fallback --from-src: lib/ present.
 if grep -q "Using frozen helper payload" /tmp/rs-frozen-build.out; then
   test ! -d "$APP/Contents/Helpers/lib"
-  file "$APP/Contents/Helpers/runspecimen" | grep -q 'Mach-O'
+  test -d "$APP/Contents/Resources/RunSpecimenEngine/_internal"
+  file "$APP/Contents/Resources/RunSpecimenEngine/runspecimen" | grep -q 'Mach-O'
   # Inherit-signed Mach-O must not be shell-exec'd; gate version via payload + entitlements.
   PAYLOAD_VER="$("$ROOT/Helpers/payload/runspecimen" --version 2>&1)"
   echo "post --frozen-helper payload --version → $PAYLOAD_VER"
   echo "$PAYLOAD_VER" | grep -qi runspecimen
-  HELP_ENT="$(codesign -d --entitlements - "$APP/Contents/Helpers/runspecimen" 2>/dev/null || true)"
+  HELP_ENT="$(codesign -d --entitlements - "$APP/Contents/Resources/RunSpecimenEngine/runspecimen" 2>/dev/null || true)"
   echo "$HELP_ENT" | grep -q 'com.apple.security.app-sandbox'
   echo "$HELP_ENT" | grep -q 'com.apple.security.inherit'
-  echo "OK: frozen Mach-O helper in bundle (sandbox+inherit; no lib/ tree)"
+  echo "OK: frozen Mach-O onedir helper in bundle (sandbox+inherit; RunSpecimenEngine; no lib/ tree)"
 else
   FROZEN_VER="$("$APP/Contents/Helpers/runspecimen" --version 2>&1)" || {
     echo "Bundled helper after --frozen-helper fallback failed (exit $?):" >&2
@@ -260,9 +275,11 @@ if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/n
   }
   cat /tmp/rs-mas-build.out
   grep -q "Using frozen helper payload for MAS" /tmp/rs-mas-build.out
-  test -x "$APP/Contents/Helpers/runspecimen"
+  test -x "$APP/Contents/Resources/RunSpecimenEngine/runspecimen"
+  test -d "$APP/Contents/Resources/RunSpecimenEngine/_internal"
   test ! -d "$APP/Contents/Helpers/lib"
-  file "$APP/Contents/Helpers/runspecimen" | grep -q 'Mach-O'
+  test ! -d "$APP/Contents/Helpers/_internal"
+  file "$APP/Contents/Resources/RunSpecimenEngine/runspecimen" | grep -q 'Mach-O'
   /usr/libexec/PlistBuddy -c 'Print :RSDistributionChannel' "$APP/Contents/Info.plist" | grep -qx mas
   REPO_VER=$(
     python3 -c 'import pathlib,re,sys; t=pathlib.Path(sys.argv[1],"src/runspecimen/__init__.py").read_text(); m=re.search(r"__version__\s*=\s*\"([^\"]+)\"", t); assert m; print(m.group(1))' \
@@ -274,7 +291,7 @@ if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/n
     echo "ERROR: MAS helper must match repo engine $REPO_VER (got: $PAYLOAD_VER)" >&2
     exit 1
   }
-  HELP_ENT="$(codesign -d --entitlements - "$APP/Contents/Helpers/runspecimen" 2>/dev/null || true)"
+  HELP_ENT="$(codesign -d --entitlements - "$APP/Contents/Resources/RunSpecimenEngine/runspecimen" 2>/dev/null || true)"
   echo "$HELP_ENT" | grep -q 'com.apple.security.app-sandbox' || {
     echo "ERROR: MAS helper missing app-sandbox entitlement" >&2
     exit 1
@@ -285,7 +302,7 @@ if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/n
   }
   # Runtime sandbox probe: inherit helper must fail from unsandboxed shell.
   set +e
-  "$APP/Contents/Helpers/runspecimen" --version >/tmp/rs-mas-helper-shell.out 2>&1
+  "$APP/Contents/Resources/RunSpecimenEngine/runspecimen" --version >/tmp/rs-mas-helper-shell.out 2>&1
   MAS_HELPER_RC=$?
   set -e
   if [[ "$MAS_HELPER_RC" -eq 0 ]]; then
@@ -294,6 +311,30 @@ if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/n
     exit 1
   fi
   echo "OK: MAS frozen helper bundle matches repo $REPO_VER (sandbox+inherit; shell rc=$MAS_HELPER_RC)"
+
+  echo "==> Store export fail-closed without Apple Distribution"
+  if ./Scripts/assert_store_export_ready.sh >/tmp/rs-export-gate.out 2>&1; then
+    echo "NOTE: Apple Distribution appears present on this host — export gate opened"
+    cat /tmp/rs-export-gate.out
+  else
+    grep -q 'STORE EXPORT BLOCKED' /tmp/rs-export-gate.out \
+      || grep -qi 'Apple Distribution' /tmp/rs-export-gate.out \
+      || {
+        echo "ERROR: assert_store_export_ready should fail closed with a clear block message" >&2
+        cat /tmp/rs-export-gate.out >&2
+        exit 1
+      }
+    echo "OK: Store export blocked without Apple Distribution + team + profile"
+  fi
+
+  echo "==> MAS sandboxed app e2e (bookmark / dashboard / PTY wait)"
+  # Prefer a sealed Archive product when present; build_app seals are structural but
+  # Xcode Archive is the Store-shaped subject under test.
+  if [[ -d /tmp/runspecimen-mas/RunSpecimen.xcarchive/Products/Applications/RunSpecimen.app ]]; then
+    ./Scripts/test_mas_sandbox_e2e.sh /tmp/runspecimen-mas/RunSpecimen.xcarchive/Products/Applications/RunSpecimen.app
+  else
+    ./Scripts/test_mas_sandbox_e2e.sh "$APP"
+  fi
 else
   echo "PyInstaller absent — verifying --mas fails closed"
   if ./Scripts/build_app.sh --mas >/tmp/rs-mas-fail.out 2>&1; then
