@@ -5,7 +5,20 @@
 # Team ID + a Mac App Store provisioning profile for com.darashkevich.runspecimen
 # are REQUIRED. Developer ID Application is intentionally NOT sufficient.
 #
+# Profile checks are exact (not substring greps on the CMS blob):
+#   - application-identifier == TEAM.BUNDLE_ID
+#   - TeamIdentifier present and == TEAM
+#   - Platform includes OSX / macOS
+#   - distribution / Mac App Store shape (no ProvisionedDevices, no get-task-allow)
+#   - rejects development, ad-hoc, Developer ID–style, and malformed profiles
+#
 # Exit 0 only when export may proceed. Exit 1 with a clear reason otherwise.
+#
+# Test hooks (optional):
+#   RS_PROFILE_SEARCH_DIRS   — colon-separated dirs of *.mobileprovision / *.provisionprofile
+#   RS_ARCHIVE_APP           — .app to require codesign TeamIdentifier == TEAM
+#   RS_SIGN_IDENTITY         — force identity string (still must be Apple Distribution)
+#   RS_EXPORT_OPTIONS_PLIST  — ExportOptions plist path
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,6 +33,162 @@ fi
 
 fail() { echo "STORE EXPORT BLOCKED: $*" >&2; exit 1; }
 pass() { echo "OK: $*"; }
+
+# --- Profile field helpers (decoded XML plist on disk) ----------------------------
+
+plist_raw() {
+  local plist="$1" key="$2"
+  /usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null || true
+}
+
+plist_has_key() {
+  local plist="$1" key="$2"
+  /usr/libexec/PlistBuddy -c "Print :$key" "$plist" >/dev/null 2>&1
+}
+
+# Print entitlement value trying modern + legacy keys.
+entitlement() {
+  local plist="$1" key="$2"
+  local v
+  v="$(plist_raw "$plist" "Entitlements:$key")"
+  [[ -n "$v" ]] && { printf '%s' "$v"; return 0; }
+  return 1
+}
+
+# Validate one decoded provisioning profile plist against TEAM + BUNDLE_ID.
+# Prints "OK: ..." on success; returns non-zero with reason on stderr via caller.
+validate_decoded_mas_profile() {
+  local plist="$1"
+  local team="$2"
+  local bundle="$3"
+  local expected_app_id="${team}.${bundle}"
+  local name platform0 app_id app_id_legacy team0 get_task provisions_devices
+  local platform_blob
+
+  [[ -f "$plist" ]] || { echo "profile plist missing: $plist"; return 1; }
+
+  # Must parse as a real plist dict (malformed → fail).
+  if ! /usr/libexec/PlistBuddy -c 'Print' "$plist" >/dev/null 2>&1; then
+    echo "malformed profile plist (PlistBuddy cannot parse)"
+    return 1
+  fi
+
+  name="$(plist_raw "$plist" "Name")"
+  team0="$(plist_raw "$plist" "TeamIdentifier:0")"
+  if [[ -z "$team0" ]]; then
+    echo "TeamIdentifier absent or empty"
+    return 1
+  fi
+  if [[ "$team0" != "$team" ]]; then
+    echo "TeamIdentifier=$team0 does not match required team $team"
+    return 1
+  fi
+
+  # Exact application identifier (prefer com.apple.application-identifier).
+  app_id="$(entitlement "$plist" "com.apple.application-identifier" || true)"
+  app_id_legacy="$(entitlement "$plist" "application-identifier" || true)"
+  if [[ -z "$app_id" ]]; then
+    app_id="$app_id_legacy"
+  fi
+  if [[ -z "$app_id" ]]; then
+    echo "application-identifier entitlement missing"
+    return 1
+  fi
+  if [[ "$app_id" == *"*"* ]]; then
+    echo "wildcard application-identifier not allowed for Store export: $app_id"
+    return 1
+  fi
+  if [[ "$app_id" != "$expected_app_id" ]]; then
+    echo "application-identifier=$app_id != required $expected_app_id"
+    return 1
+  fi
+
+  # Platform must be Mac (OSX / macOS / MacOSX).
+  platform_blob="$(plist_raw "$plist" "Platform" || true)"
+  platform0="$(plist_raw "$plist" "Platform:0" || true)"
+  if [[ -z "$platform_blob" && -z "$platform0" ]]; then
+    echo "Platform missing (need OSX/macOS for Mac App Store)"
+    return 1
+  fi
+  case "${platform_blob} ${platform0}" in
+    *OSX*|*macOS*|*MacOSX*|*MacOS*) ;;
+    *)
+      echo "Platform not Mac App Store capable: ${platform0:-$platform_blob}"
+      return 1
+      ;;
+  esac
+
+  # Development: get-task-allow true.
+  get_task="$(entitlement "$plist" "get-task-allow" || true)"
+  if [[ "$get_task" == "true" || "$get_task" == "1" ]]; then
+    echo "development profile (get-task-allow=true) — not Mac App Store distribution"
+    return 1
+  fi
+
+  # Development / ad-hoc: device list present.
+  if plist_has_key "$plist" "ProvisionedDevices"; then
+    echo "profile lists ProvisionedDevices (development/ad-hoc) — not Mac App Store"
+    return 1
+  fi
+
+  # Developer ID / direct distribution profiles are not MAS.
+  # Name + entitlement heuristics (fail closed on explicit Developer ID markers).
+  if printf '%s\n' "$name" | grep -Eqi 'Developer ID'; then
+    echo "profile Name indicates Developer ID (not Mac App Store): $name"
+    return 1
+  fi
+  # Reject explicit "Developer ID" markers inside Entitlements dump if present.
+  local ent_dump
+  ent_dump="$(plist_raw "$plist" "Entitlements" || true)"
+  if printf '%s\n' "$ent_dump" | grep -Eqi 'Developer ID'; then
+    echo "Entitlements mention Developer ID — not Mac App Store"
+    return 1
+  fi
+
+  # Reject obvious non-store types by name.
+  if printf '%s\n' "$name" | grep -Eqi 'development|ad[[:space:]-]?hoc|adhoc'; then
+    echo "profile Name indicates non-Store type: $name"
+    return 1
+  fi
+  # Prefer explicit Mac App Store / App Store / Distribution naming when Name is set.
+  if [[ -n "$name" ]] && ! printf '%s\n' "$name" | grep -Eqi 'App Store|Mac App Store|Distribution|MAS'; then
+    # Allow empty-ish / UUID-only names only if other hard checks passed; still
+    # require at least one Store/Distribution marker for fail-closed clarity.
+    echo "profile Name lacks Mac App Store/Distribution marker: ${name:-empty}"
+    return 1
+  fi
+
+  echo "valid MAS profile name=${name:-?} app_id=$app_id team=$team0 platform=${platform0:-ok}"
+  return 0
+}
+
+decode_profile_to_plist() {
+  local profile="$1"
+  local out="$2"
+  # security cms -D writes XML plist to stdout for Apple + openssl-smime fixtures.
+  if ! security cms -D -i "$profile" >"$out" 2>/dev/null; then
+    return 1
+  fi
+  [[ -s "$out" ]] || return 1
+  /usr/libexec/PlistBuddy -c 'Print' "$out" >/dev/null 2>&1
+}
+
+# --- Main gate --------------------------------------------------------------------
+
+# Unit-test entry: validate a single decoded plist and exit.
+if [[ "${1:-}" == "--validate-decoded-plist" ]]; then
+  PLIST_PATH="${2:-}"
+  TEAM_ARG="${3:-}"
+  BUNDLE_ARG="${4:-$BUNDLE_ID}"
+  [[ -n "$PLIST_PATH" && -n "$TEAM_ARG" ]] || fail "usage: $0 --validate-decoded-plist PATH TEAM [BUNDLE]"
+  if reason="$(validate_decoded_mas_profile "$PLIST_PATH" "$TEAM_ARG" "$BUNDLE_ARG")"; then
+    pass "$reason"
+    exit 0
+  else
+    rc=$?
+    fail "profile rejected: $reason"
+  fi
+fi
 
 echo "==> Store export readiness (Apple Distribution required; Developer ID insufficient)"
 
@@ -49,7 +218,14 @@ fi
 # Reject if the only "distribution-looking" identity is Developer ID and Apple Distribution is absent.
 if echo "$IDENTITIES" | grep -q 'Developer ID Application' \
   && ! echo "$IDENTITIES" | grep -Eq 'Apple Distribution|3rd Party Mac Developer Application'; then
-  fail "Only Developer ID Application found — Mac App Store export requires Apple Distribution."
+  # Allow override only when RS_SIGN_IDENTITY already pinned an Apple Distribution string
+  # that may not yet appear in find-identity (rare); still require the string itself.
+  case "$DIST_LINE" in
+    *"Apple Distribution"*|*"3rd Party Mac Developer Application"*) ;;
+    *)
+      fail "Only Developer ID Application found — Mac App Store export requires Apple Distribution."
+      ;;
+  esac
 fi
 pass "Apple Distribution identity: $DIST_LINE"
 
@@ -77,56 +253,83 @@ if [[ -n "$ID_TEAM" && "$ID_TEAM" != "$TEAM" ]]; then
 fi
 pass "Team ID matches: $TEAM"
 
-# Provisioning profile for Mac App Store + bundle id.
-PROFILE_DIRS=(
-  "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
-  "$HOME/Library/MobileDevice/Provisioning Profiles"
-)
+# Optional: archive / .app TeamIdentifier must match (when operator points at it).
+ARCHIVE_APP="${RS_ARCHIVE_APP:-}"
+if [[ -n "$ARCHIVE_APP" ]]; then
+  [[ -d "$ARCHIVE_APP" ]] || fail "RS_ARCHIVE_APP not a directory: $ARCHIVE_APP"
+  APP_DV="$(codesign -dv --verbose=4 "$ARCHIVE_APP" 2>&1 || true)"
+  APP_TEAM="$(printf '%s\n' "$APP_DV" | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+  APP_AUTH="$(printf '%s\n' "$APP_DV" | awk -F= '/^Authority=/{print $2; exit}')"
+  if [[ -z "$APP_TEAM" || "$APP_TEAM" == "not set" ]]; then
+    fail "archive TeamIdentifier unset (ad-hoc) — Store export requires Apple Distribution–signed archive matching team $TEAM"
+  fi
+  [[ "$APP_TEAM" == "$TEAM" ]] || fail "archive TeamIdentifier=$APP_TEAM != team $TEAM"
+  case "$APP_AUTH" in
+    *"Apple Distribution"*|*"3rd Party Mac Developer Application"*) ;;
+    *"Developer ID"*)
+      fail "archive Authority is Developer ID — not valid for Mac App Store: $APP_AUTH"
+      ;;
+    *)
+      fail "archive Authority must be Apple Distribution; got: ${APP_AUTH:-empty}"
+      ;;
+  esac
+  pass "Archive TeamIdentifier + Apple Distribution Authority match ($APP_TEAM)"
+fi
+
+# Provisioning profile discovery + strict validation.
+PROFILE_DIRS=()
+if [[ -n "${RS_PROFILE_SEARCH_DIRS:-}" ]]; then
+  IFS=':' read -r -a PROFILE_DIRS <<<"$RS_PROFILE_SEARCH_DIRS"
+else
+  PROFILE_DIRS=(
+    "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+    "$HOME/Library/MobileDevice/Provisioning Profiles"
+  )
+fi
+
 FOUND_PROFILE=""
-FOUND_PROFILE_TEAM=""
+FOUND_DETAIL=""
+REJECT_NOTES=()
+DECODE_TMP="$(mktemp -t rs-mas-profile)"
+trap 'rm -f "$DECODE_TMP"' EXIT
+
 shopt -s nullglob
 for dir in "${PROFILE_DIRS[@]}"; do
-  # shellcheck disable=SC2086
+  [[ -d "$dir" ]] || continue
   for profile in "$dir"/*.provisionprofile "$dir"/*.mobileprovision; do
     [[ -f "$profile" ]] || continue
-    DECODED="$(security cms -D -i "$profile" 2>/dev/null || true)"
-    [[ -n "$DECODED" ]] || continue
-    echo "$DECODED" | grep -q "$BUNDLE_ID" || continue
-    # Mac App Store platforms / get-task-allow false / distribution
-    if echo "$DECODED" | grep -Eq 'Apple Distribution|3rd Party Mac Developer Application|Mac App Store|ProvisionedDevices'; then
-      :
-    fi
-    # Exclude ad-hoc / development-only profiles that list get-task-allow true without distribution.
-    PROF_TEAM="$(printf '%s\n' "$DECODED" | plutil -extract TeamIdentifier.0 raw -o - -- - 2>/dev/null || true)"
-    if [[ -z "$PROF_TEAM" ]]; then
-      PROF_TEAM="$(printf '%s\n' "$DECODED" | awk '/TeamIdentifier/,/<\/array>/' | grep -Eo '[A-Z0-9]{10}' | head -1 || true)"
-    fi
-    # Prefer profiles that mention production / appstore style entitlements (no get-task-allow).
-    if echo "$DECODED" | grep -q 'get-task-allow'; then
-      # Development profiles often include get-task-allow — skip for Store export.
+    if ! decode_profile_to_plist "$profile" "$DECODE_TMP"; then
+      REJECT_NOTES+=("$(basename "$profile"): CMS decode failed / malformed")
       continue
     fi
-    if [[ -n "$PROF_TEAM" && "$PROF_TEAM" != "$TEAM" ]]; then
-      continue
+    if reason="$(validate_decoded_mas_profile "$DECODE_TMP" "$TEAM" "$BUNDLE_ID")"; then
+      FOUND_PROFILE="$profile"
+      FOUND_DETAIL="$reason"
+      break 2
+    else
+      REJECT_NOTES+=("$(basename "$profile"): $reason")
     fi
-    FOUND_PROFILE="$profile"
-    FOUND_PROFILE_TEAM="$PROF_TEAM"
-    break 2
   done
 done
 shopt -u nullglob
 
 if [[ -z "$FOUND_PROFILE" ]]; then
-  fail "No Mac App Store provisioning profile for $BUNDLE_ID matching team $TEAM (download from developer.apple.com / Xcode)."
+  if ((${#REJECT_NOTES[@]} > 0)); then
+    echo "Rejected profiles:" >&2
+    for note in "${REJECT_NOTES[@]}"; do
+      echo "  - $note" >&2
+    done
+  fi
+  fail "No Mac App Store provisioning profile for exact id ${TEAM}.${BUNDLE_ID} (download Mac App Store distribution profile from developer.apple.com / Xcode)."
 fi
-pass "Provisioning profile: $FOUND_PROFILE (team=${FOUND_PROFILE_TEAM:-$TEAM})"
+pass "Provisioning profile: $FOUND_PROFILE ($FOUND_DETAIL)"
 
 # method must remain app-store-connect
 METHOD="$(/usr/libexec/PlistBuddy -c 'Print :method' "$EXPORT_PLIST" 2>/dev/null || true)"
 [[ "$METHOD" == "app-store-connect" || "$METHOD" == "app-store" ]] \
   || fail "ExportOptions method must be app-store-connect (got: ${METHOD:-empty})"
 
-pass "Store export prerequisites satisfied (Apple Distribution + team $TEAM + profile)"
+pass "Store export prerequisites satisfied (Apple Distribution + team $TEAM + MAS profile)"
 echo "READY_TEAM=$TEAM"
 echo "READY_IDENTITY=$DIST_LINE"
 echo "READY_PROFILE=$FOUND_PROFILE"

@@ -114,6 +114,19 @@ final class PTYApprovalSession: @unchecked Sendable {
         send(text + "\n")
     }
 
+    /// True while the child `approve` process is still alive (gate waiting on human input).
+    var isAlive: Bool {
+        guard childPID > 0 else { return false }
+        var status: Int32 = 0
+        let waited = waitpid(childPID, &status, WNOHANG)
+        if waited == childPID {
+            // Reaped — process exited.
+            childPID = 0
+            return false
+        }
+        return kill(childPID, 0) == 0
+    }
+
     func stop() {
         reader?.cancel()
         reader = nil

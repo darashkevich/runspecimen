@@ -223,8 +223,8 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 - [x] `RSDistributionChannel=mas`
 - [x] No `get-task-allow`
 - [x] `./Scripts/archive_mas.sh` + `assert_archive_signing.sh` succeed (ad-hoc when no certs)
-- [x] `./Scripts/test_mas_sandbox_e2e.sh` (bookmark / dashboard cleanup / PTY wait — never types APPROVE)
-- [x] Store export fail-closed without Apple Distribution (`assert_store_export_ready.sh`)
+- [x] `./Scripts/test_mas_sandbox_e2e.sh` (actual APPROVE prompt + still waiting; never types APPROVE)
+- [x] Store export fail-closed (`assert_store_export_ready.sh` + `test_store_export_gate.sh` negatives)
 - [ ] Apple Distribution signing + upload to App Store Connect (Yahor) — **pending**
 - [x] Privacy policy URL in-app (Connect field **pending** Yahor)
 - [ ] Screenshots in Connect — **pending** (see [asc-kit/screenshots/](asc-kit/screenshots/))

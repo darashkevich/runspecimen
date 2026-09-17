@@ -191,37 +191,47 @@ enum MasSandboxE2E {
             }
             try session.start(cli: helper, workspace: demoURL, contract: contractURL)
 
-            // Wait for the interactive prompt without typing APPROVE.
-            let deadline = Date().addingTimeInterval(8)
+            // Exact engine prompt from approve.py — nonempty chatter alone must not pass.
+            let requiredPrompt = "Type 'APPROVE' to bind this approval:"
+            let deadline = Date().addingTimeInterval(12)
             var sawPrompt = false
             while Date() < deadline {
                 let snap = box.snapshot()
-                let lowered = snap.lowercased()
-                if lowered.contains("approve") || snap.contains("APPROVE") || lowered.contains("type") {
+                if snap.contains(requiredPrompt) {
                     sawPrompt = true
+                    break
+                }
+                // Bail early if the child already exited without the prompt.
+                if !session.isAlive && !snap.contains(requiredPrompt) {
                     break
                 }
                 try await Task.sleep(nanoseconds: 150_000_000)
             }
 
-            // Hold the gate open — human path must wait; we deliberately send nothing.
+            // Hold the gate open — human path must wait; we deliberately send nothing (no APPROVE).
             try await Task.sleep(nanoseconds: 1_500_000_000)
 
             let finalTranscript = box.snapshot()
+            let stillWaiting = session.isAlive
 
             // Critical: harness must not inject APPROVE (and app must not have done so).
             let sentApprove = finalTranscript
                 .components(separatedBy: .newlines)
                 .contains { $0.trimmingCharacters(in: .whitespaces) == "APPROVE" }
-            // Engine echoes human input; without send, APPROVE must not appear as a lone line
-            // after a completed approval. Fresh init-demo has no approval yet.
             let afterApprovals = approvalFiles(under: demoURL)
             let newApprovals = afterApprovals.subtracting(beforeApprovals)
 
             session.stop()
 
-            if !sawPrompt && finalTranscript.isEmpty {
-                throw CheckError("PTY produced no output (helper spawn failed inside sandbox?)")
+            guard sawPrompt else {
+                throw CheckError(
+                    "actual approval prompt missing (need \(requiredPrompt.debugDescription)); transcript=\(finalTranscript.prefix(800))"
+                )
+            }
+            guard stillWaiting else {
+                throw CheckError(
+                    "PTY session completed instead of waiting for human APPROVE; transcript=\(finalTranscript.prefix(800))"
+                )
             }
             if sentApprove {
                 throw CheckError("transcript contains lone APPROVE line — auto-send suspected: \(finalTranscript)")
@@ -229,13 +239,10 @@ enum MasSandboxE2E {
             if !newApprovals.isEmpty {
                 throw CheckError("approval file written without human APPROVE: \(newApprovals)")
             }
-            // Positive assertion: gate waited (prompt seen OR still interactive / no approval written).
             record(
                 "pty_approval_waits_for_human",
                 ok: true,
-                detail: sawPrompt
-                    ? "prompt observed; no APPROVE sent; no approval written"
-                    : "no APPROVE sent; no approval written (transcript \(finalTranscript.count) chars)"
+                detail: "prompt observed; still waiting; no APPROVE sent; no approval written"
             )
             _ = approvalDir
         } catch {

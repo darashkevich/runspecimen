@@ -1,0 +1,19 @@
+==> decoded-plist negatives / positive
+OK accept: mas-good
+OK reject: wrong-bundle
+OK reject: wrong-team
+OK reject: wrong-platform-ios
+OK reject: development
+OK reject: ad-hoc
+OK reject: developer-id
+OK reject: absent-teamidentifier
+OK reject: substring-bundle-bait
+OK reject: malformed
+==> CMS-signed profile discovery (RS_PROFILE_SEARCH_DIRS)
+OK: full gate blocked on wrong/dev/Developer ID CMS profiles
+OK: full gate accepts good MAS CMS profile
+==> Developer ID identity rejected
+OK: Developer ID identity blocked
+==> default host gate still fail-closed without Apple Distribution
+OK: default gate blocked without Apple Distribution
+STORE EXPORT GATE TESTS OK

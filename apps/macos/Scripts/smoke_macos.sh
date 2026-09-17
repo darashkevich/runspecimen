@@ -312,6 +312,9 @@ if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/n
   fi
   echo "OK: MAS frozen helper bundle matches repo $REPO_VER (sandbox+inherit; shell rc=$MAS_HELPER_RC)"
 
+  echo "==> Store export gate unit fixtures (fail-closed profile parse)"
+  ./Scripts/test_store_export_gate.sh
+
   echo "==> Store export fail-closed without Apple Distribution"
   if ./Scripts/assert_store_export_ready.sh >/tmp/rs-export-gate.out 2>&1; then
     echo "NOTE: Apple Distribution appears present on this host — export gate opened"

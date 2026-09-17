@@ -110,6 +110,11 @@ for required in (
     assert required in names, (required, doc)
 # Never auto-APPROVE evidence
 assert "APPROVE" not in text or "no APPROVE" in text.lower() or "never" in text.lower()
+pty = next(c for c in doc.get("checks", []) if c.get("name") == "pty_approval_waits_for_human")
+detail = (pty.get("detail") or "").lower()
+assert "prompt observed" in detail, ("PTY must require actual approval prompt", pty)
+assert "still waiting" in detail, ("PTY must still be waiting (not completed)", pty)
+assert "no approve sent" in detail, pty
 print("MAS sandbox e2e JSON OK")
 if rc != 0:
     raise SystemExit(f"harness exit {rc} despite ok JSON")

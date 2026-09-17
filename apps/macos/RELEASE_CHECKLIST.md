@@ -113,7 +113,7 @@ See NOTARIZATION.md.
 | PrivacyInfo + MAS entitlements | Done |
 | `RunSpecimen.xcodeproj` + `archive_mas.sh` | Done (Xcode 27; nested helper sandbox+inherit) |
 | Nested helper signing (`sign_nested_helper.sh`) | Done — identity-aware; ad-hoc only when no certs |
-| Sandboxed e2e (`test_mas_sandbox_e2e.sh`) | Done — bookmark / dashboard / PTY wait (never types APPROVE) |
-| Store export fail-closed (`assert_store_export_ready.sh`) | Done — Apple Distribution required; Developer ID insufficient |
+| Sandboxed e2e (`test_mas_sandbox_e2e.sh`) | Done — requires actual APPROVE prompt + still waiting (never types APPROVE) |
+| Store export fail-closed (`assert_store_export_ready.sh`) | Done — exact profile fields; Developer ID insufficient; negatives in `test_store_export_gate.sh` |
 | ASC kit (`asc-kit/`) | Metadata + reviewer demo ready; screenshots **pending** |
 | ASC upload / Submit for Review | **Blocked** — Apple Distribution + Yahor decision after Codex QA |
