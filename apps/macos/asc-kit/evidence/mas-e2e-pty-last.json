@@ -2,12 +2,12 @@
   "channel" : "mas",
   "checks" : [
     {
-      "detail" : "runspecimen 0.2.0rc10 channel=mas probe=runspecimen 0.2.0rc10",
+      "detail" : "runspecimen 0.2.0rc11 channel=mas probe=runspecimen 0.2.0rc11",
       "name" : "bundled_helper_version",
       "ok" : true
     },
     {
-      "detail" : "\/Users\/yahor\/Library\/Containers\/com.darashkevich.runspecimen\/Data\/tmp\/rs-mas-e2e-2026-09-17T134312Z\/demo",
+      "detail" : "\/Users\/yahor\/Library\/Containers\/com.darashkevich.runspecimen\/Data\/tmp\/rs-mas-e2e-2026-09-18T162331Z\/demo",
       "name" : "workspace_bookmark",
       "ok" : true
     },

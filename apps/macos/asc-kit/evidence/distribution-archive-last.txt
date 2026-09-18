@@ -1,0 +1,158 @@
+** ARCHIVE SUCCEEDED **
+
+RSDistributionChannel=mas
+==> fail-closed archive signing / entitlement / sandbox assertions
+==> codesign --verify (app + helper)
+/tmp/runspecimen-mas/RunSpecimen.xcarchive/Products/Applications/RunSpecimen.app: valid on disk
+/tmp/runspecimen-mas/RunSpecimen.xcarchive/Products/Applications/RunSpecimen.app: satisfies its Designated Requirement
+/tmp/runspecimen-mas/RunSpecimen.xcarchive/Products/Applications/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/runspecimen: valid on disk
+/tmp/runspecimen-mas/RunSpecimen.xcarchive/Products/Applications/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/runspecimen: satisfies its Designated Requirement
+OK: signatures verify
+==> app entitlements (App Sandbox)
+OK: app has app-sandbox
+==> helper entitlements (App Sandbox + inherit)
+OK: helper has sandbox+inherit
+==> TeamIdentifier / signing mode
+app TeamIdentifier=UN6KF8636A Signature=
+helper TeamIdentifier=UN6KF8636A Signature=
+OK: team UN6KF8636A matches on app + helper
+==> engine version gate (pre-sign payload; archive must match freeze)
+payload --version → runspecimen 0.2.0rc11
+OK: engine version 0.2.0rc11 (payload gated; archive size aligned)
+==> runtime sandbox probe (inherit helper must fail outside parent sandbox)
+helper --version from shell exited 133 (expected non-zero; sandbox/inherit active)
+OK: runtime sandbox probe: helper confined when not inheriting a parent sandbox
+==> PTY never auto-types APPROVE
+==> SecurityBoundary.swift invariants
+==> PTY approval never auto-types APPROVE
+ApproveSheet send path OK
+==> MAS channel fail-closed (no PATH when mas)
+==> SECURITY_BOUNDARY.md documents sandbox vs payload
+==> Entitlements: MAS has sandbox; helper has inherit
+OK: security boundary checks
+OK: PTY / security boundary
+
+ARCHIVE ASSERTIONS OK
+  app:     /tmp/runspecimen-mas/RunSpecimen.xcarchive/Products/Applications/RunSpecimen.app
+  helper:  /tmp/runspecimen-mas/RunSpecimen.xcarchive/Products/Applications/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/runspecimen
+  engine:  0.2.0rc11
+  app_team=UN6KF8636A helper_team=UN6KF8636A
+==> codesign evidence (verbose)
+----- APP codesign -dv --verbose=4 -----
+Executable=/private/tmp/runspecimen-mas/RunSpecimen.xcarchive/Products/Applications/RunSpecimen.app/Contents/MacOS/RunSpecimen
+Identifier=com.darashkevich.runspecimen
+Format=app bundle with Mach-O universal (x86_64 arm64)
+CodeDirectory v=20500 size=1800 flags=0x10000(runtime) hashes=45+7 location=embedded
+VersionPlatform=1
+VersionMin=917504
+VersionSDK=1769472
+Hash type=sha256 size=32
+CandidateCDHash sha256=3bccd4df00ca733bcd4e6348be4613851c513dbf
+CandidateCDHashFull sha256=3bccd4df00ca733bcd4e6348be4613851c513dbf627e829fa5df5a08db9d67f4
+Hash choices=sha256
+CMSDigest=3bccd4df00ca733bcd4e6348be4613851c513dbf627e829fa5df5a08db9d67f4
+CMSDigestType=2
+Executable Segment base=0
+Executable Segment limit=557056
+Executable Segment flags=0x1
+Page size=16384
+CDHash=3bccd4df00ca733bcd4e6348be4613851c513dbf
+Signature size=4794
+Authority=Apple Distribution: YAHOR DARASHKEVICH (UN6KF8636A)
+Authority=Apple Worldwide Developer Relations Certification Authority
+Authority=Apple Root CA
+Signed Time=Sep 18, 2026 at 18:23:20
+Info.plist entries=28
+TeamIdentifier=UN6KF8636A
+Runtime Version=27.0.0
+Sealed Resources version=2 rules=13 files=59
+Internal requirements count=1 size=196
+Total signatures=1
+Chosen signature=1
+----- APP entitlements -----
+Executable=/private/tmp/runspecimen-mas/RunSpecimen.xcarchive/Products/Applications/RunSpecimen.app/Contents/MacOS/RunSpecimen
+[Dict]
+	[Key] com.apple.security.app-sandbox
+	[Value]
+		[Bool] true
+	[Key] com.apple.security.files.user-selected.executable
+	[Value]
+		[Bool] true
+	[Key] com.apple.security.files.user-selected.read-write
+	[Value]
+		[Bool] true
+	[Key] com.apple.security.network.client
+	[Value]
+		[Bool] true
+	[Key] com.apple.security.network.server
+	[Value]
+		[Bool] true
+----- HELPER codesign -dv --verbose=4 -----
+Executable=/private/tmp/runspecimen-mas/RunSpecimen.xcarchive/Products/Applications/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/runspecimen
+Identifier=runspecimen
+Format=Mach-O thin (arm64)
+CodeDirectory v=20500 size=2967 flags=0x10000(runtime) hashes=82+7 location=embedded
+VersionPlatform=1
+VersionMin=720896
+VersionSDK=1704448
+Hash type=sha256 size=32
+CandidateCDHash sha256=4421321c444cb98ede18b9d4627b84e346443d93
+CandidateCDHashFull sha256=4421321c444cb98ede18b9d4627b84e346443d939d38301a49b70fe673c4a550
+Hash choices=sha256
+CMSDigest=4421321c444cb98ede18b9d4627b84e346443d939d38301a49b70fe673c4a550
+CMSDigestType=2
+Executable Segment base=0
+Executable Segment limit=49152
+Executable Segment flags=0x1
+Page size=16384
+CDHash=4421321c444cb98ede18b9d4627b84e346443d93
+Signature size=9101
+Authority=Apple Distribution: YAHOR DARASHKEVICH (UN6KF8636A)
+Authority=Apple Worldwide Developer Relations Certification Authority
+Authority=Apple Root CA
+Timestamp=Sep 18, 2026 at 18:23:19
+Info.plist=not bound
+TeamIdentifier=UN6KF8636A
+Runtime Version=26.2.0
+Sealed Resources=none
+Internal requirements count=1 size=180
+Total signatures=1
+Chosen signature=1
+----- HELPER entitlements -----
+Executable=/private/tmp/runspecimen-mas/RunSpecimen.xcarchive/Products/Applications/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/runspecimen
+[Dict]
+	[Key] com.apple.security.app-sandbox
+	[Value]
+		[Bool] true
+	[Key] com.apple.security.inherit
+	[Value]
+		[Bool] true
+==> Store export gate (fail closed — Apple Distribution + archived app required)
+RS_MAS_EXPORT=0 — skipping export_mas / -exportArchive (archive-only).
+Store export gate rc=0 (0 means a later export is allowed).
+==> Store export readiness (Apple Distribution required; Developer ID insufficient)
+  1) 063571AC8117809151DE9282B39D2FD8C60EC535 "Apple Development: jahorka@gmail.com (PK6W7JVY6D)"
+  2) 58FA385E412C4EC5997157A064FB666CE901DC7A "Apple Distribution: YAHOR DARASHKEVICH (UN6KF8636A)"
+  3) 58FA385E412C4EC5997157A064FB666CE901DC7A "Apple Distribution: YAHOR DARASHKEVICH (UN6KF8636A)"
+     3 valid identities found
+OK: Apple Distribution identity: Apple Distribution: YAHOR DARASHKEVICH (UN6KF8636A)
+OK: Team ID matches: UN6KF8636A
+OK: archive helper codesign --verify --strict
+OK: archive app codesign --verify --strict
+OK: archive app TeamIdentifier + Apple Distribution Authority match (UN6KF8636A)
+OK: archive helper TeamIdentifier + Apple Distribution Authority match (UN6KF8636A)
+OK: Provisioning profile: /Users/yahor/Library/Developer/Xcode/UserData/Provisioning Profiles/0c5ef3dc-ebad-429b-8928-fdfcfee98c29.provisionprofile (valid MAS profile name=RunSpecimen MAS app_id=UN6KF8636A.com.darashkevich.runspecimen team=UN6KF8636A platform=OSX)
+OK: Store export prerequisites satisfied (Apple Distribution + team UN6KF8636A + MAS profile)
+READY_TEAM=UN6KF8636A
+READY_IDENTITY=Apple Distribution: YAHOR DARASHKEVICH (UN6KF8636A)
+READY_PROFILE=/Users/yahor/Library/Developer/Xcode/UserData/Provisioning Profiles/0c5ef3dc-ebad-429b-8928-fdfcfee98c29.provisionprofile
+
+ARCHIVE OK
+  archive:  /tmp/runspecimen-mas/RunSpecimen.xcarchive
+  link:     /tmp/rs-clean-checkout/apps/macos/build/RunSpecimen.xcarchive
+  signing:  Manual Distribution (Apple Distribution: YAHOR DARASHKEVICH (UN6KF8636A))
+  helper:   engine 0.2.0rc11 (payload-gated; inherit-signed — not shell-exec'd)
+  channel:  mas
+  export:   gate_rc=0 (upload still Yahor-only with Apple Distribution + ASC)
+
+Do not Submit for Review or distribute this archive as production.
