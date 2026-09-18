@@ -8,6 +8,17 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$ROOT/../.." && pwd)"
 cd "$ROOT"
 
+ENV_FILE="$ROOT/Config/signing.env"
+if [[ -f "$ENV_FILE" ]]; then
+  _rs_sign="${RS_SIGN_IDENTITY:-}"
+  _rs_team="${RS_NOTARY_TEAM_ID:-}"
+  # shellcheck disable=SC1090
+  set -a && source "$ENV_FILE" && set +a
+  [[ -n "$_rs_sign" ]] && RS_SIGN_IDENTITY="$_rs_sign"
+  [[ -n "$_rs_team" ]] && RS_NOTARY_TEAM_ID="$_rs_team"
+  unset _rs_sign _rs_team
+fi
+
 ARCHIVE_PATH="${RS_ARCHIVE_PATH:-/tmp/runspecimen-mas/RunSpecimen.xcarchive}"
 DERIVED="${RS_DERIVED_DATA:-/tmp/runspecimen-mas/DerivedData}"
 SCHEME="RunSpecimen"
@@ -98,11 +109,9 @@ elif echo "$IDENTITIES" | grep -Eq 'Apple Distribution|3rd Party Mac Developer A
     SIGN_ARGS+=(DEVELOPMENT_TEAM="$RS_NOTARY_TEAM_ID")
     ASSERT_ARGS+=(--expect-team "$RS_NOTARY_TEAM_ID")
   fi
-  if [[ -n "${RS_MAS_PROFILE_SPECIFIER:-}" ]]; then
-    SIGN_ARGS+=("PROVISIONING_PROFILE_SPECIFIER=$RS_MAS_PROFILE_SPECIFIER")
-  elif [[ "$IDENTITY" == *"Apple Distribution"* ]]; then
-    SIGN_ARGS+=("PROVISIONING_PROFILE_SPECIFIER=RunSpecimen MAS")
-  fi
+  # Do not pass PROVISIONING_PROFILE_SPECIFIER at project scope — the
+  # RunSpecimenCore library target cannot take a Mac App Store profile.
+  # Identity + team lets Xcode bind RunSpecimen MAS to the app target.
   SIGNING_MODE="Manual Distribution ($IDENTITY)"
 elif echo "$IDENTITIES" | grep -Eq 'Apple Development'; then
   SIGN_ARGS=(
