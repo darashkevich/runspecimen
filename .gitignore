@@ -12,3 +12,10 @@ qa/**/outputs/
 .pytest_cache/
 .mypy_cache/
 *.egg
+
+# Native companion scaffolds (observation-only; see docs/ADR-003-ios-companion-observation.md)
+apps/ios/**/xcuserdata/
+apps/ios/**/DerivedData/
+apps/ios/*.xcworkspace
+apps/macos-companion/.build/
+apps/macos-companion/.swiftpm/

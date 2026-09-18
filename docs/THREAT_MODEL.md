@@ -35,6 +35,9 @@ Those child-process boundaries must be tested and documented before any
 - Treating resource-limit wrappers alone as an OS-sandbox claim
 - Cron, watchers, fan-out workers, or parallel execution inside one lease domain
 - Remote scheduling, distributed consensus, or exactly-once effects outside the workspace
+- Agent/plugin remote approve / run / preflight / postflight (see ADR-003 / ADR-004).
+  Optional Mac-armed **remote human confirm** is a distinct, weaker evidence channel
+  than local TTY `APPROVE` and must not be over-claimed.
 - Protection from root, kernel, hypervisor, or full-workspace rewrite attacks
 - Proof that a scientific or engineering claim is true
 - Equating HMAC shared-secret authentication with digital signatures or absolute

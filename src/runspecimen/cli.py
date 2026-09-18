@@ -38,9 +38,11 @@ from runspecimen.signing import (
 _ABOUT_SUMMARY = (
     "Exactly one human-approved, bounded local run at a time, with provenance "
     "binding and a tamper-evident receipt. Core lifecycle: approve → preflight → "
-    "run → postflight → verify. Safety model: TTY approval, workspace lease, "
-    "hash-chained events, and certificates — evidence controls, not an OS sandbox. "
-    "The dashboard is loopback-only and read-only; it cannot approve or execute."
+    "run → postflight → verify. Safety model: local TTY APPROVE (primary), optional "
+    "Mac-armed remote human confirm via paired companion (not TTY-equivalent), "
+    "workspace lease, hash-chained events, and certificates — evidence controls, "
+    "not an OS sandbox. Plugins/agents cannot approve. The dashboard is "
+    "loopback-only and read-only; it cannot approve or execute."
 )
 
 
@@ -131,6 +133,79 @@ def build_parser() -> argparse.ArgumentParser:
     _add_contract(p_dashboard)
     p_dashboard.add_argument("--port", type=int, default=0, help="Loopback port (default: choose one)")
     p_dashboard.add_argument("--open", action="store_true", help="Open the dashboard in the default browser")
+
+    p_companion = sub.add_parser(
+        "companion",
+        help="Opt-in observe + remote-human-confirm endpoint (plugins cannot approve)",
+        description=(
+            "Start a fail-closed companion listener for remote observation and optional "
+            "Mac-armed remote human confirm (ADR-004). Requires an explicit pairing token. "
+            "can_approve stays false; /v1/approve and run/preflight/postflight paths stay "
+            "forbidden. Remote confirm needs a prior `remote-confirm arm` on this Mac. "
+            "Default bind is loopback (HTTP + pairing token). Non-loopback --allow-lan "
+            "requires a private or Tailscale address and TLS (ephemeral self-signed cert "
+            "unless --tls-cert/--tls-key are provided). Cleartext remote-confirm is refused "
+            "off loopback. No public internet control plane; Tailscale is recommended."
+        ),
+    )
+    _add_workspace(p_companion)
+    _add_contract(p_companion)
+    p_companion.add_argument(
+        "--pairing-token",
+        default=None,
+        help="Bearer token shared with the iOS app (auto-generated if omitted)",
+    )
+    p_companion.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
+    p_companion.add_argument("--port", type=int, default=0, help="Bind port (default: choose one)")
+    p_companion.add_argument(
+        "--allow-lan",
+        action="store_true",
+        help="Allow private/link-local/Tailscale bind (requires TLS; still refuses public/unspecified)",
+    )
+    p_companion.add_argument(
+        "--tls-cert",
+        type=Path,
+        default=None,
+        help="PEM certificate for non-loopback binds (default: ephemeral self-signed)",
+    )
+    p_companion.add_argument(
+        "--tls-key",
+        type=Path,
+        default=None,
+        help="PEM private key for --tls-cert",
+    )
+    p_companion.add_argument(
+        "--print-token",
+        action="store_true",
+        help="Print the pairing token once on stdout (needed when auto-generated)",
+    )
+
+    p_remote = sub.add_parser(
+        "remote-confirm",
+        help="Arm/cancel Mac-side remote human confirm (ADR-004)",
+        description=(
+            "Create or clear a one-shot challenge for paired-companion remote human "
+            "confirm. Arming requires an interactive TTY and prints the challenge only "
+            "locally. This is not equivalent to local TTY APPROVE. See "
+            "docs/ADR-004-remote-human-confirm.md."
+        ),
+    )
+    remote_sub = p_remote.add_subparsers(dest="remote_confirm_command", required=True)
+    p_rc_arm = remote_sub.add_parser("arm", help="Arm a pending remote confirm and print the challenge")
+    _add_workspace(p_rc_arm)
+    _add_contract(p_rc_arm)
+    p_rc_arm.add_argument(
+        "--ttl-sec",
+        type=int,
+        default=300,
+        help="Challenge lifetime in seconds (30-3600, default 300)",
+    )
+    p_rc_status = remote_sub.add_parser("status", help="Show whether a remote confirm is pending")
+    _add_workspace(p_rc_status)
+    _add_contract(p_rc_status)
+    p_rc_cancel = remote_sub.add_parser("cancel", help="Cancel a pending remote confirm")
+    _add_workspace(p_rc_cancel)
+    _add_contract(p_rc_cancel)
 
     p_abandon = sub.add_parser(
         "abandon",
@@ -376,6 +451,129 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 if args.open:
                     webbrowser.open(url)
+                server.serve_forever()
+            finally:
+                server.server_close()
+            return 0
+        if args.command == "remote-confirm":
+            from runspecimen.paths import run_state_dir
+            from runspecimen.remote_confirm import (
+                arm_remote_confirm,
+                cancel_remote_confirm,
+                load_pending,
+                public_pending_view,
+                read_local_challenge_for_display,
+            )
+
+            if args.remote_confirm_command == "arm":
+                meta = arm_remote_confirm(
+                    contract_path=args.contract,
+                    workspace=workspace,
+                    ttl_sec=int(args.ttl_sec),
+                )
+                print(json.dumps(meta, indent=2, sort_keys=True))
+                return 0
+            if args.remote_confirm_command == "cancel":
+                print(json.dumps(cancel_remote_confirm(contract_path=args.contract, workspace=workspace), indent=2, sort_keys=True))
+                return 0
+            if args.remote_confirm_command == "status":
+                contract = load_contract(args.contract)
+                state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
+                pending = load_pending(state_dir)
+                view = public_pending_view(pending)
+                local_challenge = read_local_challenge_for_display(state_dir) if view.get("pending") else None
+                out = dict(view)
+                if local_challenge is not None:
+                    # Local CLI status may show the challenge for the Mac operator only.
+                    out["local_challenge"] = local_challenge
+                    out["local_only_note"] = (
+                        "local_challenge is printed for Mac display only; "
+                        "companion HTTP never returns this secret."
+                    )
+                print(json.dumps(out, indent=2, sort_keys=True))
+                return 0
+            raise RunSpecimenError(f"unknown remote-confirm command: {args.remote_confirm_command}")
+        if args.command == "companion":
+            from runspecimen.companion import generate_pairing_token, start_companion
+            from runspecimen.companion_attention import notify_attention_requested
+
+            token = args.pairing_token or generate_pairing_token()
+            if args.pairing_token is None and not args.print_token:
+                raise RunSpecimenError(
+                    "companion auto-generated a pairing token; re-run with --print-token "
+                    "to display it, or pass --pairing-token explicitly"
+                )
+
+            def _on_attention(entry: dict) -> None:
+                note = notify_attention_requested(message=str(entry.get("message") or ""))
+                print(
+                    json.dumps({"event": "attention", **entry, "notification": note}, sort_keys=True),
+                    flush=True,
+                )
+
+            def _on_open_dashboard() -> None:
+                from runspecimen.dashboard import start_dashboard
+
+                dash_server, dash_url = start_dashboard(
+                    workspace=workspace, contract_path=args.contract, port=0
+                )
+
+                def _serve() -> None:
+                    try:
+                        webbrowser.open(dash_url)
+                        dash_server.serve_forever()
+                    finally:
+                        dash_server.server_close()
+
+                import threading
+
+                threading.Thread(target=_serve, name="rs-companion-dashboard", daemon=True).start()
+                print(
+                    json.dumps(
+                        {
+                            "event": "open-dashboard",
+                            "url": dash_url,
+                            "loopback_only": True,
+                            "mutates_lifecycle": False,
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
+
+            def _on_remote_confirmed(approval: dict) -> None:
+                print(
+                    json.dumps(
+                        {
+                            "event": "remote-confirm-settled",
+                            "confirm_channel": approval.get("confirm_channel"),
+                            "campaign_id": approval.get("campaign_id"),
+                            "run_id": approval.get("run_id"),
+                            "not_equivalent_to": "local_tty_approve",
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
+
+            server, url, meta = start_companion(
+                workspace=workspace,
+                contract_path=args.contract,
+                pairing_token=token,
+                host=args.host,
+                port=args.port,
+                allow_lan=bool(args.allow_lan),
+                tls_cert=args.tls_cert,
+                tls_key=args.tls_key,
+                on_attention=_on_attention,
+                on_open_dashboard=_on_open_dashboard,
+                on_remote_confirmed=_on_remote_confirmed,
+            )
+            payload = dict(meta)
+            if args.print_token:
+                payload["pairing_token"] = token
+            print(json.dumps(payload, sort_keys=True), flush=True)
+            try:
                 server.serve_forever()
             finally:
                 server.server_close()

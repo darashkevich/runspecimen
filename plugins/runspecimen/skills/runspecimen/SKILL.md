@@ -23,7 +23,10 @@ GitHub).
 4. Show the user the exact command, outputs, timeout, and major limitations.
 5. Ask the user to run `runspecimen approve --workspace <workspace> --contract
    <contract>` in a real terminal. Pause until they confirm it completed; an
-   agent must not enter `APPROVE` for them.
+   agent must not enter `APPROVE` for them. Do **not** use the iOS companion
+   remote-confirm path from an agent, and do **not** paste Mac challenges into
+   chat. Optional remote human confirm is human-only (ADR-004) and is not
+   equivalent to local TTY APPROVE.
 6. Run sequentially:
    - `runspecimen preflight --workspace <workspace> --contract <contract>`
    - `runspecimen run --workspace <workspace> --contract <contract>`

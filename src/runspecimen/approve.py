@@ -141,7 +141,37 @@ def _approve_under_lease(
     if line.strip() != confirm_phrase:
         raise ApprovalError("approval aborted (confirmation phrase mismatch)")
 
-    # Re-check phase after interactive pause (still under lease).
+    return complete_approval_document(
+        contract=contract,
+        workspace=workspace,
+        now=now,
+        confirm_channel="local_tty_approve",
+        confirm_evidence={
+            "kind": "interactive_tty_phrase",
+            "phrase": confirm_phrase,
+            "claim": "Interactive local TTY APPROVE on the Mac.",
+        },
+        expected_source_hash=source_hash,
+        expected_runtime=runtime,
+    )
+
+
+def complete_approval_document(
+    *,
+    contract: Contract,
+    workspace: Path,
+    now: float | None = None,
+    confirm_channel: str = "local_tty_approve",
+    confirm_evidence: dict | None = None,
+    expected_source_hash: str | None = None,
+    expected_runtime: dict | None = None,
+) -> dict:
+    """Write approval + events after human confirmation (TTY or remote-confirm settle).
+
+    Caller must already hold the workspace lease. Re-checks phase and provenance.
+    """
+    state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
+    ensure_dir(state_dir)
     state = load_state(state_dir)
     phase = state.get("phase")
     if phase in _TERMINAL_PHASES:
@@ -150,8 +180,16 @@ def _approve_under_lease(
             f"({contract.campaign_id}/{contract.run_id})"
         )
 
+    source_hash, _manifest = hash_source(
+        workspace, list(contract.source.roots), list(contract.source.excludes)
+    )
+    if expected_source_hash is not None and expected_source_hash != source_hash:
+        raise ApprovalError("approval aborted (source hash changed since confirm was armed)")
+    runtime = expected_runtime if expected_runtime is not None else runtime_provenance(contract, workspace)
+
     ts = time.time() if now is None else now
     expires_at = ts + contract.approval.ttl_sec
+    evidence = dict(confirm_evidence or {})
     doc = {
         "approved_at": utc_now_iso(),
         "approved_at_unix": ts,
@@ -164,6 +202,8 @@ def _approve_under_lease(
         "runtime": runtime,
         "ttl_sec": contract.approval.ttl_sec,
         "argv": list(contract.argv),
+        "confirm_channel": confirm_channel,
+        "confirm_evidence": evidence,
     }
 
     atomic_write_json(approval_path(state_dir), doc)
@@ -175,6 +215,7 @@ def _approve_under_lease(
             "source_hash": source_hash,
             "runtime_id": runtime["runtime_id"],
             "expires_at_unix": expires_at,
+            "confirm_channel": confirm_channel,
         },
     )
     update_state(
