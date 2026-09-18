@@ -86,14 +86,25 @@ if [[ "$MODE" == "adhoc" || "$IDENTITY" == "-" ]]; then
   )
   SIGNING_MODE="ad-hoc"
   ASSERT_ARGS+=(--expect-adhoc)
-elif echo "$IDENTITIES" | grep -Eq 'Apple Distribution|3rd Party Mac Developer Application|Apple Development'; then
-  # Prefer Automatic when any Apple identity exists; operator still needs MAS profile for export.
-  SIGN_ARGS=(CODE_SIGN_STYLE=Automatic)
-  SIGNING_MODE="Automatic ($MODE)"
+elif echo "$IDENTITIES" | grep -Eq 'Apple Distribution|3rd Party Mac Developer Application'; then
+  # Automatic without DEVELOPMENT_TEAM falls back to "Sign to Run Locally"
+  # while the nested helper script still uses RS_SIGN_IDENTITY — mixed signing.
+  SIGN_ARGS=(
+    CODE_SIGN_STYLE=Manual
+    "CODE_SIGN_IDENTITY=$IDENTITY"
+    CODE_SIGNING_ALLOWED=YES
+  )
   if [[ -n "${RS_NOTARY_TEAM_ID:-}" ]]; then
+    SIGN_ARGS+=(DEVELOPMENT_TEAM="$RS_NOTARY_TEAM_ID")
     ASSERT_ARGS+=(--expect-team "$RS_NOTARY_TEAM_ID")
   fi
-else
+  if [[ -n "${RS_MAS_PROFILE_SPECIFIER:-}" ]]; then
+    SIGN_ARGS+=("PROVISIONING_PROFILE_SPECIFIER=$RS_MAS_PROFILE_SPECIFIER")
+  elif [[ "$IDENTITY" == *"Apple Distribution"* ]]; then
+    SIGN_ARGS+=("PROVISIONING_PROFILE_SPECIFIER=RunSpecimen MAS")
+  fi
+  SIGNING_MODE="Manual Distribution ($IDENTITY)"
+elif echo "$IDENTITIES" | grep -Eq 'Apple Development'; then
   SIGN_ARGS=(
     CODE_SIGN_STYLE=Manual
     "CODE_SIGN_IDENTITY=$IDENTITY"
