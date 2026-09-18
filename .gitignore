@@ -1,4 +1,9 @@
 .tools/
+apps/macos/build/
+apps/macos/.build/
+apps/macos/Config/signing.env
+apps/macos/Config/*.p8
+apps/macos/Helpers/payload/
 # Workspace run state (root + QA); examples/showcase/.runspecimen is intentionally tracked
 /.runspecimen/
 qa/**/.runspecimen/
@@ -19,3 +24,9 @@ apps/ios/**/DerivedData/
 apps/ios/*.xcworkspace
 apps/macos-companion/.build/
 apps/macos-companion/.swiftpm/
+apps/macos/RunSpecimen.xcodeproj/xcuserdata/
+apps/macos/RunSpecimen.xcodeproj/project.xcworkspace/xcuserdata/
+apps/macos/build/
+apps/macos/RunSpecimen *.xcodeproj/
+apps/macos/*.xcworkspace/
+apps/macos/.swiftpm/

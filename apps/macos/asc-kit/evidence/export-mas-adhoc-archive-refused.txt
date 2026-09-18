@@ -1,0 +1,7 @@
+=== real ad-hoc xcarchive refused by export_mas before xcodebuild -exportArchive ===
+archive=/var/folders/nb/gwgrnsjx7d5ftv5rz0nz1vkh0000gn/T/rs-bypass-ev.Q4U4oYU5Ov/adhoc.xcarchive
+exit=1
+xcodebuild_invoked=NO
+--- stdout/stderr ---
+==> assert_store_export_ready (fail closed; RS_ARCHIVE_PATH=/var/folders/nb/gwgrnsjx7d5ftv5rz0nz1vkh0000gn/T/rs-bypass-ev.Q4U4oYU5Ov/adhoc.xcarchive RS_ARCHIVE_APP=/var/folders/nb/gwgrnsjx7d5ftv5rz0nz1vkh0000gn/T/rs-bypass-ev.Q4U4oYU5Ov/adhoc.xcarchive/Products/Applications/RunSpecimen.app)
+STORE EXPORT BLOCKED: archive app TeamIdentifier unset (ad-hoc) — Store export requires Apple Distribution–signed archive matching team ABCD123456

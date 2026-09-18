@@ -41,6 +41,7 @@ No watchers, no recurring scheduler, no parallel workers.
 - [ADR-004 remote human confirm](docs/ADR-004-remote-human-confirm.md) — Mac-armed challenge + phone `APPROVE` (not TTY-equivalent; plugins cannot approve)
 - [iOS Observe app](apps/ios/README.md) — `com.darashkevich.runspecimen.observe` (TestFlight/later)
 - [macOS companion helper](apps/macos-companion/README.md) — `com.darashkevich.runspecimen.companion` (not MAS packaging / PR #6)
+- [macOS app](apps/macos/README.md) — native SwiftUI companion (sandbox-first; see `APP_STORE.md`)
 
 ## Install
 

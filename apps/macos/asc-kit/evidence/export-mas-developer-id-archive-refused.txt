@@ -1,0 +1,5 @@
+=== Developer ID archive refused before xcodebuild (from test_store_export_gate.sh) ===
+==> Developer ID archive Authority refused (app + helper fixtures)
+OK: Developer ID archive Authority blocked
+==> export_mas refuses Developer ID archive before xcodebuild -exportArchive
+OK export_mas pre-xcodebuild refuse: developer-id-archive
