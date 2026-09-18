@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Incident bundle and remote-confirm refuse
+
+- Add Community CLI `runspecimen bundle` for a local incident evidence pack
+  (state, events, approval, certificate, verify output, refusal extract,
+  optional predecessor chain). History on disk stays visible. Not a Veto
+  7-day vault; Team later pays for off-laptop retention, not hiding local files.
+- Remote human confirm can be **refused with a typed reason**
+  (`runspecimen remote-confirm refuse` / `POST /v1/remote-confirm-refuse`).
+  Challenge still required; pending is consumed without writing approval.
+- `runspecimen verify` surfaces `confirm_channel` (`local_tty_approve` vs
+  `remote_human_confirm`) so phone confirm is not claimed TTY-equivalent.
+- Quiet hours (`RUNSPECIMEN_QUIET_HOURS=HH-HH`) block **arm only** — never
+  auto-APPROVE. Companion iOS card shows who/what/expiry/lease/isolation/
+  predecessor chips. Plugins still cannot approve, settle, or refuse.
+- Docs: `docs/SPEC_INCIDENT_BUNDLE.md`, `docs/SPEC_REMOTE_CONFIRM_CARD.md`.
+  RS price book stays Community / Pro / Team — not Veto SKUs.
+
 ### Gemini, JetBrains, and Windsurf adapters
 
 - Add Gemini CLI extension manifest (`gemini-extension.json`), `GEMINI.md`,
