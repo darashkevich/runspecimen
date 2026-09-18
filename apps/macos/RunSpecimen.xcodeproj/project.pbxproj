@@ -21,6 +21,7 @@
 		746E229F2860B82A9C618DA9 /* CLIVersionGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E843DB581C76C70E4D0B336 /* CLIVersionGate.swift */; };
 		818B7FFB5C52F411A645E33F /* ActionBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4980BD2EA2EB66E8B05E2589 /* ActionBar.swift */; };
 		9293289E610B5767F5069B8C /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 395F997B04A26C24E649B9F7 /* AppModel.swift */; };
+		9568B3929A301CD70930F0C7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 526BBC943D12D87DD1A66868 /* Assets.xcassets */; };
 		C0EB2EB55853C627CBBC718A /* SecurityBoundary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7531B8780C3C9854D43D8CE4 /* SecurityBoundary.swift */; };
 		C243D9C8700F22A2B888FC13 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = E352B17C6C77A8BA98BACAF1 /* Models.swift */; };
 		CA561EC024C155FAB712DD64 /* libRunSpecimenCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 88F0F2985F5100DEBE7D43A3 /* libRunSpecimenCore.a */; };
@@ -51,6 +52,7 @@
 		3AD6C443994D90F881291C9E /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		3F8548B718F4960684AD9F56 /* EvidenceInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceInspectorView.swift; sourceTree = "<group>"; };
 		4980BD2EA2EB66E8B05E2589 /* ActionBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionBar.swift; sourceTree = "<group>"; };
+		526BBC943D12D87DD1A66868 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7531B8780C3C9854D43D8CE4 /* SecurityBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityBoundary.swift; sourceTree = "<group>"; };
 		88F0F2985F5100DEBE7D43A3 /* libRunSpecimenCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libRunSpecimenCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		8FDFE20E65ED9BB091606F63 /* BookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStore.swift; sourceTree = "<group>"; };
@@ -98,6 +100,7 @@
 			isa = PBXGroup;
 			children = (
 				595094821B70AFB66DB69AF0 /* Sources */,
+				526BBC943D12D87DD1A66868 /* Assets.xcassets */,
 				53246B2511C258849CD2F997 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -210,6 +213,7 @@
 				CAFA4E25B52800584DE93F32 /* Sources */,
 				F9040B7B5B9DE56E04FDB0AD /* Embed Frozen Helper */,
 				A0B22C4F814B186473E2FD87 /* Clear Codesign Xattrs */,
+				DC798735539CEF96490031BE /* Resources */,
 				89C26EB407079B5B563C9327 /* Frameworks */,
 			);
 			buildRules = (
@@ -262,6 +266,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		DC798735539CEF96490031BE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9568B3929A301CD70930F0C7 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		A0B22C4F814B186473E2FD87 /* Clear Codesign Xattrs */ = {
@@ -454,10 +469,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Entitlements/RunSpecimen.mas.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				INFOPLIST_FILE = "Config/Info-mas.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -541,10 +556,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Entitlements/RunSpecimen.mas.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				INFOPLIST_FILE = "Config/Info-mas.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

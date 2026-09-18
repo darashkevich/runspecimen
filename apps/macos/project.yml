@@ -43,6 +43,9 @@ targets:
     platform: macOS
     sources:
       - path: Sources/RunSpecimenApp
+      # Required for ITMS-90546: actool must emit Contents/Resources/Assets.car.
+      - path: Assets.xcassets
+        buildPhase: resources
     dependencies:
       - target: RunSpecimenCore
         embed: false
@@ -52,6 +55,7 @@ targets:
         excludes:
           - Info.plist
           - ICONS.md
+          - "**/*.xcassets"
     info:
       path: Config/Info-mas.plist
       properties:
@@ -63,7 +67,7 @@ targets:
         CFBundleName: RunSpecimen
         CFBundlePackageType: APPL
         CFBundleShortVersionString: "0.1.3"
-        CFBundleVersion: "4"
+        CFBundleVersion: "5"
         RSDistributionChannel: mas
         LSApplicationCategoryType: public.app-category.developer-tools
         LSMinimumSystemVersion: "14.0"
@@ -83,10 +87,10 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen
         MARKETING_VERSION: "0.1.3"
-        CURRENT_PROJECT_VERSION: "4"
+        CURRENT_PROJECT_VERSION: "5"
         INFOPLIST_FILE: Config/Info-mas.plist
         PRODUCT_NAME: RunSpecimen
-        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Entitlements/RunSpecimen.mas.entitlements
         COMBINE_HIDPI_IMAGES: YES
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: NO
