@@ -67,7 +67,7 @@ targets:
         CFBundleName: RunSpecimen
         CFBundlePackageType: APPL
         CFBundleShortVersionString: "0.1.3"
-        CFBundleVersion: "5"
+        CFBundleVersion: "6"
         RSDistributionChannel: mas
         LSApplicationCategoryType: public.app-category.developer-tools
         LSMinimumSystemVersion: "14.0"
@@ -87,7 +87,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen
         MARKETING_VERSION: "0.1.3"
-        CURRENT_PROJECT_VERSION: "5"
+        CURRENT_PROJECT_VERSION: "6"
         INFOPLIST_FILE: Config/Info-mas.plist
         PRODUCT_NAME: RunSpecimen
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

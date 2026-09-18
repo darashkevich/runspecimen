@@ -421,3 +421,9 @@ pass "Store export prerequisites satisfied (Apple Distribution + team $TEAM + MA
 echo "READY_TEAM=$TEAM"
 echo "READY_IDENTITY=$DIST_LINE"
 echo "READY_PROFILE=$FOUND_PROFILE"
+# xcodebuild -exportArchive resolves manual profiles by UUID, not display name.
+PROFILE_UUID="$(security cms -D -i "$FOUND_PROFILE" 2>/dev/null | plutil -extract UUID raw -o - - 2>/dev/null || true)"
+if [[ -z "$PROFILE_UUID" || "$PROFILE_UUID" == "null" ]]; then
+  PROFILE_UUID="$(basename "$FOUND_PROFILE" | sed 's/\.[^.]*$//')"
+fi
+echo "READY_PROFILE_UUID=$PROFILE_UUID"

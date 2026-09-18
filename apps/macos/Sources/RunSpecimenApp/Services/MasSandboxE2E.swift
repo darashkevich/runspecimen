@@ -73,8 +73,11 @@ enum MasSandboxE2E {
                     "helper --version failed inside sandbox (rc=\(probe.exitCode)): stdout=\(probe.stdout) stderr=\(probe.stderr)"
                 )
             }
-            guard versionText.contains("0.2.0rc11") else {
-                throw CheckError("helper version not rc11: \(versionText)")
+            switch CLIVersionGate.evaluate(versionOutput: versionText) {
+            case .ok:
+                break
+            default:
+                throw CheckError("helper version below app minimum: \(versionText)")
             }
             let identity = try await cli.version()
             record(

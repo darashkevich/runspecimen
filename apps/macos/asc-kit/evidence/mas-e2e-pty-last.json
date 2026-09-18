@@ -2,18 +2,8 @@
   "channel" : "mas",
   "checks" : [
     {
-      "detail" : "runspecimen 0.2.0rc11 channel=mas probe=runspecimen 0.2.0rc11",
+      "detail" : "runspecimen 0.2.0rc12 channel=mas probe=runspecimen 0.2.0rc12",
       "name" : "bundled_helper_version",
-      "ok" : true
-    },
-    {
-      "detail" : "\/Users\/yahor\/Library\/Containers\/com.darashkevich.runspecimen\/Data\/tmp\/rs-mas-e2e-2026-09-18T162331Z\/demo",
-      "name" : "workspace_bookmark",
-      "ok" : true
-    },
-    {
-      "detail" : "launched then stopped",
-      "name" : "dashboard_cleanup",
       "ok" : true
     },
     {
@@ -22,6 +12,6 @@
       "ok" : true
     }
   ],
-  "note" : "Never types APPROVE; Store upload still Yahor-only.",
+  "note" : "Never types APPROVE; Store upload still Yahor-only. Clean-tree smoke 2026-09-18T16:48Z.",
   "ok" : true
 }

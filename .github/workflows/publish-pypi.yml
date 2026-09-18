@@ -3,8 +3,9 @@ name: Publish Python package to PyPI
 # One validated GitHub Release build feeds PyPI as identical bytes.
 # This workflow MUST NOT rebuild wheel/sdist. It downloads the published
 # release assets, checks tag + SHA-256 against SHA256SUMS, and uploads those
-# files. rc11 is checksum-only: `gh attestation verify` is expected to 404
-# until a future CI-built release attaches SLSA provenance to the same subjects.
+# files. The next published candidate is checksum-only: `gh attestation verify`
+# is expected to 404 until a future CI-built release attaches SLSA provenance
+# to the same subjects. Do not publish draft tag v0.2.0-rc.11 (ecc1709).
 
 on:
   release:

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.0rc12 - 2026-09-18 (not published)
+
+Identity for the next public cut. **Do not publish** draft `v0.2.0-rc.11`
+(`ecc1709`). Tag `v0.2.0-rc.12` only on the merged green commit. Checksum-only
+until SLSA attestations exist. See `docs/RELEASE_IDENTITY.md`.
+
 ### macOS app
 
 - Fix local launch: the SwiftUI window could size to thousands of points and
@@ -10,15 +16,24 @@
   discovery failures on the in-window banner, and skip App Sandbox on local
   `--from-src` builds so the host-Python helper can run. Layout wraps on
   split / 13-inch Macs; iOS Observe uses a readable column and landscape.
+  Undersized on-screen frames now grow to the window minimum.
 - Store export gate now fail-closes on `codesign --verify --strict` for the
   archived app and nested helper, including a tamper-after-signing negative.
+  Local Store `.pkg` export uses `installerSigningCertificate` plus the MAS
+  profile **UUID** (the app profile correctly omits the installer cert).
 - Fix `AppIcon.appiconset`: catalog filenames are real `icon_*@2x.png` files
   with matching pixel sizes (128@2x is 256px). `verify_app_icon.sh` checks
   Contents.json and a warning-free `actool` compile.
-- PyPI publish workflow consumes GitHub Release assets as identical bytes
-  (no rebuild). rc11 remains checksum-only until SLSA attestations exist.
+- Next App Store Connect upload is **0.1.3 (6)**. Build **5** is already
+  `WAITING_FOR_REVIEW` and is **not** this tree.
 
-## 0.2.0rc11 - 2026-09-18
+### Packaging
+
+- PyPI publish workflow consumes GitHub Release assets as identical bytes
+  (no rebuild). This candidate remains checksum-only until SLSA attestations
+  exist.
+
+## 0.2.0rc11 - 2026-09-18 (unpublished identity; do not ship this tag)
 
 ### Brand
 

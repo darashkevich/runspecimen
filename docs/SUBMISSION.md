@@ -6,21 +6,26 @@ by a human with appropriate credentials.
 
 ## Proposed release (not published yet)
 
-Package / plugin identity on the release branch: **`0.2.0rc11`** / **`0.2.0-rc.11`**.
+Package / plugin identity on the release branch: **`0.2.0rc12`** / **`0.2.0-rc.12`**.
 
 **Last published:** [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) / PyPI `runspecimen==0.2.0rc10`.
 
-Prospective URLs (appear only after Yahor publishes the rc11 GitHub Release — that also triggers PyPI):
+**Do not publish** the existing draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) (annotated tag peels to `ecc1709`). Do not move that tag. Next tag is `v0.2.0-rc.12` on the merged green commit. See [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md).
 
-- Release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.11
-- Wheel: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.11/runspecimen-0.2.0rc11-py3-none-any.whl
-- Source: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.11/runspecimen-0.2.0rc11.tar.gz
-- Plugin archive: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.11/runspecimen-plugin-0.2.0-rc.11.zip
-- Checksums: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.11/SHA256SUMS
+Prospective URLs (appear only after Yahor publishes the rc12 GitHub Release — that also triggers PyPI of the **same bytes**):
+
+- Release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.12
+- Wheel: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/runspecimen-0.2.0rc12-py3-none-any.whl
+- Source: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/runspecimen-0.2.0rc12.tar.gz
+- Plugin archive: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/runspecimen-plugin-0.2.0-rc.12.zip
+- Checksums: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/SHA256SUMS
 
 ## 1. Cursor Marketplace
 
-**Status:** Not submitted
+**Status (2026-09-18):** **Not submitted** and **not listed**. Public
+https://cursor.com/marketplace?q=runspecimen returned no RunSpecimen plugin
+(unrelated hits only: `run-app`, Runlayer, etc.). In-repo
+`.cursor-plugin/marketplace.json` is packaging, not an approved public listing.
 
 **Submission URL:** https://cursor.com/marketplace/publish
 
@@ -61,7 +66,9 @@ plugins/runspecimen/.cursor-plugin/plugin.json
 
 ## 2. Codex/ChatGPT Plugin Directory
 
-**Status:** Not submitted
+**Status (2026-09-18):** **Not submitted** and **not listed**. Public
+https://chatgpt.com/apps catalog browse did not show RunSpecimen. Do not treat
+in-repo Codex plugin files as an approved directory listing.
 
 **Submission URL:** OpenAI plugin submission portal (https://platform.openai.com)
 
@@ -250,14 +257,14 @@ listing later; filesystem skills/rules are the supported path today.
 
 ## 3. PyPI (Python Package Index)
 
-**Status:** Last published `0.2.0rc10`; **`0.2.0rc11` not published yet**
+**Status:** Last published `0.2.0rc10`; **`0.2.0rc11` draft must stay unpublished**; **`0.2.0rc12` not published yet**
 
 **Registry URL:** https://pypi.org/project/runspecimen/
 
 ### Proposed package (after Yahor publish approval)
 
-- **Version:** `0.2.0rc11`
-- **Install (after publish):** `python3 -m pip install runspecimen==0.2.0rc11`
+- **Version:** `0.2.0rc12`
+- **Install (after publish):** `python3 -m pip install runspecimen==0.2.0rc12`
 - **Until then:** `python3 -m pip install runspecimen==0.2.0rc10`
 - **Publishing:** GitHub Actions trusted publishing with OIDC; no PyPI API
   token is stored in GitHub.
@@ -281,15 +288,16 @@ Release assets** (wheel, sdist, plugin zip, SHA256SUMS), verifies SHA-256
 digests and filenames, and uploads **those same wheel/sdist bytes** to PyPI.
 It does **not** rebuild distributions at publish time.
 
-**rc11 provenance:** checksum-only. `SHA256SUMS` is the integrity contract.
-`gh attestation verify` currently returns HTTP 404 for the draft wheel; this
-candidate does not claim SLSA / GitHub Artifact Attestation provenance.
+**rc12 provenance:** checksum-only. `SHA256SUMS` is the integrity contract.
+`gh attestation verify` is expected to 404 until a future CI-built release
+attaches SLSA / GitHub Artifact Attestation provenance. Do not describe this
+candidate as attested.
 
 The GitHub `pypi` environment is restricted to `v*` tags.
 
-Public product/support/privacy/terms pages stay on **rc10** until rc11 is live
+Public product/support/privacy/terms pages stay on **rc10** until rc12 is live
 on both GitHub (published release) and PyPI. Do not retarget download links
-from a draft.
+from a draft. Do not publish the rc11 draft.
 
 ---
 
@@ -328,15 +336,15 @@ listings are confirmed live (not pending review).
 
 | Channel | Submitted | Pending | Live | URL |
 | --- | --- | --- | --- | --- |
-| GitHub Release | ❌ rc11 draft | publish click | last live: [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) | prospective [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.11) |
-| Cursor Marketplace | ❌ | - | - | - |
-| Codex Directory | ❌ | - | - | - |
+| GitHub Release | ❌ rc12 not tagged | publish click after merge | last live: [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) | keep draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) unpublished |
+| Cursor Marketplace | ❌ | not submitted | no public listing | https://cursor.com/marketplace?q=runspecimen (2026-09-18: no RunSpecimen hit) |
+| Codex Directory | ❌ | not submitted | no public listing | https://chatgpt.com/apps (2026-09-18: RunSpecimen not in catalog browse) |
 | Claude Code community | ❌ | package ready in-repo | - | - |
 | Grok Build | ❌ | Claude-compat package ready | - | local symlink / self-host |
 | Gemini CLI gallery | ❌ | extension ready in-repo | - | - |
 | JetBrains Junie / Marketplace | ❌ | Junie catalog + IntelliJ scaffold | - | - |
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
-| PyPI | ❌ (rc11) | after GitHub Release publish | last live: `0.2.0rc10` | [runspecimen](https://pypi.org/project/runspecimen/) |
+| PyPI | ❌ (rc12) | after GitHub Release publish of `v0.2.0-rc.12` | last live: `0.2.0rc10` | [runspecimen](https://pypi.org/project/runspecimen/) |
 | Mac App Store | ⏳ WAITING_FOR_REVIEW | Apple review of macOS **0.1.3 (5)** | not public | no `apps.apple.com` URL yet — see `apps/macos/asc-kit/STATUS.md` |
 
 **Important:** Do not claim a listing is "public" or "available" until:
@@ -357,5 +365,5 @@ After each channel goes live, verify:
 5. **Gemini CLI:** `/extensions list` after link/install; confirm MCP + hooks
 6. **Junie:** `/extensions` shows `runspecimen` after marketplace add
 7. **Windsurf:** `@runspecimen` skill resolves; rule appears under Customizations
-8. **PyPI:** `pip install runspecimen` works and `runspecimen --version` shows `0.2.0rc11`
+8. **PyPI:** `pip install runspecimen` works and `runspecimen --version` shows `0.2.0rc12`
 9. **Website:** Update with verified live links only

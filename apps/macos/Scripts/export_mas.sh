@@ -55,18 +55,38 @@ echo "==> assert_store_export_ready (fail closed; RS_ARCHIVE_PATH=$ARCHIVE_PATH 
 READY_OUT="$(RS_ARCHIVE_PATH="$ARCHIVE_PATH" ./Scripts/assert_store_export_ready.sh)"
 echo "$READY_OUT"
 TEAM="$(printf '%s\n' "$READY_OUT" | awk -F= '/^READY_TEAM=/{print $2; exit}')"
+PROFILE_UUID="$(printf '%s\n' "$READY_OUT" | awk -F= '/^READY_PROFILE_UUID=/{print $2; exit}')"
 
-# Keep ExportOptions teamID in sync when still placeholder (local only; do not commit secrets).
-PLIST_TEAM="$(/usr/libexec/PlistBuddy -c 'Print :teamID' "$EXPORT_PLIST" 2>/dev/null || true)"
-if [[ "$PLIST_TEAM" == "TEAMID" && -n "$TEAM" ]]; then
-  echo "Updating local ExportOptions.mas.plist teamID → $TEAM (operator machine only)"
+# Never mutate the committed ExportOptions plist (teamID placeholder stays TEAMID).
+WORK_PLIST="$(mktemp -t rs-export-options)"
+trap 'rm -f "$WORK_PLIST"' EXIT
+cp "$EXPORT_PLIST" "$WORK_PLIST"
+EXPORT_PLIST="$WORK_PLIST"
+if [[ "$(/usr/libexec/PlistBuddy -c 'Print :teamID' "$EXPORT_PLIST" 2>/dev/null || true)" == "TEAMID" && -n "$TEAM" ]]; then
+  echo "Using local ExportOptions teamID → $TEAM (temp copy; not committed)"
   /usr/libexec/PlistBuddy -c "Set :teamID $TEAM" "$EXPORT_PLIST"
+fi
+if [[ -n "$PROFILE_UUID" ]]; then
+  echo "Binding provisioningProfiles UUID $PROFILE_UUID (exportArchive ignores profile display names)"
+  /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" "$EXPORT_PLIST" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Delete :provisioningProfiles:com.darashkevich.runspecimen" "$EXPORT_PLIST" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:com.darashkevich.runspecimen string $PROFILE_UUID" "$EXPORT_PLIST"
+fi
+
+# RS_EXPORT_DESTINATION=export writes a Store pkg locally and does not upload.
+if [[ "${RS_EXPORT_DESTINATION:-}" == "export" ]]; then
+  /usr/libexec/PlistBuddy -c "Set :destination export" "$EXPORT_PLIST"
+  echo "Local-only export (destination=export) — will not upload to App Store Connect"
 fi
 
 rm -rf "$EXPORT_DIR"
 mkdir -p "$EXPORT_DIR"
 
-echo "==> xcodebuild -exportArchive (App Store Connect)"
+DESTINATION_NOW="$(/usr/libexec/PlistBuddy -c 'Print :destination' "$EXPORT_PLIST" 2>/dev/null || echo unknown)"
+echo "==> xcodebuild -exportArchive (App Store Connect, destination=$DESTINATION_NOW)"
+if [[ "$DESTINATION_NOW" == "upload" ]]; then
+  echo "NOTE: ExportOptions destination=upload will send a pkg to App Store Connect (not Submit for Review)." >&2
+fi
 xcodebuild -exportArchive \
   -archivePath "$ARCHIVE_PATH" \
   -exportPath "$EXPORT_DIR" \

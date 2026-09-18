@@ -17,6 +17,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 GATE=./Scripts/assert_store_export_ready.sh
 chmod +x "$GATE"
+# Operator leftovers from a real archive/export must not satisfy negatives.
+unset RS_ARCHIVE_APP RS_ARCHIVE_PATH RS_EXPORT_DIR RS_EXPORT_OPTIONS_PLIST || true
 
 TMP="$(mktemp -d -t rs-store-gate)"
 trap 'rm -rf "$TMP"' EXIT
@@ -315,7 +317,7 @@ OUT="$(
   RS_NOTARY_TEAM_ID="$TEAM" \
   RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
   RS_PROFILE_SEARCH_DIRS="$PROFILES" \
-  env -u RS_ARCHIVE_APP "$GATE" 2>&1
+  env -u RS_ARCHIVE_APP -u RS_ARCHIVE_PATH "$GATE" 2>&1
 )"
 RC=$?
 set -e
