@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0rc11 - 2026-09-18
+
 ### Brand
 
 - Replace the padlock glyph with the 6-fold hexaflake mark (plugin logos,

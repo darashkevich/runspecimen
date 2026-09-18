@@ -30,3 +30,5 @@ apps/macos/build/
 apps/macos/RunSpecimen *.xcodeproj/
 apps/macos/*.xcworkspace/
 apps/macos/.swiftpm/
+.windsurf/
+

@@ -19,7 +19,7 @@ IDE_ACTIONS = PLUGIN / "jetbrains" / "scripts" / "ide_actions.py"
 
 class PluginManifestTests(unittest.TestCase):
     def test_host_manifests_share_version_and_name(self) -> None:
-        expected = "0.2.0-rc.10"
+        expected = "0.2.0-rc.11"
         manifests = {
             "codex": PLUGIN / ".codex-plugin" / "plugin.json",
             "cursor": PLUGIN / ".cursor-plugin" / "plugin.json",
@@ -38,9 +38,9 @@ class PluginManifestTests(unittest.TestCase):
         junie = json.loads((ROOT / ".junie-extension" / "marketplace.json").read_text(encoding="utf-8"))
         self.assertEqual(cursor["plugins"][0]["source"], "plugins/runspecimen")
         self.assertEqual(claude["plugins"][0]["source"], "./plugins/runspecimen")
-        self.assertEqual(claude["plugins"][0]["version"], "0.2.0-rc.10")
+        self.assertEqual(claude["plugins"][0]["version"], "0.2.0-rc.11")
         self.assertEqual(junie["extensions"][0]["source"], "./plugins/runspecimen")
-        self.assertEqual(junie["extensions"][0]["version"], "0.2.0-rc.10")
+        self.assertEqual(junie["extensions"][0]["version"], "0.2.0-rc.11")
 
     def test_claude_hooks_and_mcp_present(self) -> None:
         hooks = json.loads((PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))

@@ -3,9 +3,9 @@
 RunSpecimen is a local safety and evidence layer for consequential agent-driven
 research and engineering commands.
 
-**Current package version (this branch / proposed RC):** `0.2.0rc10`  
-**Last published:** [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9) / PyPI `runspecimen==0.2.0rc9`  
-GitHub Release assets and PyPI for rc10 appear only after an explicit publish (not done on this PR).
+**Current package version (this branch):** `0.2.0rc11`  
+**Last published:** [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) / PyPI `runspecimen==0.2.0rc10`  
+GitHub Release assets and PyPI for **rc11** appear only after the draft release is published (that also triggers trusted-publisher PyPI).
 
 ## Core promise
 
@@ -49,22 +49,20 @@ No watchers, no recurring scheduler, no parallel workers.
 
 ## Install
 
-### From PyPI (after rc10 is published)
+### From PyPI (last published candidate)
 
 ```bash
 python3 -m pip install runspecimen==0.2.0rc10
 runspecimen --version
 ```
 
-Until rc10 is published, install the last published candidate with
-`python3 -m pip install runspecimen==0.2.0rc9`, or install this branch from a
-local clone (below).
+This branch is `0.2.0rc11`. Install it from a clone (below) until the rc11 GitHub Release / PyPI upload is published.
 
 PyPI project: [runspecimen](https://pypi.org/project/runspecimen/)
 
-### From GitHub release (after rc10 tag exists)
+### From GitHub release
 
-Install directly from the v0.2.0-rc.10 release:
+Last published candidate:
 
 ```bash
 python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10-py3-none-any.whl

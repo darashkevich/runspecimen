@@ -6,17 +6,17 @@ by a human with appropriate credentials.
 
 ## Proposed release (not published yet)
 
-Package / plugin identity on the release branch: **`0.2.0rc10`** / **`0.2.0-rc.10`**.
+Package / plugin identity on the release branch: **`0.2.0rc11`** / **`0.2.0-rc.11`**.
 
-**Last published:** [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9) / PyPI `runspecimen==0.2.0rc9`.
+**Last published:** [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) / PyPI `runspecimen==0.2.0rc10`.
 
-Prospective URLs (appear only after an explicit GitHub Release + PyPI publish — do not treat as live):
+Prospective URLs (appear only after Yahor publishes the rc11 GitHub Release — that also triggers PyPI):
 
-- Release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10
-- Wheel: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10-py3-none-any.whl
-- Source: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10.tar.gz
-- Plugin archive: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-plugin-0.2.0-rc.10.zip
-- Checksums: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/SHA256SUMS
+- Release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.11
+- Wheel: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.11/runspecimen-0.2.0rc11-py3-none-any.whl
+- Source: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.11/runspecimen-0.2.0rc11.tar.gz
+- Plugin archive: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.11/runspecimen-plugin-0.2.0-rc.11.zip
+- Checksums: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.11/SHA256SUMS
 
 ## 1. Cursor Marketplace
 
@@ -250,15 +250,15 @@ listing later; filesystem skills/rules are the supported path today.
 
 ## 3. PyPI (Python Package Index)
 
-**Status:** Last published `0.2.0rc9`; **`0.2.0rc10` not published yet**
+**Status:** Last published `0.2.0rc10`; **`0.2.0rc11` not published yet**
 
 **Registry URL:** https://pypi.org/project/runspecimen/
 
 ### Proposed package (after Yahor publish approval)
 
-- **Version:** `0.2.0rc10`
-- **Install (after publish):** `python3 -m pip install runspecimen==0.2.0rc10`
-- **Until then:** `python3 -m pip install runspecimen==0.2.0rc9`
+- **Version:** `0.2.0rc11`
+- **Install (after publish):** `python3 -m pip install runspecimen==0.2.0rc11`
+- **Until then:** `python3 -m pip install runspecimen==0.2.0rc10`
 - **Publishing:** GitHub Actions trusted publishing with OIDC; no PyPI API
   token is stored in GitHub.
 
@@ -285,7 +285,7 @@ restricted to `v*` tags.
 
 ## 4. Website (runspecimen.darashkevich.com)
 
-**Status:** Live but may need update
+**Status:** Live (hexaflake mark + honest rc10 PyPI / git-main copy). Marketplace links stay pending until listings are accepted.
 
 **Current content check:** Site mentions "Public marketplace availability is not yet confirmed."
 
@@ -294,7 +294,7 @@ restricted to `v*` tags.
 After marketplace submissions are accepted (not just submitted), update the
 website to reflect actual public availability with direct links.
 
-**Location:** Website is not in this repository. Hosted separately (Cloudflare).
+**Location:** Marketing site lives in the `darashkevich.com` repo (`sites/runspecimen/`).
 
 **MANUAL ACTION REQUIRED:** Human must update website content after marketplace
 listings are confirmed live (not pending review).
@@ -305,7 +305,7 @@ listings are confirmed live (not pending review).
 
 | Channel | Submitted | Pending | Live | URL |
 | --- | --- | --- | --- | --- |
-| GitHub Release | ❌ | rc10 proposed | last live: [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9) | prospective [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) |
+| GitHub Release | ❌ rc11 draft | publish click | last live: [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) | prospective [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.11) |
 | Cursor Marketplace | ❌ | - | - | - |
 | Codex Directory | ❌ | - | - | - |
 | Claude Code community | ❌ | package ready in-repo | - | - |
@@ -313,7 +313,7 @@ listings are confirmed live (not pending review).
 | Gemini CLI gallery | ❌ | extension ready in-repo | - | - |
 | JetBrains Junie / Marketplace | ❌ | Junie catalog + IntelliJ scaffold | - | - |
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
-| PyPI | ❌ (rc10) | after GitHub Release | last live: `0.2.0rc9` | [runspecimen](https://pypi.org/project/runspecimen/) |
+| PyPI | ❌ (rc11) | after GitHub Release publish | last live: `0.2.0rc10` | [runspecimen](https://pypi.org/project/runspecimen/) |
 
 **Important:** Do not claim a listing is "public" or "available" until:
 1. Submission is accepted (not just submitted)
@@ -333,5 +333,5 @@ After each channel goes live, verify:
 5. **Gemini CLI:** `/extensions list` after link/install; confirm MCP + hooks
 6. **Junie:** `/extensions` shows `runspecimen` after marketplace add
 7. **Windsurf:** `@runspecimen` skill resolves; rule appears under Customizations
-8. **PyPI:** `pip install runspecimen` works and `runspecimen --version` shows `0.2.0rc10`
+8. **PyPI:** `pip install runspecimen` works and `runspecimen --version` shows `0.2.0rc11`
 9. **Website:** Update with verified live links only

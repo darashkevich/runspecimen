@@ -16,7 +16,7 @@ from typing import Any
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "runspecimen"
-SERVER_VERSION = "0.2.0-rc.10"
+SERVER_VERSION = "0.2.0-rc.11"
 
 ALLOWED = frozenset({
     "about",
