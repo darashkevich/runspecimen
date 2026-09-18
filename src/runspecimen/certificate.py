@@ -195,6 +195,18 @@ def verify_run_receipt(
     _verify_issuance_ordering(log, cert)
     _verify_live_outputs(workspace, cert)
 
+    confirm_channel = None
+    from runspecimen.approve import load_approval
+
+    approval = load_approval(state_dir)
+    if isinstance(approval, dict) and approval.get("confirm_channel"):
+        confirm_channel = str(approval["confirm_channel"])
+    else:
+        for rec in reversed(log.read_all()):
+            if rec.type == "approval" and rec.body.get("confirm_channel"):
+                confirm_channel = str(rec.body["confirm_channel"])
+                break
+
     if require_live_provenance:
         if contract is None:
             raise CertificateError("live provenance verification requires a contract")
@@ -229,6 +241,12 @@ def verify_run_receipt(
         "event_head": cert["event_head"],
         "campaign_id": campaign_id,
         "run_id": run_id,
+        "confirm_channel": confirm_channel,
+        "confirm_channel_note": (
+            "Remote human confirm is not equivalent to local TTY APPROVE."
+            if confirm_channel == "remote_human_confirm"
+            else None
+        ),
     }
 
 

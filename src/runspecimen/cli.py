@@ -12,6 +12,7 @@ from pathlib import Path
 
 from runspecimen import DOCS_URLS, PRODUCT_NAME, __version__
 from runspecimen.approve import approve_contract
+from runspecimen.bundle import write_incident_bundle
 from runspecimen.certificate import verify_run_receipt
 from runspecimen.contract import load_contract
 from runspecimen.errors import RunSpecimenError
@@ -182,12 +183,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_remote = sub.add_parser(
         "remote-confirm",
-        help="Arm/cancel Mac-side remote human confirm (ADR-004)",
+        help="Arm/cancel/refuse Mac-side remote human confirm (ADR-004)",
         description=(
-            "Create or clear a one-shot challenge for paired-companion remote human "
-            "confirm. Arming requires an interactive TTY and prints the challenge only "
-            "locally. This is not equivalent to local TTY APPROVE. See "
-            "docs/ADR-004-remote-human-confirm.md."
+            "Create, clear, or refuse a one-shot challenge for paired-companion remote "
+            "human confirm. Arming requires an interactive TTY and prints the challenge "
+            "only locally. Refuse consumes the pending with a typed reason and does not "
+            "write approval. This is not equivalent to local TTY APPROVE. See "
+            "docs/ADR-004-remote-human-confirm.md and docs/SPEC_REMOTE_CONFIRM_CARD.md."
         ),
     )
     remote_sub = p_remote.add_subparsers(dest="remote_confirm_command", required=True)
@@ -206,6 +208,54 @@ def build_parser() -> argparse.ArgumentParser:
     p_rc_cancel = remote_sub.add_parser("cancel", help="Cancel a pending remote confirm")
     _add_workspace(p_rc_cancel)
     _add_contract(p_rc_cancel)
+    p_rc_refuse = remote_sub.add_parser(
+        "refuse",
+        help="Consume a pending remote confirm with a typed reason (no approval)",
+    )
+    _add_workspace(p_rc_refuse)
+    _add_contract(p_rc_refuse)
+    p_rc_refuse.add_argument(
+        "--challenge",
+        required=True,
+        help="Mac-displayed one-shot challenge (required so a stolen pairing token is not enough)",
+    )
+    p_rc_refuse.add_argument(
+        "--reason",
+        required=True,
+        help="Why the pending confirm is refused (1-240 characters)",
+    )
+
+    p_bundle = sub.add_parser(
+        "bundle",
+        help="Export a local incident evidence pack (Community; not a Veto vault)",
+        description=(
+            "Copy run state, events, approval, certificate, verify output, and "
+            "refusal extracts into --out. History on disk stays free. Team sharing "
+            "and off-laptop retention are out of band. Never copies "
+            "remote_confirm_challenge.local or pairing tokens. See "
+            "docs/SPEC_INCIDENT_BUNDLE.md."
+        ),
+    )
+    _add_workspace(p_bundle)
+    p_bundle.add_argument("--campaign-id", required=True)
+    p_bundle.add_argument("--run-id", required=True)
+    p_bundle.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help="Destination directory for the incident pack",
+    )
+    p_bundle.add_argument(
+        "--contract",
+        type=Path,
+        default=None,
+        help="Optional contract for live verify when the run is postflighted",
+    )
+    p_bundle.add_argument(
+        "--chain",
+        action="store_true",
+        help="Nest predecessor run packs under predecessors/",
+    )
 
     p_abandon = sub.add_parser(
         "abandon",
@@ -463,6 +513,7 @@ def main(argv: list[str] | None = None) -> int:
                 load_pending,
                 public_pending_view,
                 read_local_challenge_for_display,
+                refuse_remote_confirm,
             )
 
             if args.remote_confirm_command == "arm":
@@ -475,6 +526,15 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             if args.remote_confirm_command == "cancel":
                 print(json.dumps(cancel_remote_confirm(contract_path=args.contract, workspace=workspace), indent=2, sort_keys=True))
+                return 0
+            if args.remote_confirm_command == "refuse":
+                refused = refuse_remote_confirm(
+                    contract_path=args.contract,
+                    workspace=workspace,
+                    challenge=str(args.challenge),
+                    reason=str(args.reason),
+                )
+                print(json.dumps(refused, indent=2, sort_keys=True))
                 return 0
             if args.remote_confirm_command == "status":
                 contract = load_contract(args.contract)
@@ -493,6 +553,17 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(out, indent=2, sort_keys=True))
                 return 0
             raise RunSpecimenError(f"unknown remote-confirm command: {args.remote_confirm_command}")
+        if args.command == "bundle":
+            manifest = write_incident_bundle(
+                workspace=workspace,
+                campaign_id=args.campaign_id,
+                run_id=args.run_id,
+                out_dir=args.out,
+                contract_path=args.contract,
+                include_chain=bool(args.chain),
+            )
+            print(json.dumps(manifest, indent=2, sort_keys=True, default=str))
+            return 0
         if args.command == "companion":
             from runspecimen.companion import generate_pairing_token, start_companion
             from runspecimen.companion_attention import notify_attention_requested

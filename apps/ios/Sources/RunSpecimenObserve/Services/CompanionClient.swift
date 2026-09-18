@@ -121,6 +121,16 @@ struct CompanionClient {
         let data = try await request(path: "/v1/remote-confirm", method: "POST", body: payload)
         return try JSONDecoder().decode(RemoteConfirmResult.self, from: data)
     }
+
+    /// Consume a Mac-armed pending without writing approval. Requires typed challenge + reason.
+    func submitRemoteRefuse(challenge: String, reason: String) async throws -> RemoteConfirmResult {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "challenge": challenge,
+            "reason": reason,
+        ])
+        let data = try await request(path: "/v1/remote-confirm-refuse", method: "POST", body: payload)
+        return try JSONDecoder().decode(RemoteConfirmResult.self, from: data)
+    }
 }
 
 final class CompanionTLSPinningDelegate: NSObject, URLSessionDelegate {

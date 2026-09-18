@@ -75,9 +75,12 @@ struct RemoteConfirmPending: Codable, Equatable {
     var claim: String?
     var notEquivalentTo: String?
     var confirmChannel: String?
+    var who: String?
+    var what: String?
+    var chips: RemoteConfirmChips?
 
     enum CodingKeys: String, CodingKey {
-        case pending, instruction, claim
+        case pending, instruction, claim, who, what, chips
         case canRemoteConfirm = "can_remote_confirm"
         case challengeId = "challenge_id"
         case expiresAtUnix = "expires_at_unix"
@@ -86,14 +89,29 @@ struct RemoteConfirmPending: Codable, Equatable {
     }
 }
 
+struct RemoteConfirmChips: Codable, Equatable {
+    var expiry: String?
+    var lease: String?
+    var isolation: String?
+    var predecessor: String?
+    var wallTimeoutSec: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case expiry, lease, isolation, predecessor
+        case wallTimeoutSec = "wall_timeout_sec"
+    }
+}
+
 struct RemoteConfirmResult: Codable, Equatable {
     var ok: Bool?
     var settled: Bool?
+    var refused: Bool?
     var confirmChannel: String?
     var note: String?
+    var reason: String?
 
     enum CodingKeys: String, CodingKey {
-        case ok, settled, note
+        case ok, settled, refused, note, reason
         case confirmChannel = "confirm_channel"
     }
 }

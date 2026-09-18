@@ -42,6 +42,7 @@ _PATTERNS = (
     re.compile(r"\bremote[_-]?confirm\b.*\bsettle\b", re.I),
     re.compile(r"\bsettle\b.*\bremote[_-]?confirm\b", re.I),
     re.compile(r"\brunspecimen(?:\.py)?\s+remote-confirm\b", re.I),
+    re.compile(r"/v1/remote-confirm(?:-refuse)?\b", re.I),
 )
 
 # Tool *names* that look like an approve surface (MCP / host naming).

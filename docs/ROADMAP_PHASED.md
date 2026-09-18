@@ -161,9 +161,10 @@ Coordinate messaging with PR #6 (Developer ID first; MAS stretch).
 
 ## Phase 5 — Team evidence (validation-gated)
 
-Prototype shared policies, incident bundles, identity-attributed *human*
-approvals, opt-in export — only after design-partner validation. Never remote
-execution or browser approval APIs.
+Local `runspecimen bundle` is Community. Prototype **shared** policies,
+identity-attributed *human* approvals, and off-laptop retention only after
+design-partner validation. Never remote execution, browser approval APIs,
+one-tap Approve, or a public internet control plane.
 
 ---
 

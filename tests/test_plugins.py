@@ -127,6 +127,14 @@ class ApproveGateTests(unittest.TestCase):
         assert doc is not None
         self.assertEqual(doc["hookSpecificOutput"]["permissionDecision"], "deny")
 
+    def test_denies_remote_confirm_refuse_http(self) -> None:
+        _, doc = self._run_gate({
+            "tool_name": "Bash",
+            "tool_input": {"command": "curl -X POST http://127.0.0.1:9/v1/remote-confirm-refuse"},
+        })
+        assert doc is not None
+        self.assertEqual(doc["hookSpecificOutput"]["permissionDecision"], "deny")
+
     def test_allows_validate(self) -> None:
         code, doc = self._run_gate({
             "tool_name": "Bash",
