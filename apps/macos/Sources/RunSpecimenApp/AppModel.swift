@@ -70,7 +70,7 @@ final class AppModel: ObservableObject {
             let fm = FileManager.default
             if fm.isExecutableFile(atPath: cliURL.path) {
                 await cli.setCLI(cliURL, source: .bookmark)
-                await refreshCLIIdentity()
+                await refreshCLIIdentity(presentAlert: false)
             } else {
                 cliSetupIssue = "Saved CLI bookmark points to a missing binary:\n\(cliURL.path)\nRe-select runspecimen via Open panel."
             }
@@ -83,7 +83,7 @@ final class AppModel: ObservableObject {
             } else {
                 pathProbeNote = "Using bundled engine at \(bundled.path)."
                 await cli.setCLI(bundled, source: .bundledHelper)
-                await refreshCLIIdentity()
+                await refreshCLIIdentity(presentAlert: false)
             }
         }
 
@@ -94,7 +94,7 @@ final class AppModel: ObservableObject {
                 // looked like an Open-panel override).
                 pathProbeNote = "Found runspecimen at \(probed.path). For App Store sandbox, select it via Open panel so a security-scoped bookmark is stored."
                 await cli.setCLI(probed, source: .pathProbe)
-                await refreshCLIIdentity()
+                await refreshCLIIdentity(presentAlert: false)
             }
         }
 
@@ -140,7 +140,7 @@ final class AppModel: ObservableObject {
             await cli.setCLI(url, source: .manual)
             cliSetupIssue = nil
             pathProbeNote = nil
-            await refreshCLIIdentity()
+            await refreshCLIIdentity(presentAlert: true)
         } catch {
             self.error = AppError(message: error.localizedDescription)
         }
@@ -182,7 +182,7 @@ final class AppModel: ObservableObject {
         }
         pathProbeNote = "Using bundled engine at \(bundled.path)."
         await cli.setCLI(bundled, source: .bundledHelper)
-        await refreshCLIIdentity()
+        await refreshCLIIdentity(presentAlert: false)
         if cliIdentity == nil, cliSetupIssue == nil {
             cliSetupIssue = "Bundled helper at \(bundled.path) did not report a usable RunSpecimen version."
         }
@@ -204,7 +204,7 @@ final class AppModel: ObservableObject {
         await refreshDashboardFlag()
     }
 
-    func refreshCLIIdentity() async {
+    func refreshCLIIdentity(presentAlert: Bool = false) async {
         do {
             let identity = try await cli.version()
             cliIdentity = identity
@@ -214,7 +214,9 @@ final class AppModel: ObservableObject {
             cliIdentity = nil
             let message = (error as? AppError)?.message ?? error.localizedDescription
             cliSetupIssue = message
-            if let appError = error as? AppError {
+            // Bootstrap failures stay on the in-window banner. A modal alert was
+            // ending up off-screen with the oversized WindowGroup frame.
+            if presentAlert, let appError = error as? AppError {
                 self.error = appError
             }
         }

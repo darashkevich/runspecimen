@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.runspecimen"
-version = "0.2.0-rc.11"
+version = "0.2.0-rc.12"
 
 repositories {
     mavenCentral()

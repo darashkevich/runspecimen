@@ -3,9 +3,9 @@
 RunSpecimen is a local safety and evidence layer for consequential agent-driven
 research and engineering commands.
 
-**Current package version (this branch):** `0.2.0rc11`  
+**Current package version (this branch):** `0.2.0rc12`  
 **Last published:** [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) / PyPI `runspecimen==0.2.0rc10`  
-GitHub Release assets and PyPI for **rc11** appear only after the draft release is published (that also triggers trusted-publisher PyPI).
+Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). GitHub Release assets and PyPI for **rc12** appear only after Yahor tags `v0.2.0-rc.12` on the merged green commit and publishes that release (that also triggers trusted-publisher PyPI of the **same bytes**). See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
 
 ## Core promise
 
@@ -35,6 +35,7 @@ No watchers, no recurring scheduler, no parallel workers.
 - [Marketing pitches](docs/MARKETING_PITCHES.md) — honest one-liners, elevators, CTAs
 - [Grok tandem](docs/GROK_TANDEM.md) — external xAI Grok review log (Composio `GROK_*`)
 - [Submission](docs/SUBMISSION.md) — marketplace submission checklist (Cursor/Codex/Claude/Grok)
+- [Release identity](docs/RELEASE_IDENTITY.md) — live vs draft vs next tag; checksum-only vs attested
 - [Threat model](docs/THREAT_MODEL.md) — trusted boundary and residual risks
 - [Schema compatibility](docs/SCHEMA_COMPATIBILITY.md) — contract/receipt versions
 - [Ed25519 receipts (optional)](docs/ED25519_RECEIPTS.md) — offline public-key verify
@@ -56,7 +57,7 @@ python3 -m pip install runspecimen==0.2.0rc10
 runspecimen --version
 ```
 
-This branch is `0.2.0rc11`. Install it from a clone (below) until the rc11 GitHub Release / PyPI upload is published.
+This branch is `0.2.0rc12`. Install it from a clone (below) until the rc12 GitHub Release / PyPI upload is published. The rc11 draft tag must stay unpublished.
 
 PyPI project: [runspecimen](https://pypi.org/project/runspecimen/)
 

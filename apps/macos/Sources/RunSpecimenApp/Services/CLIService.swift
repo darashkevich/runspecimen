@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 #if canImport(RunSpecimenCore)
 import RunSpecimenCore
@@ -32,7 +33,7 @@ actor CLIService {
             candidates.append(URL(fileURLWithPath: String(dir)).appendingPathComponent("runspecimen"))
         }
 
-        let home = fileManager.homeDirectoryForCurrentUser
+        let home = Self.realHomeDirectory()
         let extras: [String] = [
             ".local/bin/runspecimen",
             "Library/Python/3.14/bin/runspecimen",
@@ -74,6 +75,9 @@ actor CLIService {
         let output = try await run(arguments: ["--version"], expectJSON: false)
         let version = (output.stdout + "\n" + output.stderr)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        if version.lowercased().contains("need python") {
+            throw AppError(message: CLIVersionGate.failureMessage(for: .unparseable(raw: version)) ?? version)
+        }
         guard version.lowercased().contains("runspecimen") || version.contains(".") else {
             throw AppError(message: "Selected binary did not report a RunSpecimen version:\n\(version)\n(exit \(output.exitCode))")
         }
@@ -426,7 +430,7 @@ actor CLIService {
 
     nonisolated static func augmentedEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
-        let home = NSHomeDirectory()
+        let home = Self.realHomeDirectory().path
         let extras = [
             "\(home)/.local/bin",
             "\(home)/Library/Python/3.14/bin",
@@ -444,6 +448,14 @@ actor CLIService {
         env["PATH"] = (extras + [path]).joined(separator: ":")
         // No telemetry knobs to set; keep engine local-only.
         return env
+    }
+
+    /// Sandboxed `NSHomeDirectory()` is the container; PATH probes need the real user home.
+    nonisolated static func realHomeDirectory() -> URL {
+        if let pw = getpwuid(getuid()), let dir = pw.pointee.pw_dir {
+            return URL(fileURLWithPath: String(cString: dir), isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
     }
 }
 

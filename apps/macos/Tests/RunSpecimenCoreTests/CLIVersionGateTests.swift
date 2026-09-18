@@ -45,11 +45,11 @@ final class CLIVersionGateTests: XCTestCase {
         XCTAssertNotNil(CLIVersionGate.failureMessage(for: CLIVersionGate.evaluate(versionOutput: "0.2.0rc8")))
     }
 
-    func testUnparseable() {
-        switch CLIVersionGate.evaluate(versionOutput: "not-a-version") {
-        case .unparseable: break
-        default: XCTFail("expected unparseable")
-        }
+    func testPythonHelperUnparseableMessage() {
+        let raw = "runspecimen helper: need Python 3.9+ on PATH (bundled package is stdlib-only)."
+        let msg = CLIVersionGate.failureMessage(for: .unparseable(raw: raw)) ?? ""
+        XCTAssertTrue(msg.lowercased().contains("python"))
+        XCTAssertFalse(msg.contains("Could not parse runspecimen version"))
     }
 
     func testResolutionSourceLabels() {

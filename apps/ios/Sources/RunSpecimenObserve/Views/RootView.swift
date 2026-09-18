@@ -24,6 +24,8 @@ struct RootView: View {
                         Text("RunSpecimen")
                             .font(.headline.weight(.semibold))
                             .foregroundStyle(RSTheme.ink)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                     }
                 }
             }

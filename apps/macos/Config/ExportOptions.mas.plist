@@ -7,10 +7,20 @@
 	<key>destination</key>
 	<string>upload</string>
 	<key>signingStyle</key>
-	<string>automatic</string>
+	<string>manual</string>
 	<!-- Replace TEAMID with your Apple Team ID before export. -->
 	<key>teamID</key>
 	<string>TEAMID</string>
+	<key>signingCertificate</key>
+	<string>Apple Distribution</string>
+	<!-- pkg wrapper — not part of the app provisioning profile. -->
+	<key>installerSigningCertificate</key>
+	<string>3rd Party Mac Developer Installer</string>
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>com.darashkevich.runspecimen</key>
+		<string>RunSpecimen MAS</string>
+	</dict>
 	<key>uploadSymbols</key>
 	<true/>
 	<key>manageAppVersionAndBuildNumber</key>

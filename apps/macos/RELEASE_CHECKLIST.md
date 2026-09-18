@@ -76,9 +76,9 @@ test -f build/RunSpecimen.app/Contents/Resources/AppIcon.icns
    # Signing & Capabilities: Team + Apple Distribution + MAS entitlements
    # Product → Archive → Distribute App → App Store Connect → Upload
    ```
-   Or `xcodebuild -exportArchive` with `Config/ExportOptions.mas.plist` after
-   replacing `TEAMID`.
-3. ASC: version `0.1.3` / build `4` (bump as needed), screenshots, privacy URL,
+   Or `RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh` (local Store pkg;
+   UUID + installer cert; no upload). Default destination still `upload`.
+3. ASC: version `0.1.3` / next upload **build 6** (build 5 is already in review).
    paste Review notes from APP_STORE.md.
 4. **Stop before Submit for Review** until Codex QA + your decision.
 

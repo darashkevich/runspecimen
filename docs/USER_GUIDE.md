@@ -2,7 +2,7 @@
 
 Practical how-to for the local CLI. This guide matches the installed
 `runspecimen` commands and current release-candidate limits
-(`0.2.0rc11` at time of writing; last PyPI upload is `0.2.0rc10`). For a short product overview see
+(`0.2.0rc12` at time of writing; last PyPI upload is `0.2.0rc10`). For a short product overview see
 [ABOUT.md](ABOUT.md); for product intent see
 [PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
 
@@ -41,7 +41,7 @@ python3 -m pip install runspecimen==0.2.0rc10
 runspecimen --version
 ```
 
-This branch is `0.2.0rc11`. Use a source clone (below) until rc11 is published.
+This branch is `0.2.0rc12`. Use a source clone (below) until rc12 is published. Do not install from the unpublished rc11 draft.
 
 Project page: [runspecimen on PyPI](https://pypi.org/project/runspecimen/)
 

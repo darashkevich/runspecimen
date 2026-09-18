@@ -25,16 +25,29 @@ struct MainConsoleView: View {
             if model.contractURL == nil {
                 ContractPrompt()
             } else {
-                HSplitView {
-                    StatusLifecycleView()
-                        .frame(minWidth: 360, idealWidth: 420)
-                    EvidenceInspectorView()
-                        .frame(minWidth: 420)
+                GeometryReader { geo in
+                    let stacked = geo.size.width < 880
+                    if stacked {
+                        VStack(spacing: 12) {
+                            StatusLifecycleView()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            EvidenceInspectorView()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                    } else {
+                        HSplitView {
+                            StatusLifecycleView()
+                                .frame(minWidth: 280, idealWidth: 420)
+                            EvidenceInspectorView()
+                                .frame(minWidth: 320)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                    }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
             }
-            Spacer(minLength: 0)
             ActionBar()
         }
     }
@@ -44,18 +57,31 @@ struct TopBar: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        HStack(spacing: 14) {
+        ViewThatFits(in: .horizontal) {
+            bar(showPath: true)
+            bar(showPath: false)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(RSTheme.bg.opacity(0.72))
+    }
+
+    private func bar(showPath: Bool) -> some View {
+        HStack(spacing: 10) {
             HStack(spacing: 8) {
                 SignalMark(animated: false)
                 Text("RunSpecimen")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(RSTheme.ink)
+                    .lineLimit(1)
             }
             .accessibilityElement(children: .combine)
+            .layoutPriority(1)
 
             CapsuleLabel(text: model.cliIdentity?.version ?? "CLI missing", tone: model.hasCLI ? .signal : .amber)
                 .accessibilityLabel(model.hasCLI ? "CLI version \(model.cliIdentity?.version ?? "")" : "CLI missing")
                 .help(model.cliSourceLabel.map { "Source: \($0)" } ?? "Select or install runspecimen 0.2.0rc10+")
+                .layoutPriority(1)
 
             if let source = model.cliSourceLabel ?? model.cliIdentity?.source.label {
                 CapsuleLabel(text: source, tone: source == "Bundled Helpers" ? .signal : .amber)
@@ -68,16 +94,17 @@ struct TopBar: View {
                     .help("Loopback dashboard is running; it stops on quit or Stop Dashboard")
             }
 
-            if let path = model.workspaceURL?.path {
+            if showPath, let path = model.workspaceURL?.path {
                 Text(path)
                     .font(RSTheme.monoSmall)
                     .foregroundStyle(RSTheme.muted)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(path)
+                    .layoutPriority(0)
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
             Button("Contract…") { Task { await model.chooseContract() } }
             Button("Workspace…") { Task { await model.chooseWorkspace() } }
@@ -89,9 +116,6 @@ struct TopBar: View {
             .disabled(model.isBusy)
             .keyboardShortcut("r", modifiers: [.command])
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(RSTheme.bg.opacity(0.72))
     }
 }
 

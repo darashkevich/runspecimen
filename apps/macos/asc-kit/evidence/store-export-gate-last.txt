@@ -17,6 +17,8 @@ OK: codesign fixtures refused without RS_ALLOW_TEST_CODESIGN_DV=1
 OK: full gate accepts good MAS CMS profile + Distribution archive/helper
 ==> Developer ID identity rejected
 OK: Developer ID identity blocked
+==> unsigned archive fails codesign --verify --strict (fixtures cannot skip crypto)
+OK: unsigned archive blocked by codesign --verify --strict
 ==> ad-hoc archive refused (real codesign -)
 OK: ad-hoc archive blocked
 ==> Developer ID archive Authority refused (app + helper fixtures)
@@ -33,6 +35,9 @@ OK export_mas pre-xcodebuild refuse: developer-id-archive-real-codesign
 OK export_mas pre-xcodebuild refuse: mismatched-archive-app-bypass
 ==> export_mas refuses RS_TEST_CODESIGN_DV_* on production export path
 OK export_mas pre-xcodebuild refuse: test-codesign-fixtures-refused
+==> tamper-after-signing fails codesign --verify --strict (app + helper)
+OK: tampered app blocked by codesign --verify --strict
+OK: tampered helper blocked by codesign --verify --strict
 ==> default host gate still fail-closed without Apple Distribution / RS_ARCHIVE_APP
 OK: default gate blocked
 STORE EXPORT GATE TESTS OK

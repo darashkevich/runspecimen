@@ -12,6 +12,10 @@
 #   - distribution / Mac App Store shape (no ProvisionedDevices, no get-task-allow)
 #   - rejects development, ad-hoc, Developer ID–style, and malformed profiles
 #
+# Cryptographic verification (always, including when Authority/Team fixtures stub
+# codesign -dv text):
+#   codesign --verify --strict on the archived .app and the nested engine helper
+#
 # Exit 0 only when export may proceed. Exit 1 with a clear reason otherwise.
 #
 # Required:
@@ -38,9 +42,16 @@ ENV_FILE="$ROOT/Config/signing.env"
 EXPORT_PLIST="${RS_EXPORT_OPTIONS_PLIST:-$ROOT/Config/ExportOptions.mas.plist}"
 BUNDLE_ID="com.darashkevich.runspecimen"
 
+# Operator defaults from signing.env must not clobber explicit environment
+# (tests inject RS_SIGN_IDENTITY / RS_NOTARY_TEAM_ID; CI has no signing.env).
 if [[ -f "$ENV_FILE" ]]; then
+  _rs_sign="${RS_SIGN_IDENTITY:-}"
+  _rs_team="${RS_NOTARY_TEAM_ID:-}"
   # shellcheck disable=SC1090
   set -a && source "$ENV_FILE" && set +a
+  [[ -n "$_rs_sign" ]] && RS_SIGN_IDENTITY="$_rs_sign"
+  [[ -n "$_rs_team" ]] && RS_NOTARY_TEAM_ID="$_rs_team"
+  unset _rs_sign _rs_team
 fi
 
 fail() { echo "STORE EXPORT BLOCKED: $*" >&2; exit 1; }
@@ -295,6 +306,25 @@ if [[ ! -e "$HELPER" ]]; then
 fi
 [[ -e "$HELPER" ]] || fail "nested helper missing under RS_ARCHIVE_APP (checked RunSpecimenEngine + Helpers): $ARCHIVE_APP"
 
+# Cryptographic verification of sealed contents (not just codesign -dv metadata).
+# Always runs against the real archive paths. Fixtures may stub Authority/Team
+# text for unit tests; they cannot skip --verify --strict.
+assert_codesign_strict() {
+  local label="$1" path="$2"
+  local out rc
+  set +e
+  out="$(codesign --verify --strict --verbose=2 "$path" 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -ne 0 ]]; then
+    fail "$label codesign --verify --strict failed (rc=$rc): $out"
+  fi
+  pass "$label codesign --verify --strict"
+}
+
+assert_codesign_strict "archive helper" "$HELPER"
+assert_codesign_strict "archive app" "$ARCHIVE_APP"
+
 # Fixture codesign -dv text is harness-only. Production export_mas refuses these env vars.
 codesign_dv_for() {
   local path="$1" fixture="$2"
@@ -391,3 +421,9 @@ pass "Store export prerequisites satisfied (Apple Distribution + team $TEAM + MA
 echo "READY_TEAM=$TEAM"
 echo "READY_IDENTITY=$DIST_LINE"
 echo "READY_PROFILE=$FOUND_PROFILE"
+# xcodebuild -exportArchive resolves manual profiles by UUID, not display name.
+PROFILE_UUID="$(security cms -D -i "$FOUND_PROFILE" 2>/dev/null | plutil -extract UUID raw -o - - 2>/dev/null || true)"
+if [[ -z "$PROFILE_UUID" || "$PROFILE_UUID" == "null" ]]; then
+  PROFILE_UUID="$(basename "$FOUND_PROFILE" | sed 's/\.[^.]*$//')"
+fi
+echo "READY_PROFILE_UUID=$PROFILE_UUID"

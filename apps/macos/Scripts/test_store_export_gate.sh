@@ -6,14 +6,19 @@
 # a Mac App Store–shaped profile with exact application-identifier + team.
 # Also requires RS_ARCHIVE_APP (app + nested helper) and proves export_mas
 # refuses ad-hoc / Developer ID archives before xcodebuild -exportArchive.
-# Proves RS_ARCHIVE_APP cannot bypass the gate for a different RS_ARCHIVE_PATH,
-# and that RS_TEST_CODESIGN_DV_* fixtures are refused on the production export path.
+# Cryptographic codesign --verify --strict runs on the archived app and nested
+# helper even when Authority/Team fixtures stub codesign -dv. Tamper-after-signing
+# is refused. Proves RS_ARCHIVE_APP cannot bypass the gate for a different
+# RS_ARCHIVE_PATH, and that RS_TEST_CODESIGN_DV_* fixtures are refused on the
+# production export path.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 GATE=./Scripts/assert_store_export_ready.sh
 chmod +x "$GATE"
+# Operator leftovers from a real archive/export must not satisfy negatives.
+unset RS_ARCHIVE_APP RS_ARCHIVE_PATH RS_EXPORT_DIR RS_EXPORT_OPTIONS_PLIST || true
 
 TMP="$(mktemp -d -t rs-store-gate)"
 trap 'rm -rf "$TMP"' EXIT
@@ -249,23 +254,36 @@ Signature=standard
 EOF
 }
 
+sign_min_app() {
+  local app="$1"
+  codesign --force --sign - "$app/Contents/Resources/RunSpecimenEngine/runspecimen" >/dev/null 2>&1
+  codesign --force --sign - "$app" >/dev/null 2>&1
+  codesign --verify --strict "$app" >/dev/null 2>&1
+  codesign --verify --strict "$app/Contents/Resources/RunSpecimenEngine/runspecimen" >/dev/null 2>&1
+}
+
 ADHOC_APP="$TMP/adhoc-app/RunSpecimen.app"
 make_min_app "$ADHOC_APP"
-codesign --force --sign - "$ADHOC_APP/Contents/Resources/RunSpecimenEngine/runspecimen" >/dev/null 2>&1
-codesign --force --sign - "$ADHOC_APP" >/dev/null 2>&1
+sign_min_app "$ADHOC_APP"
 
 DIST_APP="$TMP/dist-app/RunSpecimen.app"
 make_min_app "$DIST_APP"
+sign_min_app "$DIST_APP"
 write_dv_fixture "$TMP/dv-app-dist.txt" "Apple Distribution: Fixture ($TEAM)" "$TEAM"
 write_dv_fixture "$TMP/dv-helper-dist.txt" "Apple Distribution: Fixture ($TEAM)" "$TEAM"
 
 DEVID_APP="$TMP/devid-app/RunSpecimen.app"
 make_min_app "$DEVID_APP"
+sign_min_app "$DEVID_APP"
 write_dv_fixture "$TMP/dv-app-devid.txt" "Developer ID Application: Fixture ($TEAM)" "$TEAM"
 write_dv_fixture "$TMP/dv-helper-devid.txt" "Developer ID Application: Fixture ($TEAM)" "$TEAM"
 
+UNSIGNED_APP="$TMP/unsigned-app/RunSpecimen.app"
+make_min_app "$UNSIGNED_APP"
+
 HELPER_BAD_APP="$TMP/helper-bad-app/RunSpecimen.app"
 make_min_app "$HELPER_BAD_APP"
+sign_min_app "$HELPER_BAD_APP"
 cat >"$TMP/dv-helper-adhoc.txt" <<'EOF'
 Executable=/tmp/fixture-helper
 Identifier=runspecimen
@@ -299,7 +317,7 @@ OUT="$(
   RS_NOTARY_TEAM_ID="$TEAM" \
   RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
   RS_PROFILE_SEARCH_DIRS="$PROFILES" \
-  env -u RS_ARCHIVE_APP "$GATE" 2>&1
+  env -u RS_ARCHIVE_APP -u RS_ARCHIVE_PATH "$GATE" 2>&1
 )"
 RC=$?
 set -e
@@ -384,6 +402,26 @@ set -e
 echo "$OUT" | grep -Eqi 'Developer ID' \
   || { echo "FAIL: expected Developer ID message" >&2; echo "$OUT" >&2; exit 1; }
 echo "OK: Developer ID identity blocked"
+
+echo "==> unsigned archive fails codesign --verify --strict (fixtures cannot skip crypto)"
+set +e
+OUT="$(
+  RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
+  RS_NOTARY_TEAM_ID="$TEAM" \
+  RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
+  RS_PROFILE_SEARCH_DIRS="$PROFILES" \
+  RS_ARCHIVE_APP="$UNSIGNED_APP" \
+  RS_ALLOW_TEST_CODESIGN_DV=1 \
+  RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
+  RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-dist.txt" \
+  "$GATE" 2>&1
+)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || { echo "FAIL: unsigned archive should block" >&2; echo "$OUT" >&2; exit 1; }
+echo "$OUT" | grep -Eq 'codesign --verify --strict' \
+  || { echo "FAIL: expected --verify --strict failure for unsigned archive" >&2; echo "$OUT" >&2; exit 1; }
+echo "OK: unsigned archive blocked by codesign --verify --strict"
 
 echo "==> ad-hoc archive refused (real codesign -)"
 set +e
@@ -553,6 +591,59 @@ run_export_expect_block "test-codesign-fixtures-refused" \
   RS_PROFILE_SEARCH_DIRS="$PROFILES" \
   RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
   RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-dist.txt"
+
+echo "==> tamper-after-signing fails codesign --verify --strict (app + helper)"
+tamper_copy() {
+  local dest="$1"
+  rm -rf "$dest"
+  mkdir -p "$(dirname "$dest")"
+  ditto "$DIST_APP" "$dest"
+  sign_min_app "$dest"
+}
+
+TAMPER_APP="$TMP/tamper-app/RunSpecimen.app"
+tamper_copy "$TAMPER_APP"
+printf '\nTAMPER\n' >>"$TAMPER_APP/Contents/MacOS/RunSpecimen"
+set +e
+OUT="$(
+  RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
+  RS_NOTARY_TEAM_ID="$TEAM" \
+  RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
+  RS_PROFILE_SEARCH_DIRS="$PROFILES" \
+  RS_ARCHIVE_APP="$TAMPER_APP" \
+  RS_ALLOW_TEST_CODESIGN_DV=1 \
+  RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
+  RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-dist.txt" \
+  "$GATE" 2>&1
+)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || { echo "FAIL: tampered app should block" >&2; echo "$OUT" >&2; exit 1; }
+echo "$OUT" | grep -Eq 'archive app codesign --verify --strict failed' \
+  || { echo "FAIL: expected app --verify --strict after tamper" >&2; echo "$OUT" >&2; exit 1; }
+echo "OK: tampered app blocked by codesign --verify --strict"
+
+TAMPER_HELPER_APP="$TMP/tamper-helper-app/RunSpecimen.app"
+tamper_copy "$TAMPER_HELPER_APP"
+printf '\nTAMPER\n' >>"$TAMPER_HELPER_APP/Contents/Resources/RunSpecimenEngine/runspecimen"
+set +e
+OUT="$(
+  RS_SIGN_IDENTITY="Apple Distribution: Fixture ($TEAM)" \
+  RS_NOTARY_TEAM_ID="$TEAM" \
+  RS_EXPORT_OPTIONS_PLIST="$EXPORT_PLIST" \
+  RS_PROFILE_SEARCH_DIRS="$PROFILES" \
+  RS_ARCHIVE_APP="$TAMPER_HELPER_APP" \
+  RS_ALLOW_TEST_CODESIGN_DV=1 \
+  RS_TEST_CODESIGN_DV_APP_FILE="$TMP/dv-app-dist.txt" \
+  RS_TEST_CODESIGN_DV_HELPER_FILE="$TMP/dv-helper-dist.txt" \
+  "$GATE" 2>&1
+)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || { echo "FAIL: tampered helper should block" >&2; echo "$OUT" >&2; exit 1; }
+echo "$OUT" | grep -Eq 'archive helper codesign --verify --strict failed' \
+  || { echo "FAIL: expected helper --verify --strict after tamper" >&2; echo "$OUT" >&2; exit 1; }
+echo "OK: tampered helper blocked by codesign --verify --strict"
 
 echo "==> default host gate still fail-closed without Apple Distribution / RS_ARCHIVE_APP"
 set +e

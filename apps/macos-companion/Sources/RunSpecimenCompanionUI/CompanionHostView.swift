@@ -11,7 +11,9 @@ struct RunSpecimenCompanionUIApp: App {
     var body: some Scene {
         WindowGroup("RunSpecimen Companion") {
             CompanionHostView()
+                .frame(minWidth: 420, minHeight: 480)
         }
+        .windowResizability(.contentMinSize)
         .defaultSize(width: 560, height: 620)
     }
 }

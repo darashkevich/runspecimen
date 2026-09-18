@@ -81,6 +81,11 @@ if [[ -n "${RS_DISTRIBUTION_CHANNEL:-}" && "$MAS_MODE" -eq 0 ]]; then
   CHANNEL="$RS_DISTRIBUTION_CHANNEL"
 fi
 
+# Host-Python helpers cannot run inside App Sandbox (/usr/bin/python3 is an Xcode shim).
+if [[ "$MAS_MODE" -eq 0 && "$CHANNEL" == "local" && -z "${RS_ENTITLEMENTS:-}" ]]; then
+  ENTITLEMENTS="$ROOT/Entitlements/RunSpecimen.local.entitlements"
+fi
+
 if [[ "$STAGE_FROZEN" -eq 1 && "$STAGE_FROM_SRC" -eq 1 ]]; then
   echo "Use either --frozen-helper/--mas or --from-src, not both." >&2
   exit 2

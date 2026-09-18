@@ -90,6 +90,15 @@ public enum CLIVersionGate {
             Or select a newer binary via Open panel / Settings.
             """
         case .unparseable(let raw):
+            let lowered = raw.lowercased()
+            if lowered.contains("need python") {
+                return """
+                Bundled helper needs a host Python 3.9+ (stdlib-only package tree).
+                \(raw.isEmpty ? "(empty)" : raw)
+
+                Install Xcode Command Line Tools (`xcode-select --install`) or Python 3.9+, then reopen RunSpecimen. Local `--from-src` builds should not be App Sandboxed.
+                """
+            }
             return """
             Could not parse runspecimen version from:
             \(raw.isEmpty ? "(empty)" : raw)

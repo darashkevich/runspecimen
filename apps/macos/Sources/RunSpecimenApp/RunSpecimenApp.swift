@@ -13,6 +13,7 @@ struct RunSpecimenApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(model)
+                .frame(minWidth: WindowPlacement.minSize.width, minHeight: WindowPlacement.minSize.height)
                 .task {
                     appDelegate.model = model
                     await model.bootstrap()
@@ -25,7 +26,9 @@ struct RunSpecimenApp: App {
                 }
         }
         .windowStyle(.automatic)
-        .defaultSize(width: 1180, height: 760)
+        .windowResizability(.contentMinSize)
+        .defaultPosition(.center)
+        .defaultSize(width: WindowPlacement.defaultSize.width, height: WindowPlacement.defaultSize.height)
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(replacing: .appInfo) {
@@ -132,7 +135,7 @@ struct RunSpecimenApp: App {
         Settings {
             SettingsView()
                 .environmentObject(model)
-                .frame(width: 540, height: 620)
+                .frame(minWidth: 420, minHeight: 480)
         }
     }
 }
@@ -141,10 +144,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var model: AppModel?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        guard MasSandboxE2E.isRequested else { return }
-        Task { @MainActor in
-            await MasSandboxE2E.runAndExit()
+        if MasSandboxE2E.isRequested {
+            Task { @MainActor in
+                await MasSandboxE2E.runAndExit()
+            }
+            return
         }
+        WindowSanitizer.install()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -158,7 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        true
+        WindowSanitizer.apply()
+        return true
     }
 }
 
@@ -200,16 +207,17 @@ struct RootView: View {
         .sheet(isPresented: $model.showApproveSheet) {
             ApproveSheet()
                 .environmentObject(model)
-                .frame(minWidth: 680, minHeight: 520)
+                .frame(minWidth: 520, idealWidth: 680, minHeight: 420, idealHeight: 520)
         }
         .sheet(isPresented: $model.showAbout) {
             AboutView()
                 .environmentObject(model)
+                .frame(minWidth: 420, minHeight: 360)
         }
         .sheet(isPresented: $model.showSettings) {
             SettingsView()
                 .environmentObject(model)
-                .frame(width: 540, height: 620)
+                .frame(minWidth: 420, minHeight: 480)
         }
     }
 }

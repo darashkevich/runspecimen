@@ -8,6 +8,17 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$ROOT/../.." && pwd)"
 cd "$ROOT"
 
+ENV_FILE="$ROOT/Config/signing.env"
+if [[ -f "$ENV_FILE" ]]; then
+  _rs_sign="${RS_SIGN_IDENTITY:-}"
+  _rs_team="${RS_NOTARY_TEAM_ID:-}"
+  # shellcheck disable=SC1090
+  set -a && source "$ENV_FILE" && set +a
+  [[ -n "$_rs_sign" ]] && RS_SIGN_IDENTITY="$_rs_sign"
+  [[ -n "$_rs_team" ]] && RS_NOTARY_TEAM_ID="$_rs_team"
+  unset _rs_sign _rs_team
+fi
+
 ARCHIVE_PATH="${RS_ARCHIVE_PATH:-/tmp/runspecimen-mas/RunSpecimen.xcarchive}"
 DERIVED="${RS_DERIVED_DATA:-/tmp/runspecimen-mas/DerivedData}"
 SCHEME="RunSpecimen"
@@ -86,14 +97,23 @@ if [[ "$MODE" == "adhoc" || "$IDENTITY" == "-" ]]; then
   )
   SIGNING_MODE="ad-hoc"
   ASSERT_ARGS+=(--expect-adhoc)
-elif echo "$IDENTITIES" | grep -Eq 'Apple Distribution|3rd Party Mac Developer Application|Apple Development'; then
-  # Prefer Automatic when any Apple identity exists; operator still needs MAS profile for export.
-  SIGN_ARGS=(CODE_SIGN_STYLE=Automatic)
-  SIGNING_MODE="Automatic ($MODE)"
+elif echo "$IDENTITIES" | grep -Eq 'Apple Distribution|3rd Party Mac Developer Application'; then
+  # Automatic without DEVELOPMENT_TEAM falls back to "Sign to Run Locally"
+  # while the nested helper script still uses RS_SIGN_IDENTITY — mixed signing.
+  SIGN_ARGS=(
+    CODE_SIGN_STYLE=Manual
+    "CODE_SIGN_IDENTITY=$IDENTITY"
+    CODE_SIGNING_ALLOWED=YES
+  )
   if [[ -n "${RS_NOTARY_TEAM_ID:-}" ]]; then
+    SIGN_ARGS+=(DEVELOPMENT_TEAM="$RS_NOTARY_TEAM_ID")
     ASSERT_ARGS+=(--expect-team "$RS_NOTARY_TEAM_ID")
   fi
-else
+  # Do not pass PROVISIONING_PROFILE_SPECIFIER at project scope — the
+  # RunSpecimenCore library target cannot take a Mac App Store profile.
+  # Identity + team lets Xcode bind RunSpecimen MAS to the app target.
+  SIGNING_MODE="Manual Distribution ($IDENTITY)"
+elif echo "$IDENTITIES" | grep -Eq 'Apple Development'; then
   SIGN_ARGS=(
     CODE_SIGN_STYLE=Manual
     "CODE_SIGN_IDENTITY=$IDENTITY"
@@ -171,7 +191,12 @@ set +e
 RS_ARCHIVE_APP="$APP_IN_ARCHIVE" ./Scripts/assert_store_export_ready.sh >"$EXPORT_GATE_LOG" 2>&1
 EXPORT_GATE_RC=$?
 set -e
-if [[ "$EXPORT_GATE_RC" -eq 0 ]]; then
+if [[ "${RS_MAS_EXPORT:-1}" == "0" ]]; then
+  echo "RS_MAS_EXPORT=0 — skipping export_mas / -exportArchive (archive-only)."
+  echo "Store export gate rc=$EXPORT_GATE_RC (0 means a later export is allowed)."
+  cat "$EXPORT_GATE_LOG" || true
+  EXPORT_RC="$EXPORT_GATE_RC"
+elif [[ "$EXPORT_GATE_RC" -eq 0 ]]; then
   echo "Store export prerequisites present — running export_mas.sh"
   RS_ARCHIVE_PATH="$ARCHIVE_PATH" RS_ARCHIVE_APP="$APP_IN_ARCHIVE" RS_EXPORT_DIR="$EXPORT_DIR" ./Scripts/export_mas.sh
   EXPORT_RC=0

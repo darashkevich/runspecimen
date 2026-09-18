@@ -1,0 +1,41 @@
+Local Mac App Store package export (destination=export, no Connect upload)
+
+Date: 2026-09-18T18:40+02:00
+Archive: /tmp/runspecimen-mas/RunSpecimen.xcarchive
+Export dir: /tmp/runspecimen-mas/export-mas-uuid/
+ExportOptions (temp): signingStyle=manual
+  signingCertificate=Apple Distribution
+  installerSigningCertificate=3rd Party Mac Developer Installer
+  provisioningProfiles: com.darashkevich.runspecimen = 0c5ef3dc-ebad-429b-8928-fdfcfee98c29
+  destination=export
+  teamID=UN6KF8636A
+  manageAppVersionAndBuildNumber=false
+
+xcodebuild -exportArchive: EXPORT SUCCEEDED
+pkg: /tmp/runspecimen-mas/export-mas-uuid/RunSpecimen.pkg (8931968 bytes)
+SHA-256: e6ea0a7f12f4094ed430ea1ebc956ad6db2d67ecfa0f52e1eb0ebb66283f1bbf
+
+pkgutil --check-signature:
+  Status: signed by a developer certificate issued by Apple (Development)
+  1. 3rd Party Mac Developer Installer: YAHOR DARASHKEVICH (UN6KF8636A)
+  2. Apple Worldwide Developer Relations Certification Authority
+  3. Apple Root CA
+
+Extracted payload RunSpecimen.app:
+  CFBundleShortVersionString=0.1.3
+  CFBundleVersion=5
+  RSDistributionChannel=mas
+  Assets.car present
+  AppIcon.icns present
+  codesign --verify --strict app: ok (Apple Distribution UN6KF8636A)
+  codesign --verify --strict helper: ok (Apple Distribution UN6KF8636A)
+  app sandbox: true
+  helper entitlements: app-sandbox + inherit
+
+Profile RunSpecimen MAS (0c5ef3dc-ebad-429b-8928-fdfcfee98c29):
+  1 DeveloperCertificate (Apple Distribution Application)
+  installer identity is in the keychain, not in the app profile (expected)
+
+This pkg is a local packaging proof from the Distribution archive after PR #15
+fixes. It is NOT App Store Connect build 5 (uploaded 15:38 CEST, before these
+commits). Do not treat SHA-256 above as the binary Apple is reviewing.

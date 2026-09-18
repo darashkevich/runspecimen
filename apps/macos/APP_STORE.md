@@ -16,14 +16,14 @@ Consult current Apple docs before each submission:
 
 | Channel | Role | Verdict |
 | --- | --- | --- |
-| **Target A — Mac App Store** | **Primary** | `./Scripts/build_app.sh --mas` (frozen **0.2.0rc10** helper) → `./Scripts/archive_mas.sh` / Xcode Archive → App Store Connect |
-| **Target B — Developer ID + notarization** | Secondary / direct download | Optional after MAS; same sandbox entitlements preferred |
+| **Target A — Mac App Store** | **Primary** | `./Scripts/build_app.sh --mas` (frozen helper **must match** `src/runspecimen/__version__`, currently **0.2.0rc12**) → `./Scripts/archive_mas.sh` → `RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh` for a local Store pkg, or default destination `upload` after Yahor decides |
+| **Target B — Developer ID + notarization** | Secondary / direct download | Optional after MAS; same sandbox entitlements preferred. **Not** a Store-validation substitute |
 
 ### Why MAS-first now
 
 1. **Guideline 2.4.5(viii)** — Store builds embed a **frozen Mach-O** helper
    (`Contents/Resources/RunSpecimenEngine/`, PyInstaller **onedir** + `_internal/`)
-   built from the current engine (`0.2.0rc10` on this branch). **Onefile is not used**
+   built from the current engine (`0.2.0rc12` on this branch). **Onefile is not used**
    — its bootloader needs SysV semaphores denied by App Sandbox. No host Python /
    optionally installed PyPI CLI is required for Store builds. `--from-src`
    host-Python launchers are **local/CI only** and are rejected at runtime when
@@ -68,7 +68,7 @@ python3 -m pip install --user 'pyinstaller>=6'   # freeze machine only
 ./Scripts/verify_app_icon.sh
 ./Scripts/test_security_boundary.sh
 ./Scripts/build_app.sh --mas
-# Confirm helper is current engine (rc10 on this branch):
+# Confirm helper is current engine (rc12 on this branch):
 #   Helpers/payload/runspecimen --version   # gate BEFORE inherit sign
 #   codesign -d --entitlements - Contents/Resources/RunSpecimenEngine/runspecimen
 #   # Do NOT expect engine --version from a normal shell —
@@ -90,13 +90,49 @@ python3 -m pip install --user 'pyinstaller>=6'   # freeze machine only
 ```
 
 Export options template: [Config/ExportOptions.mas.plist](Config/ExportOptions.mas.plist)
-(replace `TEAMID` before export). **Fail-closed export:**
-`./Scripts/assert_store_export_ready.sh` then `./Scripts/export_mas.sh` —
-Apple Distribution + matching team + MAS profile + **app inside `RS_ARCHIVE_PATH`**
-(app + nested helper Distribution-signed via real `codesign -dv`) required;
-**`RS_ARCHIVE_APP` must match that archive path** (mismatched overrides refused);
-**Developer ID / ad-hoc archives and `RS_TEST_CODESIGN_DV_*` fixtures are not
-sufficient** for production export.
+(committed `teamID` stays `TEAMID`; `export_mas.sh` rewrites a temp copy).
+**Fail-closed export:** `./Scripts/assert_store_export_ready.sh` then
+`./Scripts/export_mas.sh` — Apple Distribution + matching team + MAS profile +
+**app inside `RS_ARCHIVE_PATH`** (app + nested helper Distribution-signed via
+real `codesign -dv`) required; **`RS_ARCHIVE_APP` must match that archive path**
+(mismatched overrides refused); **Developer ID / ad-hoc archives and
+`RS_TEST_CODESIGN_DV_*` fixtures are not sufficient** for production export.
+
+### Why the MAS profile omits `3rd Party Mac Developer Installer`
+
+That is **expected**. A Mac App Store **app** provisioning profile embeds the
+**Apple Distribution (Application)** certificate (code-signing EKU). The
+**installer** certificate (`3rd Party Mac Developer Installer`) signs the
+`.pkg` wrapper and is **not** listed in `DeveloperCertificates` of
+`RunSpecimen MAS`. Regenerating the app profile will not add it. Do **not**
+enable `-allowProvisioningUpdates` / portal automation without Yahor.
+
+Operator steps (once per machine; no credential handling in git):
+
+1. Developer → Certificates: keep **Apple Distribution** (Application) and
+   **3rd Party Mac Developer Installer** installed in the login keychain
+   (`security find-identity -v -p codesigning` plus
+   `security find-identity -v | grep 'Mac Developer Installer'`).
+2. Developer → Profiles: Mac App Store **App Store** profile named
+   `RunSpecimen MAS` for `UN6KF8636A.com.darashkevich.runspecimen`,
+   Distribution (not Development). Download. On Xcode 16+ it lands as
+   `~/Library/Developer/Xcode/UserData/Provisioning Profiles/<UUID>.provisionprofile`
+   (the empty `~/Library/MobileDevice/Provisioning Profiles` dir is a red herring).
+3. Confirm the decoded profile has **one** Application `DeveloperCertificate`,
+   no `get-task-allow`, no `ProvisionedDevices`, platform `OSX`.
+4. Archive: `./Scripts/archive_mas.sh` (Manual Apple Distribution + team;
+   do not attach the MAS profile to `RunSpecimenCore`).
+5. Local Store pkg (no upload):
+   `RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh`
+   `export_mas.sh` sets `installerSigningCertificate=3rd Party Mac Developer Installer`
+   and rewrites `provisioningProfiles` to the profile **UUID** (`exportArchive`
+   does not resolve the display name `RunSpecimen MAS`).
+6. Verify: `pkgutil --check-signature` (installer chain), then extract and
+   `codesign --verify --strict` the `.app` and nested helper; entitlements
+   sandbox + inherit; `RSDistributionChannel=mas`.
+7. Only after Yahor decides to **replace** Connect build 5: leave
+   `destination=upload` (default) and bump **build 6**. Do not Submit for Review
+   from this script.
 
 ASC paste pack (metadata / screenshots checklist / reviewer demo):
 [asc-kit/](asc-kit/) — mark screenshot PNGs and Connect record as **pending** until Yahor fills them.
@@ -165,9 +201,9 @@ Shipped under `Resources/PrivacyInfo.xcprivacy`:
 | Display name | RunSpecimen |
 | Category | Developer Tools |
 | Short version | `0.1.3` (bump per ship) |
-| Build | `4` (bump per upload) |
+| Build | `6` next Connect upload (build **5** is already in review) |
 | Min macOS | 14.0 |
-| Bundled engine | `0.2.0rc10` (must match `src/runspecimen/__version__`) |
+| Bundled engine | `0.2.0rc12` (must match `src/runspecimen/__version__`) |
 | Icon | `Resources/AppIcon.icns` (+ iconset / 1024 for Connect) |
 
 ## Review notes (paste into App Review)
@@ -218,7 +254,7 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 
 ## Packaging checklist (MAS)
 
-- [x] `./Scripts/build_app.sh --mas` succeeds (Mach-O onedir engine == repo `0.2.0rc10`, `RunSpecimenEngine/_internal`, no `Helpers/lib/`)
+- [x] `./Scripts/build_app.sh --mas` succeeds (Mach-O onedir engine == repo `0.2.0rc12`, `RunSpecimenEngine/_internal`, no `Helpers/lib/`)
 - [x] Helper entitlements: `codesign -d --entitlements - …/RunSpecimenEngine/runspecimen` shows sandbox+inherit
 - [x] App Sandbox entitlements (`RunSpecimen.mas.entitlements`)
 - [x] `PrivacyInfo.xcprivacy` present
@@ -228,7 +264,8 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 - [x] `./Scripts/archive_mas.sh` + `assert_archive_signing.sh` succeed (ad-hoc when no certs)
 - [x] `./Scripts/test_mas_sandbox_e2e.sh` (actual APPROVE prompt + still waiting; never types APPROVE)
 - [x] Store export fail-closed (`assert_store_export_ready.sh` + `test_store_export_gate.sh` negatives)
-- [ ] Apple Distribution signing + upload to App Store Connect (Yahor) — **pending**
+- [x] Apple Distribution signing + **local** Store pkg export (see asc-kit evidence) — Connect **replace/upload** still Yahor
+- [ ] Next Connect upload of **0.1.3 (6)** — **pending Yahor** (do not touch WAITING_FOR_REVIEW build 5 from automation)
 - [x] Privacy policy URL in-app (Connect field **pending** Yahor)
 - [ ] Screenshots uploaded into Connect Media — **pending Yahor** (local PNGs ready in [asc-kit/screenshots/](asc-kit/screenshots/))
 - [x] Reviewer demo notes paste-ready ([asc-kit/reviewer-demo.md](asc-kit/reviewer-demo.md))
@@ -236,11 +273,14 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 
 ## Remaining Yahor-only blockers
 
-1. Create/download **Apple Distribution** cert + Mac App Store profile for
-   `com.darashkevich.runspecimen`; set Team in Xcode (replace ad-hoc Archive).
-2. Create ASC app + API key; fill `Config/signing.env` locally (gitignored); set
-   `TEAMID` in `Config/ExportOptions.mas.plist`.
-3. Archive → Upload → metadata → **Stop before Submit for Review** until Codex QA
-   + your release decision.
+1. **Decide** whether to keep App Store Connect **0.1.3 (5)** in
+   `WAITING_FOR_REVIEW` or replace it with **0.1.3 (6)** from the merged green
+   tree. Automation will not withdraw/resubmit.
+2. After a **public** GitHub + PyPI `0.2.0rc12`, retarget the product site.
+   Add an `apps.apple.com` link only when Apple returns a working URL.
+3. Screenshots / privacy URL already pasted in Connect: confirm; do not Submit
+   a second time from scripts.
 
 Do **not** merge/publish/submit from agent automation without Yahor’s release decision.
+Do **not** use Developer ID notarization as a Mac App Store validation stand-in.
+Do **not** pass `-allowProvisioningUpdates` without explicit authorization.
