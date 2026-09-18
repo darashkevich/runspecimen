@@ -11,15 +11,17 @@ struct BrandEmptyState: View {
     @StateObject private var motion = EmptyStateMotion()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Spacer(minLength: 48)
-            HStack(alignment: .top, spacing: 28) {
-                VStack(alignment: .leading, spacing: 18) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top, spacing: 28) {
+                    VStack(alignment: .leading, spacing: 18) {
                     HStack(spacing: 12) {
                         SignalMark(animated: !reduceMotion && motion.pulse)
                             .accessibilityHidden(true)
                         Text("RunSpecimen")
                             .font(.system(size: 42, weight: .bold, design: .default))
+                            .minimumScaleFactor(0.6)
+                            .lineLimit(1)
                             .foregroundStyle(RSTheme.ink)
                             .accessibilityAddTraits(.isHeader)
                     }
@@ -35,7 +37,7 @@ struct BrandEmptyState: View {
                         .foregroundStyle(RSTheme.soft)
                         .frame(maxWidth: 520, alignment: .leading)
 
-                    HStack(spacing: 12) {
+                    FitHStack(spacing: 12, alignment: .center) {
                         Button {
                             Task { await model.chooseCLI() }
                         } label: {
@@ -60,7 +62,8 @@ struct BrandEmptyState: View {
                             title: issue.lowercased().contains("version mismatch")
                                 || issue.lowercased().contains("too old")
                                 || issue.lowercased().contains("need 0.2")
-                                ? "CLI VERSION MISMATCH"
+                                || issue.lowercased().contains("need python")
+                                ? (issue.lowercased().contains("python") ? "HOST PYTHON REQUIRED" : "CLI VERSION MISMATCH")
                                 : "CLI SETUP REQUIRED",
                             message: issue
                         )
@@ -77,17 +80,19 @@ struct BrandEmptyState: View {
 
                     NonGoalsStrip()
                         .padding(.top, 28)
+                    }
+                    .frame(maxWidth: 640, alignment: .leading)
+
+                    Spacer(minLength: 0)
                 }
-                .frame(maxWidth: 640, alignment: .leading)
 
-                Spacer(minLength: 20)
+                FooterHint()
+                    .padding(.top, 36)
+                    .padding(.bottom, 8)
             }
-            .padding(.horizontal, 56)
-
-            Spacer()
-            FooterHint()
-                .padding(.horizontal, 56)
-                .padding(.bottom, 28)
+            .padding(.horizontal, 32)
+            .padding(.vertical, 28)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear {
             if !reduceMotion {
@@ -150,8 +155,8 @@ struct CLISetupBanner: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .frame(maxWidth: 520, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(RSTheme.danger.opacity(0.1))

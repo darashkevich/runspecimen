@@ -80,12 +80,37 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 export PYTHONPATH="$HERE/lib${PYTHONPATH:+:$PYTHONPATH}"
 
+python_ok() {
+  local bin="$1"
+  [[ -n "$bin" && -x "$bin" ]] || return 1
+  "$bin" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null
+}
+
+# Prefer the real interpreter behind Apple's /usr/bin/python3 shim (Xcode / CLT).
+resolve_python() {
+  local bin="$1" resolved=""
+  python_ok "$bin" || return 1
+  resolved="$("$bin" -c 'import sys; print(sys.executable)' 2>/dev/null || true)"
+  if python_ok "$resolved"; then
+    printf '%s\n' "$resolved"
+  else
+    printf '%s\n' "$bin"
+  fi
+}
+
 pick_python() {
-  local c
-  # Absolute fallbacks first — App Sandbox children sometimes see a stripped PATH.
+  local c resolved
+  # Absolute fallbacks first — GUI PATH is often /usr/bin:/bin, and App Sandbox
+  # children cannot follow the Xcode shim unless we exec the resolved binary.
   for c in \
     /usr/bin/python3 \
+    /Library/Developer/CommandLineTools/usr/bin/python3 \
+    /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/Current/bin/python3 \
+    /Applications/Xcode.app/Contents/Developer/usr/bin/python3 \
+    /Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/Current/bin/python3 \
     /opt/homebrew/bin/python3 \
+    /opt/homebrew/opt/python@3.12/bin/python3 \
+    /opt/homebrew/opt/python@3.11/bin/python3 \
     /usr/local/bin/python3 \
     python3.14 python3.13 python3.12 python3.11 python3.10 python3.9 python3
   do
@@ -93,9 +118,10 @@ pick_python() {
       [[ -x "$c" ]] || continue
     else
       command -v "$c" >/dev/null 2>&1 || continue
+      c="$(command -v "$c")"
     fi
-    if "$c" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
-      printf '%s\n' "$c"
+    if resolved="$(resolve_python "$c")"; then
+      printf '%s\n' "$resolved"
       return 0
     fi
   done

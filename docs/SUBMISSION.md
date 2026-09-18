@@ -276,10 +276,33 @@ The active PyPI trusted publisher has these values:
 
 The repository's `.github/workflows/publish-pypi.yml` runs automatically when
 a GitHub release is published. It checks out the immutable release tag,
-verifies that the tag matches the package version, reruns the complete release
-gate, transfers only the wheel and source distribution to a separate
-OIDC-enabled job, and uploads them to PyPI. The GitHub `pypi` environment is
-restricted to `v*` tags.
+verifies that the tag matches the package version, **downloads the GitHub
+Release assets** (wheel, sdist, plugin zip, SHA256SUMS), verifies SHA-256
+digests and filenames, and uploads **those same wheel/sdist bytes** to PyPI.
+It does **not** rebuild distributions at publish time.
+
+**rc11 provenance:** checksum-only. `SHA256SUMS` is the integrity contract.
+`gh attestation verify` currently returns HTTP 404 for the draft wheel; this
+candidate does not claim SLSA / GitHub Artifact Attestation provenance.
+
+The GitHub `pypi` environment is restricted to `v*` tags.
+
+Public product/support/privacy/terms pages stay on **rc10** until rc11 is live
+on both GitHub (published release) and PyPI. Do not retarget download links
+from a draft.
+
+---
+
+## 3b. Mac App Store (`com.darashkevich.runspecimen`)
+
+**Status (App Store Connect API, 2026-09-18):** macOS version **0.1.3** is
+**WAITING_FOR_REVIEW** with attached build **5** (`processingState=VALID`).
+Not approved. Not publicly available. No Mac App Store product URL.
+
+Do **not** add a MAS link to the marketing site until Apple provides a live
+`apps.apple.com` URL. Developer ID notarization is not a Store submission.
+
+Details: `apps/macos/asc-kit/STATUS.md`.
 
 ---
 
@@ -314,6 +337,7 @@ listings are confirmed live (not pending review).
 | JetBrains Junie / Marketplace | ❌ | Junie catalog + IntelliJ scaffold | - | - |
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
 | PyPI | ❌ (rc11) | after GitHub Release publish | last live: `0.2.0rc10` | [runspecimen](https://pypi.org/project/runspecimen/) |
+| Mac App Store | ⏳ WAITING_FOR_REVIEW | Apple review of macOS **0.1.3 (5)** | not public | no `apps.apple.com` URL yet — see `apps/macos/asc-kit/STATUS.md` |
 
 **Important:** Do not claim a listing is "public" or "available" until:
 1. Submission is accepted (not just submitted)

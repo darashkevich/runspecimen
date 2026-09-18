@@ -171,7 +171,12 @@ set +e
 RS_ARCHIVE_APP="$APP_IN_ARCHIVE" ./Scripts/assert_store_export_ready.sh >"$EXPORT_GATE_LOG" 2>&1
 EXPORT_GATE_RC=$?
 set -e
-if [[ "$EXPORT_GATE_RC" -eq 0 ]]; then
+if [[ "${RS_MAS_EXPORT:-1}" == "0" ]]; then
+  echo "RS_MAS_EXPORT=0 — skipping export_mas / -exportArchive (archive-only)."
+  echo "Store export gate rc=$EXPORT_GATE_RC (0 means a later export is allowed)."
+  cat "$EXPORT_GATE_LOG" || true
+  EXPORT_RC="$EXPORT_GATE_RC"
+elif [[ "$EXPORT_GATE_RC" -eq 0 ]]; then
   echo "Store export prerequisites present — running export_mas.sh"
   RS_ARCHIVE_PATH="$ARCHIVE_PATH" RS_ARCHIVE_APP="$APP_IN_ARCHIVE" RS_EXPORT_DIR="$EXPORT_DIR" ./Scripts/export_mas.sh
   EXPORT_RC=0

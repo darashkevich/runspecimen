@@ -8,29 +8,35 @@ struct ActionBar: View {
     ]
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 0) {
             Divider().overlay(RSTheme.line)
-            HStack(spacing: 10) {
-                ForEach(actions) { action in
-                    Button(action.title) {
-                        Task { await model.requestPerform(action) }
+            HStack(alignment: .center, spacing: 10) {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 96), spacing: 8)],
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    ForEach(actions) { action in
+                        Button(action.title) {
+                            Task { await model.requestPerform(action) }
+                        }
+                        .buttonStyle(ActionChipStyle(
+                            amber: action == .approve,
+                            destructive: action == .run
+                        ))
+                        .disabled(!model.isActionEnabled(action))
+                        .help(help(for: action))
+                        .accessibilityHint(help(for: action))
                     }
-                    .buttonStyle(ActionChipStyle(
-                        amber: action == .approve,
-                        destructive: action == .run
-                    ))
-                    .disabled(!model.isActionEnabled(action))
-                    .help(help(for: action))
-                    .accessibilityHint(help(for: action))
-                }
-                if model.dashboardRunning {
-                    Button("Stop Dashboard") {
-                        Task { await model.stopDashboard() }
+                    if model.dashboardRunning {
+                        Button("Stop Dashboard") {
+                            Task { await model.stopDashboard() }
+                        }
+                        .buttonStyle(ActionChipStyle())
+                        .help("Terminate the loopback dashboard child process")
                     }
-                    .buttonStyle(ActionChipStyle())
-                    .help("Terminate the loopback dashboard child process")
                 }
-                Spacer()
+                Spacer(minLength: 8)
                 if model.dashboardRunning {
                     CapsuleLabel(text: "Dashboard on", tone: .amber)
                         .accessibilityLabel("Dashboard running")
@@ -41,8 +47,8 @@ struct ActionBar: View {
                         .accessibilityLabel("Working")
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
             .background(RSTheme.bgElevated.opacity(0.9))
         }
     }

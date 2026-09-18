@@ -1,5 +1,11 @@
 name: Publish Python package to PyPI
 
+# One validated GitHub Release build feeds PyPI as identical bytes.
+# This workflow MUST NOT rebuild wheel/sdist. It downloads the published
+# release assets, checks tag + SHA-256 against SHA256SUMS, and uploads those
+# files. rc11 is checksum-only: `gh attestation verify` is expected to 404
+# until a future CI-built release attaches SLSA provenance to the same subjects.
+
 on:
   release:
     types: [published]
@@ -12,10 +18,10 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build and validate distributions
+  fetch-and-validate:
+    name: Fetch GitHub Release assets and validate digests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - name: Check out the immutable release tag
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -54,17 +60,30 @@ jobs:
               raise SystemExit(f"checked-out commit is not tagged {release_tag!r}")
           PY
 
-      - name: Install isolated build prerequisites
-        run: python -m pip install --upgrade pip "setuptools>=77" wheel
+      - name: Download the published GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          mkdir -p release-assets
+          gh release download "$RELEASE_TAG" --repo "${{ github.repository }}" --dir release-assets
+          ls -la release-assets
 
-      - name: Run the complete release gate
-        run: python scripts/release_check.py --output-dir "${{ runner.temp }}/validated-release"
+      - name: Verify tag, filenames, and SHA-256 digests
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python scripts/verify_release_assets.py \
+            --dir release-assets \
+            --repo . \
+            --tag "$RELEASE_TAG" \
+            --require-pypi
 
-      - name: Select PyPI distributions
+      - name: Stage identical PyPI bytes (no rebuild)
         run: |
           mkdir pypi-dist
-          cp "${{ runner.temp }}"/validated-release/runspecimen-*.whl pypi-dist/
-          cp "${{ runner.temp }}"/validated-release/runspecimen-*.tar.gz pypi-dist/
+          cp release-assets/runspecimen-*.whl pypi-dist/
+          cp release-assets/runspecimen-*.tar.gz pypi-dist/
           python - <<'PY'
           from pathlib import Path
 
@@ -73,7 +92,7 @@ jobs:
               name.endswith(".tar.gz") for name in files
           ):
               raise SystemExit(f"expected exactly one wheel and one source distribution, got {files}")
-          print("PyPI distributions:", *files, sep="\n- ")
+          print("PyPI distributions (bytes copied from GitHub Release):", *files, sep="\n- ")
           PY
 
       - name: Upload validated distributions
@@ -86,7 +105,7 @@ jobs:
 
   publish:
     name: Publish to PyPI with OIDC
-    needs: build
+    needs: fetch-and-validate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:

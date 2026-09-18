@@ -7,7 +7,7 @@ struct PairingView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                HStack(spacing: 14) {
+                FitHStack(spacing: 14, alignment: .top) {
                     Image("BrandMark")
                         .resizable()
                         .scaledToFit()
@@ -17,9 +17,12 @@ struct PairingView: View {
                         Text("Observe")
                             .font(.largeTitle.weight(.semibold))
                             .foregroundStyle(RSTheme.ink)
+                            .minimumScaleFactor(0.7)
+                            .lineLimit(1)
                         Text("Pair with a Mac companion you explicitly enable.")
                             .font(.subheadline)
                             .foregroundStyle(RSTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
@@ -106,7 +109,9 @@ struct PairingView: View {
                 }
             }
             .padding(20)
+            .rsReadableWidth(720)
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private func fieldLabel(_ title: String) -> some View {

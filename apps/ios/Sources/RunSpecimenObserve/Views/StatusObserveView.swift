@@ -14,13 +14,15 @@ struct StatusObserveView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(RSTheme.muted)
                     Text(session.status?.phase?.uppercased() ?? "—")
-                        .font(.system(size: 34, weight: .semibold, design: .rounded))
+                        .font(.largeTitle.weight(.semibold))
                         .foregroundStyle(RSTheme.signal)
-                    HStack(spacing: 16) {
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    FitHStack(spacing: 16, alignment: .top) {
                         meta("Campaign", session.status?.campaignId ?? "—")
                         meta("Run", session.status?.runId ?? "—")
                     }
-                    HStack(spacing: 16) {
+                    FitHStack(spacing: 16, alignment: .top) {
                         meta("Event chain", chainLabel)
                         meta("Lease", leaseLabel)
                     }
@@ -75,6 +77,7 @@ struct StatusObserveView: View {
                 .padding(.top, 8)
             }
             .padding(20)
+            .rsReadableWidth(720)
         }
         .refreshable {
             await session.refresh()
@@ -149,19 +152,17 @@ struct StatusObserveView: View {
     private var chipRow: some View {
         let pending = session.status?.companion?.remoteConfirm
         let chips = pending?.chips
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                chip("Who", pending?.who ?? "operator · workspace")
-                chip("What", pending?.what ?? "—")
-            }
-            HStack(spacing: 8) {
-                chip("Expiry", chips?.expiry ?? "—")
-                chip("Lease", chips?.lease ?? leaseLabel)
-            }
-            HStack(spacing: 8) {
-                chip("Isolation", chips?.isolation ?? "native-unspecified")
-                chip("Predecessor", chips?.predecessor ?? "none")
-            }
+        return LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 140), spacing: 8)],
+            alignment: .leading,
+            spacing: 8
+        ) {
+            chip("Who", pending?.who ?? "operator · workspace")
+            chip("What", pending?.what ?? "—")
+            chip("Expiry", chips?.expiry ?? "—")
+            chip("Lease", chips?.lease ?? leaseLabel)
+            chip("Isolation", chips?.isolation ?? "native-unspecified")
+            chip("Predecessor", chips?.predecessor ?? "none")
         }
     }
 

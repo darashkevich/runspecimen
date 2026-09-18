@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### macOS app
+
+- Fix local launch: the SwiftUI window could size to thousands of points and
+  open off-screen (blank view, hidden CLI alert, Full Screen disabled). Clamp
+  to the visible display, mark the window Full Screen-capable, keep CLI
+  discovery failures on the in-window banner, and skip App Sandbox on local
+  `--from-src` builds so the host-Python helper can run. Layout wraps on
+  split / 13-inch Macs; iOS Observe uses a readable column and landscape.
+- Store export gate now fail-closes on `codesign --verify --strict` for the
+  archived app and nested helper, including a tamper-after-signing negative.
+- Fix `AppIcon.appiconset`: catalog filenames are real `icon_*@2x.png` files
+  with matching pixel sizes (128@2x is 256px). `verify_app_icon.sh` checks
+  Contents.json and a warning-free `actool` compile.
+- PyPI publish workflow consumes GitHub Release assets as identical bytes
+  (no rebuild). rc11 remains checksum-only until SLSA attestations exist.
+
 ## 0.2.0rc11 - 2026-09-18
 
 ### Brand
