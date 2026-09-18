@@ -21,4 +21,15 @@ final class CompanionBoundaryTests: XCTestCase {
         XCTAssertFalse(joined.contains("approve"))
         XCTAssertFalse(joined.split(separator: " ").contains("run"))
     }
+
+    func testArmPlanIsRemoteConfirmNotApprove() {
+        let plan = CompanionLaunchPlan(
+            workspace: "/tmp/ws",
+            contract: "/tmp/ws/contract.json"
+        )
+        let args = plan.armRemoteConfirmArguments
+        XCTAssertEqual(args.first, "remote-confirm")
+        XCTAssertEqual(args[1], "arm")
+        XCTAssertFalse(args.contains("approve"))
+    }
 }

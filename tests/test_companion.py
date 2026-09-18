@@ -30,6 +30,7 @@ class TestCompanion(RunSpecimenTestCase):
         self.assertFalse(CAPABILITIES["can_approve"])
         self.assertFalse(CAPABILITIES["can_execute"])
         self.assertFalse(CAPABILITIES["can_mutate_lifecycle"])
+        self.assertFalse(CAPABILITIES["can_remote_confirm"])
         self.assertIn("TTY", CAPABILITIES["boundary"])
 
     def test_forbidden_paths_include_lifecycle_verbs(self) -> None:
@@ -44,6 +45,7 @@ class TestCompanion(RunSpecimenTestCase):
             self.assertTrue(path_is_forbidden(path), path)
         self.assertFalse(path_is_forbidden("/v1/status"))
         self.assertFalse(path_is_forbidden("/v1/attention"))
+        self.assertFalse(path_is_forbidden("/v1/remote-confirm"))
 
     def test_bind_policy_fail_closed(self) -> None:
         assert_bind_allowed("127.0.0.1", allow_lan=False)
@@ -91,6 +93,8 @@ class TestCompanion(RunSpecimenTestCase):
             caps = json.loads(conn.getresponse().read().decode("utf-8"))
             self.assertFalse(caps["can_approve"])
             self.assertFalse(caps["can_execute"])
+            # Without a Mac-armed pending, remote confirm stays unavailable.
+            self.assertFalse(caps.get("can_remote_confirm", False))
 
             conn.request("GET", "/v1/status", headers=headers)
             status_resp = conn.getresponse()
@@ -98,6 +102,7 @@ class TestCompanion(RunSpecimenTestCase):
             status_doc = json.loads(status_resp.read().decode("utf-8"))
             self.assertIn("phase", status_doc)
             self.assertFalse(status_doc["companion"]["can_approve"])
+            self.assertFalse(status_doc["companion"].get("can_remote_confirm", False))
 
             conn.request(
                 "POST",

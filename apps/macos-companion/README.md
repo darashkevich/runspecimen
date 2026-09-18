@@ -1,17 +1,20 @@
 # RunSpecimen macOS companion helper
 
-Thin SwiftPM module + UI that **previews** the opt-in CLI:
+Thin SwiftPM module + UI that **previews** the opt-in CLI and provides a **local
+challenge display** surface for ADR-004 remote human confirm:
 
 ```text
 runspecimen companion --workspace … --contract … [--allow-lan --host …] --print-token
+runspecimen remote-confirm arm --workspace … --contract …
 ```
 
 ## Invariants
 
-- Does **not** implement approve/run/preflight/postflight.
 - Does **not** inject TTY `APPROVE`.
-- Enforcement lives in `src/runspecimen/companion.py` (fail-closed).
-- See `docs/ADR-003-ios-companion-observation.md`.
+- Does **not** give plugins an approve path (`can_approve` stays false).
+- Challenge secret is Mac-local only (TTY / paste field / mode-0600 local file).
+- Enforcement lives in `src/runspecimen/companion.py` and `remote_confirm.py`.
+- See `docs/ADR-004-remote-human-confirm.md` (and ADR-003 for observation).
 
 ## Build
 

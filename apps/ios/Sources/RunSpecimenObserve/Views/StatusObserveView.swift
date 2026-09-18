@@ -29,6 +29,14 @@ struct StatusObserveView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RSTheme.panel)
 
+                if session.remoteConfirmPending {
+                    remoteConfirmPanel
+                } else {
+                    Text("No Mac-armed remote confirm pending. Primary approval remains Mac TTY APPROVE.")
+                        .font(.footnote)
+                        .foregroundStyle(RSTheme.muted)
+                }
+
                 VStack(spacing: 10) {
                     actionButton("Refresh status", tint: RSTheme.cyan) {
                         await session.refresh()
@@ -46,13 +54,18 @@ struct StatusObserveView: View {
                         .font(.footnote)
                         .foregroundStyle(RSTheme.signal)
                 }
+                if let note = session.lastRemoteConfirmNote {
+                    Text(note)
+                        .font(.footnote)
+                        .foregroundStyle(RSTheme.signal)
+                }
                 if let error = session.lastError {
                     Text(error)
                         .font(.footnote)
                         .foregroundStyle(RSTheme.danger)
                 }
 
-                Text("There is no Approve or Run control here. That is intentional.")
+                Text("There is no one-tap Approve control. Plugins cannot approve through this app.")
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(RSTheme.muted)
 
@@ -69,6 +82,52 @@ struct StatusObserveView: View {
         .task {
             await session.refresh()
         }
+    }
+
+    private var remoteConfirmPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Remote human confirm")
+                .font(.headline)
+                .foregroundStyle(RSTheme.ink)
+            Text(
+                session.status?.companion?.remoteConfirm?.claim
+                    ?? "Type the challenge shown on the Mac, then type APPROVE. Not equivalent to local TTY APPROVE."
+            )
+            .font(.footnote)
+            .foregroundStyle(RSTheme.muted)
+            .fixedSize(horizontal: false, vertical: true)
+
+            Text("MAC CHALLENGE")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(RSTheme.muted)
+            TextField("Challenge from Mac display", text: $session.challengeInput)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+                .padding(12)
+                .background(RSTheme.elevated)
+                .foregroundStyle(RSTheme.ink)
+
+            Text("CONFIRM PHRASE")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(RSTheme.muted)
+            TextField("Type APPROVE", text: $session.approvePhraseInput)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+                .padding(12)
+                .background(RSTheme.elevated)
+                .foregroundStyle(RSTheme.ink)
+
+            actionButton("Submit remote human confirm", tint: RSTheme.signal) {
+                await session.submitRemoteConfirm()
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RSTheme.panel)
+        .overlay(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .stroke(RSTheme.signal.opacity(0.35), lineWidth: 1)
+        )
     }
 
     private var chainLabel: String {

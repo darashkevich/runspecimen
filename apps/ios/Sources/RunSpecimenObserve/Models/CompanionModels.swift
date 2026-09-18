@@ -6,13 +6,28 @@ struct CompanionCapabilities: Codable, Equatable {
     var canApprove: Bool
     var canExecute: Bool
     var canMutateLifecycle: Bool
+    var canRemoteConfirm: Bool?
     var boundary: String
+    var remoteConfirm: RemoteConfirmCapability?
 
     enum CodingKeys: String, CodingKey {
         case product, mode, boundary
         case canApprove = "can_approve"
         case canExecute = "can_execute"
         case canMutateLifecycle = "can_mutate_lifecycle"
+        case canRemoteConfirm = "can_remote_confirm"
+        case remoteConfirm = "remote_confirm"
+    }
+}
+
+struct RemoteConfirmCapability: Codable, Equatable {
+    var pending: Bool?
+    var notEquivalentTo: String?
+    var claim: String?
+
+    enum CodingKeys: String, CodingKey {
+        case pending, claim
+        case notEquivalentTo = "not_equivalent_to"
     }
 }
 
@@ -38,12 +53,48 @@ struct CompanionFlags: Codable, Equatable {
     var mode: String?
     var canApprove: Bool?
     var canExecute: Bool?
+    var canRemoteConfirm: Bool?
     var note: String?
+    var remoteConfirm: RemoteConfirmPending?
 
     enum CodingKeys: String, CodingKey {
         case mode, note
         case canApprove = "can_approve"
         case canExecute = "can_execute"
+        case canRemoteConfirm = "can_remote_confirm"
+        case remoteConfirm = "remote_confirm"
+    }
+}
+
+struct RemoteConfirmPending: Codable, Equatable {
+    var pending: Bool?
+    var canRemoteConfirm: Bool?
+    var challengeId: String?
+    var expiresAtUnix: Double?
+    var instruction: String?
+    var claim: String?
+    var notEquivalentTo: String?
+    var confirmChannel: String?
+
+    enum CodingKeys: String, CodingKey {
+        case pending, instruction, claim
+        case canRemoteConfirm = "can_remote_confirm"
+        case challengeId = "challenge_id"
+        case expiresAtUnix = "expires_at_unix"
+        case notEquivalentTo = "not_equivalent_to"
+        case confirmChannel = "confirm_channel"
+    }
+}
+
+struct RemoteConfirmResult: Codable, Equatable {
+    var ok: Bool?
+    var settled: Bool?
+    var confirmChannel: String?
+    var note: String?
+
+    enum CodingKeys: String, CodingKey {
+        case ok, settled, note
+        case confirmChannel = "confirm_channel"
     }
 }
 

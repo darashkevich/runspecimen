@@ -38,9 +38,11 @@ from runspecimen.signing import (
 _ABOUT_SUMMARY = (
     "Exactly one human-approved, bounded local run at a time, with provenance "
     "binding and a tamper-evident receipt. Core lifecycle: approve → preflight → "
-    "run → postflight → verify. Safety model: TTY approval, workspace lease, "
-    "hash-chained events, and certificates — evidence controls, not an OS sandbox. "
-    "The dashboard is loopback-only and read-only; it cannot approve or execute."
+    "run → postflight → verify. Safety model: local TTY APPROVE (primary), optional "
+    "Mac-armed remote human confirm via paired companion (not TTY-equivalent), "
+    "workspace lease, hash-chained events, and certificates — evidence controls, "
+    "not an OS sandbox. Plugins/agents cannot approve. The dashboard is "
+    "loopback-only and read-only; it cannot approve or execute."
 )
 
 
@@ -134,12 +136,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_companion = sub.add_parser(
         "companion",
-        help="Opt-in observation endpoint for the iOS companion (cannot approve/execute)",
+        help="Opt-in observe + remote-human-confirm endpoint (plugins cannot approve)",
         description=(
-            "Start a fail-closed companion listener for remote observation. "
-            "Requires an explicit pairing token. Does not expose approve/run/preflight/"
-            "postflight. Default bind is loopback; --allow-lan requires a private or "
-            "Tailscale address. See docs/ADR-003-ios-companion-observation.md."
+            "Start a fail-closed companion listener for remote observation and optional "
+            "Mac-armed remote human confirm (ADR-004). Requires an explicit pairing token. "
+            "can_approve stays false; /v1/approve and run/preflight/postflight paths stay "
+            "forbidden. Remote confirm needs a prior `remote-confirm arm` on this Mac. "
+            "Default bind is loopback; --allow-lan requires a private or Tailscale address. "
+            "mTLS is required before exposing beyond a trusted network."
         ),
     )
     _add_workspace(p_companion)
@@ -161,6 +165,33 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the pairing token once on stdout (needed when auto-generated)",
     )
+
+    p_remote = sub.add_parser(
+        "remote-confirm",
+        help="Arm/cancel Mac-side remote human confirm (ADR-004)",
+        description=(
+            "Create or clear a one-shot challenge for paired-companion remote human "
+            "confirm. Arming requires an interactive TTY and prints the challenge only "
+            "locally. This is not equivalent to local TTY APPROVE. See "
+            "docs/ADR-004-remote-human-confirm.md."
+        ),
+    )
+    remote_sub = p_remote.add_subparsers(dest="remote_confirm_command", required=True)
+    p_rc_arm = remote_sub.add_parser("arm", help="Arm a pending remote confirm and print the challenge")
+    _add_workspace(p_rc_arm)
+    _add_contract(p_rc_arm)
+    p_rc_arm.add_argument(
+        "--ttl-sec",
+        type=int,
+        default=300,
+        help="Challenge lifetime in seconds (30-3600, default 300)",
+    )
+    p_rc_status = remote_sub.add_parser("status", help="Show whether a remote confirm is pending")
+    _add_workspace(p_rc_status)
+    _add_contract(p_rc_status)
+    p_rc_cancel = remote_sub.add_parser("cancel", help="Cancel a pending remote confirm")
+    _add_workspace(p_rc_cancel)
+    _add_contract(p_rc_cancel)
 
     p_abandon = sub.add_parser(
         "abandon",
@@ -410,6 +441,44 @@ def main(argv: list[str] | None = None) -> int:
             finally:
                 server.server_close()
             return 0
+        if args.command == "remote-confirm":
+            from runspecimen.paths import run_state_dir
+            from runspecimen.remote_confirm import (
+                arm_remote_confirm,
+                cancel_remote_confirm,
+                load_pending,
+                public_pending_view,
+                read_local_challenge_for_display,
+            )
+
+            if args.remote_confirm_command == "arm":
+                meta = arm_remote_confirm(
+                    contract_path=args.contract,
+                    workspace=workspace,
+                    ttl_sec=int(args.ttl_sec),
+                )
+                print(json.dumps(meta, indent=2, sort_keys=True))
+                return 0
+            if args.remote_confirm_command == "cancel":
+                print(json.dumps(cancel_remote_confirm(contract_path=args.contract, workspace=workspace), indent=2, sort_keys=True))
+                return 0
+            if args.remote_confirm_command == "status":
+                contract = load_contract(args.contract)
+                state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
+                pending = load_pending(state_dir)
+                view = public_pending_view(pending)
+                local_challenge = read_local_challenge_for_display(state_dir) if view.get("pending") else None
+                out = dict(view)
+                if local_challenge is not None:
+                    # Local CLI status may show the challenge for the Mac operator only.
+                    out["local_challenge"] = local_challenge
+                    out["local_only_note"] = (
+                        "local_challenge is printed for Mac display only; "
+                        "companion HTTP never returns this secret."
+                    )
+                print(json.dumps(out, indent=2, sort_keys=True))
+                return 0
+            raise RunSpecimenError(f"unknown remote-confirm command: {args.remote_confirm_command}")
         if args.command == "companion":
             from runspecimen.companion import generate_pairing_token, start_companion
 
@@ -429,8 +498,6 @@ def main(argv: list[str] | None = None) -> int:
             def _on_open_dashboard() -> None:
                 from runspecimen.dashboard import start_dashboard
 
-                # Fire-and-forget local dashboard helper thread so the companion
-                # remains observation-only and does not block on browser UI.
                 dash_server, dash_url = start_dashboard(
                     workspace=workspace, contract_path=args.contract, port=0
                 )
@@ -458,6 +525,21 @@ def main(argv: list[str] | None = None) -> int:
                     flush=True,
                 )
 
+            def _on_remote_confirmed(approval: dict) -> None:
+                print(
+                    json.dumps(
+                        {
+                            "event": "remote-confirm-settled",
+                            "confirm_channel": approval.get("confirm_channel"),
+                            "campaign_id": approval.get("campaign_id"),
+                            "run_id": approval.get("run_id"),
+                            "not_equivalent_to": "local_tty_approve",
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
+
             server, url, meta = start_companion(
                 workspace=workspace,
                 contract_path=args.contract,
@@ -467,6 +549,7 @@ def main(argv: list[str] | None = None) -> int:
                 allow_lan=bool(args.allow_lan),
                 on_attention=_on_attention,
                 on_open_dashboard=_on_open_dashboard,
+                on_remote_confirmed=_on_remote_confirmed,
             )
             payload = dict(meta)
             if args.print_token:

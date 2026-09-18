@@ -12,7 +12,7 @@ struct BoundaryBanner: View {
                 .font(.footnote)
                 .foregroundStyle(RSTheme.ink.opacity(0.92))
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Non-goals: remote approve · remote run · OS sandbox claims")
+            Text("Remote human confirm ≠ local TTY APPROVE · plugins cannot approve · not an OS sandbox")
                 .font(.caption2.monospaced())
                 .foregroundStyle(RSTheme.muted)
         }

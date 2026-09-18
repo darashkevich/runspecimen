@@ -1,14 +1,14 @@
-"""Opt-in, fail-closed companion endpoint for remote *observation*.
+"""Opt-in, fail-closed companion endpoint for observation + remote human confirm.
 
-This module intentionally mirrors the loopback dashboard safety posture while
-allowing an authenticated phone client on a human-opted local network bind.
-
-Hard rules (see docs/ADR-003-ios-companion-observation.md):
+Hard rules (see docs/ADR-003-ios-companion-observation.md and
+docs/ADR-004-remote-human-confirm.md):
 - Disabled unless explicitly enabled with a pairing token
-- Never exposes approve / run / preflight / postflight / execute
-- Does not write lifecycle state, approvals, events, or certificates
+- can_approve stays False for all clients (plugins/agents included)
+- Lifecycle verb paths (approve/run/preflight/...) stay forbidden
+- Remote confirm settles only a Mac-armed pending challenge via
+  POST /v1/remote-confirm with pairing + challenge + APPROVE
+- Challenge secret is never returned over HTTP (Mac TTY / local file only)
 - Default bind is loopback; LAN bind requires --allow-lan and a private address
-- Agents must not be given a path to inject TTY APPROVE via this API
 """
 
 from __future__ import annotations
@@ -19,13 +19,22 @@ import ipaddress
 import json
 import secrets
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
 from runspecimen.contract import load_contract
-from runspecimen.errors import RunSpecimenError
+from runspecimen.errors import ApprovalError, RunSpecimenError
+from runspecimen.paths import run_state_dir
+from runspecimen.remote_confirm import (
+    CLAIM_TEXT,
+    NOT_EQUIVALENT_TO,
+    load_pending,
+    public_pending_view,
+    settle_remote_confirm,
+)
 from runspecimen.status import status_for
 
 FORBIDDEN_PATH_MARKERS = (
@@ -38,6 +47,9 @@ FORBIDDEN_PATH_MARKERS = (
     "inject",
 )
 
+# Narrow exception: remote-confirm is allowed; it must not match "approve".
+ALLOWED_MUTATING_ROUTES = frozenset({"/v1/remote-confirm"})
+
 CAPABILITIES = {
     "product": "RunSpecimen",
     "mode": "observe",
@@ -45,14 +57,17 @@ CAPABILITIES = {
     "can_approve": False,
     "can_execute": False,
     "can_mutate_lifecycle": False,
+    "can_remote_confirm": False,
     "can_request_attention": True,
     "can_open_local_dashboard": True,
     "transport": "local-network-opt-in",
     "boundary": (
-        "Observation and attention only. Approval remains real-TTY APPROVE on the Mac. "
-        "This endpoint is not an OS sandbox and cannot approve or execute."
+        "Observation, attention, and optional Mac-armed remote human confirm. "
+        "can_approve stays false for plugins/agents. Local TTY APPROVE remains "
+        "the primary path; remote confirm is not TTY-equivalent and is not an OS sandbox."
     ),
-    "adr": "docs/ADR-003-ios-companion-observation.md",
+    "adr": "docs/ADR-004-remote-human-confirm.md",
+    "adr_observe": "docs/ADR-003-ios-companion-observation.md",
 }
 
 
@@ -93,10 +108,8 @@ def assert_bind_allowed(host: str, *, allow_lan: bool) -> None:
         )
     if addr.is_multicast or addr.is_reserved:
         raise RunSpecimenError(f"companion refuses bind address {host}")
-    # Private, link-local, and IPv6 unique-local are allowed with --allow-lan.
     if addr.is_private or addr.is_link_local or getattr(addr, "is_unique_local", False):
         return
-    # Tailscale userspace often uses 100.x (shared CGNAT / RFC6598).
     if isinstance(addr, ipaddress.IPv4Address) and ipaddress.ip_address("100.64.0.0") <= addr <= ipaddress.ip_address(
         "100.127.255.255"
     ):
@@ -107,7 +120,9 @@ def assert_bind_allowed(host: str, *, allow_lan: bool) -> None:
 
 
 def path_is_forbidden(path: str) -> bool:
-    lowered = path.lower()
+    lowered = path.lower().rstrip("/") or "/"
+    if lowered in ALLOWED_MUTATING_ROUTES:
+        return False
     return any(marker in lowered for marker in FORBIDDEN_PATH_MARKERS)
 
 
@@ -118,13 +133,20 @@ def make_handler(
     pairing_token: str,
     on_attention: Callable[[dict[str, Any]], None] | None = None,
     on_open_dashboard: Callable[[], None] | None = None,
+    on_remote_confirmed: Callable[[dict[str, Any]], None] | None = None,
 ):
-    """Create a read-mostly companion handler scoped to one workspace + contract."""
+    """Create a companion handler scoped to one workspace + contract."""
     workspace = workspace.resolve()
     contract_path = contract_path.resolve()
     contract = load_contract(contract_path)
     attention_lock = threading.Lock()
     attention_log: list[dict[str, Any]] = []
+    confirm_lock = threading.Lock()
+    rate_lock = threading.Lock()
+    # Simple in-memory rate limit: max attempts per window per peer.
+    rate_window_sec = 60.0
+    rate_max_attempts = 20
+    rate_events: list[float] = []
 
     def current_status() -> dict[str, Any]:
         live = load_contract(contract_path)
@@ -136,6 +158,33 @@ def make_handler(
             run_id=contract.run_id,
             contract_path=contract_path,
         )
+
+    def remote_confirm_view() -> dict[str, Any]:
+        state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
+        pending = load_pending(state_dir)
+        return public_pending_view(pending)
+
+    def capabilities_doc() -> dict[str, Any]:
+        view = remote_confirm_view()
+        doc = dict(CAPABILITIES)
+        doc["can_approve"] = False
+        doc["can_remote_confirm"] = bool(view.get("can_remote_confirm"))
+        doc["remote_confirm"] = {
+            "pending": bool(view.get("pending")),
+            "not_equivalent_to": NOT_EQUIVALENT_TO,
+            "claim": CLAIM_TEXT,
+        }
+        return doc
+
+    def rate_limit_ok() -> bool:
+        now = time.time()
+        with rate_lock:
+            while rate_events and rate_events[0] < now - rate_window_sec:
+                rate_events.pop(0)
+            if len(rate_events) >= rate_max_attempts:
+                return False
+            rate_events.append(now)
+            return True
 
     class CompanionHandler(BaseHTTPRequestHandler):
         server_version = "RunSpecimenCompanion"
@@ -160,7 +209,16 @@ def make_handler(
                 pass
 
         def _error(self, code: int, message: str) -> None:
-            self._respond(code, json.dumps({"error": message, "can_approve": False}).encode("utf-8"))
+            self._respond(
+                code,
+                json.dumps(
+                    {
+                        "error": message,
+                        "can_approve": False,
+                        "can_remote_confirm": False,
+                    }
+                ).encode("utf-8"),
+            )
 
         def _authorized(self) -> bool:
             auth = self.headers.get("Authorization", "")
@@ -170,7 +228,7 @@ def make_handler(
             if token is None:
                 token = self.headers.get("X-RunSpecimen-Pairing-Token")
             if not _constant_time_token_ok(token, pairing_token):
-                self._error(401, "Pairing token required. Companion cannot approve or execute.")
+                self._error(401, "Pairing token required. Companion cannot approve via plugins.")
                 return False
             return True
 
@@ -183,8 +241,6 @@ def make_handler(
                 self._error(403, "Lifecycle mutation paths are forbidden on the companion.")
                 return
             if route == "/v1/health":
-                # Health is unauthenticated so the operator can confirm the listener is up
-                # before pasting the pairing token into the phone. It reveals no run evidence.
                 self._respond(
                     200,
                     json.dumps(
@@ -193,6 +249,7 @@ def make_handler(
                             "mode": "observe",
                             "can_approve": False,
                             "can_execute": False,
+                            "can_remote_confirm": False,
                         },
                         sort_keys=True,
                     ).encode("utf-8"),
@@ -202,15 +259,21 @@ def make_handler(
                 return
             try:
                 if route == "/v1/capabilities":
-                    self._respond(200, json.dumps(CAPABILITIES, sort_keys=True).encode("utf-8"))
+                    self._respond(200, json.dumps(capabilities_doc(), sort_keys=True).encode("utf-8"))
                     return
                 if route == "/v1/status":
                     doc = current_status()
+                    view = remote_confirm_view()
                     doc["companion"] = {
                         "mode": "observe",
                         "can_approve": False,
                         "can_execute": False,
-                        "note": "Approve only via real TTY on the Mac.",
+                        "can_remote_confirm": bool(view.get("can_remote_confirm")),
+                        "remote_confirm": view,
+                        "note": (
+                            "Plugins cannot approve. Remote human confirm requires a Mac-armed "
+                            "challenge typed with APPROVE on the paired companion; not TTY-equivalent."
+                        ),
                     }
                     self._respond(200, json.dumps(doc, sort_keys=True, default=str).encode("utf-8"))
                     return
@@ -246,7 +309,6 @@ def make_handler(
                 }
                 with attention_lock:
                     attention_log.append(entry)
-                    # Keep memory bounded; this is a scaffold, not a durable queue.
                     del attention_log[:-32]
                 if on_attention is not None:
                     on_attention(entry)
@@ -258,7 +320,7 @@ def make_handler(
                             "accepted": True,
                             "mutates_lifecycle": False,
                             "can_approve": False,
-                            "note": "Mac operator must still approve on-device via TTY if action is required.",
+                            "note": "Attention only. Use remote-confirm or Mac TTY for approval.",
                         },
                         sort_keys=True,
                     ).encode("utf-8"),
@@ -280,7 +342,56 @@ def make_handler(
                     ).encode("utf-8"),
                 )
                 return
-            self._error(405, "Companion is observation-only; use the Mac TTY for lifecycle commands.")
+            if route == "/v1/remote-confirm":
+                if not rate_limit_ok():
+                    self._error(429, "Too many remote-confirm attempts; slow down.")
+                    return
+                challenge = str(payload.get("challenge") or "")
+                phrase = str(payload.get("phrase") or payload.get("confirm") or "")
+                with confirm_lock:
+                    try:
+                        approval = settle_remote_confirm(
+                            contract_path=contract_path,
+                            workspace=workspace,
+                            challenge=challenge,
+                            phrase=phrase,
+                        )
+                    except ApprovalError as exc:
+                        self._error(403, str(exc))
+                        return
+                    except (RunSpecimenError, OSError, ValueError, KeyError, TypeError) as exc:
+                        self._error(503, f"Remote confirm failed: {exc}")
+                        return
+                if on_remote_confirmed is not None:
+                    on_remote_confirmed(approval)
+                self._respond(
+                    200,
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "settled": True,
+                            "can_approve": False,
+                            "confirm_channel": approval.get("confirm_channel"),
+                            "confirm_evidence": approval.get("confirm_evidence"),
+                            "approval": {
+                                "campaign_id": approval.get("campaign_id"),
+                                "run_id": approval.get("run_id"),
+                                "contract_hash": approval.get("contract_hash"),
+                                "expires_at_unix": approval.get("expires_at_unix"),
+                                "confirm_channel": approval.get("confirm_channel"),
+                            },
+                            "note": CLAIM_TEXT,
+                        },
+                        sort_keys=True,
+                        default=str,
+                    ).encode("utf-8"),
+                )
+                return
+            self._error(
+                405,
+                "Use POST /v1/remote-confirm (paired + Mac challenge + APPROVE) "
+                "or Mac TTY approve. Plugins cannot approve.",
+            )
 
         do_PUT = do_POST
         do_PATCH = do_POST
@@ -305,6 +416,7 @@ def start_companion(
     allow_lan: bool = False,
     on_attention: Callable[[dict[str, Any]], None] | None = None,
     on_open_dashboard: Callable[[], None] | None = None,
+    on_remote_confirmed: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[ThreadingHTTPServer, str, dict[str, Any]]:
     """Bind the companion server. Fail closed unless bind policy passes."""
     if not pairing_token or len(pairing_token) < 16:
@@ -321,6 +433,7 @@ def start_companion(
         pairing_token=pairing_token,
         on_attention=on_attention,
         on_open_dashboard=on_open_dashboard,
+        on_remote_confirmed=on_remote_confirmed,
     )
     server = ThreadingHTTPServer((host, port), handler)
     bound_host, selected_port = server.server_address[:2]
@@ -334,7 +447,13 @@ def start_companion(
         "mode": "observe",
         "can_approve": False,
         "can_execute": False,
+        "can_remote_confirm": False,
         "pairing_required": True,
-        "adr": "docs/ADR-003-ios-companion-observation.md",
+        "adr": "docs/ADR-004-remote-human-confirm.md",
+        "adr_observe": "docs/ADR-003-ios-companion-observation.md",
+        "note": (
+            "Remote confirm requires Mac-side `remote-confirm arm` first. "
+            "Challenge is shown only on the Mac; mTLS required before untrusted networks."
+        ),
     }
     return server, url, meta

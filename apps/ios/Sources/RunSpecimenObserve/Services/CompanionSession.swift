@@ -10,6 +10,9 @@ final class CompanionSession: ObservableObject {
     @Published var status: CompanionStatus?
     @Published var lastError: String?
     @Published var lastAttentionNote: String?
+    @Published var challengeInput: String = ""
+    @Published var approvePhraseInput: String = ""
+    @Published var lastRemoteConfirmNote: String?
 
     private let defaultsKey = "rs.observe.pairing"
 
@@ -19,7 +22,15 @@ final class CompanionSession: ObservableObject {
 
     var boundaryCopy: String {
         capabilities?.boundary
-            ?? "Observation only. Approval is real-TTY APPROVE on the Mac. This app cannot approve or execute."
+            ?? "Observation plus optional Mac-armed remote human confirm. "
+            + "Local TTY APPROVE remains primary and is not equivalent to phone confirm. "
+            + "Plugins cannot approve. This app is not an OS sandbox."
+    }
+
+    var remoteConfirmPending: Bool {
+        status?.companion?.remoteConfirm?.pending == true
+            || status?.companion?.canRemoteConfirm == true
+            || capabilities?.canRemoteConfirm == true
     }
 
     func saveAndPair() async {
@@ -39,7 +50,7 @@ final class CompanionSession: ObservableObject {
         do {
             let caps = try await client.fetchCapabilities()
             if caps.canApprove || caps.canExecute || caps.canMutateLifecycle {
-                lastError = "Refusing pair: companion advertised lifecycle mutation (violates ADR-003)."
+                lastError = "Refusing pair: companion advertised plugin-style approve/execute (violates ADR-004)."
                 isPaired = false
                 return
             }
@@ -56,6 +67,9 @@ final class CompanionSession: ObservableObject {
     func refreshStatus() async throws {
         guard let client = makeClient() else { throw CompanionClientError.notPaired }
         status = try await client.fetchStatus()
+        if let caps = try? await client.fetchCapabilities() {
+            capabilities = caps
+        }
         if status?.companion?.canApprove == true || status?.companion?.canExecute == true {
             lastError = "Server claimed approve/execute capability; disconnecting."
             disconnect()
@@ -79,8 +93,10 @@ final class CompanionSession: ObservableObject {
             return
         }
         do {
-            try await client.requestAttention(message: "Please check RunSpecimen on the Mac (TTY approval still required).")
-            lastAttentionNote = "Attention requested. A human must still approve on the Mac if action is needed."
+            try await client.requestAttention(
+                message: "Please check RunSpecimen on the Mac (TTY or remote-confirm)."
+            )
+            lastAttentionNote = "Attention requested. Lifecycle still requires Mac TTY or Mac-armed remote confirm."
         } catch {
             lastError = error.localizedDescription
         }
@@ -100,10 +116,45 @@ final class CompanionSession: ObservableObject {
         }
     }
 
+    func submitRemoteConfirm() async {
+        lastError = nil
+        lastRemoteConfirmNote = nil
+        guard remoteConfirmPending else {
+            lastError = "No Mac-armed remote confirm is pending."
+            return
+        }
+        let challenge = challengeInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let phrase = approvePhraseInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !challenge.isEmpty else {
+            lastError = "Enter the challenge shown on the Mac."
+            return
+        }
+        guard phrase == "APPROVE" else {
+            lastError = "Phrase must be exactly APPROVE (typed, not one-tap)."
+            return
+        }
+        guard let client = makeClient() else {
+            lastError = CompanionClientError.notPaired.localizedDescription
+            return
+        }
+        do {
+            let result = try await client.submitRemoteConfirm(challenge: challenge, phrase: phrase)
+            lastRemoteConfirmNote = result.note
+                ?? "Remote human confirm settled. This is not equivalent to local TTY APPROVE."
+            challengeInput = ""
+            approvePhraseInput = ""
+            try await refreshStatus()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     func disconnect() {
         isPaired = false
         capabilities = nil
         status = nil
+        challengeInput = ""
+        approvePhraseInput = ""
         UserDefaults.standard.removeObject(forKey: defaultsKey)
     }
 

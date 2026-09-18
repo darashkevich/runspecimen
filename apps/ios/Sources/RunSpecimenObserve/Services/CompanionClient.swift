@@ -20,8 +20,8 @@ enum CompanionClientError: LocalizedError {
     }
 }
 
-/// HTTP client for the Mac-side observation endpoint only.
-/// Intentionally has no approve/run methods.
+/// HTTP client for the Mac-side companion endpoint.
+/// No plugin-style approve/run helpers — only observe + optional remote-confirm settle.
 struct CompanionClient {
     var config: PairingConfig
 
@@ -81,5 +81,15 @@ struct CompanionClient {
 
     func requestOpenDashboard() async throws {
         _ = try await request(path: "/v1/open-dashboard", method: "POST", body: Data("{}".utf8))
+    }
+
+    /// Settle a Mac-armed pending confirm. Requires typed challenge + APPROVE phrase.
+    func submitRemoteConfirm(challenge: String, phrase: String) async throws -> RemoteConfirmResult {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "challenge": challenge,
+            "phrase": phrase,
+        ])
+        let data = try await request(path: "/v1/remote-confirm", method: "POST", body: payload)
+        return try JSONDecoder().decode(RemoteConfirmResult.self, from: data)
     }
 }
