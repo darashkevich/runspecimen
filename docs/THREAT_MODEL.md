@@ -15,7 +15,8 @@ proof that a scientific or engineering claim is true.
 
 The human invoking the TTY approval, the local operating-system account, the
 RunSpecimen installation, Python runtime, workspace filesystem, and workload are
-trusted. The Codex and Cursor adapters do not expand this boundary; they call the
+trusted. The Codex, Cursor, Claude Code, and Grok Build adapters do not expand
+this boundary; they call the
 same CLI and cannot manufacture an approval.
 
 A native macOS (or other) companion UI that shells to the CLI does not move the

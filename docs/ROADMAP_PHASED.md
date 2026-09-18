@@ -152,10 +152,10 @@ exclusivity.
 ## Phase 4 — Activation and distribution polish
 
 Adversarial first-run campaign; vertical templates; GitHub showcase; narrow
-Cursor/Codex adapters (no shell escape, no approval tool). Claude Code +
-Homebrew as separate slices. Avoid duplicate marketplace submissions while
-Cursor review is pending. Coordinate messaging with PR #6 (Developer ID first;
-MAS stretch).
+Cursor/Codex adapters (no shell escape, no approval tool). Claude Code + Grok
+Build adapters shipped in-repo (`docs/INTEGRATIONS.md`); Homebrew as a separate
+slice. Avoid duplicate marketplace submissions while Cursor review is pending.
+Coordinate messaging with PR #6 (Developer ID first; MAS stretch).
 
 ---
 

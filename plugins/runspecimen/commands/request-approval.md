@@ -1,0 +1,21 @@
+---
+description: Hand off RunSpecimen approval to a human TTY (agents must not approve)
+---
+
+Show the user this exact command and pause until they confirm it completed in
+their own terminal:
+
+```bash
+runspecimen approve --workspace <workspace> --contract <contract>
+```
+
+Hard rules:
+
+- Never type or pipe `APPROVE`.
+- Never call companion `/v1/approve` or remote-confirm settle.
+- Never use internal test helpers that skip the TTY check.
+- Optional iOS companion remote-confirm is human-only (ADR-004) and is not
+  equivalent to local TTY approve.
+
+After the human confirms approval, continue with preflight → run → postflight →
+verify sequentially.

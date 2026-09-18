@@ -99,6 +99,60 @@ plugins/runspecimen/.codex-plugin/plugin.json
 
 ---
 
+## 2b. Claude Code marketplace
+
+**Status:** Package shipped in-repo; community marketplace **not submitted**
+
+**References:**
+- Plugin reference: https://code.claude.com/docs/en/plugins-reference
+- Marketplaces: https://code.claude.com/docs/en/plugin-marketplaces
+- Community catalog: `anthropics/claude-plugins-community` (public submission path)
+- Official curated catalog is invite/discretion-only (not an application guarantee)
+
+### Package locations
+
+```
+plugins/runspecimen/.claude-plugin/plugin.json
+.claude-plugin/marketplace.json
+plugins/runspecimen/.mcp.json
+plugins/runspecimen/hooks/hooks.json
+```
+
+### Local install (before marketplace acceptance)
+
+```bash
+# From a clone of this repo:
+claude plugin marketplace add ./
+claude plugin install runspecimen@runspecimen
+# or symlink plugins/runspecimen into a Claude plugins/skills directory
+```
+
+**MANUAL ACTION REQUIRED:** Human must submit to the Claude community marketplace
+when ready. Do not claim official Anthropic marketplace listing without acceptance.
+
+---
+
+## 2c. Grok Build (xAI)
+
+**Status:** Shipped via Claude Code compatibility + `plugins/runspecimen/grok/`
+
+Grok Build discovers Claude plugins/skills/hooks/MCP. Install:
+
+```bash
+mkdir -p ~/.grok/plugins
+ln -sfn "$(pwd)/plugins/runspecimen" ~/.grok/plugins/runspecimen
+grok plugin validate ~/.grok/plugins/runspecimen
+```
+
+See `plugins/runspecimen/grok/README.md`. No separate xAI partner plugin SDK is
+required today; treat any Grok marketplace listing as **not submitted** until
+published intentionally.
+
+**MANUAL ACTION REQUIRED:** Optional self-hosted marketplace source when Yahor
+wants in-product discovery beyond the symlink path.
+
+---
+
 ## 3. PyPI (Python Package Index)
 
 **Status:** Last published `0.2.0rc9`; **`0.2.0rc10` not published yet**
@@ -159,6 +213,8 @@ listings are confirmed live (not pending review).
 | GitHub Release | ❌ | rc10 proposed | last live: [v0.2.0-rc.9](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.9) | prospective [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) |
 | Cursor Marketplace | ❌ | - | - | - |
 | Codex Directory | ❌ | - | - | - |
+| Claude Code community | ❌ | package ready in-repo | - | - |
+| Grok Build | ❌ | Claude-compat package ready | - | local symlink / self-host |
 | PyPI | ❌ (rc10) | after GitHub Release | last live: `0.2.0rc9` | [runspecimen](https://pypi.org/project/runspecimen/) |
 
 **Important:** Do not claim a listing is "public" or "available" until:
@@ -174,5 +230,7 @@ After each channel goes live, verify:
 
 1. **Cursor:** Search "runspecimen" in Cursor Marketplace
 2. **Codex:** Search "runspecimen" in ChatGPT/Codex Plugins Directory
-3. **PyPI:** `pip install runspecimen` works and `runspecimen --version` shows `0.2.0rc10`
-4. **Website:** Update with verified live links only
+3. **Claude Code:** `/plugin` discover after marketplace add; confirm skill + MCP
+4. **Grok Build:** `grok inspect` shows skill/hooks/MCP after symlink
+5. **PyPI:** `pip install runspecimen` works and `runspecimen --version` shows `0.2.0rc10`
+6. **Website:** Update with verified live links only

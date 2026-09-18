@@ -254,10 +254,11 @@ runspecimen dashboard --workspace . --contract path/to/contract.json --open
   lifecycle commands. Agents must not wait on it in the main turn.
 - Startup prints JSON like `{"ok": true, "url": "http://127.0.0.1:…/", "loopback_only": true}`.
 
-## Plugins (Cursor / Codex)
+## Plugins (Cursor / Codex / Claude / Grok)
 
 Package root: `plugins/runspecimen`. The plugin is an **adapter**; the CLI on
-`PATH` remains the enforcement boundary.
+`PATH` remains the enforcement boundary. Status ledger:
+[INTEGRATIONS.md](INTEGRATIONS.md).
 
 Install:
 
@@ -267,13 +268,21 @@ Install:
 - **Cursor (local):** symlink `plugins/runspecimen` to
   `~/.cursor/plugins/local/runspecimen`, reload Cursor, confirm skill/rule in
   Customize.
+- **Claude Code:** add this repo as a marketplace (`.claude-plugin/marketplace.json`)
+  and install `runspecimen`, or symlink `plugins/runspecimen` into a Claude
+  plugin/skills directory. Includes commands, PreToolUse approve-gate hook, and
+  stdio MCP (`.mcp.json`).
+- **Grok Build:** Grok reads Claude Code plugins — symlink to
+  `~/.grok/plugins/runspecimen` (see `plugins/runspecimen/grok/README.md`).
+  Optional: copy `plugins/runspecimen/grok/AGENTS.md` into the project.
 
-Adapter limits (`plugins/runspecimen/scripts/runspecimen_adapter.py`):
+Adapter limits (`scripts/runspecimen_adapter.py` and `scripts/runspecimen_mcp.py`):
 
 - Allowed: `about`, `dashboard`, `doctor`, `validate`, `status`, `preflight`, `run`,
   `postflight`, `verify`
-- **Not allowed:** `approve` (and anything else). A human must run
-  `runspecimen approve …` in a real terminal.
+- **Not allowed:** `approve`, remote-confirm settle, companion `/v1/approve`. A
+  human must run `runspecimen approve …` in a real terminal. Claude/Grok also
+  get a PreToolUse deny hook (`scripts/block_approve_gate.py`).
 
 ## Showcase refresh (host-bound)
 
@@ -357,6 +366,7 @@ exclude `approve`.
 - [PRODUCT_PLAN.md](PRODUCT_PLAN.md)
 - [THREAT_MODEL.md](THREAT_MODEL.md)
 - [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)
+- [Integrations](INTEGRATIONS.md) — adapter status ledger + frontier research
 - [GROK_TANDEM.md](GROK_TANDEM.md) — external Grok review log
 - [CHATGPT_TANDEM.md](CHATGPT_TANDEM.md) — ChatGPT tandem history
 - [SECURITY.md](../SECURITY.md)

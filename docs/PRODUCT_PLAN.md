@@ -63,7 +63,9 @@ all declared runtime inputs, and validate the threat model.
   adapter.
 - Codex Plugin Directory package: the same contract workflow and narrow local
   adapter.
-- Claude Code plugin and Homebrew distribution next.
+- Claude Code plugin + Grok Build Claude-compat package: shipped in-repo
+  (`docs/INTEGRATIONS.md`); marketplace submission still manual.
+- Homebrew distribution next.
 - Adapters remain free and never contain a generic shell escape hatch.
 
 Exit condition: a new user can install from an agent marketplace and produce a

@@ -7,8 +7,9 @@ description: Use when a consequential local command should be explicitly approve
 
 Use the installed `runspecimen` CLI as the enforcement boundary. The CLI must be
 on `PATH` (`command -v runspecimen`). Never imitate an approval, call internal
-test helpers, pipe approval input, or weaken a contract to make a refusal
-disappear.
+test helpers, pipe approval input, settle remote-confirm, call companion
+`/v1/approve`, or weaken a contract to make a refusal disappear. Host adapters
+(Codex, Cursor, Claude Code, Grok Build, MCP) omit `approve` on purpose.
 
 For a short product summary and documentation URLs, run `runspecimen about` or
 point the user at the dashboard About panel (User guide and FAQ links open on

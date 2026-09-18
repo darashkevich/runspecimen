@@ -30,13 +30,16 @@ EXPECTED_PLUGIN_VERSION = "0.2.0-rc.10"
 SOURCE_COMPONENTS = (
     "pyproject.toml", "MANIFEST.in", "README.md", "LICENSE", "CHANGELOG.md",
     "SECURITY.md", "src", "scripts", "tests", "docs", "examples", "work",
-    "plugins", ".cursor", ".cursor-plugin", ".agents",
+    "plugins", ".cursor", ".cursor-plugin", ".claude-plugin", ".agents",
 )
 PLUGIN_COMPONENTS = (
-    ".codex-plugin/plugin.json", ".cursor-plugin/plugin.json", "README.md",
+    ".codex-plugin/plugin.json", ".cursor-plugin/plugin.json",
+    ".claude-plugin/plugin.json", ".mcp.json", "README.md",
     "assets/runspecimen-logo.png",
     "rules/runspecimen.mdc", "scripts/runspecimen_adapter.py",
-    "skills/runspecimen/SKILL.md",
+    "scripts/block_approve_gate.py", "scripts/runspecimen_mcp.py",
+    "hooks/hooks.json", "skills/runspecimen/SKILL.md",
+    "commands/request-approval.md", "grok/README.md", "grok/AGENTS.md",
 )
 FORBIDDEN_PARTS = frozenset({".git", ".runspecimen", ".tools", "__pycache__"})
 
@@ -59,12 +62,15 @@ def check_versions() -> None:
         if match is None or match.group(1) != EXPECTED_PYTHON_VERSION:
             raise SystemExit(f"{relative} version does not match release_check.py")
     plugin_root = ROOT / "plugins/runspecimen"
-    plugin = json.loads((plugin_root / PLUGIN_COMPONENTS[0]).read_text(encoding="utf-8"))
-    cursor = json.loads((plugin_root / PLUGIN_COMPONENTS[1]).read_text(encoding="utf-8"))
+    plugin = json.loads((plugin_root / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
+    cursor = json.loads((plugin_root / ".cursor-plugin/plugin.json").read_text(encoding="utf-8"))
+    claude = json.loads((plugin_root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
     if plugin.get("version", "").split("+", 1)[0] != EXPECTED_PLUGIN_VERSION:
         raise SystemExit("Codex plugin version does not match release_check.py")
     if cursor.get("version") != EXPECTED_PLUGIN_VERSION or cursor.get("name") != plugin.get("name"):
         raise SystemExit("Cursor plugin version/name is inconsistent")
+    if claude.get("version") != EXPECTED_PLUGIN_VERSION or claude.get("name") != plugin.get("name"):
+        raise SystemExit("Claude plugin version/name is inconsistent")
     prompts = plugin.get("interface", {}).get("defaultPrompt")
     if not isinstance(prompts, list) or not prompts or not all(
         isinstance(item, str) and item for item in prompts
@@ -79,6 +85,18 @@ def check_versions() -> None:
         ("version", EXPECTED_PLUGIN_VERSION),
     )):
         raise SystemExit("Cursor marketplace entry is inconsistent")
+    claude_market = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
+    claude_entries = claude_market.get("plugins")
+    if not isinstance(claude_entries, list) or len(claude_entries) != 1:
+        raise SystemExit("Claude marketplace must contain exactly the RunSpecimen plugin")
+    if any(claude_entries[0].get(key) != value for key, value in (
+        ("name", "runspecimen"), ("source", "./plugins/runspecimen"),
+        ("version", EXPECTED_PLUGIN_VERSION),
+    )):
+        raise SystemExit("Claude marketplace entry is inconsistent")
+    mcp = json.loads((plugin_root / ".mcp.json").read_text(encoding="utf-8"))
+    if "runspecimen" not in (mcp.get("mcpServers") or {}):
+        raise SystemExit("plugin .mcp.json must declare runspecimen server")
     for relative in PLUGIN_COMPONENTS:
         if not (plugin_root / relative).is_file():
             raise SystemExit(f"missing plugin component: {relative}")

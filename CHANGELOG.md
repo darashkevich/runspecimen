@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Claude Code and Grok Build adapters
+
+- Extend `plugins/runspecimen` with Claude Code manifest (`.claude-plugin/`),
+  slash commands, PreToolUse approve-gate hook, and a local stdio MCP server
+  that never exposes `approve` / remote-confirm settle.
+- Cover Grok Build via Claude Code compatibility plus `plugins/runspecimen/grok/`
+  install notes and optional `AGENTS.md`.
+- Add repo marketplace catalog `.claude-plugin/marketplace.json` and central
+  ledger/research brief `docs/INTEGRATIONS.md` (next targets: Gemini, JetBrains,
+  Windsurf).
+- Tests: `tests/test_plugins.py` for manifests, adapter allow-list, approve-gate,
+  and MCP tool exclusion.
+
 ## 0.2.0rc10 - 2026-09-15
 
 ### Optional Ed25519 public-key receipts (Phase 1)
