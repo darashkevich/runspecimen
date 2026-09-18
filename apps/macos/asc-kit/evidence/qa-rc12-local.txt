@@ -1,24 +1,26 @@
-Local QA 2026-09-18 (not a GitHub Release; do not publish these bytes as the tag)
+Local QA at git `e2d0e85e1b7b2030a7d337cc5d58cd667550e2e4` (not a GitHub Release; do not publish these bytes as the tag)
 
-Working tree before commit; commands:
+Commands:
 
 - /tmp/rs-rc12-venv/bin/python scripts/release_check.py --output-dir /tmp/rs-rc12-artifacts
-  → RunSpecimen release candidate checks passed. version=0.2.0rc12
+  → passed. version=0.2.0rc12 (re-run on this commit)
 - apps/macos/Scripts/verify_app_icon.sh → OK (actool, no warnings)
 - env -u RS_ARCHIVE_* apps/macos/Scripts/test_store_export_gate.sh → STORE EXPORT GATE TESTS OK
 - xcodebuild -scheme RunSpecimenObserve -destination 'generic/platform=iOS Simulator' -quiet build → exit 0
-- rsync working tree → /tmp/rs-qa-rc12; apps/macos/Scripts/smoke_macos.sh → SMOKE OK
+- rsync tree → /tmp/rs-qa-rc12; apps/macos/Scripts/smoke_macos.sh → SMOKE OK
   swift test All tests passed (CLIVersionGate + WindowPlacement)
   MAS frozen helper runspecimen 0.2.0rc12 (sandbox+inherit; shell rc=133)
   MAS SANDBOX E2E OK — prompt observed; still waiting; no APPROVE sent
 
-Validated local artifacts (checksum-only; not tagged, not on PyPI):
+Validated artifacts at this commit (checksum-only; not tagged, not on PyPI):
 
-38203deb104a975072929b595e6c3834e94b7d32c5fc10523746d4462cce505f  runspecimen-0.2.0rc12-py3-none-any.whl
-3f043c0e8169174f4a2ef9e507ba01f0692a2db48c794ed2171cf52b919947bd  runspecimen-0.2.0rc12.tar.gz
+1aaa0073ff7e2ce8fce94040d0f644d54293333a5f90b74030af0c0d18b3d504  runspecimen-0.2.0rc12-py3-none-any.whl
+7ddcb3688439631dfe101755fb657003e0b346a91efae98fb29d67e8b63d158e  runspecimen-0.2.0rc12.tar.gz
 1d1b27e4e99baf5fbcd27aa20e162c416d47d6ec26ecc28e7a81a285782db4c1  runspecimen-plugin-0.2.0-rc.12.zip
 
-Re-run release_check on the merged green commit before tagging. Hashes will change
-if source changes after this file.
+`scripts/verify_release_assets.py --dir /tmp/rs-rc12-artifacts --repo . --tag v0.2.0-rc.12 --require-pypi`
+→ OK; PROVENANCE: checksum-only
+
+Re-run release_check on the **merged green** commit before tagging. Hashes change if source changes.
 
 Host PATH CLI may still print 0.2.0rc11; that is not the freeze.
