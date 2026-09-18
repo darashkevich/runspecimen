@@ -1,70 +1,37 @@
-# Release identity (do not ship the rc11 draft)
+# Release identity
 
-This file is the operator contract for the next public Python/plugin cut.
-It does **not** authorize merge, GitHub Release publish, PyPI upload, or
-App Store Connect changes.
+Python/plugin cut currently public: **`0.2.0rc12`** / **`v0.2.0-rc.12`**.
+This file records what shipped; it does not authorize App Store Connect changes.
 
 ## What is live today
 
 | Channel | Identity | Evidence |
 | --- | --- | --- |
-| GitHub Release | **`v0.2.0-rc.10`** (published) | https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10 |
-| PyPI | **`0.2.0rc10`** | https://pypi.org/project/runspecimen/0.2.0rc10/ |
-| Product site | rc10 install + “not yet public” Store language | do not retarget until GitHub **and** PyPI match a new version |
+| GitHub Release | **`v0.2.0-rc.12`** (published prerelease) | https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.12 · tag peels to `eb23483bfa7c4e2ac62a3802fa2feb5d87f53cdd` |
+| PyPI | **`0.2.0rc12`** (identical SHA-256 to GitHub) | https://pypi.org/project/runspecimen/0.2.0rc12/ |
+| Product site | `python3 -m pip install runspecimen==0.2.0rc12` | https://runspecimen.darashkevich.com/ |
 | Mac App Store | **not public** | Connect macOS **0.1.3 (5)** is `WAITING_FOR_REVIEW` — no `apps.apple.com` URL |
 
-rc10 GitHub Release bytes and PyPI bytes were produced by **separate rebuilds**.
-Do not treat those SHA-256 values as identical. Do **not** retag or republish
-rc10 to “fix” that split.
+Install pin is required: pip will not select an RC without `==0.2.0rc12`.
 
-| Artifact | GitHub Release SHA-256 | PyPI SHA-256 |
-| --- | --- | --- |
-| `runspecimen-0.2.0rc10-py3-none-any.whl` | `d82d04cc…` (release assets) | `26dd3aafd34da609f5cad36ace839188ef1e104b604a5dd1873171db081f88d7` |
-| `runspecimen-0.2.0rc10.tar.gz` | `086bd860…` (release assets) | `369950aad9620a34906a919b4c2886b5c7d23853ef9e6a0014bd8b881f5d3469` |
+### rc12 identical bytes (checksum-only)
 
-The next published candidate must use **one validated wheel + sdist** as
-identical bytes on GitHub and PyPI (`publish-pypi.yml` downloads release
-assets; it does not rebuild).
+| Artifact | SHA-256 (GitHub Release = PyPI) |
+| --- | --- |
+| `runspecimen-0.2.0rc12-py3-none-any.whl` | `4ad914698f3856693349274d235a079ecb562e7f6be63e619c616da4cb1d0939` |
+| `runspecimen-0.2.0rc12.tar.gz` | `bf1f1a6223a1f65504a13f98bb1ddbad773dffd458bb6b5dcf32920c43c8bfed` |
+| `runspecimen-plugin-0.2.0-rc.12.zip` | `1d1b27e4e99baf5fbcd27aa20e162c416d47d6ec26ecc28e7a81a285782db4c1` (GitHub only) |
+
+`publish-pypi.yml` downloaded those GitHub assets and uploaded the wheel/sdist without rebuilding. Provenance is **checksum-only**: `gh attestation verify` returns HTTP 404 (no GitHub SLSA attestation on the wheel).
 
 ## Do not publish `v0.2.0-rc.11`
 
-| Fact | Value |
-| --- | --- |
-| Draft GitHub Release | https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122 |
-| Annotated tag | `v0.2.0-rc.11` → `29ece2f` |
-| Peeled commit | **`ecc1709`** (`Align MAS E2E helper version gate with rc11.`) |
-| PR #15 tip (later) | packaging, AppIcon catalog, window clamp, PyPI download-not-rebuild |
+Draft https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122 still peels to **`ecc1709`**. Leave it unpublished. Do not move that tag.
 
-PR #15 changes the source archive and the PyPI workflow after `ecc1709`.
-Publishing the existing draft would ship the wrong tree. **Do not move that
-tag.** Leave the draft unpublished until a replacement is tagged from the
-**merged, green** commit.
+## Historical: rc10 digest split
 
-## Next public candidate: `0.2.0rc12`
-
-| Field | Value |
-| --- | --- |
-| PEP 440 | `0.2.0rc12` |
-| Git tag (create only after merge + green CI) | `v0.2.0-rc.12` (annotated, immutable) |
-| Plugin / marketplace manifests | `0.2.0-rc.12` |
-| Provenance | **checksum-only** (`SHA256SUMS`). `gh attestation verify` 404 means this candidate does **not** claim SLSA / GitHub Artifact Attestations |
-| Mac marketing version | `0.1.3` |
-| Next Connect upload | **build 6** (`CFBundleVersion`). Build **5** is already in review — do not reuse it |
-
-Operator sequence (Yahor):
-
-1. Merge the green PR to `main` (human decision; agents do not merge).
-2. Confirm `git rev-parse HEAD` is the merged green commit.
-3. `python3 scripts/release_check.py --output-dir /tmp/rs-rc12` (or CI-equivalent).
-4. Create annotated tag `v0.2.0-rc.12` on **that** commit. Never retarget.
-5. Attach **those same** wheel, sdist, plugin zip, and `SHA256SUMS` to a new
-   GitHub Release. Do not attach a rebuilt second set.
-6. Publish the GitHub Release (triggers OIDC PyPI of the downloaded bytes).
-7. Verify tag, filenames, and SHA-256 on GitHub **and** PyPI before any
-   website retarget.
+rc10 GitHub Release bytes and PyPI bytes were produced by **separate rebuilds**. Do not retag or republish rc10.
 
 ## Website / Store language
 
-Until step 7 is proven, keep rc10 install commands and “Mac App Store not yet
-public” copy. Add an `apps.apple.com` link only when Apple returns a working
-public URL.
+Product page install commands match **rc12**. Add an `apps.apple.com` link only when Apple returns a working public URL. Next Connect upload, if replacing review build 5, is **0.1.3 (6)**.
