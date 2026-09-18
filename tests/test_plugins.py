@@ -1,4 +1,4 @@
-"""Plugin adapter and approve-gate coverage for Codex/Cursor/Claude/Grok."""
+"""Plugin adapter and approve-gate coverage for Codex/Cursor/Claude/Grok/Gemini/Junie/Windsurf."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ PLUGIN = ROOT / "plugins" / "runspecimen"
 ADAPTER = PLUGIN / "scripts" / "runspecimen_adapter.py"
 GATE = PLUGIN / "scripts" / "block_approve_gate.py"
 MCP = PLUGIN / "scripts" / "runspecimen_mcp.py"
+IDE_ACTIONS = PLUGIN / "jetbrains" / "scripts" / "ide_actions.py"
 
 
 class PluginManifestTests(unittest.TestCase):
@@ -23,6 +24,7 @@ class PluginManifestTests(unittest.TestCase):
             "codex": PLUGIN / ".codex-plugin" / "plugin.json",
             "cursor": PLUGIN / ".cursor-plugin" / "plugin.json",
             "claude": PLUGIN / ".claude-plugin" / "plugin.json",
+            "gemini": PLUGIN / "gemini-extension.json",
         }
         loaded = {key: json.loads(path.read_text(encoding="utf-8")) for key, path in manifests.items()}
         for key, doc in loaded.items():
@@ -33,18 +35,39 @@ class PluginManifestTests(unittest.TestCase):
     def test_marketplaces_point_at_plugin(self) -> None:
         cursor = json.loads((ROOT / ".cursor-plugin" / "marketplace.json").read_text(encoding="utf-8"))
         claude = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+        junie = json.loads((ROOT / ".junie-extension" / "marketplace.json").read_text(encoding="utf-8"))
         self.assertEqual(cursor["plugins"][0]["source"], "plugins/runspecimen")
         self.assertEqual(claude["plugins"][0]["source"], "./plugins/runspecimen")
         self.assertEqual(claude["plugins"][0]["version"], "0.2.0-rc.10")
+        self.assertEqual(junie["extensions"][0]["source"], "./plugins/runspecimen")
+        self.assertEqual(junie["extensions"][0]["version"], "0.2.0-rc.10")
 
     def test_claude_hooks_and_mcp_present(self) -> None:
         hooks = json.loads((PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
         self.assertIn("PreToolUse", hooks["hooks"])
+        self.assertIn("BeforeTool", hooks["hooks"])
         mcp = json.loads((PLUGIN / ".mcp.json").read_text(encoding="utf-8"))
         self.assertIn("runspecimen", mcp["mcpServers"])
         self.assertTrue((PLUGIN / "grok" / "README.md").is_file())
         self.assertTrue((PLUGIN / "grok" / "AGENTS.md").is_file())
         self.assertTrue((PLUGIN / "commands" / "request-approval.md").is_file())
+
+    def test_gemini_windsurf_jetbrains_files_present(self) -> None:
+        self.assertTrue((PLUGIN / "GEMINI.md").is_file())
+        self.assertTrue((PLUGIN / "gemini" / "README.md").is_file())
+        self.assertTrue((PLUGIN / "commands" / "validate.toml").is_file())
+        self.assertTrue((PLUGIN / "commands" / "request-approval.toml").is_file())
+        self.assertTrue((PLUGIN / "extension.json").is_file())
+        self.assertTrue((PLUGIN / "jetbrains" / "README.md").is_file())
+        self.assertTrue((PLUGIN / "jetbrains" / "intellij-plugin" / "src" / "main" / "resources" / "META-INF" / "plugin.xml").is_file())
+        self.assertTrue((PLUGIN / "windsurf" / "skills" / "runspecimen" / "SKILL.md").is_file())
+        self.assertTrue((PLUGIN / "windsurf" / "rules" / "runspecimen.md").is_file())
+        gemini = json.loads((PLUGIN / "gemini-extension.json").read_text(encoding="utf-8"))
+        self.assertIn("runspecimen", gemini["mcpServers"])
+        self.assertTrue(any("approve" in item for item in gemini.get("excludeTools", [])))
+        plugin_xml = (PLUGIN / "jetbrains" / "intellij-plugin" / "src" / "main" / "resources" / "META-INF" / "plugin.xml").read_text(encoding="utf-8")
+        self.assertNotIn("ApproveAction", plugin_xml)
+        self.assertIn("RequestApprovalAction", plugin_xml)
 
 
 class AdapterAllowListTests(unittest.TestCase):
@@ -61,9 +84,9 @@ class AdapterAllowListTests(unittest.TestCase):
 
 
 class ApproveGateTests(unittest.TestCase):
-    def _run_gate(self, payload: dict) -> tuple[int, dict | None]:
+    def _run_gate(self, payload: dict, extra_args: list[str] | None = None) -> tuple[int, dict | None]:
         completed = subprocess.run(
-            [sys.executable, str(GATE)],
+            [sys.executable, str(GATE), *(extra_args or [])],
             input=json.dumps(payload),
             check=False,
             capture_output=True,
@@ -107,6 +130,30 @@ class ApproveGateTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIsNone(doc)
 
+    def test_gemini_format_deny(self) -> None:
+        code, doc = self._run_gate(
+            {
+                "hook_event_name": "BeforeTool",
+                "tool_name": "run_shell_command",
+                "tool_input": {"command": "runspecimen approve --workspace . --contract c.json"},
+            },
+            extra_args=["--format", "gemini"],
+        )
+        self.assertEqual(code, 0)
+        assert doc is not None
+        self.assertEqual(doc.get("decision"), "deny")
+        self.assertIn("TTY", doc.get("reason", ""))
+        self.assertNotIn("hookSpecificOutput", doc)
+
+    def test_auto_detects_gemini_beforetool(self) -> None:
+        _, doc = self._run_gate({
+            "hook_event_name": "BeforeTool",
+            "tool_name": "run_shell_command",
+            "tool_input": {"command": "echo APPROVE"},
+        })
+        assert doc is not None
+        self.assertEqual(doc.get("decision"), "deny")
+
 
 class McpAdapterTests(unittest.TestCase):
     def _rpc(self, request: dict) -> dict:
@@ -148,6 +195,40 @@ class McpAdapterTests(unittest.TestCase):
         self.assertTrue(response["result"]["isError"])
         text = response["result"]["content"][0]["text"]
         self.assertIn("not available", text.lower())
+
+
+class JetBrainsIdeActionTests(unittest.TestCase):
+    def test_request_approval_prints_handoff_only(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(IDE_ACTIONS),
+                "request-approval",
+                "--workspace",
+                str(ROOT),
+                "--contract",
+                str(ROOT / "examples" / "demo_contract.json"),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        out = completed.stdout or ""
+        self.assertIn("runspecimen approve", out)
+        self.assertIn("Human TTY approval required", out)
+        self.assertNotIn("APPROVE\n", out)
+
+    def test_rejects_approve_action_name(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(IDE_ACTIONS), "approve", "--workspace", str(ROOT)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        combined = (completed.stdout or "") + (completed.stderr or "")
+        self.assertTrue("approve" in combined.lower() or "invalid" in combined.lower() or completed.returncode == 2)
 
 
 if __name__ == "__main__":

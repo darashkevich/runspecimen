@@ -1,0 +1,20 @@
+---
+description: Guard consequential local commands with RunSpecimen
+trigger: model_decision
+---
+
+When a user asks for a consequential, long-running, expensive, or provenance-
+sensitive local command, use the installed `runspecimen` CLI on `PATH`. Start
+with `doctor` and `validate`. Never type or pipe the `APPROVE` phrase; the user
+must complete `runspecimen approve --workspace … --contract …` in a real
+terminal. After approval, invoke `preflight`, `run`, `postflight`, then
+`runspecimen verify --workspace … --contract … --campaign-id … --run-id …`
+sequentially and stop on any refusal. Never bypass the CLI with RunSpecimen's
+internal test helpers. Explain that RunSpecimen is an orchestration/evidence
+layer and not an OS sandbox.
+
+When the user requests a visual view, launch only the loopback, read-only
+dashboard with `runspecimen dashboard --workspace … --contract … --open`.
+`dashboard` blocks in the foreground; background or detach it so the agent can
+keep running lifecycle commands. The dashboard cannot replace the real-terminal
+approval step.

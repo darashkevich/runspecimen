@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
-"""PreToolUse gate: refuse agent-driven RunSpecimen approval / settle paths.
+"""PreToolUse / BeforeTool gate: refuse agent-driven approval / settle paths.
 
-Claude Code and Grok Build invoke this hook with JSON on stdin. When the tool
-input looks like typing APPROVE, running ``runspecimen approve``, settling
-remote-confirm, or calling a forbidden companion approve path, deny the call.
-Silence (exit 0, no JSON) means the hook takes no permission decision.
+Claude Code, Grok Build, and Junie invoke this hook with JSON on stdin and
+expect Claude-shaped ``hookSpecificOutput.permissionDecision`` output.
+
+Gemini CLI uses ``BeforeTool`` and expects top-level ``decision`` / ``reason``.
+
+When the tool input looks like typing APPROVE, running ``runspecimen approve``,
+settling remote-confirm, or calling a forbidden companion approve path, deny
+the call. Silence (exit 0, no JSON) means the hook takes no permission decision.
+
+Pass ``--format gemini|claude`` to force an output dialect; default is auto
+(detect ``hook_event_name`` / ``BeforeTool`` → gemini, else claude).
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -63,7 +71,25 @@ def should_deny(payload: dict[str, Any]) -> bool:
     return any(pattern.search(text) for pattern in _PATTERNS)
 
 
-def deny_payload() -> dict[str, Any]:
+def resolve_format(payload: dict[str, Any], forced: str | None) -> str:
+    if forced in {"claude", "gemini"}:
+        return forced
+    event = str(
+        payload.get("hook_event_name")
+        or payload.get("hookEventName")
+        or ""
+    ).lower()
+    if event in {"beforetool", "before_tool", "aftertool", "after_tool"}:
+        return "gemini"
+    return "claude"
+
+
+def deny_payload(fmt: str) -> dict[str, Any]:
+    if fmt == "gemini":
+        return {
+            "decision": "deny",
+            "reason": DENY_REASON,
+        }
     return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -73,7 +99,11 @@ def deny_payload() -> dict[str, Any]:
     }
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--format", choices=("auto", "claude", "gemini"), default="auto")
+    args, _unknown = parser.parse_known_args(argv)
+
     raw = sys.stdin.read()
     if not raw.strip():
         return 0
@@ -84,7 +114,9 @@ def main() -> int:
     if not isinstance(payload, dict):
         return 0
     if should_deny(payload):
-        json.dump(deny_payload(), sys.stdout)
+        forced = None if args.format == "auto" else args.format
+        fmt = resolve_format(payload, forced)
+        json.dump(deny_payload(fmt), sys.stdout)
         sys.stdout.write("\n")
         return 0
     return 0

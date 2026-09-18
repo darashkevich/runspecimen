@@ -1,0 +1,32 @@
+<idea-plugin>
+  <id>com.runspecimen.intellij</id>
+  <name>RunSpecimen</name>
+  <vendor url="https://github.com/darashkevich/runspecimen">RunSpecimen Contributors</vendor>
+  <description><![CDATA[
+    Adapter for the RunSpecimen CLI: validate, status, request human TTY approval,
+    and verify. Does <b>not</b> approve runs inside the IDE — approval stays on a
+    real terminal. Requires <code>runspecimen</code> on PATH.
+  ]]></description>
+  <depends>com.intellij.modules.platform</depends>
+  <actions>
+    <group id="RunSpecimen.Menu" text="RunSpecimen" description="RunSpecimen CLI actions">
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+      <action id="RunSpecimen.Validate"
+              class="com.runspecimen.intellij.ValidateAction"
+              text="Validate Contract"
+              description="Run runspecimen validate via the adapter"/>
+      <action id="RunSpecimen.Status"
+              class="com.runspecimen.intellij.StatusAction"
+              text="Status"
+              description="Run runspecimen status via the adapter"/>
+      <action id="RunSpecimen.RequestApproval"
+              class="com.runspecimen.intellij.RequestApprovalAction"
+              text="Request Human Approval…"
+              description="Show the TTY approve command; never types APPROVE"/>
+      <action id="RunSpecimen.Verify"
+              class="com.runspecimen.intellij.VerifyAction"
+              text="Verify Receipt"
+              description="Run runspecimen verify via the adapter"/>
+    </group>
+  </actions>
+</idea-plugin>

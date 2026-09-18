@@ -1,0 +1,13 @@
+description = "Validate a RunSpecimen contract (never approves)"
+prompt = """
+Use the installed `runspecimen` CLI on PATH for this workspace.
+
+1. Confirm `command -v runspecimen`.
+2. Run `runspecimen doctor --workspace <workspace>`.
+3. Run `runspecimen validate --workspace <workspace> --contract <contract>`.
+4. Show the exact argv, outputs, timeout, and limitations.
+5. Do NOT type APPROVE, run `runspecimen approve`, or settle remote-confirm.
+   Ask the human to approve in a real terminal when they are ready.
+
+User notes: {{args}}
+"""

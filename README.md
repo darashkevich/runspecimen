@@ -132,10 +132,11 @@ runspecimen verify --workspace . --contract examples/demo_contract.json \
 runspecimen status --workspace . --campaign-id demo-campaign --run-id run-001
 ```
 
-## Local dashboard for Codex, Cursor, Claude, and Grok users
+## Local dashboard for agent-host users
 
 Open a contract-scoped dashboard from a terminal, or ask the installed
-RunSpecimen integration (Codex / Cursor / Claude Code / Grok Build) to do so:
+RunSpecimen integration (Codex / Cursor / Claude Code / Grok Build / Gemini CLI /
+Junie / Windsurf) to do so:
 
 ```bash
 runspecimen dashboard --workspace . --contract examples/demo_contract.json --open
@@ -272,7 +273,8 @@ into the certificate's `runtime_id`.
   libraries, environment variables, and input datasets still need to be placed
   in `source.roots` or otherwise asserted by the workload.
 - This release is licensed under Apache-2.0. The CLI remains the enforcement
-  boundary; Codex, Cursor, Claude Code, and Grok Build integrations are
+  boundary; Codex, Cursor, Claude Code, Grok Build, Gemini CLI, Junie, and
+  Windsurf integrations are
   constrained adapters to it (no auto-approve).
 
 ## Non-goals

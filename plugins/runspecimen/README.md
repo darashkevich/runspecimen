@@ -1,7 +1,8 @@
 # RunSpecimen agent adapter
 
-This plugin teaches Codex, Cursor, Claude Code, and Grok Build to put
-consequential local commands behind the RunSpecimen lifecycle.
+This plugin teaches Codex, Cursor, Claude Code, Grok Build, Gemini CLI, Junie,
+and Windsurf to put consequential local commands behind the RunSpecimen
+lifecycle.
 
 **Prerequisite:** the `runspecimen` CLI must be on `PATH` (`command -v
 runspecimen`). Install the engine first (`pip install .` or
@@ -26,6 +27,14 @@ does not ship the enforcement binary.
 - **Grok Build (xAI):** Grok reads Claude Code plugins. Symlink this directory to
   `~/.grok/plugins/runspecimen` (see `grok/README.md`), or enable Claude compat
   discovery. Optional project instructions: copy `grok/AGENTS.md`.
+- **Gemini CLI:** `gemini extensions link` / `install` this directory (see
+  `gemini/README.md`). Manifest: `gemini-extension.json`.
+- **JetBrains Junie:** add this repo as a marketplace (`.junie-extension/` or
+  `.claude-plugin/`) and install `runspecimen` (see `jetbrains/README.md`).
+  IntelliJ scaffold: `jetbrains/intellij-plugin/` (no in-IDE Approve).
+- **Windsurf:** symlink `windsurf/skills/runspecimen` and
+  `windsurf/rules/runspecimen.md` into `.windsurf/` or
+  `~/.codeium/windsurf/` (see `windsurf/README.md`).
 
 ## Boundary
 
@@ -44,17 +53,19 @@ Approve-safety layers in this package:
 1. Skill / rules / commands instruct agents to pause for human TTY approve.
 2. `scripts/runspecimen_adapter.py` and `scripts/runspecimen_mcp.py` omit
    `approve` (and remote-confirm settle) from their allow-lists.
-3. Claude/Grok `hooks/hooks.json` + `scripts/block_approve_gate.py` deny Bash or
-   MCP tool calls that look like typing `APPROVE`, running `runspecimen
-   approve`, or settling remote-confirm.
+3. `hooks/hooks.json` + `scripts/block_approve_gate.py` deny Bash/shell or MCP
+   tool calls that look like typing `APPROVE`, running `runspecimen approve`,
+   or settling remote-confirm (Claude `PreToolUse` + Gemini `BeforeTool`).
+4. JetBrains `ide_actions.py` / IntelliJ scaffold expose `request-approval`
+   handoff only — never an Approve action.
 
-## MCP (Claude Code / Claude Desktop / Grok)
+## MCP (Claude / Gemini / Junie / Desktop / Grok / Windsurf)
 
-`.mcp.json` starts a local stdio MCP server (`scripts/runspecimen_mcp.py`) that
-exposes only: `about`, `doctor`, `validate`, `status`, `preflight`, `run`,
-`postflight`, `verify`, `dashboard`. No network phone-home. For Claude Desktop
-outside the plugin, point an MCP server entry at the same script with an
-absolute path.
+`.mcp.json` (and Gemini/Junie mirrors) starts a local stdio MCP server
+(`scripts/runspecimen_mcp.py`) that exposes only: `about`, `doctor`,
+`validate`, `status`, `preflight`, `run`, `postflight`, `verify`, `dashboard`.
+No network phone-home. For hosts outside a plugin install, point an MCP server
+entry at the same script with an absolute path.
 
 ## Local dashboard
 

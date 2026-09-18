@@ -23,10 +23,11 @@ include work/compute.py
 include plugins/runspecimen/assets/runspecimen-logo.png
 recursive-include scripts *.py *.sh
 recursive-include tests *.py
-recursive-include plugins *.json *.md *.mdc *.py
+recursive-include plugins *.json *.md *.mdc *.py *.toml *.kt *.kts *.xml
 recursive-include .cursor *.mdc
 recursive-include .cursor-plugin *.json
 recursive-include .claude-plugin *.json
+recursive-include .junie-extension *.json
 recursive-include .agents *.json
 prune examples/showcase/.runspecimen
 global-exclude __pycache__ *.py[cod] .DS_Store

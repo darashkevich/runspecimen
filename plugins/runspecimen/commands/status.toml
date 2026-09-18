@@ -1,0 +1,11 @@
+description = "Read-only RunSpecimen status for a campaign/run"
+prompt = """
+Run a read-only status check (cannot approve, preflight, run, or settle):
+
+```bash
+runspecimen status --workspace <workspace> \
+  --campaign-id <campaign_id> --run-id <run_id>
+```
+
+User notes: {{args}}
+"""

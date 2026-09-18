@@ -20,6 +20,28 @@
           }
         ]
       }
+    ],
+    "BeforeTool": [
+      {
+        "matcher": "run_shell_command",
+        "hooks": [
+          {
+            "type": "command",
+            "name": "runspecimen-block-approve-shell",
+            "command": "python3 \"${extensionPath}${/}scripts${/}block_approve_gate.py\" --format gemini"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp_runspecimen_.*",
+        "hooks": [
+          {
+            "type": "command",
+            "name": "runspecimen-block-approve-mcp",
+            "command": "python3 \"${extensionPath}${/}scripts${/}block_approve_gate.py\" --format gemini"
+          }
+        ]
+      }
     ]
   }
 }
