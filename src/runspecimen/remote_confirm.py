@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import secrets
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -39,6 +41,8 @@ CLAIM_TEXT = (
     "Remote human confirm of a Mac-armed pending approval; "
     "distinct from interactive TTY APPROVE."
 )
+MAX_REFUSE_REASON_CHARS = 240
+QUIET_HOURS_ENV = "RUNSPECIMEN_QUIET_HOURS"
 
 _TERMINAL_PHASES = frozenset({"running", "completed", "failed", "postflighted", "abandoned"})
 
@@ -132,7 +136,15 @@ def public_pending_view(pending: dict[str, Any] | None, *, now: float | None = N
         "confirm_channel": CONFIRM_CHANNEL,
         "not_equivalent_to": NOT_EQUIVALENT_TO,
         "claim": CLAIM_TEXT,
-        "instruction": "Type the Mac-displayed challenge and the word APPROVE.",
+        "instruction": (
+            "Type the Mac-displayed challenge and the word APPROVE. "
+            "Refuse requires the same challenge plus a reason."
+        ),
+        "who": "operator · workspace",
+        "what": (
+            f"{pending.get('campaign_id')}/{pending.get('run_id')}"
+            + (f" · {str(pending.get('contract_hash'))[:12]}" if pending.get("contract_hash") else "")
+        ),
     }
 
 
@@ -156,6 +168,11 @@ def arm_remote_confirm(
 
     if ttl_sec < 30 or ttl_sec > 3600:
         raise RunSpecimenError("remote-confirm ttl_sec must be between 30 and 3600")
+    if quiet_hours_blocks_arm(now=now):
+        raise RunSpecimenError(
+            f"refuse remote-confirm arm: {QUIET_HOURS_ENV} is active "
+            "(quiet hours never auto-APPROVE; wait or unset the env)"
+        )
 
     workspace = resolve_workspace(workspace)
     contract = load_contract(contract_path)
@@ -258,6 +275,147 @@ def _arm_under_lease(
         "not_equivalent_to": NOT_EQUIVALENT_TO,
         "attention_notification": attention,
         "adr": "docs/ADR-004-remote-human-confirm.md",
+    }
+
+
+def quiet_hours_blocks_arm(*, now: float | None = None) -> bool:
+    """Refuse arming when RUNSPECIMEN_QUIET_HOURS=HH-HH is set and local hour is inside the window."""
+    raw = os.environ.get(QUIET_HOURS_ENV, "").strip()
+    if not raw:
+        return False
+    parts = raw.replace("–", "-").split("-")
+    if len(parts) != 2:
+        raise RunSpecimenError(f"{QUIET_HOURS_ENV} must look like 22-07")
+    try:
+        start = int(parts[0])
+        end = int(parts[1])
+    except ValueError as exc:
+        raise RunSpecimenError(f"{QUIET_HOURS_ENV} must look like 22-07") from exc
+    if not (0 <= start <= 23 and 0 <= end <= 23):
+        raise RunSpecimenError(f"{QUIET_HOURS_ENV} hours must be 0-23")
+    if start == end:
+        return False
+    if now is None:
+        hour = datetime.now().hour
+    else:
+        hour = datetime.fromtimestamp(now).hour
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end
+
+
+def run_ontology_chips(
+    *,
+    contract: Contract,
+    workspace: Path,
+    pending: dict[str, Any] | None,
+    now: float | None = None,
+) -> dict[str, Any]:
+    """Blast-radius stand-ins for runs (not money/audience)."""
+    from runspecimen.lease import Lease
+
+    ts = time.time() if now is None else now
+    expiry = "—"
+    expires = None if pending is None else pending.get("expires_at_unix")
+    if isinstance(expires, (int, float)):
+        remaining = max(0, int(float(expires) - ts))
+        expiry = f"{remaining}s"
+    lease = Lease.for_workspace(workspace, holder="status")
+    pred = "none"
+    if contract.predecessor is not None:
+        pred = f"{contract.predecessor.campaign_id}/{contract.predecessor.run_id}"
+    return {
+        "expiry": expiry,
+        "lease": "held" if lease.is_locked_by_other() else "free",
+        "isolation": "native-unspecified",
+        "predecessor": pred,
+        "wall_timeout_sec": contract.caps.wall_timeout_sec,
+    }
+
+
+def refuse_remote_confirm(
+    *,
+    contract_path: Path,
+    workspace: Path,
+    challenge: str,
+    reason: str,
+    now: float | None = None,
+) -> dict[str, Any]:
+    """Consume a live pending confirm with a typed reason. Does not write approval."""
+    cleaned = (reason or "").strip()
+    if not cleaned or len(cleaned) > MAX_REFUSE_REASON_CHARS:
+        raise ApprovalError(
+            f"refuse reason required (1-{MAX_REFUSE_REASON_CHARS} characters)"
+        )
+    workspace = resolve_workspace(workspace)
+    contract = load_contract(contract_path)
+    try:
+        with hold_workspace_lease(workspace, holder="remote-confirm-refuse"):
+            return _refuse_under_lease(
+                contract=contract,
+                workspace=workspace,
+                challenge=challenge,
+                reason=cleaned,
+                now=now,
+            )
+    except LeaseError as exc:
+        raise ApprovalError(str(exc)) from exc
+
+
+def _refuse_under_lease(
+    *,
+    contract: Contract,
+    workspace: Path,
+    challenge: str,
+    reason: str,
+    now: float | None,
+) -> dict[str, Any]:
+    from runspecimen.events import EventLog
+
+    state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
+    ensure_dir(state_dir)
+    pending = load_pending(state_dir)
+    if not pending_is_live(pending, now=now) or pending is None:
+        raise ApprovalError("no live Mac-armed remote confirm pending")
+    if pending.get("contract_hash") != contract.contract_hash:
+        raise ApprovalError("remote-confirm pending contract_hash mismatch")
+
+    provided = (challenge or "").strip().upper()
+    expected_digest = str(pending.get("challenge_sha256") or "")
+    if not provided or not hmac.compare_digest(_challenge_digest(provided), expected_digest):
+        _record_failure(state_dir, pending)
+        raise ApprovalError("remote-confirm refuse aborted (challenge mismatch)")
+
+    pending = dict(pending)
+    pending["consumed"] = True
+    pending["refused"] = True
+    pending["refuse_reason"] = reason
+    atomic_write_json(pending_path(state_dir), pending)
+    _clear_local_challenge(state_dir)
+
+    log = EventLog.for_state_dir(state_dir)
+    log.ensure()
+    record = log.append(
+        "remote_confirm_refused",
+        {
+            "reason": reason,
+            "challenge_id": pending.get("challenge_id"),
+            "confirm_channel": CONFIRM_CHANNEL,
+            "not_equivalent_to": NOT_EQUIVALENT_TO,
+            "campaign_id": contract.campaign_id,
+            "run_id": contract.run_id,
+            "contract_hash": contract.contract_hash,
+        },
+    )
+    clear_pending(state_dir)
+    return {
+        "ok": True,
+        "refused": True,
+        "reason": reason,
+        "confirm_channel": CONFIRM_CHANNEL,
+        "event_hash": record.event_hash,
+        "not_equivalent_to": NOT_EQUIVALENT_TO,
+        "note": "Pending consumed. Re-arm or use local TTY APPROVE. Not an agent amend chat.",
     }
 
 

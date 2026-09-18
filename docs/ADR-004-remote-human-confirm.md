@@ -52,9 +52,13 @@ Honest claim:
    allowed transport (loopback cleartext **or** TLS). Success consumes the
    challenge (single-use), rate-limits failures, and writes the approval with
    remote-confirm attestation metadata.
-5. No pending / wrong challenge / reuse / expired / unauthenticated / plugin
+5. Typed **refuse + reason** (`POST /v1/remote-confirm-refuse` or
+   `runspecimen remote-confirm refuse`) consumes the pending **without** writing
+   an approval. Challenge is still required. This is the Amend analog; it is not
+   a chatbot and not auto-APPROVE.
+6. No pending / wrong challenge / reuse / expired / unauthenticated / plugin
    path / cleartext off loopback → **refuse**. No silent remote run of arbitrary
-   commands.
+   commands. Quiet hours (`RUNSPECIMEN_QUIET_HOURS=HH-HH`) block **arm only**.
 
 ### Capability flags (plugin exclusion)
 

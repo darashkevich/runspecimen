@@ -12,6 +12,8 @@ SwiftUI companion for **remote observation** and optional **Mac-armed remote hum
 - Optional remote human confirm (ADR-004): only when the Mac has armed a pending
   challenge; the human must **type** the Mac-displayed challenge **and** `APPROVE`
   (no one-tap button). This is **not** equivalent to local TTY APPROVE evidence.
+- Typed **refuse + reason** consumes the pending without writing approval
+  (`POST /v1/remote-confirm-refuse`). Re-arm or use Mac TTY to proceed.
 - Pairing talks to `runspecimen companion` (opt-in, fail-closed).
 - Loopback may use `http://127.0.0.1`. Non-loopback requires **HTTPS + TLS
   fingerprint** from the Mac printout. Tailscale is recommended. No public
@@ -56,8 +58,10 @@ runspecimen remote-confirm arm \
 ```
 
 Enter the printed URL + token (+ fingerprint for HTTPS) in the app. When a pending
-confirm exists, type the Mac challenge and `APPROVE`. The client refuses to stay
-paired if capabilities claim plugin-style `can_approve` / `can_execute`.
+confirm exists, the app shows one card (who/what/expiry/lease/isolation/predecessor).
+Type the Mac challenge and `APPROVE` to settle, or the same challenge plus a reason
+to refuse. There is no one-tap Approve. The client refuses to stay paired if
+capabilities claim plugin-style `can_approve` / `can_execute`.
 
 ## Brand
 

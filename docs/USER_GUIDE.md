@@ -280,9 +280,11 @@ Adapter limits (`scripts/runspecimen_adapter.py` and `scripts/runspecimen_mcp.py
 
 - Allowed: `about`, `dashboard`, `doctor`, `validate`, `status`, `preflight`, `run`,
   `postflight`, `verify`
-- **Not allowed:** `approve`, remote-confirm settle, companion `/v1/approve`. A
-  human must run `runspecimen approve …` in a real terminal. Claude/Grok also
-  get a PreToolUse deny hook (`scripts/block_approve_gate.py`).
+- **Not allowed:** `approve`, remote-confirm settle/refuse, companion `/v1/approve`.
+  A human must run `runspecimen approve …` in a real terminal (or Mac-armed
+  remote confirm on the paired phone). Claude/Grok also get a PreToolUse deny
+  hook (`scripts/block_approve_gate.py`). Local `runspecimen bundle` is a human
+  CLI for incident packs; it is not an adapter approve path.
 
 ## Showcase refresh (host-bound)
 

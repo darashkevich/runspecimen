@@ -46,6 +46,7 @@ class TestCompanion(RunSpecimenTestCase):
         self.assertFalse(path_is_forbidden("/v1/status"))
         self.assertFalse(path_is_forbidden("/v1/attention"))
         self.assertFalse(path_is_forbidden("/v1/remote-confirm"))
+        self.assertFalse(path_is_forbidden("/v1/remote-confirm-refuse"))
 
     def test_bind_policy_fail_closed(self) -> None:
         assert_bind_allowed("127.0.0.1", allow_lan=False)

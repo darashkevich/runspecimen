@@ -7,6 +7,7 @@ docs/ADR-004-remote-human-confirm.md):
 - Lifecycle verb paths (approve/run/preflight/...) stay forbidden
 - Remote confirm settles only a Mac-armed pending challenge via
   POST /v1/remote-confirm with pairing + challenge + APPROVE
+- POST /v1/remote-confirm-refuse consumes pending with challenge + reason (no approval)
 - Challenge secret is never returned over HTTP (Mac TTY / local file only)
 - Default bind is loopback (pairing token OK over cleartext)
 - Non-loopback bind requires --allow-lan, a private/Tailscale address, and TLS
@@ -43,6 +44,8 @@ from runspecimen.remote_confirm import (
     NOT_EQUIVALENT_TO,
     load_pending,
     public_pending_view,
+    refuse_remote_confirm,
+    run_ontology_chips,
     settle_remote_confirm,
 )
 from runspecimen.status import status_for
@@ -58,7 +61,7 @@ FORBIDDEN_PATH_MARKERS = (
 )
 
 # Narrow exception: remote-confirm is allowed; it must not match "approve".
-ALLOWED_MUTATING_ROUTES = frozenset({"/v1/remote-confirm"})
+ALLOWED_MUTATING_ROUTES = frozenset({"/v1/remote-confirm", "/v1/remote-confirm-refuse"})
 
 CAPABILITIES = {
     "product": "RunSpecimen",
@@ -283,6 +286,16 @@ def make_handler(
                 if route == "/v1/status":
                     doc = current_status()
                     view = remote_confirm_view()
+                    pending = load_pending(
+                        run_state_dir(workspace, contract.campaign_id, contract.run_id)
+                    )
+                    if view.get("pending"):
+                        view = dict(view)
+                        view["chips"] = run_ontology_chips(
+                            contract=contract,
+                            workspace=workspace,
+                            pending=pending,
+                        )
                     doc["companion"] = {
                         "mode": "observe",
                         "can_approve": False,
@@ -416,9 +429,56 @@ def make_handler(
                     ).encode("utf-8"),
                 )
                 return
+            if route == "/v1/remote-confirm-refuse":
+                if not remote_confirm_transport_ok(
+                    client_address=self.client_address,
+                    connection=self.connection,
+                ):
+                    self._error(
+                        403,
+                        "remote-confirm-refuse refuses cleartext off loopback; "
+                        "use TLS (--allow-lan enables ephemeral TLS) or Tailscale.",
+                    )
+                    return
+                if not rate_limit_ok():
+                    self._error(429, "Too many remote-confirm attempts; slow down.")
+                    return
+                challenge = str(payload.get("challenge") or "")
+                reason = str(payload.get("reason") or "")
+                with confirm_lock:
+                    try:
+                        refused = refuse_remote_confirm(
+                            contract_path=contract_path,
+                            workspace=workspace,
+                            challenge=challenge,
+                            reason=reason,
+                        )
+                    except ApprovalError as exc:
+                        self._error(403, str(exc))
+                        return
+                    except (RunSpecimenError, OSError, ValueError, KeyError, TypeError) as exc:
+                        self._error(503, f"Remote confirm refuse failed: {exc}")
+                        return
+                self._respond(
+                    200,
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "refused": True,
+                            "can_approve": False,
+                            "confirm_channel": refused.get("confirm_channel"),
+                            "reason": refused.get("reason"),
+                            "note": refused.get("note"),
+                        },
+                        sort_keys=True,
+                        default=str,
+                    ).encode("utf-8"),
+                )
+                return
             self._error(
                 405,
-                "Use POST /v1/remote-confirm (paired + Mac challenge + APPROVE) "
+                "Use POST /v1/remote-confirm (paired + Mac challenge + APPROVE), "
+                "POST /v1/remote-confirm-refuse (challenge + reason), "
                 "or Mac TTY approve. Plugins cannot approve.",
             )
 

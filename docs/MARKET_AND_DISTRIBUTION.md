@@ -160,9 +160,9 @@ The vanity funnel—marketplace impressions without completed verified runs—sh
 
 Marketplace listings should be free. They are acquisition channels and integration surfaces, not reliable billing channels.
 
-- **Community:** free/open core; one local operator; contracts, exclusive leases, local receipts, verification.
-- **Pro:** approximately $19–29 per user/month; richer history, reusable policy packs, signed receipts, TUI/IDE review, support.
-- **Team:** approximately $49–79 per user/month with a minimum annual contract; shared policies, delegated approvals, evidence export, team analytics.
+- **Community:** free/open core; one local operator; contracts, exclusive leases, local receipts, verification, **local incident bundle** (`runspecimen bundle`), and the **free companion remote-confirm card**. History on disk stays visible. This is **not** the Veto Free/Pro/Teams/Intent price book.
+- **Pro:** approximately $19–29 per user/month; richer history, reusable policy packs, signed receipts, TUI/IDE review, support. Remote confirm stays free — do not paywall the phone card.
+- **Team:** approximately $49–79 per user/month with a minimum annual contract; shared policies, identity-attributed human review, **off-laptop** evidence retention, incident review with design partners. Not a 7-day Veto receipt vault and not Veto Intent/watchdog SKUs.
 - **Enterprise:** custom, initially $20k–100k/year depending on deployment and support; SSO, on-prem control plane, fleet enforcement, retention, compliance packs, SLA.
 
 Pricing must be tested through design-partner conversations before building a cloud control plane.

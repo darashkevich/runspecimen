@@ -13,6 +13,7 @@ final class CompanionSession: ObservableObject {
     @Published var lastAttentionNote: String?
     @Published var challengeInput: String = ""
     @Published var approvePhraseInput: String = ""
+    @Published var refuseReasonInput: String = ""
     @Published var lastRemoteConfirmNote: String?
 
     private let defaultsKey = "rs.observe.pairing"
@@ -158,12 +159,47 @@ final class CompanionSession: ObservableObject {
         }
     }
 
+    func submitRemoteRefuse() async {
+        lastError = nil
+        lastRemoteConfirmNote = nil
+        guard remoteConfirmPending else {
+            lastError = "No Mac-armed remote confirm is pending."
+            return
+        }
+        let challenge = challengeInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let reason = refuseReasonInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !challenge.isEmpty else {
+            lastError = "Enter the challenge shown on the Mac."
+            return
+        }
+        guard (1 ... 240).contains(reason.count) else {
+            lastError = "Refuse requires a reason (1–240 characters). This does not approve."
+            return
+        }
+        guard let client = makeClient() else {
+            lastError = CompanionClientError.notPaired.localizedDescription
+            return
+        }
+        do {
+            let result = try await client.submitRemoteRefuse(challenge: challenge, reason: reason)
+            lastRemoteConfirmNote = result.note
+                ?? "Pending refused. Re-arm or use local TTY APPROVE. Not an approval."
+            challengeInput = ""
+            approvePhraseInput = ""
+            refuseReasonInput = ""
+            try await refreshStatus()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     func disconnect() {
         isPaired = false
         capabilities = nil
         status = nil
         challengeInput = ""
         approvePhraseInput = ""
+        refuseReasonInput = ""
         UserDefaults.standard.removeObject(forKey: defaultsKey)
     }
 

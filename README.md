@@ -41,6 +41,8 @@ No watchers, no recurring scheduler, no parallel workers.
 - [Phased roadmap](docs/ROADMAP_PHASED.md) — feature and UX pipeline
 - [ADR-003 iOS companion observation](docs/ADR-003-ios-companion-observation.md) — remote observe / attention (Accepted defaults: loopback HTTP OK; LAN TLS + Tailscale preferred)
 - [ADR-004 remote human confirm](docs/ADR-004-remote-human-confirm.md) — Mac-armed challenge + phone `APPROVE` (not TTY-equivalent; plugins cannot approve)
+- [Incident bundle](docs/SPEC_INCIDENT_BUNDLE.md) — local Community evidence pack (`runspecimen bundle`); not a Veto vault
+- [Remote confirm card](docs/SPEC_REMOTE_CONFIRM_CARD.md) — one-card iOS UX, refuse+reason, `confirm_channel` on verify
 - [iOS Observe app](apps/ios/README.md) — `com.darashkevich.runspecimen.observe` (TestFlight/later)
 - [macOS companion helper](apps/macos-companion/README.md) — `com.darashkevich.runspecimen.companion` (not MAS packaging / PR #6)
 - [macOS app](apps/macos/README.md) — native SwiftUI companion (sandbox-first; see `APP_STORE.md`)
@@ -130,6 +132,10 @@ runspecimen postflight --workspace . --contract examples/demo_contract.json
 runspecimen verify --workspace . --contract examples/demo_contract.json \
   --campaign-id demo-campaign --run-id run-001
 runspecimen status --workspace . --campaign-id demo-campaign --run-id run-001
+
+# Optional: local incident pack (Community). Never a 7-day Veto vault.
+runspecimen bundle --workspace . --campaign-id demo-campaign --run-id run-001 \
+  --out /tmp/rs-incident --contract examples/demo_contract.json
 ```
 
 ## Local dashboard for agent-host users

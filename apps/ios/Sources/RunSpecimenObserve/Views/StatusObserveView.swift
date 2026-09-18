@@ -97,6 +97,8 @@ struct StatusObserveView: View {
             .foregroundStyle(RSTheme.muted)
             .fixedSize(horizontal: false, vertical: true)
 
+            chipRow
+
             Text("MAC CHALLENGE")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(RSTheme.muted)
@@ -120,6 +122,20 @@ struct StatusObserveView: View {
             actionButton("Submit remote human confirm", tint: RSTheme.signal) {
                 await session.submitRemoteConfirm()
             }
+
+            Text("REFUSE REASON")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(RSTheme.muted)
+            TextField("Why this pending confirm is refused", text: $session.refuseReasonInput)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(12)
+                .background(RSTheme.elevated)
+                .foregroundStyle(RSTheme.ink)
+
+            actionButton("Refuse pending (no approval)", tint: RSTheme.danger) {
+                await session.submitRemoteRefuse()
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -128,6 +144,40 @@ struct StatusObserveView: View {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .stroke(RSTheme.signal.opacity(0.35), lineWidth: 1)
         )
+    }
+
+    private var chipRow: some View {
+        let pending = session.status?.companion?.remoteConfirm
+        let chips = pending?.chips
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                chip("Who", pending?.who ?? "operator · workspace")
+                chip("What", pending?.what ?? "—")
+            }
+            HStack(spacing: 8) {
+                chip("Expiry", chips?.expiry ?? "—")
+                chip("Lease", chips?.lease ?? leaseLabel)
+            }
+            HStack(spacing: 8) {
+                chip("Isolation", chips?.isolation ?? "native-unspecified")
+                chip("Predecessor", chips?.predecessor ?? "none")
+            }
+        }
+    }
+
+    private func chip(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title.uppercased())
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(RSTheme.muted)
+            Text(value)
+                .font(.caption.monospaced())
+                .foregroundStyle(RSTheme.ink)
+                .lineLimit(2)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RSTheme.elevated)
     }
 
     private var chainLabel: String {

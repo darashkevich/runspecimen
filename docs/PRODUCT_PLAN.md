@@ -75,7 +75,9 @@ verified local receipt in under ten minutes.
 
 - Shared, versioned policies and contract templates.
 - Delegated approvals with identity and separation of duties.
-- Signed receipt export, retention, incident bundles, and support.
+- **Off-laptop** retention, identity-attributed review, and support. Local
+  `runspecimen bundle` is Community (already specified); Team does not hide
+  files that already exist on disk and is not a Veto 7-day vault.
 - Five design partners in computational research, ML evaluation, security,
   quant/backtesting, or regulated engineering.
 
