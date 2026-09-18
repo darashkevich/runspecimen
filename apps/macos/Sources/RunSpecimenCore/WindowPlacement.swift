@@ -29,6 +29,9 @@ public enum WindowPlacement {
         if frame.height > screen.height * 1.2 || frame.width > screen.width * 1.2 {
             return true
         }
+        if frame.width + 0.5 < minSize.width || frame.height + 0.5 < minSize.height {
+            return true
+        }
         return false
     }
 

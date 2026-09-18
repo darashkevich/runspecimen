@@ -30,9 +30,13 @@ final class WindowPlacementTests: XCTestCase {
 
     func testTinyFrameGrowsToMinimum() {
         let tiny = CGRect(x: 40, y: 40, width: 200, height: 180)
-        XCTAssertTrue(WindowPlacement.needsSanitize(frame: tiny, screens: [screen]))
+        XCTAssertTrue(
+            WindowPlacement.needsSanitize(frame: tiny, screens: [screen]),
+            "on-screen frames smaller than minSize must still be sanitized"
+        )
         let next = WindowPlacement.sanitize(frame: tiny, screens: [screen])
         XCTAssertGreaterThanOrEqual(next.width, WindowPlacement.minSize.width - 0.5)
         XCTAssertGreaterThanOrEqual(next.height, WindowPlacement.minSize.height - 0.5)
+        XCTAssertFalse(WindowPlacement.needsSanitize(frame: next, screens: [screen]))
     }
 }
