@@ -86,6 +86,14 @@ plugins/runspecimen/.cursor-plugin/plugin.json
 plugins/runspecimen/.codex-plugin/plugin.json
 ```
 
+Copy-out logos (hexaflake, square RGB):
+
+```
+plugins/runspecimen/assets/logo.png              # 512 — interface.logo
+plugins/runspecimen/assets/composer-icon.png     # 128 — interface.composerIcon
+plugins/runspecimen/assets/runspecimen-logo.png  # 512 — Cursor plugin logo
+```
+
 ### Submission steps (skills-only)
 
 1. Open the OpenAI plugin submission portal

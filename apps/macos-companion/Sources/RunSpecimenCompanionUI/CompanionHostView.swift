@@ -120,7 +120,7 @@ struct CompanionHostView: View {
                     }
                 }
 
-                Text("Phone must type this challenge plus APPROVE. This is remote human confirm — not local TTY APPROVE.")
+                Text("Phone must type this challenge plus APPROVE, or the same challenge plus a reason to refuse. This is remote human confirm — not local TTY APPROVE.")
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.secondary)
 

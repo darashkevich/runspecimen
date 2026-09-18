@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 512 512" fill="none" aria-hidden="true">
+  <title>RunSpecimen</title>
+  <rect width="512" height="512" fill="#070a0f"/>
+  <polygon points="256.000,14.000 465.578,135.000 465.578,377.000 256.000,498.000 46.422,377.000 46.422,135.000" fill="#0d1219" stroke="#9be56a" stroke-width="9.5" stroke-linejoin="miter"/>
+  <polygon points="256.000,46.000 437.865,151.000 437.865,361.000 256.000,466.000 74.135,361.000 74.135,151.000" fill="none" stroke="#9be56a" stroke-width="6.200" stroke-linejoin="miter"/>
+  <polygon points="346.930,98.505 437.860,256.000 346.930,413.495 165.070,413.495 74.140,256.000 165.070,98.505" fill="none" stroke="#6ec8ff" stroke-width="5.270" stroke-linejoin="miter"/>
+  <polygon points="256.000,104.800 386.943,331.600 125.057,331.600" fill="none" stroke="#6ec8ff" stroke-width="4.340" stroke-linejoin="miter"/>
+  <polygon points="256.000,407.200 125.057,180.400 386.943,180.400" fill="none" stroke="#6ec8ff" stroke-width="4.340" stroke-linejoin="miter"/>
+  <polygon points="256.000,92.200 397.855,174.100 397.855,337.900 256.000,419.800 114.145,337.900 114.145,174.100" fill="none" stroke="#6ec8ff" stroke-width="4.836" stroke-linejoin="miter"/>
+  <polygon points="326.925,133.154 397.851,256.000 326.925,378.846 185.075,378.846 114.149,256.000 185.075,133.154" fill="none" stroke="#9be56a" stroke-width="4.111" stroke-linejoin="miter"/>
+  <polygon points="256.000,128.236 366.647,192.118 366.647,319.882 256.000,383.764 145.353,319.882 145.353,192.118" fill="none" stroke="#9be56a" stroke-width="3.772" stroke-linejoin="miter"/>
+  <polygon points="311.322,160.180 366.644,256.000 311.322,351.820 200.678,351.820 145.356,256.000 200.678,160.180" fill="none" stroke="#6ec8ff" stroke-width="3.206" stroke-linejoin="miter"/>
+  <polygon points="256.000,164.010 335.666,301.995 176.334,301.995" fill="none" stroke="#6ec8ff" stroke-width="2.640" stroke-linejoin="miter"/>
+  <polygon points="256.000,347.990 176.334,210.005 335.666,210.005" fill="none" stroke="#6ec8ff" stroke-width="2.640" stroke-linejoin="miter"/>
+  <polygon points="256.000,156.344 342.305,206.172 342.305,305.828 256.000,355.656 169.695,305.828 169.695,206.172" fill="none" stroke="#6ec8ff" stroke-width="2.942" stroke-linejoin="miter"/>
+  <polygon points="299.151,181.260 342.302,256.000 299.151,330.740 212.849,330.740 169.698,256.000 212.849,181.260" fill="none" stroke="#9be56a" stroke-width="2.501" stroke-linejoin="miter"/>
+  <polygon points="256.000,178.268 323.318,217.134 323.318,294.866 256.000,333.732 188.682,294.866 188.682,217.134" fill="none" stroke="#9be56a" stroke-width="2.295" stroke-linejoin="miter"/>
+  <polygon points="289.658,197.703 323.316,256.000 289.658,314.297 222.342,314.297 188.684,256.000 222.342,197.703" fill="none" stroke="#6ec8ff" stroke-width="1.951" stroke-linejoin="miter"/>
+  <polygon points="256.000,200.033 304.469,283.983 207.531,283.983" fill="none" stroke="#6ec8ff" stroke-width="1.606" stroke-linejoin="miter"/>
+  <polygon points="256.000,311.967 207.531,228.017 304.469,228.017" fill="none" stroke="#6ec8ff" stroke-width="1.606" stroke-linejoin="miter"/>
+  <polygon points="256.000,195.369 308.508,225.685 308.508,286.315 256.000,316.631 203.492,286.315 203.492,225.685" fill="none" stroke="#6ec8ff" stroke-width="1.790" stroke-linejoin="miter"/>
+  <polygon points="282.253,210.528 308.506,256.000 282.253,301.472 229.747,301.472 203.494,256.000 229.747,210.528" fill="none" stroke="#9be56a" stroke-width="1.522" stroke-linejoin="miter"/>
+  <polygon points="256.000,221.980 285.462,238.990 285.462,273.010 256.000,290.020 226.538,273.010 226.538,238.990" fill="#e8b84a" stroke="#e8b84a" stroke-width="0.700" stroke-linejoin="miter"/>
+  <polygon points="263.812,242.469 271.624,256.000 263.812,269.531 248.188,269.531 240.376,256.000 248.188,242.469" fill="#0d1219" stroke="none"/>
+</svg>

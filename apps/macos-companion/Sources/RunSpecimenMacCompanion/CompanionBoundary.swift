@@ -19,8 +19,10 @@ public enum CompanionBoundary {
     It does not inject TTY APPROVE and does not give plugins an approve path.
     can_approve stays false. Optional remote human confirm requires a Mac-armed \
     one-shot challenge typed with APPROVE on a paired phone — not equivalent to \
-    local TTY APPROVE, and not an OS sandbox. Non-loopback binds require TLS; \
-    Tailscale is recommended. Focus/DND may suppress arm/attention banners.
+    local TTY APPROVE, and not an OS sandbox. The phone may instead refuse with \
+    the same challenge plus a typed reason (no approval written). Non-loopback \
+    binds require TLS; Tailscale is recommended. Focus/DND may suppress \
+    arm/attention banners.
     """
 
     public static let attentionPolicy = """

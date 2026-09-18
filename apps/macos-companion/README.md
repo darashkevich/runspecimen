@@ -16,6 +16,8 @@ runspecimen remote-confirm arm --workspace … --contract …
 - Does **not** inject TTY `APPROVE`.
 - Does **not** give plugins an approve path (`can_approve` stays false).
 - Challenge secret is Mac-local only (TTY / paste field / mode-0600 local file).
+- Phone refuse (challenge + reason) is documented here; this helper still does
+  not settle or refuse on behalf of the human.
 - Non-loopback companion binds require TLS (Python CLI); Tailscale recommended.
 - Attention default: local banner **with sound** (CLI `osascript` + helper
   UserNotifications). Focus/DND may suppress delivery — no Focus-bypass claim.

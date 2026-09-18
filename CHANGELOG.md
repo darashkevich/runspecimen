@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Brand
+
+- Replace the padlock glyph with the 6-fold hexaflake mark (plugin logos,
+  Codex `interface.logo` / `composerIcon`, iOS Observe, macOS AppIcon).
+
 ### Incident bundle and remote-confirm refuse
 
 - Add Community CLI `runspecimen bundle` for a local incident evidence pack

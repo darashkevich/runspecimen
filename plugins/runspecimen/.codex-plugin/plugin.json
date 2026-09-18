@@ -21,6 +21,8 @@
     "defaultPrompt": [
       "Put this local command behind a verified RunSpecimen lifecycle.",
       "Open the RunSpecimen local dashboard for this contract."
-    ]
+    ],
+    "logo": "./assets/logo.png",
+    "composerIcon": "./assets/composer-icon.png"
   }
 }

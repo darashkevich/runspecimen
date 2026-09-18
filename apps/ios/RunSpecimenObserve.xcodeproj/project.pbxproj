@@ -233,7 +233,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "RunSpecimen Observe";
 				INFOPLIST_KEY_NSBonjourServices = "";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "RunSpecimen Observe pairs only with a Mac you enable on your local network or Tailscale. It cannot approve or execute runs.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "RunSpecimen Observe pairs only with a Mac you enable on your local network or Tailscale. Non-loopback requires TLS. It cannot approve or execute runs.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
@@ -315,7 +315,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "RunSpecimen Observe";
 				INFOPLIST_KEY_NSBonjourServices = "";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "RunSpecimen Observe pairs only with a Mac you enable on your local network or Tailscale. It cannot approve or execute runs.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "RunSpecimen Observe pairs only with a Mac you enable on your local network or Tailscale. Non-loopback requires TLS. It cannot approve or execute runs.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = NO;

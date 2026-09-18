@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" aria-hidden="true">
-  <title>RunSpecimen mark</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" aria-hidden="true">
+  <title>RunSpecimen</title>
+  <rect width="512" height="512" fill="#070a0f"/>
   <polygon points="256.000,14.000 465.578,135.000 465.578,377.000 256.000,498.000 46.422,377.000 46.422,135.000" fill="#0d1219" stroke="#9be56a" stroke-width="9.5" stroke-linejoin="miter"/>
   <polygon points="256.000,58.000 427.473,157.000 427.473,355.000 256.000,454.000 84.527,355.000 84.527,157.000" fill="none" stroke="#6ec8ff" stroke-width="3.400" stroke-linejoin="miter"/>
   <polygon points="256.000,190.000 313.158,223.000 313.158,289.000 256.000,322.000 198.842,289.000 198.842,223.000" fill="none" stroke="#9be56a" stroke-width="1.133" stroke-linejoin="miter"/>
