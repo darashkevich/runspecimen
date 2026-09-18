@@ -4,6 +4,7 @@ include SECURITY.md
 include docs/ABOUT.md
 include docs/ED25519_RECEIPTS.md
 include docs/FAQ.md
+include docs/INTEGRATIONS.md
 include docs/MARKET_AND_DISTRIBUTION.md
 include docs/NEXT_CHANGES.md
 include docs/PRODUCT_PLAN.md
@@ -25,6 +26,7 @@ recursive-include tests *.py
 recursive-include plugins *.json *.md *.mdc *.py
 recursive-include .cursor *.mdc
 recursive-include .cursor-plugin *.json
+recursive-include .claude-plugin *.json
 recursive-include .agents *.json
 prune examples/showcase/.runspecimen
 global-exclude __pycache__ *.py[cod] .DS_Store

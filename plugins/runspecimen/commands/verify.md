@@ -1,0 +1,12 @@
+---
+description: Verify a RunSpecimen receipt after postflight
+---
+
+After a successful postflight, verify with the full flags:
+
+```bash
+runspecimen verify --workspace <workspace> --contract <contract> \
+  --campaign-id <campaign_id> --run-id <run_id>
+```
+
+Report the certificate ID from the verify JSON. Do not invent a passing receipt.

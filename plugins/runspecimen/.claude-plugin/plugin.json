@@ -1,0 +1,18 @@
+{
+  "name": "runspecimen",
+  "displayName": "RunSpecimen",
+  "version": "0.2.0-rc.10",
+  "description": "Approve, bound, run, postflight, and verify consequential local commands.",
+  "author": {
+    "name": "RunSpecimen Contributors",
+    "url": "https://github.com/darashkevich/runspecimen"
+  },
+  "homepage": "https://github.com/darashkevich/runspecimen",
+  "repository": "https://github.com/darashkevich/runspecimen",
+  "license": "Apache-2.0",
+  "keywords": ["agents", "automation", "provenance", "safety", "local-first"],
+  "skills": "./skills/",
+  "commands": "./commands/",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json"
+}

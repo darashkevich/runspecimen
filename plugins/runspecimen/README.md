@@ -1,7 +1,7 @@
 # RunSpecimen agent adapter
 
-This plugin teaches Codex and Cursor to put consequential local commands behind
-the RunSpecimen lifecycle.
+This plugin teaches Codex, Cursor, Claude Code, and Grok Build to put
+consequential local commands behind the RunSpecimen lifecycle.
 
 **Prerequisite:** the `runspecimen` CLI must be on `PATH` (`command -v
 runspecimen`). Install the engine first (`pip install .` or
@@ -18,6 +18,14 @@ does not ship the enforcement binary.
   `~/.cursor/plugins/local/runspecimen`, reload Cursor, and confirm that the
   RunSpecimen skill and rule appear in Customize. Repo marketplace metadata lives
   at `.cursor-plugin/marketplace.json`.
+- **Claude Code:** add this repository as a marketplace
+  (`/plugin marketplace add darashkevich/runspecimen` or a local checkout), then
+  install `runspecimen`. Or symlink this directory under `~/.claude/plugins/` /
+  a skills-directory plugin path. Manifest: `.claude-plugin/plugin.json`. Repo
+  marketplace catalog: `.claude-plugin/marketplace.json`.
+- **Grok Build (xAI):** Grok reads Claude Code plugins. Symlink this directory to
+  `~/.grok/plugins/runspecimen` (see `grok/README.md`), or enable Claude compat
+  discovery. Optional project instructions: copy `grok/AGENTS.md`.
 
 ## Boundary
 
@@ -30,6 +38,23 @@ before an agent can continue. Receipt checks use:
 runspecimen verify --workspace … --contract … \
   --campaign-id … --run-id …
 ```
+
+Approve-safety layers in this package:
+
+1. Skill / rules / commands instruct agents to pause for human TTY approve.
+2. `scripts/runspecimen_adapter.py` and `scripts/runspecimen_mcp.py` omit
+   `approve` (and remote-confirm settle) from their allow-lists.
+3. Claude/Grok `hooks/hooks.json` + `scripts/block_approve_gate.py` deny Bash or
+   MCP tool calls that look like typing `APPROVE`, running `runspecimen
+   approve`, or settling remote-confirm.
+
+## MCP (Claude Code / Claude Desktop / Grok)
+
+`.mcp.json` starts a local stdio MCP server (`scripts/runspecimen_mcp.py`) that
+exposes only: `about`, `doctor`, `validate`, `status`, `preflight`, `run`,
+`postflight`, `verify`, `dashboard`. No network phone-home. For Claude Desktop
+outside the plugin, point an MCP server entry at the same script with an
+absolute path.
 
 ## Local dashboard
 

@@ -31,8 +31,10 @@ No watchers, no recurring scheduler, no parallel workers.
 - [FAQ](docs/FAQ.md) — vs CI/sandbox/agents, TTY approval, verify-after-clone, parallelism, receipts
 - [Product plan](docs/PRODUCT_PLAN.md) — invariants and roadmap
 - [Market and distribution](docs/MARKET_AND_DISTRIBUTION.md) — wedge, channels, commercial sequence
+- [Integrations](docs/INTEGRATIONS.md) — adapter status ledger + frontier-lab research
 - [Marketing pitches](docs/MARKETING_PITCHES.md) — honest one-liners, elevators, CTAs
 - [Grok tandem](docs/GROK_TANDEM.md) — external xAI Grok review log (Composio `GROK_*`)
+- [Submission](docs/SUBMISSION.md) — marketplace submission checklist (Cursor/Codex/Claude/Grok)
 - [Threat model](docs/THREAT_MODEL.md) — trusted boundary and residual risks
 - [Schema compatibility](docs/SCHEMA_COMPATIBILITY.md) — contract/receipt versions
 - [Ed25519 receipts (optional)](docs/ED25519_RECEIPTS.md) — offline public-key verify
@@ -130,10 +132,10 @@ runspecimen verify --workspace . --contract examples/demo_contract.json \
 runspecimen status --workspace . --campaign-id demo-campaign --run-id run-001
 ```
 
-## Local dashboard for Codex and Cursor users
+## Local dashboard for Codex, Cursor, Claude, and Grok users
 
-Open a contract-scoped dashboard from a terminal, or ask the installed Codex or
-Cursor RunSpecimen integration to do so:
+Open a contract-scoped dashboard from a terminal, or ask the installed
+RunSpecimen integration (Codex / Cursor / Claude Code / Grok Build) to do so:
 
 ```bash
 runspecimen dashboard --workspace . --contract examples/demo_contract.json --open
@@ -270,7 +272,8 @@ into the certificate's `runtime_id`.
   libraries, environment variables, and input datasets still need to be placed
   in `source.roots` or otherwise asserted by the workload.
 - This release is licensed under Apache-2.0. The CLI remains the enforcement
-  boundary; Codex and Cursor integrations are constrained adapters to it.
+  boundary; Codex, Cursor, Claude Code, and Grok Build integrations are
+  constrained adapters to it (no auto-approve).
 
 ## Non-goals
 
