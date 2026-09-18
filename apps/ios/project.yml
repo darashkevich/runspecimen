@@ -11,7 +11,7 @@ settings:
     TARGETED_DEVICE_FAMILY: "1,2"
     INFOPLIST_KEY_UILaunchScreen_Generation: YES
     INFOPLIST_KEY_CFBundleDisplayName: RunSpecimen Observe
-    INFOPLIST_KEY_NSLocalNetworkUsageDescription: RunSpecimen Observe pairs only with a Mac you enable on your local network or Tailscale. It cannot approve or execute runs.
+    INFOPLIST_KEY_NSLocalNetworkUsageDescription: RunSpecimen Observe pairs only with a Mac you enable on your local network or Tailscale. Non-loopback requires TLS. It cannot approve or execute runs.
     INFOPLIST_KEY_NSBonjourServices: ""
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
@@ -30,6 +30,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen.observe
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: YES
+        # Shipping channel: TestFlight/later — no App Store submit in this change set.
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
 schemes:

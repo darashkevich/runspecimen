@@ -1,8 +1,8 @@
 # ADR-003 — iOS companion for remote observation (not remote approval)
 
-**Status:** Proposed (scaffold landed; pairing transport decision open)  
+**Status:** Accepted (product defaults locked 2026-09-18; Apple portal / TestFlight upload still operator-owned)  
 **Date:** 2026-09-17  
-**Deciders:** Yahor (required sign-off before any mutating remote API)  
+**Deciders:** Yahor  
 **Related:** `docs/THREAT_MODEL.md`, loopback dashboard (`src/runspecimen/dashboard.py`), macOS ADR-001 (PR #6 / `apps/macos`)
 
 ## Context
@@ -25,22 +25,37 @@ Ship a companion as **remote observation + optional attention request**, with in
 | --- | --- | --- |
 | Read phase / lease / receipt summaries | Yes (authenticated) | Source of truth via CLI / `.runspecimen/` |
 | Refresh status | Yes (non-mutating) | Serves snapshot |
-| Request attention (notify Mac operator) | Optional | Local notification / banner only |
+| Request attention (notify Mac operator) | Optional | Local notification / banner **with sound** (default) |
 | Open loopback dashboard on Mac | Optional narrow command | Local-only side effect |
 | `approve` / `run` / `preflight` / `postflight` / inject `APPROVE` via plugins | **Forbidden** (`can_approve` always false) | TTY / native PTY only |
 | Mac-armed **remote human confirm** (challenge + `APPROVE` on paired phone) | Allowed only per **ADR-004** when Mac armed a pending | Challenge shown locally on Mac |
 | Unattended remote execute | **Forbidden** | N/A |
 
-### Pairing & transport (v1 recommendation)
+### Pairing & transport (Accepted defaults)
 
 1. **Default off.** Companion listener does not start unless the operator opts in.
-2. **Fail-closed bind.** Default bind is loopback. LAN / Tailscale bind requires an explicit flag and refuses public/unspecified addresses unless a future ADR adds authenticated internet exposure.
-3. **Pairing model (recommended for v1):** local-network QR (or short code) that transfers a **pairing secret** + Mac endpoint URL over an out-of-band channel the human can see. iOS stores the secret in Keychain; requests use a short-lived HMAC (or bearer derived from the secret). Prefer Tailscale/LAN over any public internet control plane.
-4. **iCloud / public relay:** deferred. Not in v1. Would need a separate ADR covering authn, key custody, and residual remote-attacker risk.
-5. **Trust:** the phone is an untrusted observer by default. With ADR-004, a paired
-   phone may settle a **Mac-armed** pending confirm only by typing the Mac-local
-   challenge + `APPROVE`. A compromised phone still cannot invent approve/run without
-   that Mac-side challenge. Plugins never get `can_approve`.
+2. **Fail-closed bind.** Default bind is loopback. LAN / Tailscale bind requires `--allow-lan` and refuses public/unspecified addresses.
+3. **Loopback:** pairing bearer over cleartext HTTP is OK.
+4. **Non-loopback:** TLS is **required** before the listener starts (ephemeral self-signed cert generated at pair time, or operator-supplied `--tls-cert` / `--tls-key`). Phone pins the printed SHA-256 fingerprint. Pairing bearer remains the client authenticator (full client-certificate mTLS is optional future hardening, not required for this default).
+5. **Remote-confirm** additionally refuses cleartext off loopback even if a misconfigured cleartext socket exists.
+6. **Recommended path:** Tailscale (or equivalent private mesh) + TLS. **No public internet control plane.**
+7. **Pairing model:** out-of-band transfer of URL + pairing secret (+ TLS fingerprint when HTTPS). iOS stores secrets in Keychain / app defaults for the observe client.
+8. **iCloud / public relay:** deferred. Not in v1.
+
+### Attention UX (Accepted default)
+
+- Mac posts a **local notification banner with sound** when the phone requests attention and when a remote confirm is armed.
+- Honest limit: **Focus / Do Not Disturb may suppress banners and sounds**; RunSpecimen does **not** claim Focus bypass.
+- Silent-only is **not** the product default for armed remote-confirm on the Mac helper / CLI path.
+
+### Bundle IDs / shipping channel (Accepted convention; portal still open)
+
+| Surface | Bundle ID |
+| --- | --- |
+| iOS Observe | `com.darashkevich.runspecimen.observe` |
+| Mac companion helper | `com.darashkevich.runspecimen.companion` |
+
+Shipping channel for the iOS binary: **TestFlight / later**. No App Store submit, ASC upload, or notarization is implied by accepting this ADR. Apple Developer portal app records and provisioning remain operator-owned.
 
 ### API surface (companion endpoint)
 
@@ -57,7 +72,7 @@ Explicitly rejected without ADR-004 settle semantics (405 / 403):
 - any path containing `approve`, `run`, `preflight`, `postflight`, `execute`, `pty`, `inject`
 - agent/plugin-driven approval
 
-Optional additive path (Yahor go-ahead; see **ADR-004**):
+Optional additive path (see **ADR-004**):
 
 - `POST /v1/remote-confirm` — paired companion only; settles a **Mac-armed** pending
   challenge when the human types challenge + `APPROVE`. Not TTY-equivalent.
@@ -70,7 +85,7 @@ Optional additive path (Yahor go-ahead; see **ADR-004**):
 | --- | --- |
 | Remote attacker forges journal via companion | Companion writes approval **only** via ADR-004 settle of a Mac-armed pending; otherwise never writes lifecycle. Journal trust remains local hash-chain (+ optional HMAC/Ed25519). |
 | Stolen pairing secret | Attacker can read status and request attention until revoked. Without the Mac-displayed challenge, remote confirm fails. Rotate by stopping companion and re-pairing. |
-| LAN MITM without TLS | v1 may use HTTP on trusted LAN/Tailscale with bearer auth; treat as cleartext-equivalent if the network is hostile. **mTLS required before untrusted networks** (ADR-004). |
+| LAN MITM without TLS | Non-loopback binds require TLS + fingerprint pin; cleartext remote-confirm off loopback is refused. Residual: hostile LAN can still observe cleartext loopback if somehow reachable. |
 | Phishing “approve on phone” UX | No one-tap approve; typed challenge + APPROVE; copy states not TTY-equivalent. |
 | Confused deputy / plugin calling companion | `can_approve` always false; `/v1/approve` forbidden; plugins must not receive pairing tokens or automate remote-confirm. |
 | Misread as sandbox | Capabilities + About copy: evidence/observation layer, not OS confinement. |
@@ -87,18 +102,18 @@ Optional additive path (Yahor go-ahead; see **ADR-004**):
 | --- | --- |
 | Remote approve/run API with strong auth | Breaks TTY-human invariant; agents could be wired to it; needs Yahor sign-off + new ADR |
 | Public internet control plane (default) | Expands attack surface; conflicts with local-only default |
+| Cleartext LAN remote-confirm | Rejected; TLS required off loopback |
 | iOS app shells SSH and types APPROVE | Still remote approval; forbidden |
 | Reuse loopback dashboard from phone via tunnel without pairing | Host header / loopback checks intentionally block this; bypassing them would weaken dashboard guarantees |
+| Focus-bypass “critical alert” attention | Overreach for v1; document Focus limits honestly instead |
 
-## Yahor decisions needed
+## Still operator / Apple-portal owned
 
-1. **Transport:** LAN-only vs Tailscale-preferred vs defer any non-loopback bind until mutual TLS exists?
-2. **Attention channel:** local macOS notification only, or also sound / Focus bypass?
-3. **When (if ever)** authenticated remote human confirm — **accepted in ADR-004** as
-   Mac-armed challenge + phone-typed APPROVE; still never for agents/plugins.
-4. **Brand / App Store:** companion bundle id and whether it ships as a separate free utility after Mac app channel stabilizes.
+- Creating the App Store Connect / Developer portal app records
+- Provisioning profiles, Development Team signing, TestFlight upload
+- App Store submit (explicitly out of scope)
 
-## Explicit non-goals (v1 observation scaffold)
+## Explicit non-goals (v1)
 
 - Agent- or plugin-driven approval from iOS
 - Claiming OS sandboxing, compliance certification, or Ed25519-as-legal-signature

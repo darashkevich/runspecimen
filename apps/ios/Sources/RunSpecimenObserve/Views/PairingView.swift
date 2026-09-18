@@ -44,6 +44,18 @@ struct PairingView: View {
                         .background(RSTheme.elevated)
                         .foregroundStyle(RSTheme.ink)
                         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+
+                    fieldLabel("TLS fingerprint (HTTPS / LAN)")
+                    TextField("tls_fingerprint_sha256 from Mac", text: $session.tlsFingerprint)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .padding(12)
+                        .background(RSTheme.elevated)
+                        .foregroundStyle(RSTheme.ink)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    Text("Required for https:// URLs. Loopback http://127.0.0.1 can omit it.")
+                        .font(.caption2)
+                        .foregroundStyle(RSTheme.muted)
                 }
 
                 Button {
@@ -82,6 +94,8 @@ struct PairingView: View {
                           --workspace … --contract … \\
                           --allow-lan --host <private-or-tailscale-ip> \\
                           --print-token
+                        # Prefer Tailscale. Non-loopback enables TLS automatically.
+                        # Paste url + pairing_token + tls_fingerprint_sha256 here.
                         """
                     )
                     .font(.caption.monospaced())

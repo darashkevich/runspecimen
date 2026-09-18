@@ -18,7 +18,8 @@ let package = Package(
         .executableTarget(
             name: "RunSpecimenCompanionUI",
             dependencies: ["RunSpecimenMacCompanion"],
-            path: "Sources/RunSpecimenCompanionUI"
+            path: "Sources/RunSpecimenCompanionUI",
+            exclude: ["Info.plist"]
         ),
         .testTarget(
             name: "RunSpecimenMacCompanionTests",

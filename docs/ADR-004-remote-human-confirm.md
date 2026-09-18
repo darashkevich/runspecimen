@@ -1,6 +1,6 @@
 # ADR-004 — Attested remote human confirm (not TTY-equivalent)
 
-**Status:** Accepted for opt-in companion path (Yahor go-ahead 2026-09-18)  
+**Status:** Accepted (opt-in companion path; transport / attention / bundle defaults locked 2026-09-18)  
 **Date:** 2026-09-18  
 **Deciders:** Yahor  
 **Related:** `docs/ADR-003-ios-companion-observation.md`, `docs/THREAT_MODEL.md`, loopback dashboard
@@ -39,7 +39,8 @@ Honest claim:
    Arming requires an interactive TTY. The one-shot challenge is printed **only**
    to that local TTY (and optionally a mode-0600 local display file for the Mac
    helper). The challenge secret is **never** returned by the companion HTTP API,
-   including to a paired phone.
+   including to a paired phone. Arming also posts a Mac local notification **with
+   sound** (Focus/DND may still suppress it; no Focus-bypass claim).
 2. Companion **status** (authenticated pairing only) surfaces **presence**:
    `can_remote_confirm=true` while a non-expired, unconsumed pending exists.
    Unauthenticated clients see neither the secret nor pending details beyond
@@ -47,11 +48,13 @@ Honest claim:
 3. **Phone** shows text fields (not a one-tap Approve button). The human must
    type the Mac challenge **and** the word `APPROVE`.
 4. Companion accepts `POST /v1/remote-confirm` **only** with a valid pairing
-   token, matching challenge, exact `APPROVE` phrase, and live pending. Success
-   consumes the challenge (single-use), rate-limits failures, and writes the
-   approval with remote-confirm attestation metadata.
+   token, matching challenge, exact `APPROVE` phrase, live pending, and an
+   allowed transport (loopback cleartext **or** TLS). Success consumes the
+   challenge (single-use), rate-limits failures, and writes the approval with
+   remote-confirm attestation metadata.
 5. No pending / wrong challenge / reuse / expired / unauthenticated / plugin
-   path → **refuse**. No silent remote run of arbitrary commands.
+   path / cleartext off loopback → **refuse**. No silent remote run of arbitrary
+   commands.
 
 ### Capability flags (plugin exclusion)
 
@@ -67,18 +70,34 @@ Lifecycle verb paths containing `approve`, `run`, `preflight`, `postflight`,
 Cursor plugins must continue to instruct humans to use local TTY `approve` and
 must not be given pairing tokens or a remote-confirm automation path.
 
-### Transport / mTLS (phased)
+### Transport / TLS (Accepted defaults)
 
-- v1 keeps ADR-003 bind policy: default loopback; `--allow-lan` only for
-  private / link-local / Tailscale CGNAT addresses; refuse public and
-  unspecified binds.
-- Pairing bearer + challenge + short TTL + rate limit are required on every
+- Default bind is loopback; pairing bearer over HTTP is OK on loopback.
+- `--allow-lan` only for private / link-local / Tailscale CGNAT addresses;
+  refuse public and unspecified binds.
+- **Non-loopback binds require TLS** before the listener starts: ephemeral
+  self-signed cert generated at pair time (or operator `--tls-cert` /
+  `--tls-key`). iOS pins the printed SHA-256 fingerprint.
+- Pairing bearer + challenge + short TTL + rate limit remain required on every
   remote-confirm attempt.
-- **Mutual TLS (or equivalent mutually authenticated transport) is required
-  before exposing the companion beyond a trusted network** (home LAN /
-  Tailscale). Do **not** ship a public internet control plane in this ADR.
-- HTTP on a hostile LAN remains cleartext-equivalent for confidentiality of
-  status snapshots; the challenge secret stays off the wire.
+- **Cleartext remote-confirm off loopback is refused.**
+- **Tailscale (or equivalent private mesh) is the recommended path.**
+- **No public internet control plane.**
+- Full client-certificate mutual TLS remains optional future hardening; the
+  Accepted v1 authenticator off loopback is **TLS server cert (pinned) + pairing
+  bearer**.
+
+### Attention UX (Accepted default)
+
+- Local macOS banner **with sound** on arm and on `/v1/attention`.
+- Document honestly: Focus / DND may suppress delivery; no Focus-bypass claim.
+- Silent-only is not the default for armed remote-confirm.
+
+### Bundle IDs
+
+- iOS Observe: `com.darashkevich.runspecimen.observe`
+- Mac companion helper: `com.darashkevich.runspecimen.companion`
+- Shipping channel: **TestFlight / later** (portal / upload / submit still out of scope)
 
 ### Receipt / event fields
 
@@ -119,7 +138,7 @@ can distinguish channels without over-reading integrity as sandboxing.
 | Replay of successful confirm | Challenge single-use; pending consumed |
 | Phone one-tap phishing UX | UI requires typed challenge + `APPROVE`; no one-tap approve |
 | Equating remote confirm with TTY evidence | Receipt `not_equivalent_to` + boundary copy |
-| Public exposure without mTLS | Bind policy + ADR requirement for mTLS before untrusted networks |
+| Cleartext LAN remote-confirm / public exposure | TLS required off loopback; bind policy; no public control plane |
 | Confused as OS sandbox | Explicit non-goal; capabilities boundary text |
 
 ## Explicit non-goals
@@ -129,16 +148,12 @@ can distinguish channels without over-reading integrity as sandboxing.
 - Remote `run` / `preflight` / `postflight` / arbitrary command execution
 - Claiming OS sandboxing, compliance certification, or TTY-equivalent evidence
 - Public unauthenticated control plane
-- Shipping mTLS in this change set (documented prerequisite for broader exposure)
+- Apple Developer portal records, TestFlight upload, App Store submit
+- Focus / DND bypass for attention banners
 
-## Yahor decisions still open
+## Still operator / Apple-portal owned
 
-1. **Transport:** when to require mTLS (or Tailscale-only policy) for any
-   non-loopback bind in product defaults.
-2. **Attention UX:** local notification only vs sound / Focus bypass when a
-   pending remote confirm is armed.
-3. **App Store:** whether Observe ships as a separate free utility after Mac
-   channel stabilizes (no submit in this PR).
+- App record, provisioning, Development Team, TestFlight upload, App Store submit
 
 ## Alternatives considered
 
@@ -148,3 +163,5 @@ can distinguish channels without over-reading integrity as sandboxing.
 | Send challenge secret to phone over API | Weakens “see Mac challenge” attestation |
 | Allow plugins to call remote-confirm | Breaks agent-cannot-approve invariant |
 | Full remote run control plane | Out of scope; expands blast radius |
+| Cleartext LAN remote-confirm | Rejected; TLS required off loopback |
+| Require client-certificate mTLS before any LAN use | Deferred as optional hardening; pinned server TLS + pairing bearer is the Accepted default |

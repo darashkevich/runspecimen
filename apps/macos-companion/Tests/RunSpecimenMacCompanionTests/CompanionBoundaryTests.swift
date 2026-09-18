@@ -8,6 +8,12 @@ final class CompanionBoundaryTests: XCTestCase {
         XCTAssertEqual(CompanionBoundary.mode, "observe")
     }
 
+    func testStableBundleIdentifiers() {
+        XCTAssertEqual(CompanionBoundary.bundleIdentifier, "com.darashkevich.runspecimen.companion")
+        XCTAssertEqual(CompanionBoundary.iosObserveBundleIdentifier, "com.darashkevich.runspecimen.observe")
+        XCTAssertTrue(CompanionBoundary.shippingChannel.contains("TestFlight"))
+    }
+
     func testLaunchPlanNeverIncludesApproveOrRun() {
         let plan = CompanionLaunchPlan(
             workspace: "/tmp/ws",

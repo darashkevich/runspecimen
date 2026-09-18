@@ -101,4 +101,12 @@ struct RemoteConfirmResult: Codable, Equatable {
 struct PairingConfig: Codable, Equatable {
     var baseURL: URL
     var pairingToken: String
+    /// SHA-256 fingerprint of the Mac companion TLS cert (colons optional). Required for HTTPS.
+    var tlsFingerprint: String?
+
+    enum CodingKeys: String, CodingKey {
+        case baseURL
+        case pairingToken
+        case tlsFingerprint
+    }
 }

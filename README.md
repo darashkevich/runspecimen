@@ -37,10 +37,10 @@ No watchers, no recurring scheduler, no parallel workers.
 - [Schema compatibility](docs/SCHEMA_COMPATIBILITY.md) — contract/receipt versions
 - [Ed25519 receipts (optional)](docs/ED25519_RECEIPTS.md) — offline public-key verify
 - [Phased roadmap](docs/ROADMAP_PHASED.md) — feature and UX pipeline
-- [ADR-003 iOS companion observation](docs/ADR-003-ios-companion-observation.md) — remote observe / attention
+- [ADR-003 iOS companion observation](docs/ADR-003-ios-companion-observation.md) — remote observe / attention (Accepted defaults: loopback HTTP OK; LAN TLS + Tailscale preferred)
 - [ADR-004 remote human confirm](docs/ADR-004-remote-human-confirm.md) — Mac-armed challenge + phone `APPROVE` (not TTY-equivalent; plugins cannot approve)
-- [iOS Observe app](apps/ios/README.md) — SwiftUI scaffold
-- [macOS companion helper](apps/macos-companion/README.md) — CLI preview UI (not MAS packaging)
+- [iOS Observe app](apps/ios/README.md) — `com.darashkevich.runspecimen.observe` (TestFlight/later)
+- [macOS companion helper](apps/macos-companion/README.md) — `com.darashkevich.runspecimen.companion` (not MAS packaging / PR #6)
 
 ## Install
 

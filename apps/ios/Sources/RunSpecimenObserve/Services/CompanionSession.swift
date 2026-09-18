@@ -5,6 +5,7 @@ import SwiftUI
 final class CompanionSession: ObservableObject {
     @Published var baseURLString: String = "http://127.0.0.1:8787/"
     @Published var pairingToken: String = ""
+    @Published var tlsFingerprint: String = ""
     @Published var isPaired: Bool = false
     @Published var capabilities: CompanionCapabilities?
     @Published var status: CompanionStatus?
@@ -42,9 +43,17 @@ final class CompanionSession: ObservableObject {
             isPaired = false
             return
         }
+        let scheme = (url.scheme ?? "").lowercased()
+        let fingerprint = tlsFingerprint.trimmingCharacters(in: .whitespacesAndNewlines)
+        if scheme == "https", fingerprint.isEmpty {
+            lastError = "HTTPS requires the Mac tls_fingerprint_sha256 from companion --print-token."
+            isPaired = false
+            return
+        }
         let config = PairingConfig(
             baseURL: url,
-            pairingToken: pairingToken.trimmingCharacters(in: .whitespacesAndNewlines)
+            pairingToken: pairingToken.trimmingCharacters(in: .whitespacesAndNewlines),
+            tlsFingerprint: fingerprint.isEmpty ? nil : fingerprint
         )
         let client = CompanionClient(config: config)
         do {
@@ -163,12 +172,20 @@ final class CompanionSession: ObservableObject {
               let url = URL(string: baseURLString),
               !pairingToken.isEmpty
         else { return nil }
-        return CompanionClient(config: PairingConfig(baseURL: url, pairingToken: pairingToken))
+        let fingerprint = tlsFingerprint.trimmingCharacters(in: .whitespacesAndNewlines)
+        return CompanionClient(
+            config: PairingConfig(
+                baseURL: url,
+                pairingToken: pairingToken,
+                tlsFingerprint: fingerprint.isEmpty ? nil : fingerprint
+            )
+        )
     }
 
     private func persist(_ config: PairingConfig) {
         baseURLString = config.baseURL.absoluteString
         pairingToken = config.pairingToken
+        tlsFingerprint = config.tlsFingerprint ?? ""
         if let data = try? JSONEncoder().encode(config) {
             UserDefaults.standard.set(data, forKey: defaultsKey)
         }
@@ -180,6 +197,7 @@ final class CompanionSession: ObservableObject {
         else { return }
         baseURLString = config.baseURL.absoluteString
         pairingToken = config.pairingToken
+        tlsFingerprint = config.tlsFingerprint ?? ""
         isPaired = true
     }
 }

@@ -142,8 +142,10 @@ def build_parser() -> argparse.ArgumentParser:
             "Mac-armed remote human confirm (ADR-004). Requires an explicit pairing token. "
             "can_approve stays false; /v1/approve and run/preflight/postflight paths stay "
             "forbidden. Remote confirm needs a prior `remote-confirm arm` on this Mac. "
-            "Default bind is loopback; --allow-lan requires a private or Tailscale address. "
-            "mTLS is required before exposing beyond a trusted network."
+            "Default bind is loopback (HTTP + pairing token). Non-loopback --allow-lan "
+            "requires a private or Tailscale address and TLS (ephemeral self-signed cert "
+            "unless --tls-cert/--tls-key are provided). Cleartext remote-confirm is refused "
+            "off loopback. No public internet control plane; Tailscale is recommended."
         ),
     )
     _add_workspace(p_companion)
@@ -158,7 +160,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_companion.add_argument(
         "--allow-lan",
         action="store_true",
-        help="Allow private/link-local/Tailscale bind (still refuses public/unspecified)",
+        help="Allow private/link-local/Tailscale bind (requires TLS; still refuses public/unspecified)",
+    )
+    p_companion.add_argument(
+        "--tls-cert",
+        type=Path,
+        default=None,
+        help="PEM certificate for non-loopback binds (default: ephemeral self-signed)",
+    )
+    p_companion.add_argument(
+        "--tls-key",
+        type=Path,
+        default=None,
+        help="PEM private key for --tls-cert",
     )
     p_companion.add_argument(
         "--print-token",
@@ -481,6 +495,7 @@ def main(argv: list[str] | None = None) -> int:
             raise RunSpecimenError(f"unknown remote-confirm command: {args.remote_confirm_command}")
         if args.command == "companion":
             from runspecimen.companion import generate_pairing_token, start_companion
+            from runspecimen.companion_attention import notify_attention_requested
 
             token = args.pairing_token or generate_pairing_token()
             if args.pairing_token is None and not args.print_token:
@@ -490,8 +505,9 @@ def main(argv: list[str] | None = None) -> int:
                 )
 
             def _on_attention(entry: dict) -> None:
+                note = notify_attention_requested(message=str(entry.get("message") or ""))
                 print(
-                    json.dumps({"event": "attention", **entry}, sort_keys=True),
+                    json.dumps({"event": "attention", **entry, "notification": note}, sort_keys=True),
                     flush=True,
                 )
 
@@ -547,6 +563,8 @@ def main(argv: list[str] | None = None) -> int:
                 host=args.host,
                 port=args.port,
                 allow_lan=bool(args.allow_lan),
+                tls_cert=args.tls_cert,
+                tls_key=args.tls_key,
                 on_attention=_on_attention,
                 on_open_dashboard=_on_open_dashboard,
                 on_remote_confirmed=_on_remote_confirmed,

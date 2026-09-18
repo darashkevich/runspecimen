@@ -7,6 +7,10 @@ public enum CompanionBoundary {
     public static let mode = "observe"
     public static let canApprove = false
     public static let canExecute = false
+    /// Stable App Store / TestFlight-oriented bundle id (portal record still operator-owned).
+    public static let bundleIdentifier = "com.darashkevich.runspecimen.companion"
+    public static let iosObserveBundleIdentifier = "com.darashkevich.runspecimen.observe"
+    public static let shippingChannel = "TestFlight/later"
     public static let adrRelativePath = "docs/ADR-004-remote-human-confirm.md"
     public static let observeAdrRelativePath = "docs/ADR-003-ios-companion-observation.md"
 
@@ -15,7 +19,14 @@ public enum CompanionBoundary {
     It does not inject TTY APPROVE and does not give plugins an approve path.
     can_approve stays false. Optional remote human confirm requires a Mac-armed \
     one-shot challenge typed with APPROVE on a paired phone — not equivalent to \
-    local TTY APPROVE, and not an OS sandbox.
+    local TTY APPROVE, and not an OS sandbox. Non-loopback binds require TLS; \
+    Tailscale is recommended. Focus/DND may suppress arm/attention banners.
+    """
+
+    public static let attentionPolicy = """
+    Default attention: local macOS banner with sound when remote-confirm is armed \
+    or the phone requests attention. Focus / Do Not Disturb may still suppress \
+    delivery — RunSpecimen does not claim Focus bypass.
     """
 }
 
@@ -41,6 +52,7 @@ public struct CompanionLaunchPlan: Equatable, Sendable {
     }
 
     /// Arguments for `runspecimen companion …` — never includes approve/run.
+    /// Non-loopback `--allow-lan` implies TLS in the Python CLI.
     public var processArguments: [String] {
         var args = [
             "companion",

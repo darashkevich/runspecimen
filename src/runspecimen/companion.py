@@ -8,7 +8,9 @@ docs/ADR-004-remote-human-confirm.md):
 - Remote confirm settles only a Mac-armed pending challenge via
   POST /v1/remote-confirm with pairing + challenge + APPROVE
 - Challenge secret is never returned over HTTP (Mac TTY / local file only)
-- Default bind is loopback; LAN bind requires --allow-lan and a private address
+- Default bind is loopback (pairing token OK over cleartext)
+- Non-loopback bind requires --allow-lan, a private/Tailscale address, and TLS
+- Remote-confirm refuses cleartext off loopback; no public internet control plane
 """
 
 from __future__ import annotations
@@ -25,6 +27,14 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
+from runspecimen.companion_tls import (
+    CompanionTLSMaterial,
+    generate_ephemeral_tls,
+    host_requires_tls,
+    load_tls_material,
+    remote_confirm_transport_ok,
+    wrap_server_socket,
+)
 from runspecimen.contract import load_contract
 from runspecimen.errors import ApprovalError, RunSpecimenError
 from runspecimen.paths import run_state_dir
@@ -60,7 +70,14 @@ CAPABILITIES = {
     "can_remote_confirm": False,
     "can_request_attention": True,
     "can_open_local_dashboard": True,
-    "transport": "local-network-opt-in",
+    "transport": "loopback-http-or-lan-tls-opt-in",
+    "transport_policy": {
+        "loopback": "pairing-token-over-http-ok",
+        "non_loopback": "tls-required-plus-pairing-token",
+        "remote_confirm_cleartext_off_loopback": False,
+        "public_internet_control_plane": False,
+        "recommended_path": "tailscale-or-private-lan-with-tls",
+    },
     "boundary": (
         "Observation, attention, and optional Mac-armed remote human confirm. "
         "can_approve stays false for plugins/agents. Local TTY APPROVE remains "
@@ -68,6 +85,8 @@ CAPABILITIES = {
     ),
     "adr": "docs/ADR-004-remote-human-confirm.md",
     "adr_observe": "docs/ADR-003-ios-companion-observation.md",
+    "ios_bundle_id": "com.darashkevich.runspecimen.observe",
+    "mac_companion_bundle_id": "com.darashkevich.runspecimen.companion",
 }
 
 
@@ -343,6 +362,16 @@ def make_handler(
                 )
                 return
             if route == "/v1/remote-confirm":
+                if not remote_confirm_transport_ok(
+                    client_address=self.client_address,
+                    connection=self.connection,
+                ):
+                    self._error(
+                        403,
+                        "remote-confirm refuses cleartext off loopback; "
+                        "use TLS (--allow-lan enables ephemeral TLS) or Tailscale.",
+                    )
+                    return
                 if not rate_limit_ok():
                     self._error(429, "Too many remote-confirm attempts; slow down.")
                     return
@@ -414,11 +443,13 @@ def start_companion(
     host: str = "127.0.0.1",
     port: int = 0,
     allow_lan: bool = False,
+    tls_cert: Path | None = None,
+    tls_key: Path | None = None,
     on_attention: Callable[[dict[str, Any]], None] | None = None,
     on_open_dashboard: Callable[[], None] | None = None,
     on_remote_confirmed: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[ThreadingHTTPServer, str, dict[str, Any]]:
-    """Bind the companion server. Fail closed unless bind policy passes."""
+    """Bind the companion server. Fail closed unless bind + TLS policy passes."""
     if not pairing_token or len(pairing_token) < 16:
         raise RunSpecimenError("companion requires a pairing token of at least 16 characters")
     if not 0 <= port <= 65535:
@@ -426,6 +457,16 @@ def start_companion(
     if not workspace.is_dir():
         raise RunSpecimenError(f"workspace is not a directory: {workspace}")
     assert_bind_allowed(host, allow_lan=allow_lan)
+
+    needs_tls = host_requires_tls(host)
+    tls_material: CompanionTLSMaterial | None = None
+    if tls_cert is not None or tls_key is not None:
+        if tls_cert is None or tls_key is None:
+            raise RunSpecimenError("companion TLS requires both --tls-cert and --tls-key")
+        tls_material = load_tls_material(cert_path=tls_cert, key_path=tls_key)
+    elif needs_tls:
+        tls_dir = Path(workspace) / ".runspecimen" / "companion_tls"
+        tls_material = generate_ephemeral_tls(bind_host=host, destination=tls_dir)
 
     handler = make_handler(
         workspace=workspace,
@@ -436,24 +477,35 @@ def start_companion(
         on_remote_confirmed=on_remote_confirmed,
     )
     server = ThreadingHTTPServer((host, port), handler)
+    if tls_material is not None:
+        wrap_server_socket(server, tls_material)
     bound_host, selected_port = server.server_address[:2]
-    url = f"http://{bound_host}:{selected_port}/"
-    meta = {
+    scheme = "https" if tls_material is not None else "http"
+    url = f"{scheme}://{bound_host}:{selected_port}/"
+    meta: dict[str, Any] = {
         "ok": True,
         "url": url,
         "host": bound_host,
         "port": selected_port,
+        "scheme": scheme,
+        "tls": tls_material is not None,
         "allow_lan": allow_lan,
         "mode": "observe",
         "can_approve": False,
         "can_execute": False,
         "can_remote_confirm": False,
         "pairing_required": True,
+        "ios_bundle_id": CAPABILITIES["ios_bundle_id"],
+        "mac_companion_bundle_id": CAPABILITIES["mac_companion_bundle_id"],
+        "shipping_channel": "TestFlight/later (no App Store submit in this change set)",
         "adr": "docs/ADR-004-remote-human-confirm.md",
         "adr_observe": "docs/ADR-003-ios-companion-observation.md",
         "note": (
             "Remote confirm requires Mac-side `remote-confirm arm` first. "
-            "Challenge is shown only on the Mac; mTLS required before untrusted networks."
+            "Challenge is shown only on the Mac. Non-loopback binds require TLS; "
+            "Tailscale is the recommended path. No public internet control plane."
         ),
     }
+    if tls_material is not None:
+        meta.update(tls_material.as_meta())
     return server, url, meta

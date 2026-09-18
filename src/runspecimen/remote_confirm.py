@@ -236,6 +236,14 @@ def _arm_under_lease(
     )
     stdout.flush()
 
+    from runspecimen.companion_attention import notify_remote_confirm_armed
+
+    attention = notify_remote_confirm_armed(
+        campaign_id=contract.campaign_id,
+        run_id=contract.run_id,
+        ttl_sec=ttl_sec,
+    )
+
     return {
         "ok": True,
         "armed": True,
@@ -248,6 +256,7 @@ def _arm_under_lease(
         "local_challenge_file": str(local_challenge_path(state_dir)),
         "confirm_channel": CONFIRM_CHANNEL,
         "not_equivalent_to": NOT_EQUIVALENT_TO,
+        "attention_notification": attention,
         "adr": "docs/ADR-004-remote-human-confirm.md",
     }
 

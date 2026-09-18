@@ -1,10 +1,14 @@
+import CryptoKit
 import Foundation
+import Security
 
 enum CompanionClientError: LocalizedError {
     case notPaired
     case http(Int, String)
     case decoding
     case transport(String)
+    case tlsPinRequired
+    case tlsPinMismatch
 
     var errorDescription: String? {
         switch self {
@@ -16,6 +20,10 @@ enum CompanionClientError: LocalizedError {
             return "Could not decode companion response."
         case let .transport(message):
             return message
+        case .tlsPinRequired:
+            return "HTTPS companion URLs require the Mac TLS fingerprint from --print-token."
+        case .tlsPinMismatch:
+            return "TLS certificate fingerprint does not match the paired Mac value."
         }
     }
 }
@@ -34,6 +42,26 @@ struct CompanionClient {
         return url
     }
 
+    private func makeSession() throws -> URLSession {
+        let scheme = (config.baseURL.scheme ?? "").lowercased()
+        if scheme == "https" {
+            let pin = (config.tlsFingerprint ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !pin.isEmpty else { throw CompanionClientError.tlsPinRequired }
+            let delegate = CompanionTLSPinningDelegate(expectedFingerprint: pin)
+            return URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+        }
+        if scheme == "http" {
+            let host = (config.baseURL.host ?? "").lowercased()
+            let loopback = host == "localhost" || host == "127.0.0.1" || host == "::1"
+            if !loopback {
+                throw CompanionClientError.transport(
+                    "Cleartext HTTP is only allowed for loopback. Use HTTPS + TLS fingerprint for LAN/Tailscale."
+                )
+            }
+        }
+        return URLSession.shared
+    }
+
     private func request(path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
         var req = URLRequest(url: try endpoint(path))
         req.httpMethod = method
@@ -44,8 +72,9 @@ struct CompanionClient {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         req.timeoutInterval = 8
+        let session = try makeSession()
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
+            let (data, response) = try await session.data(for: req)
             guard let http = response as? HTTPURLResponse else {
                 throw CompanionClientError.transport("Non-HTTP response")
             }
@@ -91,5 +120,54 @@ struct CompanionClient {
         ])
         let data = try await request(path: "/v1/remote-confirm", method: "POST", body: payload)
         return try JSONDecoder().decode(RemoteConfirmResult.self, from: data)
+    }
+}
+
+final class CompanionTLSPinningDelegate: NSObject, URLSessionDelegate {
+    let expectedFingerprint: String
+
+    init(expectedFingerprint: String) {
+        self.expectedFingerprint = Self.normalize(expectedFingerprint)
+        super.init()
+    }
+
+    static func normalize(_ value: String) -> String {
+        value
+            .uppercased()
+            .filter { "0123456789ABCDEF".contains($0) }
+            .lowercased()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let trust = challenge.protectionSpace.serverTrust
+        else {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
+        let cert: SecCertificate?
+        if #available(iOS 15.0, *) {
+            cert = SecTrustGetCertificateAtIndex(trust, 0)
+        } else {
+            cert = SecTrustGetCertificateAtIndex(trust, 0)
+        }
+        guard let cert else {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
+        let data = SecCertificateCopyData(cert) as Data
+        let digest = SHA256.hash(data: data)
+        let compact = digest.map { String(format: "%02x", $0) }.joined()
+        guard compact == expectedFingerprint else {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+        completionHandler(.useCredential, URLCredential(trust: trust))
     }
 }

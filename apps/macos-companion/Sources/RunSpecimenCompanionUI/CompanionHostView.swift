@@ -1,13 +1,38 @@
 import SwiftUI
 import RunSpecimenMacCompanion
+import UserNotifications
 
 @main
 struct RunSpecimenCompanionUIApp: App {
+    init() {
+        AttentionBanner.requestAuthorization()
+    }
+
     var body: some Scene {
         WindowGroup("RunSpecimen Companion") {
             CompanionHostView()
         }
-        .defaultSize(width: 560, height: 560)
+        .defaultSize(width: 560, height: 620)
+    }
+}
+
+enum AttentionBanner {
+    static func requestAuthorization() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+
+    /// Local banner + sound when the operator pastes an armed challenge for display.
+    static func notifyArmedChallengeVisible() {
+        let content = UNMutableNotificationContent()
+        content.title = "RunSpecimen remote confirm armed"
+        content.body = "Challenge is visible on this Mac. Phone must type it + APPROVE. Focus/DND may suppress banners."
+        content.sound = .default
+        let req = UNNotificationRequest(
+            identifier: "rs.remote-confirm.armed.\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
     }
 }
 
@@ -20,6 +45,7 @@ struct CompanionHostView: View {
     @State private var armPreview = ""
     @State private var localChallenge = ""
     @State private var challengeFileHint = ""
+    @State private var didNotifyForChallenge = false
 
     var body: some View {
         ScrollView {
@@ -30,12 +56,19 @@ struct CompanionHostView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Text("Bundle ID: \(CompanionBoundary.bundleIdentifier) · \(CompanionBoundary.shippingChannel)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                Text(CompanionBoundary.attentionPolicy)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Form {
                     TextField("Workspace", text: $workspace)
                     TextField("Contract JSON", text: $contract)
                     TextField("Bind host", text: $host)
-                    Toggle("Allow LAN / Tailscale bind", isOn: $allowLAN)
+                    Toggle("Allow LAN / Tailscale bind (TLS required)", isOn: $allowLAN)
                 }
                 .onChange(of: workspace) { _, _ in refreshPreview() }
                 .onChange(of: contract) { _, _ in refreshPreview() }
@@ -46,6 +79,9 @@ struct CompanionHostView: View {
                     Text("1) Start companion (pairing)")
                         .font(.headline)
                     previewBlock(companionPreview.isEmpty ? "Fill workspace + contract." : companionPreview)
+                    Text("Non-loopback binds print https URL + tls_fingerprint_sha256 for the phone.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
 
                     Text("2) Arm remote human confirm (local challenge)")
                         .font(.headline)
@@ -68,6 +104,15 @@ struct CompanionHostView: View {
                         .background(Color.primary.opacity(0.08))
                     TextField("Paste Mac challenge here", text: $localChallenge)
                         .textFieldStyle(.roundedBorder)
+                        .onChange(of: localChallenge) { _, newValue in
+                            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if trimmed.isEmpty {
+                                didNotifyForChallenge = false
+                            } else if !didNotifyForChallenge {
+                                didNotifyForChallenge = true
+                                AttentionBanner.notifyArmedChallengeVisible()
+                            }
+                        }
                     if !challengeFileHint.isEmpty {
                         Text(challengeFileHint)
                             .font(.caption.monospaced())
