@@ -1,0 +1,25 @@
+{
+  "description": "Deny agent-driven RunSpecimen approval and remote-confirm settle. Human TTY approve only. Claude/Junie/Grok use this file so BeforeTool (Gemini) never enters Claude's schema.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/block_approve_gate.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__plugin_runspecimen_runspecimen__.*|mcp__runspecimen__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/block_approve_gate.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

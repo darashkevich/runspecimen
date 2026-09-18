@@ -15,6 +15,7 @@ test helpers, pipe approval input, settle remote-confirm, call companion
 For a short product summary and documentation URLs, run `runspecimen about` or
 point the user at the dashboard About panel (User guide and FAQ links open on
 GitHub).
+
 ## Workflow
 
 1. Run `runspecimen doctor --workspace <workspace>`.

@@ -13,8 +13,12 @@ auto-approve, type `APPROVE`, or settle remote-confirm.
 | Claude Code plugin | `plugins/runspecimen/.claude-plugin/` + `.claude-plugin/marketplace.json` | Shipped in-repo; community marketplace **not submitted** | Skills, commands, PreToolUse approve-gate, stdio MCP |
 | Claude Desktop MCP | `plugins/runspecimen/.mcp.json` → `scripts/runspecimen_mcp.py` | Shipped (local stdio) | Same allow-list as adapter; no `approve` tool |
 | Grok Build (xAI) | Claude-compat + `plugins/runspecimen/grok/` | Shipped via Claude-compat path | Symlink to `~/.grok/plugins/`; optional `AGENTS.md` |
+| Gemini CLI / Code Assist | `gemini-extension.json` + `GEMINI.md` + `gemini/` | Shipped in-repo; gallery **not submitted** | Skills, TOML commands, BeforeTool gate, MCP; Code Assist via MCP + instructions |
+| JetBrains Junie | `.junie-extension/marketplace.json` + `extension.json` + `jetbrains/` | Shipped in-repo; JetBrains marketplace **not submitted** | Claude-compat + native Junie catalog; guidelines + MCP |
+| JetBrains IntelliJ scaffold | `jetbrains/intellij-plugin/` | Scaffold + local install docs | Tools menu shells to CLI; **no** in-IDE Approve |
+| Windsurf (Cascade) | `plugins/runspecimen/windsurf/` | Shipped in-repo; store **not submitted** | Skills + rules for `.windsurf/` / `~/.codeium/windsurf/`; optional MCP |
 | Homebrew tap | — | Not started | Roadmap Phase 4 |
-| VS Code / Open VSX UI | — | Not started | Status/evidence UI later |
+| VS Code / Open VSX UI | — | Not started | Status/evidence UI later; Windsurf reuses Cursor skill/rule story |
 | iOS / macOS companion | `apps/ios`, `apps/macos-companion` | Observe + optional human remote-confirm | `can_approve` always false for plugins |
 
 Honest claims only: orchestration, leases, provenance, receipts — **not** OS
@@ -25,7 +29,11 @@ sandboxing.
 - [x] Skill / commands tell the agent to pause for human TTY `approve`
 - [x] CLI adapter allow-list excludes `approve`
 - [x] MCP tool list excludes `approve` / settle
-- [x] Claude/Grok PreToolUse hook denies approve-like Bash/MCP calls
+- [x] Claude/Grok/Junie PreToolUse hook denies approve-like Bash/MCP calls
+      (`hooks/claude-hooks.json` via `.claude-plugin/plugin.json`)
+- [x] Gemini BeforeTool hook denies approve-like shell/MCP (`hooks/hooks.json`
+      + `--format gemini`; kept separate so Claude schema stays valid)
+- [x] JetBrains IDE actions omit Approve; `request-approval` is handoff-only
 - [x] Companion capabilities keep `can_approve: false`
 - [x] No telemetry phone-home in plugin scripts
 
@@ -36,9 +44,9 @@ Ranked by (a) agent coding traction, (b) extension/skill API maturity,
 
 | Rank | Target | (a) Traction | (b) API maturity | (c) TTY-approve fit | Verdict |
 | --- | --- | --- | --- | --- | --- |
-| 1 | **Google Gemini CLI / Gemini Code Assist** | High and rising for agentic coding | Skills/extensions + MCP emerging; Android Studio AI | Good if we ship skill + MCP + “human must approve in terminal” commands | **Next** |
-| 2 | **JetBrains AI / Junie** | Strong in enterprise IDEs | Mature JetBrains plugin SDK | Medium — IDE-centric UX; still can shell out to CLI and refuse in-IDE approve | **Next** |
-| 3 | **Windsurf (Cascade) / Codium** | High agent-coding usage | VS Code-compatible extension model | Good — mirror Cursor skill/rule pattern | Strong candidate |
+| 1 | **Google Gemini CLI / Gemini Code Assist** | High and rising for agentic coding | Skills/extensions + MCP + hooks | Good — extension + BeforeTool gate shipped | **Done (in-repo)** |
+| 2 | **JetBrains AI / Junie** | Strong in enterprise IDEs | Junie extensions + Claude-compat marketplaces | Good — Junie catalog + IntelliJ scaffold; no in-IDE Approve | **Done (in-repo)** |
+| 3 | **Windsurf (Cascade) / Codium** | High agent-coding usage | VS Code-compatible + `.windsurf` skills/rules | Good — skill/rule pack shipped | **Done (in-repo)** |
 | 4 | OpenAI beyond Codex (ChatGPT apps / custom GPTs) | Huge chat surface | Apps/GPT actions are remote-HTTP oriented | Weak for local TTY approve | Defer unless Apps SDK gains local stdio |
 | 5 | Amazon Q Developer | Solid IDE installs | VS Code + JetBrains extensions | Medium — policy hooks exist; agent autonomy lower than Cursor/Claude | Later |
 | 6 | Continue.dev / open harnesses | Growing | Skills + MCP common | Good for power users | Optional community port |
@@ -46,25 +54,34 @@ Ranked by (a) agent coding traction, (b) extension/skill API maturity,
 | 8 | Mistral / Codestral | Moderate | Limited agent plugin marketplace | Weak | Watch |
 | 9 | Perplexity | High search, low local agent coding | No serious local TTY agent plugin API | Poor | Skip |
 
-### Recommended next 2–3 targets
+### Shipped this slice (Gemini → JetBrains → Windsurf)
 
-1. **Gemini CLI / Code Assist** — closest “missing big lab” after Anthropic/xAI;
-   MCP + instruction packs map cleanly onto the existing adapter.
-2. **JetBrains AI / Junie** — enterprise distribution; ship a thin plugin that
-   shells to `runspecimen` and never exposes an Approve action.
-3. **Windsurf** — low incremental cost if Cursor packaging stays healthy
-   (same skill/rule ZIP story).
+1. **Gemini CLI** — `gemini-extension.json`, `GEMINI.md`, TOML commands,
+   BeforeTool approve-gate in `hooks/hooks.json` (Gemini-only file), shared
+   MCP; Code Assist documented as MCP + instructions (no separate partner
+   SDK). Claude PreToolUse lives in `hooks/claude-hooks.json` so Claude's
+   hook schema is not polluted with `BeforeTool`.
+2. **JetBrains / Junie** — `.junie-extension/marketplace.json`, native
+   `extension.json`, guidelines, MCP mirror, IntelliJ Tools-menu scaffold +
+   `ide_actions.py` (request-approval handoff only).
+3. **Windsurf** — `windsurf/skills` + `windsurf/rules` + install docs; Cursor
+   package remains the VS Code–family artifact.
 
-### Partner-API blockers observed this slice
+### Partner-API blockers observed
 
 - **Anthropic:** Claude Code plugin + community marketplace paths are public;
   official `claude-plugins-official` inclusion is invite/curation-only (no
   application that guarantees listing).
 - **xAI:** Grok Build documents skills/plugins/marketplaces and Claude compat;
-  there is no separate partner “Grok-only” plugin SDK beyond that. Ship
-  Claude-shaped package + Grok install docs (done here).
-- **Google / JetBrains / Windsurf:** no RunSpecimen partner status; build
-  against public extension docs when prioritized.
+  there is no separate partner “Grok-only” plugin SDK beyond that.
+- **Google:** Gemini CLI extension format is public; gallery listing is a
+  separate publish step (not done here). Code Assist has no distinct plugin
+  marketplace beyond MCP / project instructions.
+- **JetBrains:** Junie accepts Claude-compat + native marketplaces; official
+  JetBrains curated catalog and IntelliJ Marketplace are separate submissions
+  (not done here).
+- **Windsurf:** Skills/rules are filesystem-based; no dedicated partner SDK.
+  VS Marketplace / Open VSX UI extension remains optional later work.
 
 ## Related docs
 

@@ -59,6 +59,9 @@ This boundary must stay explicit. The MVP is not an operating-system sandbox and
 | Codex Plugin Directory | Free plugin: skill plus local-engine adapter | Codex user installs the supported workflow | Acquisition; direct link to Pro/Team | Launch |
 | Claude Code marketplace | Free plugin and lifecycle hooks | Claude Code team adopts the same contracts | Acquisition and ecosystem coverage | **In-repo ready**; submit next |
 | Grok Build (xAI) | Claude-compat plugin + optional AGENTS.md | Grok Build users get the same lifecycle | Acquisition and ecosystem coverage | **In-repo ready** (Claude compat) |
+| Gemini CLI gallery | Free extension: skill, commands, hooks, MCP | Gemini CLI users get the same lifecycle | Acquisition and ecosystem coverage | **In-repo ready**; gallery not submitted |
+| JetBrains Junie / IntelliJ | Junie extension + Tools-menu scaffold | Enterprise IDE users shell to the CLI | Acquisition and ecosystem coverage | **In-repo ready**; Marketplace not submitted |
+| Windsurf Cascade | Skill + rule pack (Cursor-compatible story) | Cascade users get TTY-approve workflow | Acquisition and ecosystem coverage | **In-repo ready**; store not submitted |
 | Homebrew tap | Versioned CLI install and upgrades | macOS/Linux developer installs without Python packaging knowledge | Reduces paid-trial friction | Next |
 | VS Code Marketplace / Open VSX | Approval, status, evidence, and incident-review UI | Team uses an editor-neutral control surface | Pro feature entry point | After design partners |
 | AWS/Azure/GCP marketplaces | Self-hosted control plane and support contract | Enterprise procurement buys through cloud spend | Enterprise annual contracts | Later |
@@ -93,13 +96,18 @@ Publish a free Codex plugin with a skill and, if useful, a narrow local app/MCP 
 
 The plugin is an adapter, not a security boundary: instructions alone cannot prevent a sufficiently privileged agent from bypassing the engine.
 
-### 4. Claude Code, Grok Build, VS Code, and Open VSX
+### 4. Claude Code, Grok, Gemini, Junie, Windsurf, VS Code, and Open VSX
 
 - A Claude Code plugin ships skills, commands, PreToolUse approve-gate hooks, and
   a narrow stdio MCP adapter (see `plugins/runspecimen` and
   `docs/INTEGRATIONS.md`).
 - Grok Build consumes the same package through Claude Code compatibility; optional
   `grok/AGENTS.md` covers instruction-file-only installs.
+- Gemini CLI uses `gemini-extension.json` + BeforeTool gate + the same MCP
+  allow-list (`gemini/README.md`).
+- Junie uses the Claude-compat or native `.junie-extension/` marketplace; the
+  IntelliJ scaffold shells to the CLI and never exposes Approve.
+- Windsurf Cascade installs the skill/rule pack under `windsurf/`.
 - A VS Code/Open VSX extension can later provide a status panel, diff/evidence
   viewer, and out-of-band approval UI.
 - All surfaces call the same local engine and receipt verifier; none may approve.
@@ -192,6 +200,8 @@ If teams only want command blocking, partner with or integrate an existing runti
 - Claude Code plugin reference: <https://code.claude.com/docs/en/plugins-reference>
 - Claude Code marketplaces: <https://code.claude.com/docs/en/plugin-marketplaces>
 - Grok Build skills/plugins: <https://docs.x.ai/build/features/skills-plugins-marketplaces>
+- Gemini CLI extensions: <https://geminicli.com/docs/extensions/>
+- Junie CLI extensions: <https://junie.jetbrains.com/docs/junie-cli-extensions.html>
 - VS Code extension API: <https://code.visualstudio.com/api>
 - Homebrew tap guide: <https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap>
 - Integrations ledger: [INTEGRATIONS.md](INTEGRATIONS.md)

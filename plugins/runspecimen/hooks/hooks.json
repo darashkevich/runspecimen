@@ -1,22 +1,24 @@
 {
-  "description": "Deny agent-driven RunSpecimen approval and remote-confirm settle. Human TTY approve only.",
+  "description": "Gemini CLI BeforeTool gate: deny agent-driven RunSpecimen approval and remote-confirm settle. Claude/Junie/Grok intentionally use hooks/claude-hooks.json instead — Claude rejects unknown BeforeTool keys in hooks.json.",
   "hooks": {
-    "PreToolUse": [
+    "BeforeTool": [
       {
-        "matcher": "Bash",
+        "matcher": "run_shell_command",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/block_approve_gate.py\""
+            "name": "runspecimen-block-approve-shell",
+            "command": "python3 \"${extensionPath}${/}scripts${/}block_approve_gate.py\" --format gemini"
           }
         ]
       },
       {
-        "matcher": "mcp__plugin_runspecimen_runspecimen__.*|mcp__runspecimen__.*",
+        "matcher": "mcp_runspecimen_.*",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/block_approve_gate.py\""
+            "name": "runspecimen-block-approve-mcp",
+            "command": "python3 \"${extensionPath}${/}scripts${/}block_approve_gate.py\" --format gemini"
           }
         ]
       }

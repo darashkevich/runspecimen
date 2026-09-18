@@ -115,7 +115,7 @@ plugins/runspecimen/.codex-plugin/plugin.json
 plugins/runspecimen/.claude-plugin/plugin.json
 .claude-plugin/marketplace.json
 plugins/runspecimen/.mcp.json
-plugins/runspecimen/hooks/hooks.json
+plugins/runspecimen/hooks/claude-hooks.json   # PreToolUse only (Claude schema)
 ```
 
 ### Local install (before marketplace acceptance)
@@ -150,6 +150,93 @@ published intentionally.
 
 **MANUAL ACTION REQUIRED:** Optional self-hosted marketplace source when Yahor
 wants in-product discovery beyond the symlink path.
+
+---
+
+## 2d. Gemini CLI extension gallery
+
+**Status:** Package shipped in-repo; gallery **not submitted**
+
+**References:**
+- Extensions: https://geminicli.com/docs/extensions/
+- Extension reference: https://geminicli.com/docs/extensions/reference/
+- Hooks: https://geminicli.com/docs/hooks/reference/
+
+### Package locations
+
+```
+plugins/runspecimen/gemini-extension.json
+plugins/runspecimen/GEMINI.md
+plugins/runspecimen/commands/*.toml
+plugins/runspecimen/hooks/hooks.json   # BeforeTool only (Gemini; Claude uses claude-hooks.json)
+plugins/runspecimen/gemini/README.md
+```
+
+### Local install
+
+```bash
+gemini extensions link "$(pwd)/plugins/runspecimen"
+# or: gemini extensions install "$(pwd)/plugins/runspecimen"
+```
+
+**MANUAL ACTION REQUIRED:** Human must publish to the Gemini CLI extension
+gallery when ready. Gemini Code Assist uses the same MCP script + project
+instructions; there is no separate partner plugin SDK.
+
+---
+
+## 2e. JetBrains Junie / IntelliJ
+
+**Status:** Junie catalog + IntelliJ scaffold in-repo; JetBrains Marketplace
+**not submitted**
+
+### Package locations
+
+```
+.junie-extension/marketplace.json
+plugins/runspecimen/extension.json
+plugins/runspecimen/jetbrains/
+plugins/runspecimen/mcp/.mcp.json
+plugins/runspecimen/guidelines/runspecimen.md
+```
+
+### Local install (Junie)
+
+```text
+/extensions → Marketplaces → Add → /absolute/path/to/runspecimen
+→ Install runspecimen
+```
+
+IntelliJ scaffold: see `plugins/runspecimen/jetbrains/intellij-plugin/README.md`
+(Tools menu only; no Approve action).
+
+**MANUAL ACTION REQUIRED:** Official JetBrains curated Junie catalog and
+IntelliJ Marketplace submissions are human-only when Yahor wants them.
+
+---
+
+## 2f. Windsurf (Cascade)
+
+**Status:** Skill/rule pack shipped; VS Marketplace / Open VSX **not submitted**
+
+### Package locations
+
+```
+plugins/runspecimen/windsurf/README.md
+plugins/runspecimen/windsurf/skills/runspecimen/SKILL.md
+plugins/runspecimen/windsurf/rules/runspecimen.md
+```
+
+### Local install
+
+```bash
+mkdir -p .windsurf/skills .windsurf/rules
+ln -sfn "$(pwd)/plugins/runspecimen/windsurf/skills/runspecimen" .windsurf/skills/runspecimen
+ln -sfn "$(pwd)/plugins/runspecimen/windsurf/rules/runspecimen.md" .windsurf/rules/runspecimen.md
+```
+
+**MANUAL ACTION REQUIRED:** Optional dedicated UI extension / marketplace
+listing later; filesystem skills/rules are the supported path today.
 
 ---
 
@@ -215,6 +302,9 @@ listings are confirmed live (not pending review).
 | Codex Directory | ❌ | - | - | - |
 | Claude Code community | ❌ | package ready in-repo | - | - |
 | Grok Build | ❌ | Claude-compat package ready | - | local symlink / self-host |
+| Gemini CLI gallery | ❌ | extension ready in-repo | - | - |
+| JetBrains Junie / Marketplace | ❌ | Junie catalog + IntelliJ scaffold | - | - |
+| Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
 | PyPI | ❌ (rc10) | after GitHub Release | last live: `0.2.0rc9` | [runspecimen](https://pypi.org/project/runspecimen/) |
 
 **Important:** Do not claim a listing is "public" or "available" until:
@@ -232,5 +322,8 @@ After each channel goes live, verify:
 2. **Codex:** Search "runspecimen" in ChatGPT/Codex Plugins Directory
 3. **Claude Code:** `/plugin` discover after marketplace add; confirm skill + MCP
 4. **Grok Build:** `grok inspect` shows skill/hooks/MCP after symlink
-5. **PyPI:** `pip install runspecimen` works and `runspecimen --version` shows `0.2.0rc10`
-6. **Website:** Update with verified live links only
+5. **Gemini CLI:** `/extensions list` after link/install; confirm MCP + hooks
+6. **Junie:** `/extensions` shows `runspecimen` after marketplace add
+7. **Windsurf:** `@runspecimen` skill resolves; rule appears under Customizations
+8. **PyPI:** `pip install runspecimen` works and `runspecimen --version` shows `0.2.0rc10`
+9. **Website:** Update with verified live links only
