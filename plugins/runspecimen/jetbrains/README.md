@@ -69,6 +69,8 @@ Build (optional, developer machine with JDK 17+):
 
 ```bash
 cd plugins/runspecimen/jetbrains/intellij-plugin
+# Wrapper is not committed; generate once if missing:
+gradle wrapper --gradle-version 8.7
 ./gradlew buildPlugin
 ```
 

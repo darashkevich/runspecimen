@@ -44,8 +44,13 @@ class PluginManifestTests(unittest.TestCase):
 
     def test_claude_hooks_and_mcp_present(self) -> None:
         hooks = json.loads((PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
-        self.assertIn("PreToolUse", hooks["hooks"])
+        claude_hooks = json.loads((PLUGIN / "hooks" / "claude-hooks.json").read_text(encoding="utf-8"))
         self.assertIn("BeforeTool", hooks["hooks"])
+        self.assertNotIn("PreToolUse", hooks["hooks"])
+        self.assertIn("PreToolUse", claude_hooks["hooks"])
+        self.assertNotIn("BeforeTool", claude_hooks["hooks"])
+        claude_plugin = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(claude_plugin.get("hooks"), "./hooks/claude-hooks.json")
         mcp = json.loads((PLUGIN / ".mcp.json").read_text(encoding="utf-8"))
         self.assertIn("runspecimen", mcp["mcpServers"])
         self.assertTrue((PLUGIN / "grok" / "README.md").is_file())
@@ -153,6 +158,36 @@ class ApproveGateTests(unittest.TestCase):
         })
         assert doc is not None
         self.assertEqual(doc.get("decision"), "deny")
+
+    def test_denies_mcp_tool_name_approve(self) -> None:
+        _, doc = self._run_gate(
+            {
+                "hook_event_name": "BeforeTool",
+                "tool_name": "mcp_runspecimen_approve",
+                "tool_input": {},
+            },
+            extra_args=["--format", "gemini"],
+        )
+        assert doc is not None
+        self.assertEqual(doc.get("decision"), "deny")
+
+    def test_denies_ide_actions_approve_shell(self) -> None:
+        _, doc = self._run_gate({
+            "tool_name": "Bash",
+            "tool_input": {
+                "command": "python3 plugins/runspecimen/jetbrains/scripts/ide_actions.py approve --workspace .",
+            },
+        })
+        assert doc is not None
+        self.assertEqual(doc["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_allows_discuss_approve_lowercase(self) -> None:
+        code, doc = self._run_gate({
+            "tool_name": "Bash",
+            "tool_input": {"command": "echo remember human must approve in tty"},
+        })
+        self.assertEqual(code, 0)
+        self.assertIsNone(doc)
 
 
 class McpAdapterTests(unittest.TestCase):

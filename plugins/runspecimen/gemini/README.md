@@ -42,17 +42,24 @@ gemini extensions install https://github.com/darashkevich/runspecimen \
 | Context | `GEMINI.md` | Always-on TTY-approve policy |
 | Skill | `skills/runspecimen/SKILL.md` | Lifecycle workflow |
 | Commands | `commands/*.toml` | `/validate`, `/status`, `/request-approval`, `/verify` |
-| Hooks | `hooks/hooks.json` → `BeforeTool` | Deny approve / settle shell + MCP |
+| Hooks | `hooks/hooks.json` → `BeforeTool` only | Deny approve / settle shell + MCP |
+| Claude hooks (sibling) | `hooks/claude-hooks.json` → `PreToolUse` | Claude/Junie/Grok via plugin.json; not mixed into Gemini file |
 | MCP | `scripts/runspecimen_mcp.py` | No `approve` tool |
 
 ## Approve-safety
 
 1. `GEMINI.md` + skill instruct the agent to pause for human TTY approve.
 2. MCP allow-list omits `approve` / settle.
-3. `BeforeTool` hook runs `block_approve_gate.py --format gemini`.
+3. `BeforeTool` hook runs `block_approve_gate.py --format gemini` from
+   `hooks/hooks.json` (Gemini-only; Claude uses `hooks/claude-hooks.json`).
 4. `excludeTools` additionally blocks obvious `runspecimen approve` /
    `remote-confirm` shell invocations.
 5. Local-only; no telemetry phone-home.
+
+Gemini CLI loads `hooks/hooks.json` from the extension root. Claude Code
+rejects `BeforeTool` keys, so PreToolUse lives in a separate file pointed at by
+`.claude-plugin/plugin.json`. Ensure hooks are enabled in Gemini settings
+(`enableHooks`) if your build gates hook execution behind that flag.
 
 ## Gemini Code Assist (IDE)
 

@@ -30,7 +30,9 @@ sandboxing.
 - [x] CLI adapter allow-list excludes `approve`
 - [x] MCP tool list excludes `approve` / settle
 - [x] Claude/Grok/Junie PreToolUse hook denies approve-like Bash/MCP calls
-- [x] Gemini BeforeTool hook denies approve-like shell/MCP (`--format gemini`)
+      (`hooks/claude-hooks.json` via `.claude-plugin/plugin.json`)
+- [x] Gemini BeforeTool hook denies approve-like shell/MCP (`hooks/hooks.json`
+      + `--format gemini`; kept separate so Claude schema stays valid)
 - [x] JetBrains IDE actions omit Approve; `request-approval` is handoff-only
 - [x] Companion capabilities keep `can_approve: false`
 - [x] No telemetry phone-home in plugin scripts
@@ -55,8 +57,10 @@ Ranked by (a) agent coding traction, (b) extension/skill API maturity,
 ### Shipped this slice (Gemini → JetBrains → Windsurf)
 
 1. **Gemini CLI** — `gemini-extension.json`, `GEMINI.md`, TOML commands,
-   BeforeTool approve-gate, shared MCP; Code Assist documented as MCP +
-   instructions (no separate partner SDK).
+   BeforeTool approve-gate in `hooks/hooks.json` (Gemini-only file), shared
+   MCP; Code Assist documented as MCP + instructions (no separate partner
+   SDK). Claude PreToolUse lives in `hooks/claude-hooks.json` so Claude's
+   hook schema is not polluted with `BeforeTool`.
 2. **JetBrains / Junie** — `.junie-extension/marketplace.json`, native
    `extension.json`, guidelines, MCP mirror, IntelliJ Tools-menu scaffold +
    `ide_actions.py` (request-approval handoff only).

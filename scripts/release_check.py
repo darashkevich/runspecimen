@@ -40,7 +40,7 @@ PLUGIN_COMPONENTS = (
     "assets/runspecimen-logo.png",
     "rules/runspecimen.mdc", "scripts/runspecimen_adapter.py",
     "scripts/block_approve_gate.py", "scripts/runspecimen_mcp.py",
-    "hooks/hooks.json", "skills/runspecimen/SKILL.md",
+    "hooks/hooks.json", "hooks/claude-hooks.json", "skills/runspecimen/SKILL.md",
     "commands/request-approval.md", "commands/request-approval.toml",
     "grok/README.md", "grok/AGENTS.md",
     "gemini/README.md", "jetbrains/README.md",
@@ -123,8 +123,14 @@ def check_versions() -> None:
     if "runspecimen" not in (junie_mcp.get("mcpServers") or {}):
         raise SystemExit("plugin mcp/.mcp.json must declare runspecimen server")
     hooks = json.loads((plugin_root / "hooks/hooks.json").read_text(encoding="utf-8"))
-    if "PreToolUse" not in (hooks.get("hooks") or {}) or "BeforeTool" not in (hooks.get("hooks") or {}):
-        raise SystemExit("plugin hooks.json must declare PreToolUse and BeforeTool gates")
+    if "BeforeTool" not in (hooks.get("hooks") or {}) or "PreToolUse" in (hooks.get("hooks") or {}):
+        raise SystemExit("hooks/hooks.json must be Gemini BeforeTool-only (Claude rejects BeforeTool)")
+    claude_hooks = json.loads((plugin_root / "hooks/claude-hooks.json").read_text(encoding="utf-8"))
+    if "PreToolUse" not in (claude_hooks.get("hooks") or {}) or "BeforeTool" in (claude_hooks.get("hooks") or {}):
+        raise SystemExit("hooks/claude-hooks.json must be Claude PreToolUse-only")
+    claude_plugin = json.loads((plugin_root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
+    if claude_plugin.get("hooks") != "./hooks/claude-hooks.json":
+        raise SystemExit("Claude plugin.json must point hooks at ./hooks/claude-hooks.json")
     plugin_xml = (
         plugin_root / "jetbrains/intellij-plugin/src/main/resources/META-INF/plugin.xml"
     ).read_text(encoding="utf-8")

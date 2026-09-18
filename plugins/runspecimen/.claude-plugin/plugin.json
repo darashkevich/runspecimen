@@ -13,6 +13,6 @@
   "keywords": ["agents", "automation", "provenance", "safety", "local-first"],
   "skills": "./skills/",
   "commands": "./commands/",
-  "hooks": "./hooks/hooks.json",
+  "hooks": "./hooks/claude-hooks.json",
   "mcpServers": "./.mcp.json"
 }

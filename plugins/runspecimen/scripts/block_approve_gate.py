@@ -34,6 +34,7 @@ DENY_REASON = (
 _PATTERNS = (
     re.compile(r"\brunspecimen(?:\.py)?\s+approve\b", re.I),
     re.compile(r"\brunspecimen_adapter\.py\s+approve\b", re.I),
+    re.compile(r"\bide_actions\.py\s+approve\b", re.I),
     re.compile(r"\becho\s+['\"]?APPROVE['\"]?", re.I),
     re.compile(r"\bprintf\s+['\"]?APPROVE['\"]?", re.I),
     re.compile(r"\bAPPROVE\b"),
@@ -42,6 +43,9 @@ _PATTERNS = (
     re.compile(r"\bsettle\b.*\bremote[_-]?confirm\b", re.I),
     re.compile(r"\brunspecimen(?:\.py)?\s+remote-confirm\b", re.I),
 )
+
+# Tool *names* that look like an approve surface (MCP / host naming).
+_TOOL_NAME_APPROVE = re.compile(r"(?:^|[\W_])approve(?:[\W_]|$)", re.I)
 
 
 def _collect_text(value: Any, out: list[str]) -> None:
@@ -58,6 +62,8 @@ def _collect_text(value: Any, out: list[str]) -> None:
 def should_deny(payload: dict[str, Any]) -> bool:
     blobs: list[str] = []
     tool_name = str(payload.get("tool_name") or payload.get("toolName") or "")
+    if tool_name and _TOOL_NAME_APPROVE.search(tool_name):
+        return True
     if tool_name:
         blobs.append(tool_name)
     tool_input = payload.get("tool_input") or payload.get("toolInput") or {}

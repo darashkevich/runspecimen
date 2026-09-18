@@ -5,8 +5,11 @@
 ### Gemini, JetBrains, and Windsurf adapters
 
 - Add Gemini CLI extension manifest (`gemini-extension.json`), `GEMINI.md`,
-  TOML slash commands, and `BeforeTool` approve-gate wiring (shared
-  `block_approve_gate.py --format gemini`).
+  TOML slash commands, and `BeforeTool` approve-gate wiring via
+  `hooks/hooks.json` (Gemini-only) plus shared
+  `block_approve_gate.py --format gemini`. Claude/Junie/Grok keep
+  `hooks/claude-hooks.json` (`PreToolUse`) so Claude's hook schema is not
+  broken by `BeforeTool` keys.
 - Add Junie native marketplace (`.junie-extension/marketplace.json`),
   `extension.json`, guidelines, MCP mirror, JetBrains install docs, tested
   `ide_actions.py`, and a minimal IntelliJ Tools-menu scaffold with **no**
@@ -14,6 +17,8 @@
 - Add Windsurf Cascade skill/rule pack under `plugins/runspecimen/windsurf/`.
 - Extend `docs/INTEGRATIONS.md` / `docs/SUBMISSION.md` ledger for all three.
 - Tests cover Gemini gate dialect, IDE action allow-list, and new manifests.
+- QA: split Claude/Gemini hook files; deny `ide_actions.py approve` and
+  approve-named MCP tool ids in the shared gate.
 
 ### Claude Code and Grok Build adapters
 

@@ -115,7 +115,7 @@ plugins/runspecimen/.codex-plugin/plugin.json
 plugins/runspecimen/.claude-plugin/plugin.json
 .claude-plugin/marketplace.json
 plugins/runspecimen/.mcp.json
-plugins/runspecimen/hooks/hooks.json
+plugins/runspecimen/hooks/claude-hooks.json   # PreToolUse only (Claude schema)
 ```
 
 ### Local install (before marketplace acceptance)
@@ -168,7 +168,7 @@ wants in-product discovery beyond the symlink path.
 plugins/runspecimen/gemini-extension.json
 plugins/runspecimen/GEMINI.md
 plugins/runspecimen/commands/*.toml
-plugins/runspecimen/hooks/hooks.json   # BeforeTool entries
+plugins/runspecimen/hooks/hooks.json   # BeforeTool only (Gemini; Claude uses claude-hooks.json)
 plugins/runspecimen/gemini/README.md
 ```
 

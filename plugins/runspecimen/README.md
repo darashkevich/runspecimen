@@ -53,9 +53,11 @@ Approve-safety layers in this package:
 1. Skill / rules / commands instruct agents to pause for human TTY approve.
 2. `scripts/runspecimen_adapter.py` and `scripts/runspecimen_mcp.py` omit
    `approve` (and remote-confirm settle) from their allow-lists.
-3. `hooks/hooks.json` + `scripts/block_approve_gate.py` deny Bash/shell or MCP
-   tool calls that look like typing `APPROVE`, running `runspecimen approve`,
-   or settling remote-confirm (Claude `PreToolUse` + Gemini `BeforeTool`).
+3. `hooks/claude-hooks.json` (Claude/Junie/Grok via plugin.json) and
+   `hooks/hooks.json` (Gemini BeforeTool) + `scripts/block_approve_gate.py`
+   deny Bash/shell or MCP tool calls that look like typing `APPROVE`, running
+   `runspecimen approve`, or settling remote-confirm. The files are split on
+   purpose: Claude rejects unknown `BeforeTool` keys in a shared hooks.json.
 4. JetBrains `ide_actions.py` / IntelliJ scaffold expose `request-approval`
    handoff only — never an Approve action.
 
