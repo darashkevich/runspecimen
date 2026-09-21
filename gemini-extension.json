@@ -1,0 +1,19 @@
+{
+  "name": "runspecimen",
+  "version": "0.2.0-rc.12",
+  "description": "Approve, bound, run, postflight, and verify consequential local commands. Human TTY approve only — this extension never approves.",
+  "contextFileName": "plugins/runspecimen/GEMINI.md",
+  "mcpServers": {
+    "runspecimen": {
+      "command": "python3",
+      "args": [
+        "${extensionPath}${/}plugins${/}runspecimen${/}scripts${/}runspecimen_mcp.py"
+      ],
+      "cwd": "${extensionPath}${/}plugins${/}runspecimen"
+    }
+  },
+  "excludeTools": [
+    "run_shell_command(runspecimen approve)",
+    "run_shell_command(runspecimen remote-confirm)"
+  ]
+}
