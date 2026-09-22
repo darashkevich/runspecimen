@@ -283,8 +283,9 @@ into the certificate's `runtime_id`.
   `0.2.0rc13` accepts opt-in `sandbox-exec` and `bwrap` when the contract names
   them and the tool is installed; a missing tool fails closed. Those backends
   can confine writes to the workspace and deny network. They are not an OS
-  sandbox. `bwrap` was argument-tested (argv wrapping). It was not executed on
-  macOS. A real Linux execution test may land separately. CPU, memory, and
+  sandbox. Linux CI installs bubblewrap and runs a real `bwrap` spawn
+  regression when the tool is present; macOS does not execute `bwrap`.
+  CPU, memory, and
   child-process limits are not part of either backend. Published `0.2.0rc12`
   rejects the `isolation` field. Optional Ed25519 is not an OS sandbox. A
   companion app’s UI sandbox (if any) does not imply payload confinement.

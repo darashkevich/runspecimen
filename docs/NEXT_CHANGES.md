@@ -206,3 +206,7 @@ Per `PRODUCT_PLAN.md`: generic observability, shell firewall, hosted remote exec
 1. Add credits in [platform.openai.com billing](https://platform.openai.com/settings/organization/billing/) or generate a fresh Composio connection locally. Never commit short-lived connection URLs or credentials.
 2. Re-run Completions with the same brief (logged in `docs/CHATGPT_TANDEM.md`).
 3. Append GPT's real reply to the chatlog; convert matching sections above from `LOCAL DRAFT` → `FROM GPT` (or add GPT-only items). Mark `<!-- APPROVE: -->` for Yahor.
+
+## Stable 0.2.0
+
+See **Stable 0.2.0 gate** in [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md). Gate is **not met** while the published package is `0.2.0rc13`.
