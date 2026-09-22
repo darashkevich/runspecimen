@@ -23,10 +23,8 @@ include work/compute.py
 include plugins/runspecimen/assets/runspecimen-logo.png
 include plugins/runspecimen/assets/logo.png
 include plugins/runspecimen/assets/logo.svg
-include plugins/runspecimen/assets/logo-512.png
 include plugins/runspecimen/assets/composer-icon.png
 include plugins/runspecimen/assets/composer-icon.svg
-include plugins/runspecimen/assets/composer-icon-128.png
 recursive-include scripts *.py *.sh
 recursive-include tests *.py
 recursive-include plugins *.json *.md *.mdc *.py *.toml *.kt *.kts *.xml

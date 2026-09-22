@@ -32,3 +32,4 @@ apps/macos/*.xcworkspace/
 apps/macos/.swiftpm/
 .windsurf/
 
+.wrangler/
