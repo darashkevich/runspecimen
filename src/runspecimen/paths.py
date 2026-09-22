@@ -37,10 +37,22 @@ def ensure_within(workspace: Path, candidate: Path, *, label: str) -> Path:
     """Resolve candidate and require it to stay under workspace."""
     ws = workspace.resolve()
     raw = Path(candidate)
-    abs_path = (ws / raw).resolve() if not raw.is_absolute() else raw.resolve()
     try:
+        abs_path = (ws / raw).resolve() if not raw.is_absolute() else raw.resolve()
         abs_path.relative_to(ws)
     except ValueError as exc:
+        message = str(exc).lower()
+        if "\x00" in str(candidate) or "null" in message or "embedded null" in message:
+            raise PathEscapeError(
+                f"{label} contains an unsafe path component: {candidate!r}"
+            ) from exc
+        # relative_to failure → escape
+        try:
+            abs_path  # type: ignore[name-defined]
+        except NameError:
+            raise PathEscapeError(
+                f"{label} contains an unsafe path component: {candidate!r}"
+            ) from exc
         raise PathEscapeError(
             f"{label} escapes workspace: {candidate} -> {abs_path} (workspace={ws})"
         ) from exc
@@ -64,6 +76,11 @@ def run_state_dir(workspace: Path, campaign_id: str, run_id: str) -> Path:
 
 def campaign_state_dir(workspace: Path, campaign_id: str) -> Path:
     return workspace_state_root(workspace) / "runs" / _safe_id(campaign_id)
+
+
+def validate_id(value: str) -> str:
+    """Public path-safe id check (campaign/run/predecessor)."""
+    return _safe_id(value)
 
 
 def _safe_id(value: str) -> str:

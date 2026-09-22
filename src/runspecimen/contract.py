@@ -7,9 +7,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from runspecimen.errors import ContractError
+from runspecimen.errors import ContractError, PathEscapeError
 from runspecimen.hashutil import hash_contract_file, sha256_bytes
-from runspecimen.paths import ensure_within, resolve_workspace
+from runspecimen.paths import ensure_within, resolve_workspace, validate_id
 from runspecimen.schema import assert_supported_contract_version
 
 # Hard caps enforced by the tool (unsafe if contract exceeds these).
@@ -19,6 +19,9 @@ MAX_APPROVAL_TTL_SEC = 7 * 24 * 60 * 60
 MIN_WALL_TIMEOUT_SEC = 1
 MIN_CAPTURE_BYTES = 1
 MIN_APPROVAL_TTL_SEC = 1
+MAX_CONTRACT_BYTES = 1 * 1024 * 1024
+MAX_STRING_CHARS = 16 * 1024
+MAX_ARGV_LEN = 256
 
 _HEX_CHARS = set("0123456789abcdefABCDEF")
 
@@ -44,9 +47,23 @@ def _require_dict(obj: Any, label: str) -> dict[str, Any]:
     return obj
 
 
+def _require_id(obj: Any, label: str) -> str:
+    value = _require_str(obj, label)
+    try:
+        return validate_id(value)
+    except PathEscapeError as exc:
+        raise ContractError(f"{label} is not a path-safe id: {exc}") from exc
+
+
 def _require_str(obj: Any, label: str) -> str:
     if not isinstance(obj, str) or not obj:
         raise ContractError(f"{label} must be a non-empty string")
+    if "\x00" in obj:
+        raise ContractError(f"{label} must not contain NUL bytes")
+    if len(obj) > MAX_STRING_CHARS:
+        raise ContractError(
+            f"{label} exceeds max length {MAX_STRING_CHARS} characters"
+        )
     return obj
 
 
@@ -261,21 +278,21 @@ def parse_contract(
     version = _require_int(data.get("version"), "version")
     assert_supported_contract_version(version)
 
-    campaign_id = _require_str(data.get("campaign_id"), "campaign_id")
-    run_id = _require_str(data.get("run_id"), "run_id")
+    campaign_id = _require_id(data.get("campaign_id"), "campaign_id")
+    run_id = _require_id(data.get("run_id"), "run_id")
 
     argv_raw = _require_list(data.get("argv"), "argv")
     if not argv_raw:
         raise ContractError("argv must be a non-empty array")
+    if len(argv_raw) > MAX_ARGV_LEN:
+        raise ContractError(f"argv exceeds max length {MAX_ARGV_LEN}")
     argv: list[str] = []
     for i, item in enumerate(argv_raw):
         if not isinstance(item, str) or item == "":
             raise ContractError(f"argv[{i}] must be a non-empty string")
         argv.append(item)
 
-    cwd = data.get("cwd", ".")
-    if not isinstance(cwd, str):
-        raise ContractError("cwd must be a string")
+    cwd = _require_str(data.get("cwd", "."), "cwd")
 
     source_obj = _require_dict(data.get("source"), "source")
     _reject_unknown(source_obj, {"roots", "excludes"}, "source")
@@ -339,10 +356,10 @@ def parse_contract(
         else:
             refuse_if_failed = True
         predecessor = PredecessorSpec(
-            campaign_id=_require_str(
+            campaign_id=_require_id(
                 pred.get("campaign_id", campaign_id), "predecessor.campaign_id"
             ),
-            run_id=_require_str(pred.get("run_id"), "predecessor.run_id"),
+            run_id=_require_id(pred.get("run_id"), "predecessor.run_id"),
             require_postflight=require_postflight,
             refuse_if_failed=refuse_if_failed,
         )
@@ -465,9 +482,21 @@ def load_contract(path: Path) -> Contract:
         # Parse and fingerprint one snapshot. Reopening the path to hash it
         # could bind the parsed command to a replacement contract's bytes.
         payload = path.read_bytes()
-        data = json.loads(payload.decode("utf-8"), object_pairs_hook=_object_without_duplicates)
+        if len(payload) > MAX_CONTRACT_BYTES:
+            raise ContractError(
+                f"contract exceeds max size {MAX_CONTRACT_BYTES} bytes"
+            )
+        try:
+            text = payload.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ContractError(f"invalid contract JSON encoding: {exc}") from exc
+        data = json.loads(text, object_pairs_hook=_object_without_duplicates)
+        if not isinstance(data, dict):
+            raise ContractError("contract must be a JSON object")
     except ContractError:
         raise
+    except json.JSONDecodeError as exc:
+        raise ContractError(f"invalid contract JSON: {exc}") from exc
     except Exception as exc:  # noqa: BLE001
         raise ContractError(f"invalid contract JSON: {exc}") from exc
     return parse_contract(data, path=path, contract_hash=sha256_bytes(payload))
