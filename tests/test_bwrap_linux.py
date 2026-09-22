@@ -55,6 +55,66 @@ from runspecimen.state import load_state
 ESCAPE_PATH = Path("/tmp/runspecimen-bwrap-escape")
 
 
+def _bwrap_spawn_usable():
+    """Return None if a minimal bwrap spawn works; else a skip reason.
+
+    GitHub Actions user namespaces often cannot configure loopback inside
+    ``--unshare-net`` (``RTM_NEWADDR: Operation not permitted``). Construction
+    tests still run; real spawn tests skip with this reason.
+    """
+    tool = shutil.which("bwrap")
+    if not tool:
+        return "bwrap is not installed; real confinement spawn skipped"
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="rs-bwrap-probe-") as tmp:
+        marker = Path(tmp) / "ok"
+        completed = subprocess.run(
+            [
+                tool,
+                "--die-with-parent",
+                "--unshare-user",
+                "--uid",
+                "0",
+                "--gid",
+                "0",
+                "--ro-bind",
+                "/",
+                "/",
+                "--bind",
+                tmp,
+                tmp,
+                "--dev",
+                "/dev",
+                "--proc",
+                "/proc",
+                "--chdir",
+                tmp,
+                "--unshare-net",
+                "--",
+                sys.executable,
+                "-c",
+                "from pathlib import Path; Path(%r).write_text('ok')" % str(marker),
+            ],
+            check=False,
+            capture_output=True,
+        )
+        if completed.returncode == 0 and marker.is_file():
+            return None
+        err = (completed.stderr or b"").decode("utf-8", "replace")
+        if "RTM_NEWADDR" in err:
+            return (
+                "bwrap --unshare-net cannot configure loopback on this host "
+                "(RTM_NEWADDR); real spawn skipped"
+            )
+        return "bwrap probe failed (exit %s): %s" % (completed.returncode, err.strip())
+
+
+_BWRAP_SPAWN_SKIP = _bwrap_spawn_usable()
+
+
+
 def _option_pairs(argv: list[str], flag: str) -> list[tuple[str, str]]:
     pairs: list[tuple[str, str]] = []
     for index, item in enumerate(argv):
@@ -192,10 +252,7 @@ class BwrapMissingBackendTests(RunSpecimenTestCase):
         self.assertIsNone(load_certificate(state_dir))
 
 
-@unittest.skipUnless(
-    shutil.which("bwrap"),
-    "bwrap is not installed; real confinement spawn skipped",
-)
+@unittest.skipIf(_BWRAP_SPAWN_SKIP, _BWRAP_SPAWN_SKIP or "bwrap spawn unusable")
 class BwrapLinuxIntegrationTests(RunSpecimenTestCase):
     def test_outside_write_is_blocked_and_not_certified(self) -> None:
         ESCAPE_PATH.unlink(missing_ok=True)
@@ -333,10 +390,7 @@ class BwrapConstructionNetworkTests(BwrapConstructionTests):
         self.assertIn("inside the workspace", str(ctx.exception))
 
 
-@unittest.skipUnless(
-    shutil.which("bwrap"),
-    "bwrap is not installed; real confinement spawn skipped",
-)
+@unittest.skipIf(_BWRAP_SPAWN_SKIP, _BWRAP_SPAWN_SKIP or "bwrap spawn unusable")
 class BwrapLinuxNetworkAndWriteTests(RunSpecimenTestCase):
     def test_network_is_denied_at_runtime(self) -> None:
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
