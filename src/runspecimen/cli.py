@@ -127,6 +127,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_workspace(p_doctor)
 
+    sub.add_parser(
+        "isolation",
+        help="Show opt-in confinement backends on this host (none is the default)",
+    )
+
     p_dashboard = sub.add_parser(
         "dashboard", help="Open a loopback-only read-only lifecycle dashboard"
     )
@@ -231,7 +236,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Copy run state, events, approval, certificate, verify output, and "
             "refusal extracts into --out. History on disk stays free. Team sharing "
-            "and off-laptop retention are out of band. Never copies "
+            "Use retain to copy a pack outside the workspace. Never copies "
             "remote_confirm_challenge.local or pairing tokens. See "
             "docs/SPEC_INCIDENT_BUNDLE.md."
         ),
@@ -256,6 +261,58 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Nest predecessor run packs under predecessors/",
     )
+
+    p_retain = sub.add_parser(
+        "retain",
+        help="Copy an incident pack to a directory outside the workspace",
+        description=(
+            "Same evidence pack as bundle, refused when --out is inside the "
+            "workspace. Local files only: no upload, no retention service, no account."
+        ),
+    )
+    _add_workspace(p_retain)
+    p_retain.add_argument("--campaign-id", required=True)
+    p_retain.add_argument("--run-id", required=True)
+    p_retain.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help="Destination directory outside the workspace",
+    )
+    p_retain.add_argument("--contract", type=Path, default=None)
+    p_retain.add_argument("--chain", action="store_true")
+
+    p_digest = sub.add_parser(
+        "digest",
+        help="Print recorded receipt fields (does not live-verify)",
+        description=(
+            "Summarize a certificate already on disk. This does not check the "
+            "event chain, signatures, or current provenance. Use verify for that. "
+            "--live only compares output file bytes to output_digests."
+        ),
+    )
+    _add_workspace(p_digest)
+    p_digest.add_argument("--campaign-id", required=True)
+    p_digest.add_argument("--run-id", required=True)
+    p_digest.add_argument(
+        "--live",
+        action="store_true",
+        help="Also compare current output files to recorded output digests",
+    )
+
+    p_diff = sub.add_parser(
+        "diff",
+        help="Compare two recorded receipts in one workspace",
+        description=(
+            "Print a field diff of two certificates. Differences are reported "
+            "with exit status 0. A missing certificate is an error. This is not verify."
+        ),
+    )
+    _add_workspace(p_diff)
+    p_diff.add_argument("--campaign-id", required=True)
+    p_diff.add_argument("--run-id", required=True)
+    p_diff.add_argument("--against-campaign-id", required=True)
+    p_diff.add_argument("--against-run-id", required=True)
 
     p_abandon = sub.add_parser(
         "abandon",
@@ -403,6 +460,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
+    if args.command == "isolation":
+        from runspecimen.isolation import host_capabilities
+
+        print(json.dumps(host_capabilities(), indent=2, sort_keys=True))
+        return 0
 
     workspace = resolve_workspace(args.workspace)
 
@@ -461,18 +523,24 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "validate":
             contract = load_contract(args.contract)
             from runspecimen.contract import check_contract_paths
+            from runspecimen.policy import execution_constraints
 
             check_contract_paths(contract, workspace)
+            isolation, policy = execution_constraints(contract, workspace)
             result = {
                 "ok": True,
                 "campaign_id": contract.campaign_id,
                 "run_id": contract.run_id,
                 "contract_hash": contract.contract_hash,
                 "runtime": runtime_provenance(contract, workspace),
+                "isolation": isolation,
+                "policy": policy,
             }
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0
         if args.command == "doctor":
+            from runspecimen.isolation import host_capabilities
+
             workspace_writable = os.access(str(workspace), os.W_OK)
             lease = Lease.for_workspace(workspace, holder="doctor") if workspace.is_dir() else None
             lease_held = lease.is_locked_by_other() if lease is not None else False
@@ -486,6 +554,7 @@ def main(argv: list[str] | None = None) -> int:
                 "workspace_lease_held": lease_held,
                 "active_lease": lease_meta.to_dict() if lease_meta else None,
                 "docs": dict(DOCS_URLS),
+                "isolation": host_capabilities(),
             }
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0 if result["ok"] else 1
@@ -563,6 +632,41 @@ def main(argv: list[str] | None = None) -> int:
                 include_chain=bool(args.chain),
             )
             print(json.dumps(manifest, indent=2, sort_keys=True, default=str))
+            return 0
+        if args.command == "retain":
+            from runspecimen.bundle import retain_incident_bundle
+
+            manifest = retain_incident_bundle(
+                workspace=workspace,
+                campaign_id=args.campaign_id,
+                run_id=args.run_id,
+                out_dir=args.out,
+                contract_path=args.contract,
+                include_chain=bool(args.chain),
+            )
+            print(json.dumps(manifest, indent=2, sort_keys=True, default=str))
+            return 0
+        if args.command == "digest":
+            from runspecimen.digest import live_output_rows, load_recorded_receipt, summarize_receipt
+
+            cert = load_recorded_receipt(workspace, args.campaign_id, args.run_id)
+            summary = summarize_receipt(cert)
+            if args.live:
+                summary["live_outputs"] = live_output_rows(workspace, cert)
+                summary["note"] = (
+                    "Recorded certificate fields, plus a byte compare of output_digests "
+                    "to current files. This is not runspecimen verify."
+                )
+            print(json.dumps(summary, indent=2, sort_keys=True, default=str))
+            return 0
+        if args.command == "diff":
+            from runspecimen.digest import diff_summaries, load_recorded_receipt, summarize_receipt
+
+            left = summarize_receipt(load_recorded_receipt(workspace, args.campaign_id, args.run_id))
+            right = summarize_receipt(
+                load_recorded_receipt(workspace, args.against_campaign_id, args.against_run_id)
+            )
+            print(json.dumps(diff_summaries(left, right), indent=2, sort_keys=True, default=str))
             return 0
         if args.command == "companion":
             from runspecimen.companion import generate_pairing_token, start_companion

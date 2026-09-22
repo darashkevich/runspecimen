@@ -17,12 +17,13 @@ auto-approve, type `APPROVE`, or settle remote-confirm.
 | JetBrains Junie | `.junie-extension/marketplace.json` + `extension.json` + `jetbrains/` | Shipped in-repo; JetBrains marketplace **not submitted** | Claude-compat + native Junie catalog; guidelines + MCP |
 | JetBrains IntelliJ scaffold | `jetbrains/intellij-plugin/` | Scaffold + local install docs | Tools menu shells to CLI; **no** in-IDE Approve |
 | Windsurf (Cascade) | `plugins/runspecimen/windsurf/` | Shipped in-repo; store **not submitted** | Skills + rules for `.windsurf/` / `~/.codeium/windsurf/`; optional MCP |
-| Homebrew tap | — | Not started | Roadmap Phase 4 |
+| Homebrew formula | `packaging/homebrew/runspecimen.rb` | In repo; installs published `0.2.0rc12` | Not a tap. Does not install unreleased isolation/policy/retain |
 | VS Code / Open VSX UI | — | Not started | Status/evidence UI later; Windsurf reuses Cursor skill/rule story |
 | iOS / macOS companion | `apps/ios`, `apps/macos-companion` | Observe + optional human remote-confirm | `can_approve` always false for plugins |
 
-Honest claims only: orchestration, leases, provenance, receipts — **not** OS
-sandboxing.
+Honest claims only: orchestration, leases, provenance, receipts. Opt-in
+`sandbox-exec` / `bwrap` confine writes (and network, when the contract denies
+it). They are not an OS sandbox. Default `none` confines nothing.
 
 ## Approve-safety checklist (all adapters)
 

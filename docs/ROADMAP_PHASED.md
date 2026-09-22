@@ -42,12 +42,12 @@ hardware-backed identity.
 | `init-demo`, `demo_rc.sh`, showcase | Shipped |
 | Contract `version` + receipt `schema_version` | Phase 0 (PR #5) |
 | Dashboard four-question IA | Phase 0 prototype (PR #5) |
-| Ed25519 offline pubkey receipts | **Next** (Phase 1) |
-| Tested isolation integrations | Phase 2 (design → narrow slice) |
-| Fuzz / golden depth | Phase 3 |
-| Activation / adapters | Phase 4 |
-| Team evidence | Phase 5 (validation-gated) |
-| UX a11y completion + site | Phase 6 |
+| Ed25519 offline pubkey receipts | Shipped optional extra (see `docs/ED25519_RECEIPTS.md`) |
+| Tested isolation integrations | In this working tree, unreleased (`none` / `sandbox-exec` / `bwrap`) |
+| Fuzz / golden depth | In this working tree (`tests/test_fuzz_contracts.py`) |
+| Activation / adapters | Adapters shipped in-repo; Homebrew formula pins published rc12 |
+| Local evidence slice | In this working tree (policy file, local OS user, `retain`). No paid control plane |
+| UX a11y + digest/diff + site copy | In this working tree. Public site no longer lists a price book. Proof adapters stay buyer-driven |
 
 ## Frozen invariants (every phase)
 
@@ -112,68 +112,65 @@ optional dep over handwritten crypto). Hardware-backed keys remain later.
 
 ---
 
-## Phase 2 — Isolation via tested integrations *(not an invented sandbox)*
+## Phase 2 — Isolation via tested integrations *(in tree, unreleased)*
 
-**Scope**
+Shipped in this working tree. Not in published `0.2.0rc12`.
 
-- Opt-in backends (e.g. hardened containers, platform-supported OS isolation)
-  with **capability discovery**, preflight **refusal** if declared policy cannot
-  be enforced, and receipt fields for backend/version/effective settings.
-- Document threat model, escape paths, and residual risks.
-- Resource-limit wrappers alone must **not** be marketed as an OS sandbox.
-- Native/unsandboxed execution stays honestly labeled.
+- Optional contract `isolation.backend`: `none` (default), `sandbox-exec` (when the binary is on PATH), `bwrap` (when the binary is on PATH).
+- A declared backend that is missing fails closed at approve, preflight, and run.
+- `none` does not wrap argv. The receipt says the workload is not confined.
+- `sandbox-exec` is seatbelt write confinement to the workspace, with network denied unless `isolation.network` is true. It is not an OS sandbox.
+- `bwrap` bind-mounts the workspace read-write over a read-only host root, and unshares the network unless `isolation.network` is true.
+- `runspecimen isolation` and `doctor` report which backends exist. They do not claim one is in effect.
+- Receipt field `isolation` (backend, enforced, network, tool, claim, residual) is bound into `certificate_id` when present. Historical receipts that omit it still verify.
 
-**macOS app (PR #6) boundary**
+The macOS app sandbox still does not confine a CLI started in Terminal, and it does not confine the workload except through the contract backend above.
 
-- Sandbox entitlements on the SwiftUI UI process ≠ confinement of an externally
-  selected `runspecimen` CLI launched from Terminal, and ≠ confinement of the
-  workload subprocess the CLI starts.
-- Before any “sandboxed execution” marketing: test and document the actual
-  child-process / payload boundary (inherit vs external launch).
-
-**Acceptance:** Declared isolation unmet → fail closed; receipt records what
-was applied; unsupported hosts labeled; threat model updated.
-
-**Hypothesis only (not core):** customer-validated opt-in coordinator that
-schedules only exact, still-fresh human-approved contracts, preserves
-predecessor/lease checks, and uses distinct lease domains — never auto-approval
-or run-ID resurrection. Record demand; do not implement in-engine now.
+Not in the engine: a scheduler, watcher, or coordinator. Resource limits are not an isolation backend.
 
 ---
 
-## Phase 3 — Resilience and compatibility depth
+## Phase 3 — Resilience and compatibility depth *(in tree, unreleased)*
 
-Fuzz contract parsing, state transitions, paths, interruption; expand golden
-historical receipts; clear migration errors. Preserve terminality and lease
-exclusivity.
-
----
-
-## Phase 4 — Activation and distribution polish
-
-Adversarial first-run campaign; vertical templates; GitHub showcase; narrow
-Cursor/Codex adapters (no shell escape, no approval tool). Claude Code + Grok
-Build adapters shipped in-repo (`docs/INTEGRATIONS.md`); Homebrew as a separate
-slice. Avoid duplicate marketplace submissions while Cursor review is pending.
-Coordinate messaging with PR #6 (Developer ID first; MAS stretch).
+- `tests/test_fuzz_contracts.py` mutates contracts and paths with stdlib `random` and requires fail-closed errors. No new required dependency.
+- Terminal phases still refuse re-entry.
+- Interruption during a run is covered by `tests/test_timeout_run.py` (`run_result=interrupted`).
+- Optional receipt fields change `certificate_id`. The showcase certificate stays a legacy receipt without those fields.
+- Migration text for `isolation`, `policy`, and `approver` is in `docs/SCHEMA_COMPATIBILITY.md`.
 
 ---
 
-## Phase 5 — Team evidence (validation-gated)
+## Phase 4 — Activation and distribution polish *(partial, in tree)*
 
-Local `runspecimen bundle` is Community. Prototype **shared** policies,
-identity-attributed *human* approvals, and off-laptop retention only after
-design-partner validation. Never remote execution, browser approval APIs,
-one-tap Approve, or a public internet control plane.
+Done in this tree, without new marketplace submissions:
+
+- `examples/templates/` for a research step, an ML eval step, and a security check that names a shared policy.
+- `examples/campaigns/adversarial-first-run/` shows a second worker refused by the workspace lease.
+- `packaging/homebrew/runspecimen.rb` installs published `v0.2.0-rc.12`. It does not install this unreleased tree. A tap repository is not created here.
+
+Still outside this change: Cursor, Claude, Gemini, Junie, and OpenAI submissions already filed. Do not file them again. Windsurf, VS Code, and Amazon Q stay unsubmitted. GitHub showcase was already published with rc12.
 
 ---
 
-## Phase 6 — UX completion + site honesty
+## Phase 5 — Local evidence slice *(in tree, unreleased; no control plane)*
 
-a11y/WCAG, digest/diff, coherent CLI/docs/site copy **after** capabilities ship
-and are independently validated. No production marketing upgrades for unshipped
-claims. Website PRs against `darashkevich/darashkevich.com` only after product
-approval.
+The paid Team pilot, SSO, billing, and design-partner gate are not in this
+tree. The local mechanics are:
+
+- Optional contract `policy` names a JSON file inside the workspace. Its SHA-256 is part of the contract hash. Ceilings, `argv0_allow`, and `require_isolation_backend` are enforced before approval.
+- The approval document and receipt record `approver` as the local OS user (`kind: local_os_user`). That is the account that settled the TTY or remote-confirm on this Mac, not an SSO identity.
+- `runspecimen retain --out <dir>` copies the incident pack and refuses a destination inside the workspace. Nothing is uploaded.
+
+Not built: browser approval, one-tap Approve, a public retention service, remote execution, or a paid control plane.
+
+---
+
+## Phase 6 — UX completion + site honesty *(in tree, unreleased engine)*
+
+- `runspecimen digest` and `runspecimen diff` compare recorded receipts. They are not `verify`. `digest --live` reports output-byte drift only.
+- Dashboard: skip link, main landmark, stronger focus outlines, muted text darkened for contrast, auto-refresh starts off when the user prefers reduced motion, and the page states the contract's isolation backend without applying it.
+- The public page `sites/runspecimen/public/index.html` (in the portfolio repo) no longer lists Pro/Team prices. It still installs published `0.2.0rc12` and says the new commands are not in that package.
+- No production claim that opt-in confinement is an OS sandbox.
 
 ### Domain-specific proof adapters (optional, buyer-driven)
 

@@ -1,0 +1,9 @@
+{
+  "argv0_allow": ["python3"],
+  "id": "research-default",
+  "max_stderr_max_bytes": 65536,
+  "max_stdout_max_bytes": 65536,
+  "max_wall_timeout_sec": 600,
+  "require_isolation_backend": "none",
+  "version": 1
+}

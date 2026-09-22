@@ -16,7 +16,9 @@ from runspecimen.contract import check_contract_paths, load_contract, validate_c
 from runspecimen.errors import LeaseError, PreflightError, RunError
 from runspecimen.events import EventLog, utc_now_iso
 from runspecimen.hashutil import hash_source
+from runspecimen.isolation import assert_tool_unchanged, confinement_argv, plans_match
 from runspecimen.lease import hold_workspace_lease
+from runspecimen.policy import execution_constraints
 from runspecimen.paths import (
     STDERR_FILENAME,
     STDOUT_FILENAME,
@@ -151,6 +153,15 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
     if not cwd.is_dir():
         raise RunError(f"cwd does not exist or is not a directory: {contract.cwd}")
 
+    isolation, policy = execution_constraints(contract, workspace)
+    if not plans_match(approval.get("isolation"), isolation):
+        raise PreflightError(
+            "isolation backend does not match the approval "
+            f"(approved {approval.get('isolation')!r}, live {isolation!r})"
+        )
+    if approval.get("policy") != policy:
+        raise PreflightError("shared policy does not match the approval")
+
     # Source/runtime hashing and predecessor verification can outlast a short
     # approval. Check the clock again at the actual launch boundary.
     ts = time.time() if now is None else now
@@ -167,19 +178,24 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
             "source_hash": source_hash,
             "runtime_id": runtime["runtime_id"],
             "wall_timeout_sec": contract.caps.wall_timeout_sec,
+            "isolation_backend": isolation.get("backend"),
+            "isolation_enforced": isolation.get("enforced"),
         },
     )
-    update_state(
-        state_dir,
-        phase="running",
-        campaign_id=contract.campaign_id,
-        run_id=contract.run_id,
-        run_started_at=utc_now_iso(),
-        run_started_at_unix=ts,
-        contract_hash=contract.contract_hash,
-        source_hash=source_hash,
-        runtime=runtime,
-    )
+    running_fields: dict = {
+        "phase": "running",
+        "campaign_id": contract.campaign_id,
+        "run_id": contract.run_id,
+        "run_started_at": utc_now_iso(),
+        "run_started_at_unix": ts,
+        "contract_hash": contract.contract_hash,
+        "source_hash": source_hash,
+        "runtime": runtime,
+        "isolation": isolation,
+    }
+    if policy is not None:
+        running_fields["policy"] = policy
+    update_state(state_dir, **running_fields)
 
     deadline = time.monotonic() + contract.caps.wall_timeout_sec
     try:
@@ -198,6 +214,17 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
             # Direct executable launch (binaries, not scripts)
             launch_argv = [str(runtime["resolved_executable"]), *contract.argv[1:]]
 
+        launch_argv = confinement_argv(
+            isolation,
+            launch_argv,
+            workspace=workspace,
+            cwd=cwd,
+            profile_path=state_dir / "isolation.sb",
+        )
+        # Hash again immediately before exec. A tool swapped after approval,
+        # or between the earlier check and this spawn, must not run.
+        assert_tool_unchanged(isolation)
+
         proc = subprocess.Popen(  # noqa: S603
             launch_argv,
             cwd=str(cwd),
@@ -207,6 +234,16 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
             shell=False,
             start_new_session=True,
         )
+    except PreflightError as exc:
+        update_state(
+            state_dir,
+            phase="failed",
+            run_result="failed",
+            error=str(exc),
+            run_finished_at=utc_now_iso(),
+        )
+        log.append("run_failed", {"error": str(exc)})
+        raise
     except OSError as exc:
         update_state(
             state_dir,

@@ -40,7 +40,9 @@ if ! file "$HELPER" | grep -q 'Mach-O'; then
 fi
 
 HELPER_ENTITLEMENTS="$ROOT/Entitlements/RunSpecimen.helper.entitlements"
+PYTHON_ENTITLEMENTS="$ROOT/Entitlements/RunSpecimen.python.entitlements"
 test -f "$HELPER_ENTITLEMENTS"
+test -f "$PYTHON_ENTITLEMENTS"
 
 RESOLVE_OUT="$("$ROOT/Scripts/resolve_codesign_identity.sh")"
 IDENTITY="$(printf '%s\n' "$RESOLVE_OUT" | awk -F= '/^IDENTITY=/{print substr($0,10); exit}')"
@@ -58,25 +60,46 @@ INTERNAL="$HELPER_DIR/_internal"
 
 sign_file() {
   local path="$1"
-  local with_entitlements="${2:-0}"
+  local entitlements="${2:-}"
+  local want_ts="${3:-0}"
   xattr -cr "$path" 2>/dev/null || true
-  if [[ "$MODE" == "adhoc" || "$IDENTITY" == "-" ]]; then
-    if [[ "$with_entitlements" == "1" ]]; then
-      codesign --force --sign - --options runtime --timestamp=none \
-        --entitlements "$HELPER_ENTITLEMENTS" \
-        "$path"
+  local attempt=1
+  local max=5
+  while true; do
+    local err=""
+    local rc=0
+    if [[ "$MODE" == "adhoc" || "$IDENTITY" == "-" ]]; then
+      if [[ -n "$entitlements" ]]; then
+        err="$(codesign --force --sign - --options runtime --timestamp=none \
+          --entitlements "$entitlements" "$path" 2>&1)" || rc=$?
+      else
+        err="$(codesign --force --sign - --options runtime --timestamp=none "$path" 2>&1)" || rc=$?
+      fi
     else
-      codesign --force --sign - --options runtime --timestamp=none "$path"
+      local ts_flag=(--timestamp=none)
+      if [[ "$want_ts" == "1" ]]; then
+        ts_flag=(--timestamp)
+      fi
+      if [[ -n "$entitlements" ]]; then
+        err="$(codesign --force --sign "$IDENTITY" --options runtime "${ts_flag[@]}" \
+          --entitlements "$entitlements" "$path" 2>&1)" || rc=$?
+      else
+        err="$(codesign --force --sign "$IDENTITY" --options runtime "${ts_flag[@]}" "$path" 2>&1)" || rc=$?
+      fi
     fi
-  else
-    if [[ "$with_entitlements" == "1" ]]; then
-      codesign --force --sign "$IDENTITY" --options runtime --timestamp \
-        --entitlements "$HELPER_ENTITLEMENTS" \
-        "$path"
-    else
-      codesign --force --sign "$IDENTITY" --options runtime --timestamp "$path"
+    if [[ $rc -eq 0 ]]; then
+      [[ -n "$err" ]] && printf '%s\n' "$err"
+      return 0
     fi
-  fi
+    printf '%s\n' "$err" >&2
+    if [[ "$want_ts" == "1" && $attempt -lt $max && "$err" == *"timestamp"* ]]; then
+      echo "codesign timestamp miss on $path — retry $attempt/$max" >&2
+      sleep "$attempt"
+      attempt=$((attempt + 1))
+      continue
+    fi
+    return "$rc"
+  done
 }
 
 # Inside-out: sign nested dylibs / .so / Mach-O bins under _internal first.
@@ -87,11 +110,17 @@ if [[ -d "$INTERNAL" ]]; then
   xattr -cr "$INTERNAL" 2>/dev/null || true
   while IFS= read -r -d '' f; do
     if file "$f" 2>/dev/null | grep -q 'Mach-O'; then
-      sign_file "$f" 0
+      # Nested CPython / .so need CS entitlements or Hardened Runtime kills the helper.
+      # Skip Apple TSA on every .so — two archive phases would otherwise flood it.
+      sign_file "$f" "$PYTHON_ENTITLEMENTS" 0
     else
       chmod a-x "$f" 2>/dev/null || true
     fi
   done < <(find "$INTERNAL" -type f -print0)
+  while IFS= read -r -d '' fw; do
+    echo "Signing nested framework $fw"
+    sign_file "$fw" "$PYTHON_ENTITLEMENTS" 1
+  done < <(find "$INTERNAL" -name '*.framework' -print0)
 fi
 
 if [[ "$MODE" == "adhoc" || "$IDENTITY" == "-" ]]; then
@@ -100,7 +129,7 @@ if [[ "$MODE" == "adhoc" || "$IDENTITY" == "-" ]]; then
 else
   echo "Signing nested helper with identity ($MODE): $IDENTITY"
 fi
-sign_file "$HELPER" 1
+sign_file "$HELPER" "$HELPER_ENTITLEMENTS" 1
 
 # Fail-closed entitlement assertions
 ENT_XML="$(codesign -d --entitlements - "$HELPER" 2>/dev/null || true)"

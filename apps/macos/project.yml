@@ -67,7 +67,8 @@ targets:
         CFBundleName: RunSpecimen
         CFBundlePackageType: APPL
         CFBundleShortVersionString: "0.1.3"
-        CFBundleVersion: "6"
+        CFBundleVersion: "8"
+        ITSAppUsesNonExemptEncryption: false
         RSDistributionChannel: mas
         LSApplicationCategoryType: public.app-category.developer-tools
         LSMinimumSystemVersion: "14.0"
@@ -79,6 +80,8 @@ targets:
       path: Entitlements/RunSpecimen.mas.entitlements
       properties:
         com.apple.security.app-sandbox: true
+        com.apple.security.cs.allow-unsigned-executable-memory: true
+        com.apple.security.cs.disable-library-validation: true
         com.apple.security.files.user-selected.read-write: true
         com.apple.security.files.user-selected.executable: true
         com.apple.security.network.client: true
@@ -87,7 +90,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen
         MARKETING_VERSION: "0.1.3"
-        CURRENT_PROJECT_VERSION: "6"
+        CURRENT_PROJECT_VERSION: "8"
         INFOPLIST_FILE: Config/Info-mas.plist
         PRODUCT_NAME: RunSpecimen
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -146,6 +149,17 @@ targets:
               fi
             fi
           done
+          DEMO_SRC="${SRCROOT}/Resources/ReviewerDemo"
+          if [[ -d "$DEMO_SRC" && -f "$DEMO_SRC/contract.json" ]]; then
+            rm -rf "$RES_DEST/ReviewerDemo"
+            mkdir -p "$RES_DEST/ReviewerDemo"
+            rsync -a --delete --exclude '.runspecimen' --exclude '.DS_Store' "$DEMO_SRC/" "$RES_DEST/ReviewerDemo/" \
+              || cp -R "$DEMO_SRC/." "$RES_DEST/ReviewerDemo/"
+            echo "Staged reviewer demo workspace → $RES_DEST/ReviewerDemo"
+          else
+            echo "error: Missing Resources/ReviewerDemo/contract.json (App Review completeness)." >&2
+            exit 1
+          fi
           # Strip Finder/Box xattrs that break codesign ("resource fork … not allowed").
           INTERNAL_SRC="${SRCROOT}/Helpers/payload/_internal"
           if [[ ! -d "$INTERNAL_SRC" ]]; then

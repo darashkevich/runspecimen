@@ -30,10 +30,12 @@ struct SettingsView: View {
                         .font(RSTheme.monoSmall)
                         .foregroundStyle(RSTheme.muted)
                 }
-                Button("Select runspecimen…") {
-                    Task { await model.chooseCLI() }
+                if !DistributionChannel.current.requiresBundledHelper {
+                    Button("Select runspecimen…") {
+                        Task { await model.chooseCLI() }
+                    }
+                    .accessibilityHint("Opens a file picker. Required for App Sandbox bookmark grants.")
                 }
-                .accessibilityHint("Opens a file picker. Required for App Sandbox bookmark grants.")
                 Button("Prefer Bundled Helper") {
                     Task { await model.preferBundledHelper() }
                 }
@@ -41,7 +43,9 @@ struct SettingsView: View {
                 Button("Clear CLI Bookmark & Rediscover") {
                     Task { await model.clearCLIBookmarkAndRediscover() }
                 }
-                .accessibilityHint("Drops the Open-panel bookmark so discovery can use Helpers then PATH.")
+                .accessibilityHint(DistributionChannel.current.requiresBundledHelper
+                    ? "Drops a saved CLI bookmark and uses the bundled engine. Store builds do not select a host CLI."
+                    : "Drops the Open-panel bookmark so discovery can use Helpers then PATH.")
                 if let issue = model.cliSetupIssue {
                     Text(issue)
                         .font(.system(size: 11))
@@ -52,7 +56,9 @@ struct SettingsView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(RSTheme.amber)
                 }
-                Text("Discovery order: Open-panel bookmark → Contents/Helpers/runspecimen → PATH/PyPI (PATH disabled for Mac App Store builds). Store builds require a frozen Mach-O helper (./Scripts/build_app.sh --mas). See Helpers/README.md, SECURITY_BOUNDARY.md, and ADR-002.")
+                Text(DistributionChannel.current.requiresBundledHelper
+                     ? "Mac App Store builds use the bundled frozen engine only. Do not pip install a host CLI. Prefer Bundled Helper if Source is not Bundled Helpers."
+                     : "Discovery order: Open-panel bookmark → Contents/Helpers/runspecimen → PATH/PyPI (PATH disabled for Mac App Store builds).")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -78,16 +84,18 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Install guidance") {
-                Text("python3 -m pip install 'runspecimen==0.2.0rc10'")
-                    .font(RSTheme.monoSmall)
-                    .textSelection(.enabled)
-                Text("Or stage a helper: ./Scripts/stage_helper.sh --from-src && ./Scripts/build_app.sh")
-                    .font(RSTheme.monoSmall)
-                    .textSelection(.enabled)
-                Link("User guide", destination: AppLinks.userGuide)
-                Link("Notarization steps", destination: URL(string: "https://github.com/darashkevich/runspecimen/blob/cursor/macos-native-app/apps/macos/NOTARIZATION.md")!)
-                Link("Helper packaging", destination: URL(string: "https://github.com/darashkevich/runspecimen/blob/cursor/macos-native-app/apps/macos/Helpers/README.md")!)
+            if !DistributionChannel.current.requiresBundledHelper {
+                Section("Install guidance") {
+                    Text("python3 -m pip install 'runspecimen==0.2.0rc12'")
+                        .font(RSTheme.monoSmall)
+                        .textSelection(.enabled)
+                    Text("Or stage a helper: ./Scripts/stage_helper.sh --from-src && ./Scripts/build_app.sh")
+                        .font(RSTheme.monoSmall)
+                        .textSelection(.enabled)
+                    Link("User guide", destination: AppLinks.userGuide)
+                    Link("Notarization steps", destination: URL(string: "https://github.com/darashkevich/runspecimen/blob/main/apps/macos/NOTARIZATION.md")!)
+                    Link("Helper packaging", destination: URL(string: "https://github.com/darashkevich/runspecimen/blob/main/apps/macos/Helpers/README.md")!)
+                }
             }
         }
         .formStyle(.grouped)

@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import getpass
 import math
+import os
 import sys
 import time
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 from runspecimen.atomic import atomic_write_json, read_json
 from runspecimen.contract import Contract, check_contract_paths, load_contract
 from runspecimen.errors import ApprovalError, LeaseError
+from runspecimen.isolation import plans_match
+from runspecimen.policy import execution_constraints
 from runspecimen.events import EventLog, utc_now_iso
 from runspecimen.hashutil import hash_source
 from runspecimen.lease import hold_workspace_lease
@@ -24,6 +28,18 @@ from runspecimen.state import load_state, update_state
 from runspecimen.runtime import runtime_provenance
 
 CONFIRM_PHRASE = "APPROVE"
+
+
+def local_approver() -> dict[str, Any]:
+    """The OS account that settled approval on this machine. Not an SSO identity."""
+    try:
+        user = getpass.getuser()
+    except Exception as exc:  # noqa: BLE001
+        raise ApprovalError(f"cannot record the local OS user: {exc}") from exc
+    if not user or any(ch.isspace() for ch in user):
+        raise ApprovalError("refusing to record a blank local OS user")
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    return {"kind": "local_os_user", "uid": uid, "user": user}
 _TERMINAL_PHASES = frozenset({"running", "completed", "failed", "postflighted", "abandoned"})
 
 
@@ -113,6 +129,9 @@ def _approve_under_lease(
         workspace, list(contract.source.roots), list(contract.source.excludes)
     )
     runtime = runtime_provenance(contract, workspace)
+    isolation, policy = execution_constraints(contract, workspace)
+    approver = local_approver()
+    policy_line = "none" if policy is None else f"{policy['id']} ({policy['sha256'][:12]})"
 
     stdout.write(
         f"Approve bounded run?\n"
@@ -127,6 +146,9 @@ def _approve_under_lease(
         f"  capture:  stdout={contract.caps.stdout_max_bytes}B "
         f"stderr={contract.caps.stderr_max_bytes}B\n"
         f"  prior:    {contract.predecessor!r}\n"
+        f"  isolation: {isolation['claim']}\n"
+        f"  policy:   {policy_line}\n"
+        f"  approver: {approver['user']} (local OS user)\n"
         f"  contract: {contract.contract_hash}\n"
         f"  source:   {source_hash}\n"
         f"  runtime:  {runtime['resolved_executable']}\n"
@@ -153,6 +175,8 @@ def _approve_under_lease(
         },
         expected_source_hash=source_hash,
         expected_runtime=runtime,
+        expected_isolation=isolation,
+        expected_policy=policy,
     )
 
 
@@ -165,6 +189,8 @@ def complete_approval_document(
     confirm_evidence: dict | None = None,
     expected_source_hash: str | None = None,
     expected_runtime: dict | None = None,
+    expected_isolation: dict | None = None,
+    expected_policy: dict | None = None,
 ) -> dict:
     """Write approval + events after human confirmation (TTY or remote-confirm settle).
 
@@ -186,6 +212,12 @@ def complete_approval_document(
     if expected_source_hash is not None and expected_source_hash != source_hash:
         raise ApprovalError("approval aborted (source hash changed since confirm was armed)")
     runtime = expected_runtime if expected_runtime is not None else runtime_provenance(contract, workspace)
+    isolation, policy = execution_constraints(contract, workspace)
+    if expected_isolation is not None and not plans_match(expected_isolation, isolation):
+        raise ApprovalError("approval aborted (isolation backend changed since the prompt)")
+    if expected_policy is not None and expected_policy != policy:
+        raise ApprovalError("approval aborted (policy binding changed since the prompt)")
+    approver = local_approver()
 
     ts = time.time() if now is None else now
     expires_at = ts + contract.approval.ttl_sec
@@ -204,7 +236,11 @@ def complete_approval_document(
         "argv": list(contract.argv),
         "confirm_channel": confirm_channel,
         "confirm_evidence": evidence,
+        "approver": approver,
+        "isolation": isolation,
     }
+    if policy is not None:
+        doc["policy"] = policy
 
     atomic_write_json(approval_path(state_dir), doc)
     log = EventLog.for_state_dir(state_dir)
@@ -216,6 +252,8 @@ def complete_approval_document(
             "runtime_id": runtime["runtime_id"],
             "expires_at_unix": expires_at,
             "confirm_channel": confirm_channel,
+            "approver": approver,
+            "isolation_backend": isolation.get("backend"),
         },
     )
     update_state(

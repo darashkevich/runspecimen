@@ -2,7 +2,7 @@
 
 Practical how-to for the local CLI. This guide matches the installed
 `runspecimen` commands and current release-candidate limits
-(`0.2.0rc12` at time of writing; last PyPI upload is `0.2.0rc10`). For a short product overview see
+(`0.2.0rc12`, published on GitHub and PyPI). For a short product overview see
 [ABOUT.md](ABOUT.md); for product intent see
 [PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
 
@@ -14,8 +14,11 @@ mandatory postflight before a successor; tamper-evident hash-chained receipts.
 
 **It is not:**
 
-- An OS sandbox. Wall timeout, process-group cleanup, and path containment are
-  orchestration controls, not a security boundary against a hostile payload.
+- An OS sandbox. The default `isolation.backend` is `none`: wall timeout,
+  process-group cleanup, and path checks do not confine a hostile payload.
+  Opt-in `sandbox-exec` (macOS, when installed) and `bwrap` (Linux, when
+  installed) confine writes to the workspace and can deny network. The receipt
+  records the residual risk. A missing declared backend fails closed.
 - A job scheduler. No cron, watchers, fan-out, or parallel workers in one
   workspace lease domain.
 - Absolute non-repudiation or scientific proof. Receipts are locally
@@ -34,26 +37,26 @@ enter `APPROVE` for you.
 
 Requirements: Python 3.9+, POSIX (`fcntl` leases), stdlib only.
 
-### From PyPI (last published candidate)
+### From PyPI
 
 ```bash
-python3 -m pip install runspecimen==0.2.0rc10
+python3 -m pip install runspecimen==0.2.0rc12
 runspecimen --version
 ```
 
-This branch is `0.2.0rc12`. Use a source clone (below) until rc12 is published. Do not install from the unpublished rc11 draft.
+Pin the version. Do not install from the unpublished rc11 draft.
 
-Project page: [runspecimen on PyPI](https://pypi.org/project/runspecimen/)
+Project page: [runspecimen 0.2.0rc12 on PyPI](https://pypi.org/project/runspecimen/0.2.0rc12/)
 
-### From GitHub release (last published candidate)
+### From GitHub release
 
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10-py3-none-any.whl
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/runspecimen-0.2.0rc12-py3-none-any.whl
 
 runspecimen --version
 ```
 
-Checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/SHA256SUMS)
+Checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/SHA256SUMS)
 
 ### From source clone
 
@@ -160,6 +163,22 @@ Start from `examples/demo_contract.json`. Minimal surface (version 1):
 | `approval.ttl_sec` | Approval expiry bound into the approval document |
 | `predecessor` | Gate on a prior run’s postflight / failure, or `null` |
 | `postflight.*` | Exit code, output existence/SHA, JSON field equality, source unchanged |
+| `isolation` | Optional. `backend`: `none` (default), `sandbox-exec`, or `bwrap`. `network: true` is refused when backend is `none` |
+| `policy` | Optional. `{id, path, sha256}` of a JSON file inside the workspace. Ceilings apply before approval |
+
+`runspecimen isolation` lists backends on this host. `runspecimen retain` copies
+an incident pack outside the workspace and refuses a destination inside it.
+The approval receipt records the local OS user as `approver`. That is not an
+SSO identity.
+
+`runspecimen digest` prints recorded certificate fields. `runspecimen diff`
+compares two receipts in one workspace. Neither checks the event chain or
+signatures; `verify` does that. `digest --live` only compares output file
+bytes to `output_digests`. A diff that finds differences still exits 0.
+
+These commands and fields are in this working tree. Published `0.2.0rc12`
+rejects `isolation` and `policy` as unknown and does not provide `digest`,
+`diff`, or `retain`.
 
 Hard tool maxima (refuse out-of-range contracts):
 
@@ -348,7 +367,7 @@ exclude `approve`.
 | Symptom | What to check |
 | --- | --- |
 | `workspace execution lease unavailable` | Another lifecycle command holds `.runspecimen/execution.lock`. `doctor` / `status` show `workspace_lease_held` / `lease_meta`. Wait for the holder to finish, or inspect whether a crashed process left confusion (status can report running with no active lease). |
-| Stuck in `running` | Inspect `status` and captures under the run dir. There is no automated recover/abandon command yet; do not reuse the same `run_id`. |
+| Stuck in `running` | Inspect `status`. A human can `abandon` that run on a TTY. Do not reuse the same `run_id`. |
 | `approval requires an interactive TTY` | Run `approve` in a real terminal (stdin and stdout must be TTYs). Do not pipe `APPROVE`. |
 | Approval expired / hash mismatch | Re-approve after fixing contract or source drift. Contract hash is raw bytes. |
 | Runtime / executable mismatch | Interpreter or binary path changed since approval (common after clone or PATH change). Re-approve on this host. |
@@ -356,7 +375,7 @@ exclude `approve`.
 | Predecessor refused | Prior run not postflighted, failed/timed out, or receipt invalid. Fix predecessor first. |
 | Second `run` refused | Expected: a run ID cannot be reused after execution starts. New contract + new `run_id`. |
 | Outputs already exist at preflight | Delete or move asserted output paths before launch (they must start absent). |
-| Untrusted payload | Use a container or OS sandbox; RunSpecimen does not isolate the process. |
+| Untrusted payload | Default backend `none` does not confine the process. Opt-in `sandbox-exec` or `bwrap` only when declared and installed; read `isolation.residual`. They are not an OS sandbox. Published `0.2.0rc12` has neither field. |
 
 ## Related docs
 

@@ -44,34 +44,38 @@ Those child-process boundaries must be tested and documented before any
 - Equating HMAC shared-secret authentication with digital signatures or absolute
   non-repudiation
 
-## Isolation direction (future, opt-in)
+## Isolation (opt-in)
 
-Planned work prefers **tested platform integrations** (for example hardened
-containers or native OS isolation backends) with:
+The default backend is `none`. RunSpecimen does not wrap the approved argv and
+does not confine writes or network. The receipt says so.
 
-- capability discovery,
-- preflight refusal when a declared policy cannot be enforced,
-- receipt fields recording backend, version, and effective settings,
-- an explicit residual-risk / escape write-up.
+Opt-in backends, only when the contract names them and the tool is on `PATH`:
 
-Until such a backend is selected, tested, and documented, execution remains
-**unsandboxed** aside from orchestration controls (lease, wall clock, capture
-bounds, process-group timeout).
+| Backend | What it enforces | What it does not enforce |
+| --- | --- | --- |
+| `sandbox-exec` | Seatbelt profile: deny by default, allow the process to run and read the host, allow writes only under the workspace, deny network unless `isolation.network` is true | A complete OS sandbox. Mach lookup and host reads stay allowed so the approved program can start. Profile escape and a hostile approved payload remain. |
+| `bwrap` | Read-only host root, read-write bind of the workspace, network unshared unless `isolation.network` is true | A complete OS sandbox. The approved program keeps the authority of that mount. |
+
+A declared backend that is not installed fails closed before launch. Validate, approve, and preflight identify that tool by hashing the file. They do not execute it. If the file path or bytes change after approval, launch is refused and no receipt can say the backend was enforced. Resource
+limits (wall clock, capture bytes) are not an isolation backend. The macOS app
+sandbox on the GUI process does not confine a CLI the user runs in Terminal,
+and it does not replace the contract backend.
 
 ## Receipt authentication vs signatures
 
 - **Hash-chained events + certificate_id** — integrity of recorded local evidence.
 - **HMAC-SHA256** (optional) — shared-secret MAC; verifiers who hold the key can
   also forge; useful for controlled sharing, not independent third-party trust.
-- **Ed25519** (planned optional extra) — offline public-key verification without
-  sharing the private key; still depends on key-custody and does not prove
-  scientific truth.
+- **Ed25519** (optional extra, shipped) — offline public-key verification without
+  sharing the private key; still depends on key custody and does not prove
+  scientific truth. See `docs/ED25519_RECEIPTS.md`.
 
 ## Residual risks
 
 The wall-clock timeout kills the launched process group, but detached or hostile
 process behavior is outside the security boundary. Native libraries, environment
 variables, input services, and datasets are not automatically fingerprinted.
-Place material local inputs in `source.roots`; use a container or OS sandbox when
-the payload or its dependencies are not trusted — and treat that as a separate
-control until RunSpecimen records an enforced isolation backend on the receipt.
+Place material local inputs in `source.roots`. When the payload is not trusted,
+name `sandbox-exec` or `bwrap` in the contract and read the receipt field
+`isolation.residual` before treating the run as confined. `backend: none` is
+not that control.

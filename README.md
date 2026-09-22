@@ -4,8 +4,8 @@ RunSpecimen is a local safety and evidence layer for consequential agent-driven
 research and engineering commands.
 
 **Current package version (this branch):** `0.2.0rc12`  
-**Last published:** [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) / PyPI `runspecimen==0.2.0rc10`  
-Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). GitHub Release assets and PyPI for **rc12** appear only after Yahor tags `v0.2.0-rc.12` on the merged green commit and publishes that release (that also triggers trusted-publisher PyPI of the **same bytes**). See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
+**Published:** [v0.2.0-rc.12](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.12) / PyPI `runspecimen==0.2.0rc12` (identical bytes; checksum-only, not SLSA-attested).  
+Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
 
 ## Core promise
 
@@ -17,6 +17,8 @@ Exactly **one** approved, bounded run at a time, with:
 4. **Tamper-evident receipts** — append-only SHA-256 hash-chained event log + verifiable certificate
 
 No watchers, no recurring scheduler, no parallel workers.
+
+Unreleased in this working tree, and **not** in the published `0.2.0rc12` package: opt-in `isolation` (`none` by default), a workspace `policy` file, `retain`, `digest`, and `diff`. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md). `none` does not confine the process. `sandbox-exec` and `bwrap` are not an OS sandbox.
 
 ## Requirements
 
@@ -50,32 +52,30 @@ No watchers, no recurring scheduler, no parallel workers.
 
 ## Install
 
-### From PyPI (last published candidate)
+### From PyPI
 
 ```bash
-python3 -m pip install runspecimen==0.2.0rc10
+python3 -m pip install runspecimen==0.2.0rc12
 runspecimen --version
 ```
 
-This branch is `0.2.0rc12`. Install it from a clone (below) until the rc12 GitHub Release / PyPI upload is published. The rc11 draft tag must stay unpublished.
+Pin the version. pip will not select an RC without `==0.2.0rc12`. The rc11 draft tag must stay unpublished.
 
-PyPI project: [runspecimen](https://pypi.org/project/runspecimen/)
+PyPI project: [runspecimen 0.2.0rc12](https://pypi.org/project/runspecimen/0.2.0rc12/)
 
 ### From GitHub release
 
-Last published candidate:
-
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10-py3-none-any.whl
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/runspecimen-0.2.0rc12-py3-none-any.whl
 ```
 
 Or from source tarball:
 
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/runspecimen-0.2.0rc10.tar.gz
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/runspecimen-0.2.0rc12.tar.gz
 ```
 
-Verify checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.10/SHA256SUMS)
+Verify checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/SHA256SUMS)
 
 ### From local clone
 

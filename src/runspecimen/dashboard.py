@@ -237,6 +237,9 @@ def _presentation(status: dict[str, Any], contract: Contract) -> dict[str, Any]:
                 warnings.append("Approval has expired. Review and approve again before launch.")
         else:
             approval_label, approval_detail = "Recorded", "Within expiry; preflight must recheck source and runtime."
+            who = approval.get("approver")
+            if isinstance(who, dict) and isinstance(who.get("user"), str) and who.get("user"):
+                approval_detail += f" Local OS user {who['user']}."
     count = status.get("event_count", 0)
     chain_ok = status.get("event_chain_ok")
     chain_label = "No events" if not count else "Intact" if chain_ok is True else "Invalid"
@@ -296,6 +299,21 @@ def _presentation(status: dict[str, Any], contract: Contract) -> dict[str, Any]:
         "trust_ladder": _trust_ladder(status, certificate_id if isinstance(certificate_id, str) else None),
         "run_identity": f"{contract.campaign_id} / {contract.run_id}",
     }
+
+
+def _isolation_copy(contract: Contract) -> str:
+    backend = contract.isolation.backend
+    if backend == "none":
+        return (
+            "This contract's isolation backend is none. The payload is not confined. "
+            "Wall clock and capture limits are not an OS sandbox."
+        )
+    network = "network allowed" if contract.isolation.network else "network denied"
+    return (
+        f"This contract asks for isolation backend {backend} ({network}). "
+        "That profile is applied only at run, and only if the tool is on PATH. "
+        "The receipt records the residual risk. This page does not apply it, and it is not an OS sandbox."
+    )
 
 
 def dashboard_document(*, workspace: Path, contract_path: Path, status: dict[str, Any], contract: Contract | None = None) -> str:
@@ -396,7 +414,7 @@ def dashboard_document(*, workspace: Path, contract_path: Path, status: dict[str
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>RunSpecimen — {_escape(contract.campaign_id)} / {_escape(contract.run_id)}</title>
 <style>
-:root{{--ink:#142033;--muted:#5c6b7f;--line:#d7dee8;--soft:#eef2f7;--panel:#fff;--brand:#1f4b99;--brand-soft:#e8f0fb;--success:#0f6b4c;--success-soft:#e7f6ef;--warn:#8a5a00;--warn-soft:#fff6e5;--danger:#a82a38;--danger-soft:#fdecee;--shadow:0 10px 28px rgba(20,32,51,.07)}}
+:root{{--ink:#142033;--muted:#4a5a6e;--line:#d7dee8;--soft:#eef2f7;--panel:#fff;--brand:#1f4b99;--brand-soft:#e8f0fb;--success:#0f6b4c;--success-soft:#e7f6ef;--warn:#8a5a00;--warn-soft:#fff6e5;--danger:#a82a38;--danger-soft:#fdecee;--shadow:0 10px 28px rgba(20,32,51,.07)}}
 *{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(1200px 600px at 10% -10%,#dfe9f7 0%,transparent 55%),linear-gradient(180deg,#f4f7fb,#e8eef5);color:var(--ink);font:15px/1.55 "Avenir Next","Segoe UI","Helvetica Neue",sans-serif}}button{{font:inherit}}code,pre,.hash{{font:13px/1.55 "SF Mono",SFMono-Regular,Menlo,Consolas,monospace}}
 .topbar{{height:56px;background:#0f1a2c;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 max(20px,calc((100vw - 1120px)/2))}}.brand{{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em}}.brand-mark{{width:28px;height:28px;border-radius:6px;display:grid;place-items:center;background:linear-gradient(145deg,#3d6ec7,#1f4b99);font-size:11px;font-weight:800}}.topbar-meta{{display:flex;align-items:center;gap:12px}}.docs-nav{{display:flex;gap:12px;font-size:12px}}.docs-nav a{{color:#c5cedc;text-decoration:none}}.docs-nav a:hover{{color:#fff;text-decoration:underline}}.read-only{{font-size:11px;color:#c5cedc;border:1px solid #3d4a61;border-radius:4px;padding:3px 8px}}
 main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
@@ -409,7 +427,7 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
 .dashboard-grid{{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(280px,.75fr);gap:18px;align-items:start}}.panel{{background:var(--panel);border:1px solid var(--line);border-radius:4px;box-shadow:var(--shadow);overflow:hidden}}.panel-header{{padding:18px 20px 14px;border-bottom:1px solid var(--line)}}.panel-header h2{{margin:0;font-size:17px}}.panel-header p{{margin:4px 0 0;color:var(--muted);font-size:13px}}.panel-body{{padding:18px 20px}}
 .payload{{border-left:4px solid var(--brand)}}.payload-command{{display:block;margin:10px 0 14px;padding:12px 13px;border-radius:4px;background:#111a2e;color:#edf2ff;white-space:pre-wrap;overflow-wrap:anywhere}}.facts{{display:grid;grid-template-columns:1fr 1fr;gap:0 18px;margin:0}}.fact{{padding:10px 0;border-top:1px solid var(--line);min-width:0}}.fact dt{{color:var(--muted);font-size:12px}}.fact dd{{margin:3px 0 0;font-weight:650;overflow-wrap:anywhere}}.fact.wide{{grid-column:1/-1}}
 .timeline{{list-style:none;padding:0;margin:0}}.step{{display:grid;grid-template-columns:34px minmax(0,1fr);gap:12px;position:relative;padding:0 0 20px}}.step:last-child{{padding-bottom:0}}.step:not(:last-child)::before{{content:"";position:absolute;left:16px;top:32px;bottom:0;width:2px;background:var(--line)}}.step-marker{{position:relative;z-index:1;width:34px;height:34px;display:grid;place-items:center;border-radius:50%;background:var(--soft);border:2px solid var(--line);color:var(--muted);font-size:12px;font-weight:800}}.step.complete .step-marker{{background:var(--success);border-color:var(--success);color:#fff;font-size:0}}.step.complete .step-marker::after{{content:"✓";font-size:15px}}.step.current .step-marker{{background:var(--brand);border-color:var(--brand);color:#fff}}.step.failed .step-marker{{background:var(--danger);border-color:var(--danger);color:#fff}}.step.complete:not(:last-child)::before{{background:#8dceb2}}.step-heading{{display:flex;align-items:center;justify-content:space-between;gap:10px}}.step h3{{font-size:15px;margin:4px 0 0}}.step-state{{text-transform:uppercase;letter-spacing:.06em;font-size:10px;font-weight:800;color:var(--muted)}}.step.complete .step-state{{color:var(--success)}}.step.current .step-state{{color:var(--brand)}}.step.failed .step-state{{color:var(--danger)}}.step p{{margin:4px 0 9px;color:var(--muted);font-size:13px}}
-.command-row{{display:flex;gap:8px;align-items:stretch}}.command-row code{{flex:1;min-width:0;padding:9px 10px;background:var(--soft);border:1px solid var(--line);border-radius:4px;overflow-wrap:anywhere;color:#273550;white-space:pre-wrap}}.copy-button,.refresh-button{{border:1px solid #cbd4e2;background:#fff;color:#28364e;border-radius:4px;padding:7px 11px;font-size:12px;font-weight:700;cursor:pointer}}.copy-button:hover,.refresh-button:hover{{border-color:var(--brand);color:var(--brand)}}.copy-button:focus-visible,.refresh-button:focus-visible,summary:focus-visible{{outline:3px solid rgba(31,75,153,.25);outline-offset:2px}}
+.command-row{{display:flex;gap:8px;align-items:stretch}}.command-row code{{flex:1;min-width:0;padding:9px 10px;background:var(--soft);border:1px solid var(--line);border-radius:4px;overflow-wrap:anywhere;color:#273550;white-space:pre-wrap}}.copy-button,.refresh-button{{border:1px solid #cbd4e2;background:#fff;color:#28364e;border-radius:4px;padding:7px 11px;font-size:12px;font-weight:700;cursor:pointer}}.copy-button:hover,.refresh-button:hover{{border-color:var(--brand);color:var(--brand)}}.skip{{position:absolute;left:8px;top:-48px;background:#fff;color:#142033;padding:8px 12px;z-index:5;font-weight:700}}.skip:focus{{top:8px}}.copy-button:focus-visible,.refresh-button:focus-visible,summary:focus-visible,a:focus-visible{{outline:3px solid rgba(31,75,153,.55);outline-offset:2px}}
 .side-stack{{display:grid;gap:18px}}.path-list{{margin:0}}.path-list div{{padding:10px 0;border-bottom:1px solid var(--line)}}.path-list div:last-child{{border-bottom:0}}.path-list dt{{color:var(--muted);font-size:12px}}.path-list dd{{margin:3px 0 0;overflow-wrap:anywhere}}
 .evidence-summary{{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px;cursor:pointer;font-weight:750}}.evidence-summary::marker{{color:var(--brand)}}.evidence-body{{padding:0 18px 18px}}.evidence-body pre{{margin:0;max-height:420px;overflow:auto;padding:14px;border-radius:4px;background:#10182b;color:#dbe4f4;white-space:pre-wrap;overflow-wrap:anywhere}}
 .refresh-message{{min-height:20px;margin:9px 0 0;color:var(--muted);font-size:12px}}.refresh-message.error{{color:var(--danger)}}
@@ -421,8 +439,9 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
 .site-footer{{margin-top:28px;padding-top:18px;border-top:1px solid var(--line);display:grid;gap:8px}}.footer-docs{{display:flex;flex-wrap:wrap;gap:10px 16px}}.footer-docs a{{color:var(--brand);font-weight:700;font-size:13px;text-decoration:none}}.footer-docs a:hover{{text-decoration:underline}}.footer-note{{margin:0;color:var(--muted);font-size:12px}}
 </style></head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">RS</span><span>RunSpecimen</span></div><div class="topbar-meta"><nav class="docs-nav" aria-label="Documentation"><a href="#about">About</a><a href="{_escape(DOCS_URLS['user_guide'])}" target="_blank" rel="noopener noreferrer">User guide</a><a href="{_escape(DOCS_URLS['faq'])}" target="_blank" rel="noopener noreferrer">FAQ</a></nav><span class="read-only">Local · loopback only · read-only</span></div></header>
-<main>
+<main id="main">
   <section class="compose" aria-label="Run overview">
     <div class="compose-hero">
       <p class="brand-line">RunSpecimen</p>
@@ -442,7 +461,7 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
   <ol class="trust-ladder" id="trust-ladder" aria-label="Evidence trust ladder">{trust_html}</ol>
 
   <div class="refresh-toolbar"><button id="refresh-button" class="refresh-button" type="button">Refresh status</button><label><input id="auto-refresh" type="checkbox" checked> Auto-refresh every 5s</label><span id="refresh-message" class="refresh-message" role="status">Loaded local evidence. Live receipt verification has not been performed.</span></div>
-  <ul id="warnings" {'hidden' if not view['warnings'] else ''}>{warnings_html}</ul>
+  <ul id="warnings" aria-live="polite" {'hidden' if not view['warnings'] else ''}>{warnings_html}</ul>
 
   <section class="status-grid" aria-label="Current run status">
     {cards}
@@ -463,13 +482,15 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
             <div class="fact wide"><dt>Runtime provenance</dt><dd>{_escape(runtime_line)}</dd></div>
             <div class="fact wide"><dt>Predecessor</dt><dd>{_escape(predecessor)}</dd></div>
             <div class="fact wide"><dt>Postflight assertions</dt><dd>Exit code {_escape(contract.postflight.exit_code)} · {_escape(assertion_count)} digests/JSON checks · source unchanged: {_escape('required' if contract.postflight.source_unchanged else 'not required')}</dd></div>
+            <div class="fact wide"><dt>Declared isolation</dt><dd>{_escape(_isolation_copy(contract))}</dd></div>
+            <div class="fact wide"><dt>Shared policy</dt><dd>{_escape(contract.policy.id if contract.policy is not None else 'none')}</dd></div>
           </dl>
         </div>
       </section>
 
       <section class="panel">
         <div class="panel-header"><h2>Guided lifecycle</h2><p>Progress describes recorded history. Stop at the first refusal or failure.</p></div>
-        <div class="panel-body"><details class="terminal-help"><summary>Terminal instructions</summary><p>Open Terminal on this computer and paste the relevant command below. The absolute workspace and contract paths are included. For approval, review the command, outputs and limits, then type APPROVE yourself when prompted. Run one step at a time.</p><p>A finished or failed run ID cannot be reused. Create a new contract and run ID for a new execution. RunSpecimen does not isolate a payload from your operating system.</p></details><ol class="timeline">{steps}</ol><p id="copy-message" class="refresh-message" aria-live="polite"></p></div>
+        <div class="panel-body"><details class="terminal-help"><summary>Terminal instructions</summary><p>Open Terminal on this computer and paste the relevant command below. The absolute workspace and contract paths are included. For approval, review the command, outputs and limits, then type APPROVE yourself when prompted. Run one step at a time.</p><p>A finished or failed run ID cannot be reused. Create a new contract and run ID for a new execution. {_escape(_isolation_copy(contract))}</p></details><ol class="timeline">{steps}</ol><p id="copy-message" class="refresh-message" aria-live="polite"></p></div>
       </section>
     </div>
 
@@ -511,7 +532,7 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
         </div>
         <div>
           <h3>Safety model</h3>
-          <p>TTY approval, workspace lease, hash-chained events, and certificates are evidence controls. They are not an OS sandbox against a hostile payload.</p>
+          <p>TTY approval, workspace lease, hash-chained events, and certificates are evidence controls. {_escape(_isolation_copy(contract))}</p>
         </div>
         <div>
           <h3>This dashboard</h3>
@@ -537,6 +558,7 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
 </main>
 <script>
 const text=(id,value)=>{{const el=document.getElementById(id);if(el)el.textContent=String(value)}};
+if(window.matchMedia("(prefers-reduced-motion: reduce)").matches){{const box=document.getElementById("auto-refresh");if(box)box.checked=false;}}
 function renderTrust(ladder){{
   const root=document.getElementById("trust-ladder");if(!root||!Array.isArray(ladder))return;
   root.replaceChildren();

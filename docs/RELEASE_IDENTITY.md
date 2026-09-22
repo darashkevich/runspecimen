@@ -10,7 +10,7 @@ This file records what shipped; it does not authorize App Store Connect changes.
 | GitHub Release | **`v0.2.0-rc.12`** (published prerelease) | https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.12 · tag peels to `eb23483bfa7c4e2ac62a3802fa2feb5d87f53cdd` |
 | PyPI | **`0.2.0rc12`** (identical SHA-256 to GitHub) | https://pypi.org/project/runspecimen/0.2.0rc12/ |
 | Product site | `python3 -m pip install runspecimen==0.2.0rc12` | https://runspecimen.darashkevich.com/ |
-| Mac App Store | **not public** | Connect macOS **0.1.3 (5)** is `WAITING_FOR_REVIEW` — no `apps.apple.com` URL |
+| Mac App Store | **not public** | Connect macOS **0.1.3 (8)** is `WAITING_FOR_REVIEW` (submission `9c19e1cd-ebd1-4705-b683-5a5fdc2671f6`, submitted 2026-09-21T05:36:49Z). Builds 5 and 6 were rejected and cancelled. |
 
 Install pin is required: pip will not select an RC without `==0.2.0rc12`.
 
@@ -34,4 +34,4 @@ rc10 GitHub Release bytes and PyPI bytes were produced by **separate rebuilds**.
 
 ## Website / Store language
 
-Product page install commands match **rc12**. Add an `apps.apple.com` link only when Apple returns a working public URL. Next Connect upload, if replacing review build 5, is **0.1.3 (6)**.
+Product page install commands match **rc12**. Add an `apps.apple.com` link only when Apple returns a working public URL. The binary in review is **0.1.3 (8)**. Do not upload another build while that submission is `WAITING_FOR_REVIEW`.

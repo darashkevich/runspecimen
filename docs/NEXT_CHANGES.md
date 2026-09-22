@@ -114,9 +114,10 @@ confinement.
 **Risks:** False security theater; portability; workload breakage; expanding trust
 boundary accidentally; marketing UI sandbox as payload sandbox.
 
-**Acceptance:** Contract declares isolation policy; unmet policy refuses preflight;
-receipt records backend/version/settings; README/threat model state residual risks;
-native/unsandboxed remains honestly labeled.
+**Status:** In this working tree, unreleased. `isolation.backend` is `none`
+(default, not confined), `sandbox-exec`, or `bwrap`. Missing tool fails closed.
+Receipt field `isolation` includes the residual. Not an OS sandbox. Published
+`0.2.0rc12` does not accept the field.
 
 ---
 

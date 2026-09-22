@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "campaign_id": "ml-eval-step",
+  "run_id": "run-001",
+  "argv": ["python3", "work/evaluate.py"],
+  "cwd": ".",
+  "source": {"roots": ["work"], "excludes": []},
+  "outputs": {"required": ["outputs/metrics.json"]},
+  "caps": {
+    "wall_timeout_sec": 600,
+    "stdout_max_bytes": 1048576,
+    "stderr_max_bytes": 1048576
+  },
+  "approval": {"ttl_sec": 3600},
+  "predecessor": null,
+  "isolation": {"backend": "none"},
+  "postflight": {
+    "exit_code": 0,
+    "require_outputs": true,
+    "output_sha256": {},
+    "json_equals": [
+      {"path": "outputs/metrics.json", "field": "status", "equals": "ok"}
+    ],
+    "source_unchanged": true
+  }
+}

@@ -25,7 +25,7 @@ leases, approval binding, or receipt verification in Swift.
 | App icon (`AppIcon.icns` / iconset / 1024) | Done |
 | Workspace Open panel + security-scoped bookmarks | Done |
 | CLI discovery: bookmark → Helpers → PATH (PATH off on MAS) | Done |
-| Minimum CLI gate (`0.2.0rc9+`; bundle `0.2.0rc10`) | Done |
+| Minimum CLI gate (`0.2.0rc9+`; Store bundle `0.2.0rc12`) | Done |
 | `doctor` / `--version` / `status` / `validate` | Done |
 | Lifecycle + evidence inspector | Done |
 | Approve sheet with real PTY (never auto-`APPROVE`) | Done |

@@ -43,6 +43,12 @@ final class CLIVersionGateTests: XCTestCase {
             XCTFail("expected tooOld")
         }
         XCTAssertNotNil(CLIVersionGate.failureMessage(for: CLIVersionGate.evaluate(versionOutput: "0.2.0rc8")))
+        let masMsg = CLIVersionGate.failureMessage(
+            for: CLIVersionGate.evaluate(versionOutput: "0.2.0rc8"),
+            channel: .mas
+        ) ?? ""
+        XCTAssertFalse(masMsg.contains("pip install"))
+        XCTAssertTrue(masMsg.contains("bundled"))
     }
 
     func testPythonHelperUnparseableMessage() {

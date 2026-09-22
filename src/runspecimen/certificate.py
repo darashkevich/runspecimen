@@ -59,6 +59,19 @@ def build_certificate(
         "schema_version": CURRENT_RECEIPT_SCHEMA_VERSION,
         "source_hash": source_hash,
     }
+    isolation = state.get("isolation")
+    if isolation is None and approval is not None:
+        isolation = approval.get("isolation")
+    if isolation is not None:
+        body["isolation"] = isolation
+    policy = state.get("policy")
+    if policy is None and approval is not None:
+        policy = approval.get("policy")
+    if policy is not None:
+        body["policy"] = policy
+    approver = (approval or {}).get("approver")
+    if approver is not None:
+        body["approver"] = approver
     certificate_id = sha256_bytes(canonical_json_bytes(certificate_id_material(body)))
     return {"certificate_id": certificate_id, **body}
 

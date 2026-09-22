@@ -16,6 +16,10 @@ authentication remains a shared-secret MAC and is not a schema version by itself
 - Forward compatibility: new optional fields may be added under the same
   version only when older engines that reject unknown fields are no longer
   required. Until then, unknown top-level or nested fields fail closed.
+- Optional on version 1, accepted by this working tree and rejected by
+  published `0.2.0rc12`: `isolation` (`backend` of `none`, `sandbox-exec`, or
+  `bwrap`, plus optional `network`) and `policy` (`id`, `path`, `sha256` of a
+  workspace-local JSON file). Absent `isolation` means backend `none`.
 
 ## Receipt schema versions (`certificate.json`)
 
@@ -29,6 +33,9 @@ authentication remains a shared-secret MAC and is not a schema version by itself
 - When `schema_version` is present on a certificate, it is included in the
   `certificate_id` hash material. Legacy certificates omit it from both the
   document and the hash material.
+- New receipts may also include `isolation`, `policy`, and `approver`. Each
+  key is part of `certificate_id` only when it is present. Historical receipts
+  that omit them stay valid. Do not rewrite an issued certificate to add them.
 
 ### Issuance rules
 

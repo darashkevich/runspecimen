@@ -306,6 +306,26 @@ if [[ ! -e "$HELPER" ]]; then
 fi
 [[ -e "$HELPER" ]] || fail "nested helper missing under RS_ARCHIVE_APP (checked RunSpecimenEngine + Helpers): $ARCHIVE_APP"
 
+# ITMS rejects PyInstaller's copied CPython framework if it still says com.apple.python3.
+APPLE_NS_HITS="$(python3 -c '
+import pathlib, plistlib, sys
+root = pathlib.Path(sys.argv[1])
+hits = []
+for p in root.rglob("Info.plist"):
+    try:
+        data = plistlib.loads(p.read_bytes())
+    except Exception:
+        continue
+    bid = data.get("CFBundleIdentifier")
+    if isinstance(bid, str) and bid.startswith("com.apple.python"):
+        hits.append("%s %s" % (bid, p))
+print("\n".join(hits))
+' "$ARCHIVE_APP")"
+if [[ -n "$APPLE_NS_HITS" ]]; then
+  fail "archived helper still ships Apple-namespace Python bundle ids (rewrite in freeze_helper.sh): $APPLE_NS_HITS"
+fi
+pass "no Apple-namespace Python bundle ids in archived helper"
+
 # Cryptographic verification of sealed contents (not just codesign -dv metadata).
 # Always runs against the real archive paths. Fixtures may stub Authority/Team
 # text for unit tests; they cannot skip --verify --strict.

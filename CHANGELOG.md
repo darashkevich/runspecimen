@@ -2,11 +2,18 @@
 
 ## Unreleased
 
-## 0.2.0rc12 - 2026-09-18 (not published)
+Not tagged. Published `0.2.0rc12` does not include this section.
 
-Identity for the next public cut. **Do not publish** draft `v0.2.0-rc.11`
-(`ecc1709`). Tag `v0.2.0-rc.12` only on the merged green commit. Checksum-only
-until SLSA attestations exist. See `docs/RELEASE_IDENTITY.md`.
+- Opt-in isolation backends `sandbox-exec` and `bwrap`. Default `none` does not confine the process. A declared backend that is missing fails closed. The receipt records what was applied and the residual risk. This is not an OS sandbox. The tool is identified by file hash. Validation does not execute it, and a tool replaced after approval is refused.
+- Optional workspace-local `policy` file (hash-bound). `approver` records the local OS user. `runspecimen retain` copies an incident pack outside the workspace. No control plane and no uploader.
+- Stdlib contract/path mutation tests, vertical templates, an adversarial first-run lease campaign, and a Homebrew formula that installs published `v0.2.0-rc.12`.
+- `runspecimen digest` and `runspecimen diff` for recorded receipts. They do not replace `verify`.
+- Dashboard skip link, contrast, reduced-motion auto-refresh, and isolation copy that matches the contract.
+
+## 0.2.0rc12 - 2026-09-18 (published)
+
+Published on GitHub as `v0.2.0-rc.12` and on PyPI as `0.2.0rc12` (identical bytes, checksum-only). **Do not publish** draft `v0.2.0-rc.11`
+(`ecc1709`). See `docs/RELEASE_IDENTITY.md`.
 
 ### macOS app
 
@@ -24,8 +31,7 @@ until SLSA attestations exist. See `docs/RELEASE_IDENTITY.md`.
 - Fix `AppIcon.appiconset`: catalog filenames are real `icon_*@2x.png` files
   with matching pixel sizes (128@2x is 256px). `verify_app_icon.sh` checks
   Contents.json and a warning-free `actool` compile.
-- Next App Store Connect upload is **0.1.3 (6)**. Build **5** is already
-  `WAITING_FOR_REVIEW` and is **not** this tree.
+- Mac App Store **0.1.3 (8)** is `WAITING_FOR_REVIEW` (submitted 2026-09-21). Builds 5 and 6 were rejected. Do not upload another binary while build 8 is waiting.
 
 ### Packaging
 

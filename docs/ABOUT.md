@@ -20,15 +20,18 @@ tamper-evident receipt of what happened.
 
 ## Safety model
 
-RunSpecimen records evidence; it does **not** sandbox the payload from the OS.
+RunSpecimen records evidence. The default isolation backend is `none`: it does
+**not** sandbox the payload from the OS.
 
 - Interactive TTY approval (agents must not type `APPROVE`)
 - Workspace execution lease (one mutating lifecycle step at a time)
 - Hash-chained append-only event log
 - Verifiable local certificates after successful postflight
+- Opt-in `sandbox-exec` or `bwrap` when the contract names them and the tool is installed. A missing tool fails closed. Neither backend is an OS sandbox. Published `0.2.0rc12` does not accept the `isolation` field.
 
 Wall timeout, process-group cleanup, and path-inside-workspace checks are
-orchestration controls, not isolation against a hostile program.
+orchestration controls. They confine a hostile program only when a receipt
+shows an enforced isolation backend, and only to the degree `isolation.residual` states.
 
 ## Dashboard
 

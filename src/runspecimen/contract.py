@@ -127,6 +127,23 @@ class PostflightSpec:
 
 
 @dataclass(frozen=True)
+class IsolationSpec:
+    """Opt-in confinement. ``none`` is the default and confines nothing."""
+
+    backend: str
+    network: bool = False
+
+
+@dataclass(frozen=True)
+class PolicyRef:
+    """Workspace-local shared policy. The file bytes are part of the contract hash."""
+
+    id: str
+    path: str
+    sha256: str
+
+
+@dataclass(frozen=True)
 class Contract:
     version: int
     campaign_id: str
@@ -140,6 +157,8 @@ class Contract:
     predecessor: PredecessorSpec | None
     postflight: PostflightSpec
     runtime: RuntimeSpec | None
+    isolation: IsolationSpec
+    policy: PolicyRef | None
     path: Path
     contract_hash: str
     raw: dict[str, Any] = field(repr=False)
@@ -155,6 +174,46 @@ class Contract:
         paths.update(self.postflight.output_sha256)
         paths.update(assertion.path for assertion in self.postflight.json_equals)
         return tuple(sorted(paths))
+
+
+_ISOLATION_BACKENDS = frozenset({"none", "sandbox-exec", "bwrap"})
+
+
+def _parse_isolation(raw: Any) -> IsolationSpec:
+    if raw is None:
+        return IsolationSpec(backend="none", network=False)
+    obj = _require_dict(raw, "isolation")
+    _reject_unknown(obj, {"backend", "network"}, "isolation")
+    backend = obj.get("backend", "none")
+    if not isinstance(backend, str) or backend not in _ISOLATION_BACKENDS:
+        raise ContractError(
+            "isolation.backend must be one of: none, sandbox-exec, bwrap"
+        )
+    if "network" in obj:
+        network = _require_bool(obj.get("network"), "isolation.network")
+    else:
+        network = False
+    if backend == "none" and network:
+        raise ContractError(
+            "isolation.network cannot be enabled when backend is none; "
+            "none does not confine the network"
+        )
+    return IsolationSpec(backend=backend, network=network)
+
+
+def _parse_policy(raw: Any) -> PolicyRef | None:
+    if raw is None:
+        return None
+    obj = _require_dict(raw, "policy")
+    _reject_unknown(obj, {"id", "path", "sha256"}, "policy")
+    policy_id = _require_str(obj.get("id"), "policy.id")
+    if any(ch.isspace() for ch in policy_id) or "/" in policy_id or "\\" in policy_id:
+        raise ContractError("policy.id must be a single token without path separators")
+    path = _require_str(obj.get("path"), "policy.path")
+    if path.startswith("/") or path.startswith("~"):
+        raise ContractError("policy.path must be a relative path inside the workspace")
+    digest = _require_sha256_hex(obj.get("sha256"), "policy.sha256")
+    return PolicyRef(id=policy_id, path=path, sha256=digest)
 
 
 def validate_caps(caps: CapsSpec) -> None:
@@ -194,6 +253,8 @@ def parse_contract(
             "predecessor",
             "postflight",
             "runtime",
+            "isolation",
+            "policy",
         },
         "contract",
     )
@@ -370,6 +431,9 @@ def parse_contract(
             capture_libs=capture_libs or False,
         )
 
+    isolation = _parse_isolation(data.get("isolation"))
+    policy = _parse_policy(data.get("policy"))
+
     if contract_hash is None:
         contract_hash = hash_contract_file(path)
     return Contract(
@@ -385,6 +449,8 @@ def parse_contract(
         predecessor=predecessor,
         postflight=postflight,
         runtime=runtime_spec,
+        isolation=isolation,
+        policy=policy,
         path=path.resolve(),
         contract_hash=contract_hash,
         raw=data,
@@ -419,3 +485,5 @@ def check_contract_paths(contract: Contract, workspace: Path) -> None:
         ensure_within(workspace, Path(out), label=f"output_sha256 path {out!r}")
     for assertion in contract.postflight.json_equals:
         ensure_within(workspace, Path(assertion.path), label=f"json_equals path {assertion.path!r}")
+    if contract.policy is not None:
+        ensure_within(workspace, Path(contract.policy.path), label="policy.path")

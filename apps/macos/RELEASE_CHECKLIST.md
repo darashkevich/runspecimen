@@ -7,9 +7,9 @@ Short operator path for shipping the macOS companion. Detail:
 **Invariants:** no telemetry; Approve never auto-types `APPROVE`; receipts ≠
 digital signatures; payload is **not** OS-sandboxed by the UI sandbox alone.
 
-**Engine:** MAS freeze must ship **`0.2.0rc10`** (match `src/runspecimen/__version__`).
+**Engine:** MAS freeze must ship **`0.2.0rc12`** (match `src/runspecimen/__version__`).
 
-**Do not** Submit for Review until Codex QA + your release decision.
+**Do not** upload or Submit another Mac App Store build while **0.1.3 (8)** is `WAITING_FOR_REVIEW`.
 
 ## Yahor-only prerequisites
 
@@ -52,7 +52,7 @@ python3 -m pip install --user 'pyinstaller>=6'
 ./Scripts/test_security_boundary.sh
 ./Scripts/build_app.sh --mas
 # Expect:
-build/RunSpecimen.app/Contents/Helpers/runspecimen --version   # → 0.2.0rc10
+build/RunSpecimen.app/Contents/Helpers/runspecimen --version   # → 0.2.0rc12
 test ! -d build/RunSpecimen.app/Contents/Helpers/lib
 /usr/libexec/PlistBuddy -c 'Print :RSDistributionChannel' \
   build/RunSpecimen.app/Contents/Info.plist   # → mas
@@ -78,9 +78,7 @@ test -f build/RunSpecimen.app/Contents/Resources/AppIcon.icns
    ```
    Or `RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh` (local Store pkg;
    UUID + installer cert; no upload). Default destination still `upload`.
-3. ASC: version `0.1.3` / next upload **build 6** (build 5 is already in review).
-   paste Review notes from APP_STORE.md.
-4. **Stop before Submit for Review** until Codex QA + your decision.
+3. ASC: version `0.1.3` / build **8** is already `WAITING_FOR_REVIEW` (submitted 2026-09-21). Do not upload another build or Submit again while that submission is waiting.
 
 Optional: `brew install xcodegen` then `./Scripts/generate_xcodeproj.sh` if
 `project.yml` changed (committed `RunSpecimen.xcodeproj` is the default Archive input).

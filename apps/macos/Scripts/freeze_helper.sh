@@ -187,6 +187,31 @@ Before Mac App Store / redistribution:
 Local Prefer Bundled Helper smoke does not require Store signing.
 EOF
 
+# App Store rejects PyInstaller's copied CPython framework because its
+# Info.plist still says CFBundleIdentifier=com.apple.python3.
+python3 - "$DEST_INTERNAL" <<'PY'
+import pathlib, plistlib, sys
+root = pathlib.Path(sys.argv[1])
+changed = 0
+for p in root.rglob("Info.plist"):
+    try:
+        data = plistlib.loads(p.read_bytes())
+    except Exception:
+        continue
+    bid = data.get("CFBundleIdentifier")
+    if not isinstance(bid, str):
+        continue
+    if bid == "com.apple.python3" or bid.startswith("com.apple.python"):
+        data["CFBundleIdentifier"] = "com.darashkevich.runspecimen.python3"
+        p.write_bytes(plistlib.dumps(data, fmt=plistlib.FMT_XML))
+        print(f"Rewrote Apple-namespace bundle id {bid} → com.darashkevich.runspecimen.python3 ({p})")
+        changed += 1
+    elif bid.startswith("com.apple."):
+        raise SystemExit(f"Refusing leftover Apple-namespace bundle id {bid} in {p}")
+if changed:
+    print(f"Rewrote {changed} PyInstaller Python framework Info.plist(s)")
+PY
+
 echo "Staged frozen helper: $DEST"
 echo "Staged runtime:       $DEST_INTERNAL"
 ls -la "$DEST"

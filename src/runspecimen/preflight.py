@@ -16,7 +16,9 @@ from runspecimen.contract import (
 from runspecimen.errors import CertificateError, LeaseError, PreflightError
 from runspecimen.events import EventLog
 from runspecimen.hashutil import hash_source
+from runspecimen.isolation import plans_match
 from runspecimen.lease import hold_workspace_lease
+from runspecimen.policy import execution_constraints
 from runspecimen.paths import ensure_within, resolve_workspace, run_state_dir
 from runspecimen.state import load_state, update_state
 from runspecimen.runtime import runtime_matches, runtime_provenance
@@ -119,6 +121,12 @@ def _preflight_under_lease(
     if phase in {"running", "completed", "failed", "postflighted", "abandoned"}:
         raise PreflightError(f"run already in phase={phase!r}; refuse re-entry")
 
+    isolation, policy = execution_constraints(contract, workspace)
+    if not plans_match(approval.get("isolation"), isolation):
+        raise PreflightError("isolation backend does not match the approval")
+    if approval.get("policy") != policy:
+        raise PreflightError("shared policy does not match the approval")
+
     ts = time.time() if now is None else now
     ok, reason = approval_is_valid(approval, contract, source_hash, now=ts)
     if not ok:
@@ -132,6 +140,8 @@ def _preflight_under_lease(
         "source_hash": source_hash,
         "runtime": runtime,
         "approval_expires_at_unix": approval["expires_at_unix"],
+        "isolation_backend": isolation.get("backend"),
+        "isolation_enforced": isolation.get("enforced"),
     }
     log = EventLog.for_state_dir(state_dir)
     log.append("preflight_ok", result)

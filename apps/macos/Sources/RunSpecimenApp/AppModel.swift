@@ -100,17 +100,42 @@ final class AppModel: ObservableObject {
 
         if cliIdentity == nil && cliSetupIssue == nil {
             if channel.requiresBundledHelper {
-                cliSetupIssue = "Mac App Store build: bundled runspecimen helper missing or not executable under Contents/Helpers. This build fails closed — no host Python / PATH fallback."
+                cliSetupIssue = "Mac App Store build: bundled runspecimen helper missing or not executable. This build fails closed — no host Python / PATH / pip fallback."
             } else {
-                cliSetupIssue = "runspecimen CLI not found. Install 0.2.0rc10+ then select the binary:\npython3 -m pip install 'runspecimen==0.2.0rc10'\n\nOr stage a helper into Contents/Helpers (see Helpers/README.md)."
+                cliSetupIssue = "runspecimen CLI not found. Install 0.2.0rc12+ then select the binary:\npython3 -m pip install 'runspecimen==0.2.0rc12'\n\nOr stage a helper into Contents/Helpers (see Helpers/README.md)."
             }
         }
 
         if let ws = bookmarks.loadWorkspace() {
             workspaceURL = ws
+        } else if channel.requiresBundledHelper, ReviewerDemoWorkspace.bundledRoot() != nil {
+            // App Review Macs have a clean container. Opening the bundled
+            // workspace here means the reviewer never lands on an empty CTA.
+            await openReviewerDemo()
         }
 
         await refreshDashboardFlag()
+    }
+
+    func openReviewerDemo() async {
+        do {
+            let dest = try ReviewerDemoWorkspace.materialize()
+            do {
+                try bookmarks.saveWorkspace(dest)
+            } catch {
+                // App-container copies are writable without an Open-panel bookmark.
+            }
+            workspaceURL = dest
+            contractURL = dest.appendingPathComponent(ReviewerDemoWorkspace.contractName)
+            contract = nil
+            status = nil
+            statusError = nil
+            await loadContractSummary()
+            await runDoctor()
+            await refreshStatus()
+        } catch {
+            self.error = AppError(message: (error as? AppError)?.message ?? error.localizedDescription)
+        }
     }
 
     func chooseWorkspace() async {
@@ -129,6 +154,10 @@ final class AppModel: ObservableObject {
     }
 
     func chooseCLI() async {
+        if DistributionChannel.current.requiresBundledHelper {
+            self.error = AppError(message: "Mac App Store builds use the bundled engine only. Use Prefer Bundled Helper. This build does not select a host CLI.")
+            return
+        }
         guard let url = PanelPicker.pickCLI() else { return }
         let name = url.lastPathComponent
         guard name == "runspecimen" || name.hasPrefix("runspecimen") else {

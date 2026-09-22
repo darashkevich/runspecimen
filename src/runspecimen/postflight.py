@@ -12,6 +12,7 @@ from runspecimen.contract import check_contract_paths, load_contract
 from runspecimen.errors import LeaseError, PostflightError
 from runspecimen.events import EventLog
 from runspecimen.hashutil import hash_source, sha256_file
+from runspecimen.isolation import plan_identity
 from runspecimen.lease import hold_workspace_lease
 from runspecimen.paths import ensure_within, resolve_workspace, run_state_dir
 from runspecimen.state import load_state, update_state
@@ -166,6 +167,18 @@ def _postflight_under_lease(*, contract, workspace: Path) -> dict:
         failures.append(
             f"source changed since run: expected {state.get('source_hash')}, got {source_hash}"
         )
+
+    approved_isolation = approval.get("isolation") if isinstance(approval, dict) else None
+    run_isolation = state.get("isolation")
+    if approved_isolation is not None or run_isolation is not None:
+        if not isinstance(approved_isolation, dict) or not isinstance(run_isolation, dict):
+            failures.append("isolation record missing from approval or run state")
+        elif plan_identity(approved_isolation) != plan_identity(run_isolation):
+            failures.append("isolation applied at run does not match the approval")
+    approved_policy = approval.get("policy") if isinstance(approval, dict) else None
+    run_policy = state.get("policy")
+    if approved_policy != run_policy:
+        failures.append("shared policy applied at run does not match the approval")
 
     log = EventLog.for_state_dir(state_dir)
     if failures:

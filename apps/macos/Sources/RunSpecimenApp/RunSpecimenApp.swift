@@ -43,6 +43,10 @@ struct RunSpecimenApp: App {
                 Divider()
             }
             CommandMenu("Workspace") {
+                Button("Open Reviewer Demo") {
+                    Task { await model.openReviewerDemo() }
+                }
+                .keyboardShortcut("d", modifiers: [.command, .option, .shift])
                 Button("Open Workspace…") {
                     Task { await model.chooseWorkspace() }
                 }
@@ -101,8 +105,10 @@ struct RunSpecimenApp: App {
                 .disabled(!model.dashboardRunning)
             }
             CommandMenu("Engine") {
-                Button("Select runspecimen CLI…") {
-                    Task { await model.chooseCLI() }
+                if !DistributionChannel.current.requiresBundledHelper {
+                    Button("Select runspecimen CLI…") {
+                        Task { await model.chooseCLI() }
+                    }
                 }
                 Button("Prefer Bundled Helper") {
                     Task { await model.preferBundledHelper() }

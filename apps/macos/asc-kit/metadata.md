@@ -16,7 +16,7 @@
 
 ## Promotional text (optional, ≤170)
 
-Local safety and evidence control for one human-approved bounded run. Sandboxed SwiftUI shell; enforcement is the bundled CLI. No telemetry.
+Local evidence control for one human-approved bounded run. Native SwiftUI shell; enforcement is the bundled CLI. No telemetry. Data Not Collected.
 
 ## Description
 
@@ -27,6 +27,7 @@ The Mac app is a sandboxed SwiftUI shell. Enforcement lives in the bundled `runs
 What you get:
 
 - Native status, evidence, and certificate inspection
+- Built-in Open Reviewer Demo workspace (no git checkout, no pip install)
 - Interactive Approve sheet on a real TTY
 - Optional loopback-only, read-only dashboard (cannot approve or execute)
 - Security-scoped workspace bookmarks for App Sandbox
@@ -38,7 +39,7 @@ Privacy: https://runspecimen.darashkevich.com/privacy/
 
 ## Keywords (≤100 chars, comma-separated)
 
-runspecimen,evidence,approval,local,cli,sandbox,developer,receipt,preflight
+runspecimen,evidence,approval,local,cli,developer,receipt,preflight,control
 
 ## URLs
 
@@ -53,8 +54,8 @@ runspecimen,evidence,approval,local,cli,sandbox,developer,receipt,preflight
 | Key | Value |
 | --- | --- |
 | Short version | 0.1.3 |
-| Build | 4 |
-| Bundled engine | 0.2.0rc10 |
+| Build | 6 |
+| Bundled engine | 0.2.0rc12 |
 | Min macOS | 14.0 |
 
 ## App Privacy

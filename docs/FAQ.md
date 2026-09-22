@@ -25,10 +25,18 @@ the workspace evidence with matching host runtime expectations.
 
 A sandbox limits what a process can reach. RunSpecimen records whether an
 approved, exclusive, bounded step happened and whether declared outcomes
-passed. It is **not** an OS sandbox: no CPU/memory/network/filesystem
-containment beyond wall clock, capture size, path-inside-workspace checks, and
-process-group kill on timeout. Use a container or stronger isolation for
-untrusted payloads.
+passed. It is **not** an OS sandbox.
+
+The default `isolation.backend` is `none`: wall clock, capture size,
+path-inside-workspace checks, and process-group kill. No filesystem or network
+confinement.
+
+Opt-in `sandbox-exec` (macOS, if `sandbox-exec` is on PATH) and `bwrap` (Linux,
+if `bwrap` is on PATH) confine writes to the workspace and deny network unless
+the contract sets `isolation.network` to true. A declared backend that is not
+installed fails closed. The receipt field `isolation.residual` states what
+that profile still allows, including host reads. CPU and memory limits are
+not part of either backend.
 
 ## Why does approval require a TTY?
 
@@ -88,7 +96,7 @@ assertions, use a fresh `run_id` per attempt, and chain steps with
 
 - Repository: https://github.com/darashkevich/runspecimen
 - Check installed CLI: `runspecimen --version` (engine package version, e.g.
-  `0.2.0rc12`; last published PyPI is `0.2.0rc10`)
+  `0.2.0rc12`, also the published PyPI pin)
 
 ## Is the dashboard safe to leave open?
 

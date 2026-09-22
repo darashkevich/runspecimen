@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "campaign_id": "security-check",
+  "run_id": "run-001",
+  "argv": ["python3", "work/check.py"],
+  "cwd": ".",
+  "source": {"roots": ["work"], "excludes": []},
+  "outputs": {"required": ["outputs/result.json"]},
+  "caps": {
+    "wall_timeout_sec": 60,
+    "stdout_max_bytes": 65536,
+    "stderr_max_bytes": 65536
+  },
+  "approval": {"ttl_sec": 1800},
+  "predecessor": null,
+  "isolation": {"backend": "none"},
+  "policy": {
+    "id": "research-default",
+    "path": "policy.json",
+    "sha256": "f94fda8d48571a11bae2551ce11d1f925aff63bd6dfb1bff0b2188930aa6f6e7"
+  },
+  "postflight": {
+    "exit_code": 0,
+    "require_outputs": true,
+    "output_sha256": {},
+    "json_equals": [
+      {"path": "outputs/result.json", "field": "status", "equals": "ok"}
+    ],
+    "source_unchanged": true
+  }
+}

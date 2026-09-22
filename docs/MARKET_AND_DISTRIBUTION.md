@@ -158,6 +158,8 @@ The vanity funnel—marketplace impressions without completed verified runs—sh
 
 ## Packaging and pricing hypothesis
 
+Not the current plan. The public site does not list prices, and this tree does not add a checkout, SSO, or control plane. The notes below are an old hypothesis, kept so the numbers are not mistaken for a live offer.
+
 Marketplace listings should be free. They are acquisition channels and integration surfaces, not reliable billing channels.
 
 - **Community:** free/open core; one local operator; contracts, exclusive leases, local receipts, verification, **local incident bundle** (`runspecimen bundle`), and the **free companion remote-confirm card**. History on disk stays visible. This is **not** the Veto Free/Pro/Teams/Intent price book.

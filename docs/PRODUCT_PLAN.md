@@ -43,15 +43,14 @@ tests pass.
 
 - Bind the resolved executable, interpreter, native libraries, environment
   allowlist, input datasets, and engine build to the contract and receipt.
-- Prefer opt-in, tested isolation integrations (containers / native OS backends)
-  with capability discovery, fail-closed unmet policy, and receipt-recorded
-  effective settings — not an invented general OS sandbox or resource wrappers
-  marketed as one.
+- Opt-in `sandbox-exec` and `bwrap`, with discovery, fail-closed unmet backends,
+  and receipt-recorded settings. Default remains unconfined `none`. This is not
+  an OS sandbox product.
 - Sign receipts with optional Ed25519 (offline public-key verify) while keeping
   HMAC as shared-secret authentication; support an append-only transparency
   destination later.
 - Add crash-recovery commands with explicit, audited human decisions.
-- Fuzz contract parsing, state transitions, paths, and interruption points.
+- Stdlib fuzz of contract parsing and paths, plus existing interruption tests.
 - Define migration and compatibility rules for contract and receipt versions.
 
 Exit condition: an external reviewer can reproduce a receipt, detect changes to
@@ -65,24 +64,24 @@ all declared runtime inputs, and validate the threat model.
   adapter.
 - Claude Code plugin + Grok Build Claude-compat package: shipped in-repo
   (`docs/INTEGRATIONS.md`); marketplace submission still manual.
-- Homebrew distribution next.
+- Homebrew formula in `packaging/homebrew/` pins published `0.2.0rc12`. A tap is separate.
 - Adapters remain free and never contain a generic shell escape hatch.
 
 Exit condition: a new user can install from an agent marketplace and produce a
 verified local receipt in under ten minutes.
 
-## Milestone 3: paid Team pilot
+## Milestone 3: local evidence slice (not a paid pilot)
 
-- Shared, versioned policies and contract templates.
-- Delegated approvals with identity and separation of duties.
-- **Off-laptop** retention, identity-attributed review, and support. Local
-  `runspecimen bundle` is Community (already specified); Team does not hide
-  files that already exist on disk and is not a Veto 7-day vault.
-- Five design partners in computational research, ML evaluation, security,
-  quant/backtesting, or regulated engineering.
+Monetization is out of scope. This tree has the local pieces only:
 
-Exit condition: at least three teams pay for evidence sharing or policy control,
-not merely command blocking.
+- Shared workspace policy file, hash-bound in the contract, with ceilings and an argv allow-list.
+- `approver` on the approval and receipt: the local OS user who settled it.
+- `runspecimen retain` copies a bundle outside the workspace. No upload.
+- Vertical templates under `examples/templates/`.
+
+Not in this tree: SSO, billing, delegated approval, a browser approve API, or a retention service.
+
+The paid-pilot exit (teams paying for evidence sharing) is not a gate for this work.
 
 ## Explicitly postponed
 

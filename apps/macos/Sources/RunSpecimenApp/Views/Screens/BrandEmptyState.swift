@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(RunSpecimenCore)
+import RunSpecimenCore
+#endif
 
 @MainActor
 final class EmptyStateMotion: ObservableObject {
@@ -9,6 +12,7 @@ struct BrandEmptyState: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var motion = EmptyStateMotion()
+    private var storeBuild: Bool { DistributionChannel.current.requiresBundledHelper }
 
     var body: some View {
         ScrollView {
@@ -38,20 +42,30 @@ struct BrandEmptyState: View {
                         .frame(maxWidth: 520, alignment: .leading)
 
                     FitHStack(spacing: 12, alignment: .center) {
-                        Button {
-                            Task { await model.chooseCLI() }
-                        } label: {
-                            Label(model.hasCLI ? "CLI selected" : "Select runspecimen CLI", systemImage: "terminal")
+                        if storeBuild {
+                            Button {
+                                Task { await model.openReviewerDemo() }
+                            } label: {
+                                Label("Open Reviewer Demo", systemImage: "play.circle")
+                            }
+                            .buttonStyle(SignalButtonStyle(emphasized: true))
+                            .accessibilityHint("Copy the bundled reviewer workspace and inspect status")
+                        } else {
+                            Button {
+                                Task { await model.chooseCLI() }
+                            } label: {
+                                Label(model.hasCLI ? "CLI selected" : "Select runspecimen CLI", systemImage: "terminal")
+                            }
+                            .buttonStyle(SignalButtonStyle(emphasized: !model.hasCLI))
+                            .accessibilityHint(model.hasCLI ? "Change the selected runspecimen binary" : "Open a file picker to choose the runspecimen executable")
                         }
-                        .buttonStyle(SignalButtonStyle(emphasized: !model.hasCLI))
-                        .accessibilityHint(model.hasCLI ? "Change the selected runspecimen binary" : "Open a file picker to choose the runspecimen executable")
 
                         Button {
                             Task { await model.chooseWorkspace() }
                         } label: {
                             Label(model.hasWorkspace ? "Workspace selected" : "Open Workspace", systemImage: "folder")
                         }
-                        .buttonStyle(SignalButtonStyle(emphasized: model.hasCLI && !model.hasWorkspace))
+                        .buttonStyle(SignalButtonStyle(emphasized: !storeBuild && model.hasCLI && !model.hasWorkspace))
                         .disabled(!model.hasCLI)
                         .accessibilityHint("Choose a workspace folder via Open panel")
                     }
@@ -172,8 +186,12 @@ struct CLISetupBanner: View {
 }
 
 struct FooterHint: View {
+    private var storeBuild: Bool { DistributionChannel.current.requiresBundledHelper }
+
     var body: some View {
-        Text("Install: python3 -m pip install 'runspecimen==0.2.0rc10'   ·   Local-only · Apache-2.0")
+        Text(storeBuild
+             ? "Mac App Store · Bundled engine · Local-only · Apache-2.0 · Data Not Collected"
+             : "Install: python3 -m pip install 'runspecimen==0.2.0rc12'   ·   Local-only · Apache-2.0")
             .font(RSTheme.monoSmall)
             .foregroundStyle(RSTheme.soft)
     }

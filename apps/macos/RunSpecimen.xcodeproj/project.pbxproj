@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		00FBAEA6B6DD45C4449D6E18 /* ApproveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F2CAAB7E3AD3F6FD10E723C /* ApproveSheet.swift */; };
+		0AEFB4491F3D31B7937C6A96 /* WindowPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD1AAD0FBB0481F911E148D4 /* WindowPlacement.swift */; };
 		0D0D6744F7E92B0102D34529 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D088609193CFD648FE7973A6 /* SettingsView.swift */; };
 		11D70B967766E55BFFF54C07 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AD6C443994D90F881291C9E /* AboutView.swift */; };
 		1C28BC134D4EB0FA328766FE /* CLIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F565B47A4AF145AFF0D32B /* CLIService.swift */; };
@@ -16,12 +17,10 @@
 		448F074AD68DBF4196633D80 /* EvidenceInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F8548B718F4960684AD9F56 /* EvidenceInspectorView.swift */; };
 		483F4CF79A70E85661E22A61 /* BrandEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9E846019D6C07EC8472D3F /* BrandEmptyState.swift */; };
 		5012036C37C0F2FEF1A5793F /* RSTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23F6E6DCBD40F79418D2E40 /* RSTheme.swift */; };
-		3C4D5E6F708192A3B4C5D6E7 /* AdaptiveLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B3C4D5E6F708192A3B4C5D6 /* AdaptiveLayout.swift */; };
+		5102999ACFB62C8B508AD3C3 /* WindowSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14E6488D9406692617588706 /* WindowSanitizer.swift */; };
 		5C5B9798DC755213726C94BF /* MasSandboxE2E.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC565DB1F27E2AED085ED2ED /* MasSandboxE2E.swift */; };
 		6FB765924CD7E4CA44AE488C /* BookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FDFE20E65ED9BB091606F63 /* BookmarkStore.swift */; };
-		6B8D0E2F4A6C8E01B3D5F7A9 /* WindowSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9C1E3F5B7D9024C6E8A0B2 /* WindowSanitizer.swift */; };
 		746E229F2860B82A9C618DA9 /* CLIVersionGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E843DB581C76C70E4D0B336 /* CLIVersionGate.swift */; };
-		8E2B4D6E80A1C3E5F791A3B5 /* WindowPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F3A1C8E2B4D6E80A1C3E5F7 /* WindowPlacement.swift */; };
 		818B7FFB5C52F411A645E33F /* ActionBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4980BD2EA2EB66E8B05E2589 /* ActionBar.swift */; };
 		9293289E610B5767F5069B8C /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 395F997B04A26C24E649B9F7 /* AppModel.swift */; };
 		9568B3929A301CD70930F0C7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 526BBC943D12D87DD1A66868 /* Assets.xcassets */; };
@@ -29,8 +28,10 @@
 		C243D9C8700F22A2B888FC13 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = E352B17C6C77A8BA98BACAF1 /* Models.swift */; };
 		CA561EC024C155FAB712DD64 /* libRunSpecimenCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 88F0F2985F5100DEBE7D43A3 /* libRunSpecimenCore.a */; };
 		E0D6392F303910C4B33ECC3F /* DistributionChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A08563FFD0AB533D32DFDC /* DistributionChannel.swift */; };
+		E0DC89E8B0E37C7FB0A6F88B /* ReviewerDemoWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 822C2E8FBE36FF1CF3797630 /* ReviewerDemoWorkspace.swift */; };
 		E5F6FE3C64619C36460B0D20 /* StatusLifecycleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ED625BA3F8017FA5CE6448D /* StatusLifecycleView.swift */; };
 		E6C9E64159AA99328093C70A /* MainConsoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2320608A61C637B03E76E723 /* MainConsoleView.swift */; };
+		EAAA0509D3C5A5D0756E9069 /* AdaptiveLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AE95F2D317B76DDFCF181E2 /* AdaptiveLayout.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -44,6 +45,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		14E6488D9406692617588706 /* WindowSanitizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowSanitizer.swift; sourceTree = "<group>"; };
 		1E843DB581C76C70E4D0B336 /* CLIVersionGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIVersionGate.swift; sourceTree = "<group>"; };
 		1ED625BA3F8017FA5CE6448D /* StatusLifecycleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusLifecycleView.swift; sourceTree = "<group>"; };
 		1F2CAAB7E3AD3F6FD10E723C /* ApproveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApproveSheet.swift; sourceTree = "<group>"; };
@@ -53,18 +55,18 @@
 		395F997B04A26C24E649B9F7 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		3A67C161EC147254CE84D7C9 /* RunSpecimenApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunSpecimenApp.swift; sourceTree = "<group>"; };
 		3AD6C443994D90F881291C9E /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		3AE95F2D317B76DDFCF181E2 /* AdaptiveLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveLayout.swift; sourceTree = "<group>"; };
 		3F8548B718F4960684AD9F56 /* EvidenceInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceInspectorView.swift; sourceTree = "<group>"; };
 		4980BD2EA2EB66E8B05E2589 /* ActionBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionBar.swift; sourceTree = "<group>"; };
 		526BBC943D12D87DD1A66868 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7531B8780C3C9854D43D8CE4 /* SecurityBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityBoundary.swift; sourceTree = "<group>"; };
+		822C2E8FBE36FF1CF3797630 /* ReviewerDemoWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewerDemoWorkspace.swift; sourceTree = "<group>"; };
 		88F0F2985F5100DEBE7D43A3 /* libRunSpecimenCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libRunSpecimenCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		8FDFE20E65ED9BB091606F63 /* BookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStore.swift; sourceTree = "<group>"; };
-		7A9C1E3F5B7D9024C6E8A0B2 /* WindowSanitizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowSanitizer.swift; sourceTree = "<group>"; };
-		9F3A1C8E2B4D6E80A1C3E5F7 /* WindowPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPlacement.swift; sourceTree = "<group>"; };
 		A7A08563FFD0AB533D32DFDC /* DistributionChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DistributionChannel.swift; sourceTree = "<group>"; };
 		AA9E846019D6C07EC8472D3F /* BrandEmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandEmptyState.swift; sourceTree = "<group>"; };
 		C23F6E6DCBD40F79418D2E40 /* RSTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSTheme.swift; sourceTree = "<group>"; };
-		2B3C4D5E6F708192A3B4C5D6 /* AdaptiveLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveLayout.swift; sourceTree = "<group>"; };
+		CD1AAD0FBB0481F911E148D4 /* WindowPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPlacement.swift; sourceTree = "<group>"; };
 		D088609193CFD648FE7973A6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		DC565DB1F27E2AED085ED2ED /* MasSandboxE2E.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasSandboxE2E.swift; sourceTree = "<group>"; };
 		E352B17C6C77A8BA98BACAF1 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -123,8 +125,8 @@
 		633E686CBE898E3D1A14BA73 /* Theme */ = {
 			isa = PBXGroup;
 			children = (
+				3AE95F2D317B76DDFCF181E2 /* AdaptiveLayout.swift */,
 				C23F6E6DCBD40F79418D2E40 /* RSTheme.swift */,
-				2B3C4D5E6F708192A3B4C5D6 /* AdaptiveLayout.swift */,
 			);
 			path = Theme;
 			sourceTree = "<group>";
@@ -144,7 +146,7 @@
 				1E843DB581C76C70E4D0B336 /* CLIVersionGate.swift */,
 				A7A08563FFD0AB533D32DFDC /* DistributionChannel.swift */,
 				7531B8780C3C9854D43D8CE4 /* SecurityBoundary.swift */,
-				9F3A1C8E2B4D6E80A1C3E5F7 /* WindowPlacement.swift */,
+				CD1AAD0FBB0481F911E148D4 /* WindowPlacement.swift */,
 			);
 			path = RunSpecimenCore;
 			sourceTree = "<group>";
@@ -156,7 +158,8 @@
 				E6F565B47A4AF145AFF0D32B /* CLIService.swift */,
 				DC565DB1F27E2AED085ED2ED /* MasSandboxE2E.swift */,
 				36CDFCFCD215BA28614B65F0 /* PTYApprovalSession.swift */,
-				7A9C1E3F5B7D9024C6E8A0B2 /* WindowSanitizer.swift */,
+				822C2E8FBE36FF1CF3797630 /* ReviewerDemoWorkspace.swift */,
+				14E6488D9406692617588706 /* WindowSanitizer.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -340,7 +343,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\nHELPER_SRC=\"${SRCROOT}/Helpers/payload/runspecimen\"\nHELPER_NOTICE=\"${SRCROOT}/Helpers/payload/NOTICE.txt\"\nDEST=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Helpers\"\nRES_DEST=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources\"\nREPO=\"$(cd \"${SRCROOT}/../..\" && pwd)\"\nif [[ ! -x \"$HELPER_SRC\" ]]; then\n  echo \"error: Missing frozen helper at Helpers/payload/runspecimen.\"\n  echo \"error: Run: ./Scripts/freeze_helper.sh --enable --require --verify\"\n  exit 1\nfi\nif ! file \"$HELPER_SRC\" | grep -q 'Mach-O'; then\n  echo \"error: Helpers/payload/runspecimen must be a Mach-O freeze (MAS path).\"\n  file \"$HELPER_SRC\" || true\n  exit 1\nfi\n# Fail-closed version gate BEFORE inherit entitlements (shell cannot exec after).\nREPO_VER=$(\n  python3 -c 'import pathlib,re,sys; t=pathlib.Path(sys.argv[1],\"src/runspecimen/__init__.py\").read_text(); m=re.search(r\"__version__\\s*=\\s*\\\"([^\\\"]+)\\\"\", t); assert m; print(m.group(1))' \\\n    \"$REPO\"\n)\nHELPER_VER=\"$(\"$HELPER_SRC\" --version 2>&1)\" || {\n  echo \"error: Helpers/payload/runspecimen --version failed\" >&2\n  echo \"$HELPER_VER\" >&2\n  exit 1\n}\necho \"Frozen helper pre-sign --version → $HELPER_VER (repo=$REPO_VER)\"\necho \"$HELPER_VER\" | grep -F \"$REPO_VER\" >/dev/null || {\n  echo \"error: helper version mismatch (want $REPO_VER, got $HELPER_VER)\" >&2\n  exit 1\n}\nmkdir -p \"$DEST\" \"$RES_DEST\"\nENGINE_DEST=\"${RES_DEST}/RunSpecimenEngine\"\n# Always stage icon + privacy manifest (XcodeGen resource sync can miss on some hosts).\nfor f in AppIcon.icns AppIcon-1024.png PrivacyInfo.xcprivacy; do\n  if [[ -f \"${SRCROOT}/Resources/$f\" ]]; then\n    if cp -X /etc/hosts /tmp/.rs-cp-x-test 2>/dev/null; then\n      rm -f /tmp/.rs-cp-x-test\n      cp -X -f \"${SRCROOT}/Resources/$f\" \"$RES_DEST/$f\"\n    else\n      cp -f \"${SRCROOT}/Resources/$f\" \"$RES_DEST/$f\"\n    fi\n  fi\ndone\n# Strip Finder/Box xattrs that break codesign (\"resource fork … not allowed\").\nINTERNAL_SRC=\"${SRCROOT}/Helpers/payload/_internal\"\nif [[ ! -d \"$INTERNAL_SRC\" ]]; then\n  echo \"error: Missing Helpers/payload/_internal (onedir freeze required for MAS sandbox).\" >&2\n  echo \"error: Run: ./Scripts/freeze_helper.sh --enable --require --verify\" >&2\n  exit 1\nfi\nrm -rf \"$ENGINE_DEST\" \"$DEST/runspecimen\" \"$DEST/_internal\" \"$DEST/lib\"\nmkdir -p \"$ENGINE_DEST\"\nif cp -X /etc/hosts /tmp/.rs-cp-x-test 2>/dev/null; then\n  rm -f /tmp/.rs-cp-x-test\n  cp -X -f \"$HELPER_SRC\" \"$ENGINE_DEST/runspecimen\"\n  [[ -f \"$HELPER_NOTICE\" ]] && cp -X -f \"$HELPER_NOTICE\" \"$RES_DEST/HelperNOTICE.txt\" || true\nelse\n  cp -f \"$HELPER_SRC\" \"$ENGINE_DEST/runspecimen\"\n  [[ -f \"$HELPER_NOTICE\" ]] && cp -f \"$HELPER_NOTICE\" \"$RES_DEST/HelperNOTICE.txt\" || true\nfi\nchmod +x \"$ENGINE_DEST/runspecimen\"\nmkdir -p \"$ENGINE_DEST/_internal\"\nif rsync -a --delete --exclude '__pycache__' --exclude '*.pyc' \"$INTERNAL_SRC/\" \"$ENGINE_DEST/_internal/\" 2>/dev/null; then\n  :\nelse\n  cp -R \"$INTERNAL_SRC/.\" \"$ENGINE_DEST/_internal/\"\nfi\n# Do not place loose files under Helpers — Xcode treats Contents/Helpers/*\n# as nested code that must be signed. Engine lives only under Resources.\nrm -rf \"$DEST\"\nmkdir -p \"$DEST\"\nxattr -cr \"$ENGINE_DEST\" 2>/dev/null || true\n\"${SRCROOT}/Scripts/sign_nested_helper.sh\" \"$ENGINE_DEST/runspecimen\"\necho \"Embedded helper engine: $ENGINE_DEST/runspecimen (engine $REPO_VER, onedir _internal)\"\n";
+			shellScript = "set -euo pipefail\nHELPER_SRC=\"${SRCROOT}/Helpers/payload/runspecimen\"\nHELPER_NOTICE=\"${SRCROOT}/Helpers/payload/NOTICE.txt\"\nDEST=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Helpers\"\nRES_DEST=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources\"\nREPO=\"$(cd \"${SRCROOT}/../..\" && pwd)\"\nif [[ ! -x \"$HELPER_SRC\" ]]; then\n  echo \"error: Missing frozen helper at Helpers/payload/runspecimen.\"\n  echo \"error: Run: ./Scripts/freeze_helper.sh --enable --require --verify\"\n  exit 1\nfi\nif ! file \"$HELPER_SRC\" | grep -q 'Mach-O'; then\n  echo \"error: Helpers/payload/runspecimen must be a Mach-O freeze (MAS path).\"\n  file \"$HELPER_SRC\" || true\n  exit 1\nfi\n# Fail-closed version gate BEFORE inherit entitlements (shell cannot exec after).\nREPO_VER=$(\n  python3 -c 'import pathlib,re,sys; t=pathlib.Path(sys.argv[1],\"src/runspecimen/__init__.py\").read_text(); m=re.search(r\"__version__\\s*=\\s*\\\"([^\\\"]+)\\\"\", t); assert m; print(m.group(1))' \\\n    \"$REPO\"\n)\nHELPER_VER=\"$(\"$HELPER_SRC\" --version 2>&1)\" || {\n  echo \"error: Helpers/payload/runspecimen --version failed\" >&2\n  echo \"$HELPER_VER\" >&2\n  exit 1\n}\necho \"Frozen helper pre-sign --version → $HELPER_VER (repo=$REPO_VER)\"\necho \"$HELPER_VER\" | grep -F \"$REPO_VER\" >/dev/null || {\n  echo \"error: helper version mismatch (want $REPO_VER, got $HELPER_VER)\" >&2\n  exit 1\n}\nmkdir -p \"$DEST\" \"$RES_DEST\"\nENGINE_DEST=\"${RES_DEST}/RunSpecimenEngine\"\n# Always stage icon + privacy manifest (XcodeGen resource sync can miss on some hosts).\nfor f in AppIcon.icns AppIcon-1024.png PrivacyInfo.xcprivacy; do\n  if [[ -f \"${SRCROOT}/Resources/$f\" ]]; then\n    if cp -X /etc/hosts /tmp/.rs-cp-x-test 2>/dev/null; then\n      rm -f /tmp/.rs-cp-x-test\n      cp -X -f \"${SRCROOT}/Resources/$f\" \"$RES_DEST/$f\"\n    else\n      cp -f \"${SRCROOT}/Resources/$f\" \"$RES_DEST/$f\"\n    fi\n  fi\ndone\nDEMO_SRC=\"${SRCROOT}/Resources/ReviewerDemo\"\nif [[ -d \"$DEMO_SRC\" && -f \"$DEMO_SRC/contract.json\" ]]; then\n  rm -rf \"$RES_DEST/ReviewerDemo\"\n  mkdir -p \"$RES_DEST/ReviewerDemo\"\n  rsync -a --delete --exclude '.runspecimen' --exclude '.DS_Store' \"$DEMO_SRC/\" \"$RES_DEST/ReviewerDemo/\" \\\n    || cp -R \"$DEMO_SRC/.\" \"$RES_DEST/ReviewerDemo/\"\n  echo \"Staged reviewer demo workspace → $RES_DEST/ReviewerDemo\"\nelse\n  echo \"error: Missing Resources/ReviewerDemo/contract.json (App Review completeness).\" >&2\n  exit 1\nfi\n# Strip Finder/Box xattrs that break codesign (\"resource fork … not allowed\").\nINTERNAL_SRC=\"${SRCROOT}/Helpers/payload/_internal\"\nif [[ ! -d \"$INTERNAL_SRC\" ]]; then\n  echo \"error: Missing Helpers/payload/_internal (onedir freeze required for MAS sandbox).\" >&2\n  echo \"error: Run: ./Scripts/freeze_helper.sh --enable --require --verify\" >&2\n  exit 1\nfi\nrm -rf \"$ENGINE_DEST\" \"$DEST/runspecimen\" \"$DEST/_internal\" \"$DEST/lib\"\nmkdir -p \"$ENGINE_DEST\"\nif cp -X /etc/hosts /tmp/.rs-cp-x-test 2>/dev/null; then\n  rm -f /tmp/.rs-cp-x-test\n  cp -X -f \"$HELPER_SRC\" \"$ENGINE_DEST/runspecimen\"\n  [[ -f \"$HELPER_NOTICE\" ]] && cp -X -f \"$HELPER_NOTICE\" \"$RES_DEST/HelperNOTICE.txt\" || true\nelse\n  cp -f \"$HELPER_SRC\" \"$ENGINE_DEST/runspecimen\"\n  [[ -f \"$HELPER_NOTICE\" ]] && cp -f \"$HELPER_NOTICE\" \"$RES_DEST/HelperNOTICE.txt\" || true\nfi\nchmod +x \"$ENGINE_DEST/runspecimen\"\nmkdir -p \"$ENGINE_DEST/_internal\"\nif rsync -a --delete --exclude '__pycache__' --exclude '*.pyc' \"$INTERNAL_SRC/\" \"$ENGINE_DEST/_internal/\" 2>/dev/null; then\n  :\nelse\n  cp -R \"$INTERNAL_SRC/.\" \"$ENGINE_DEST/_internal/\"\nfi\n# Do not place loose files under Helpers — Xcode treats Contents/Helpers/*\n# as nested code that must be signed. Engine lives only under Resources.\nrm -rf \"$DEST\"\nmkdir -p \"$DEST\"\nxattr -cr \"$ENGINE_DEST\" 2>/dev/null || true\n\"${SRCROOT}/Scripts/sign_nested_helper.sh\" \"$ENGINE_DEST/runspecimen\"\necho \"Embedded helper engine: $ENGINE_DEST/runspecimen (engine $REPO_VER, onedir _internal)\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -351,6 +354,7 @@
 			files = (
 				11D70B967766E55BFFF54C07 /* AboutView.swift in Sources */,
 				818B7FFB5C52F411A645E33F /* ActionBar.swift in Sources */,
+				EAAA0509D3C5A5D0756E9069 /* AdaptiveLayout.swift in Sources */,
 				9293289E610B5767F5069B8C /* AppModel.swift in Sources */,
 				00FBAEA6B6DD45C4449D6E18 /* ApproveSheet.swift in Sources */,
 				6FB765924CD7E4CA44AE488C /* BookmarkStore.swift in Sources */,
@@ -362,11 +366,11 @@
 				C243D9C8700F22A2B888FC13 /* Models.swift in Sources */,
 				2EB57F1869DBF37A893A9F3F /* PTYApprovalSession.swift in Sources */,
 				5012036C37C0F2FEF1A5793F /* RSTheme.swift in Sources */,
-				3C4D5E6F708192A3B4C5D6E7 /* AdaptiveLayout.swift in Sources */,
-				6B8D0E2F4A6C8E01B3D5F7A9 /* WindowSanitizer.swift in Sources */,
+				E0DC89E8B0E37C7FB0A6F88B /* ReviewerDemoWorkspace.swift in Sources */,
 				2C47316E44CE2A922CF15D1A /* RunSpecimenApp.swift in Sources */,
 				0D0D6744F7E92B0102D34529 /* SettingsView.swift in Sources */,
 				E5F6FE3C64619C36460B0D20 /* StatusLifecycleView.swift in Sources */,
+				5102999ACFB62C8B508AD3C3 /* WindowSanitizer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -377,7 +381,7 @@
 				746E229F2860B82A9C618DA9 /* CLIVersionGate.swift in Sources */,
 				E0D6392F303910C4B33ECC3F /* DistributionChannel.swift in Sources */,
 				C0EB2EB55853C627CBBC718A /* SecurityBoundary.swift in Sources */,
-				8E2B4D6E80A1C3E5F791A3B5 /* WindowPlacement.swift in Sources */,
+				0AEFB4491F3D31B7937C6A96 /* WindowPlacement.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -484,7 +488,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Entitlements/RunSpecimen.mas.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 8;
 				INFOPLIST_FILE = "Config/Info-mas.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -571,7 +575,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Entitlements/RunSpecimen.mas.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 8;
 				INFOPLIST_FILE = "Config/Info-mas.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

@@ -4,15 +4,15 @@ This document lists the manual actions required to publish RunSpecimen to
 various distribution channels. Each section describes what must be done
 by a human with appropriate credentials.
 
-## Proposed release (not published yet)
+## Published release
 
-Package / plugin identity on the release branch: **`0.2.0rc12`** / **`0.2.0-rc.12`**.
+Package / plugin identity: **`0.2.0rc12`** / **`0.2.0-rc.12`**.
 
-**Last published:** [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) / PyPI `runspecimen==0.2.0rc10`.
+**Published:** [v0.2.0-rc.12](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.12) / PyPI `runspecimen==0.2.0rc12`. GitHub Release assets and PyPI are the same bytes (checksum-only; not SLSA-attested).
 
-**Do not publish** the existing draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) (annotated tag peels to `ecc1709`). Do not move that tag. Next tag is `v0.2.0-rc.12` on the merged green commit. See [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md).
+**Do not publish** the existing draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) (annotated tag peels to `ecc1709`). Do not move that tag. See [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md).
 
-Prospective URLs (appear only after Yahor publishes the rc12 GitHub Release — that also triggers PyPI of the **same bytes**):
+Published URLs:
 
 - Release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.12
 - Wheel: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/runspecimen-0.2.0rc12-py3-none-any.whl
@@ -22,9 +22,7 @@ Prospective URLs (appear only after Yahor publishes the rc12 GitHub Release — 
 
 ## 1. Cursor Marketplace
 
-**Status (2026-09-18):** **Not submitted** and **not listed**. Public
-https://cursor.com/marketplace?q=runspecimen returned no RunSpecimen plugin
-(unrelated hits only: `run-app`, Runlayer, etc.). In-repo
+**Status (2026-09-21):** Publish form submitted (“Thanks for applying”). **Not listed.** In-repo
 `.cursor-plugin/marketplace.json` is packaging, not an approved public listing.
 
 **Submission URL:** https://cursor.com/marketplace/publish
@@ -60,15 +58,13 @@ plugins/runspecimen/.cursor-plugin/plugin.json
 - [x] All paths are relative and valid
 - [x] Plugin tested locally
 
-**MANUAL ACTION REQUIRED:** Human must submit at https://cursor.com/marketplace/publish
+Form submitted 2026-09-21. Do not claim a public Cursor Marketplace listing until Anysphere accepts it.
 
 ---
 
 ## 2. Codex/ChatGPT Plugin Directory
 
-**Status (2026-09-18):** **Not submitted** and **not listed**. Public
-https://chatgpt.com/apps catalog browse did not show RunSpecimen. Do not treat
-in-repo Codex plugin files as an approved directory listing.
+**Status (2026-09-21):** **Not submitted** and **not listed**. OpenAI still requires a verified developer identity (Persona camera ID) before the skills-only zip can be uploaded. Do not treat in-repo Codex plugin files as an approved directory listing.
 
 **Submission URL:** OpenAI plugin submission portal (https://platform.openai.com)
 
@@ -116,7 +112,7 @@ plugins/runspecimen/assets/runspecimen-logo.png  # 512 — Cursor plugin logo
 
 ## 2b. Claude Code marketplace
 
-**Status:** Package shipped in-repo; community marketplace **not submitted**
+**Status (2026-09-21):** Directory form **submitted for review** at https://platform.claude.com/plugins/submit. **Not listed** until Anthropic accepts it.
 
 **References:**
 - Plugin reference: https://code.claude.com/docs/en/plugins-reference
@@ -170,7 +166,7 @@ wants in-product discovery beyond the symlink path.
 
 ## 2d. Gemini CLI extension gallery
 
-**Status:** Package shipped in-repo; gallery **not submitted**
+**Status (2026-09-21):** GitHub topic `gemini-cli-extension` and repo-root `gemini-extension.json` are on `main` (`68c334d`). The gallery crawler runs daily. **Not indexed yet.**
 
 **References:**
 - Extensions: https://geminicli.com/docs/extensions/
@@ -194,16 +190,14 @@ gemini extensions link "$(pwd)/plugins/runspecimen"
 # or: gemini extensions install "$(pwd)/plugins/runspecimen"
 ```
 
-**MANUAL ACTION REQUIRED:** Human must publish to the Gemini CLI extension
-gallery when ready. Gemini Code Assist uses the same MCP script + project
-instructions; there is no separate partner plugin SDK.
+Gallery indexing is the crawler, not a form. Gemini Code Assist uses the same MCP script + project
+instructions; there is no separate partner plugin SDK. Do not claim a gallery listing until it appears.
 
 ---
 
 ## 2e. JetBrains Junie / IntelliJ
 
-**Status:** Junie catalog + IntelliJ scaffold in-repo; JetBrains Marketplace
-**not submitted**
+**Status (2026-09-21):** Catalog PR https://github.com/JetBrains/junie-extensions/pull/16 is open. **Not merged** and not a Marketplace listing.
 
 ### Package locations
 
@@ -257,15 +251,14 @@ listing later; filesystem skills/rules are the supported path today.
 
 ## 3. PyPI (Python Package Index)
 
-**Status:** Last published `0.2.0rc10`; **`0.2.0rc11` draft must stay unpublished**; **`0.2.0rc12` not published yet**
+**Status:** **`0.2.0rc12` is published** (identical bytes to the GitHub Release). **`0.2.0rc11` draft must stay unpublished.**
 
-**Registry URL:** https://pypi.org/project/runspecimen/
+**Registry URL:** https://pypi.org/project/runspecimen/0.2.0rc12/
 
-### Proposed package (after Yahor publish approval)
+### Published package
 
 - **Version:** `0.2.0rc12`
-- **Install (after publish):** `python3 -m pip install runspecimen==0.2.0rc12`
-- **Until then:** `python3 -m pip install runspecimen==0.2.0rc10`
+- **Install:** `python3 -m pip install runspecimen==0.2.0rc12`
 - **Publishing:** GitHub Actions trusted publishing with OIDC; no PyPI API
   token is stored in GitHub.
 
@@ -295,17 +288,15 @@ candidate as attested.
 
 The GitHub `pypi` environment is restricted to `v*` tags.
 
-Public product/support/privacy/terms pages stay on **rc10** until rc12 is live
-on both GitHub (published release) and PyPI. Do not retarget download links
+Public product/support/privacy/terms pages pin **rc12**. Do not retarget download links
 from a draft. Do not publish the rc11 draft.
 
 ---
 
 ## 3b. Mac App Store (`com.darashkevich.runspecimen`)
 
-**Status (App Store Connect API, 2026-09-18):** macOS version **0.1.3** is
-**WAITING_FOR_REVIEW** with attached build **5** (`processingState=VALID`).
-Not approved. Not publicly available. No Mac App Store product URL.
+**Status (App Store Connect, 2026-09-21):** macOS version **0.1.3 (8)** and
+App Info are **WAITING_FOR_REVIEW** (submission `9c19e1cd-ebd1-4705-b683-5a5fdc2671f6`, submitted 2026-09-21T05:36:49Z). Builds 5 and 6 were rejected. Not publicly available. Do not upload another build while this submission is waiting.
 
 Do **not** add a MAS link to the marketing site until Apple provides a live
 `apps.apple.com` URL. Developer ID notarization is not a Store submission.
@@ -316,7 +307,7 @@ Details: `apps/macos/asc-kit/STATUS.md`.
 
 ## 4. Website (runspecimen.darashkevich.com)
 
-**Status:** Live (hexaflake mark + honest rc10 PyPI / git-main copy). Marketplace links stay pending until listings are accepted.
+**Status:** Live (hexaflake mark + `runspecimen==0.2.0rc12`). Marketplace links stay pending until listings are accepted.
 
 **Current content check:** Site mentions "Public marketplace availability is not yet confirmed."
 
@@ -336,16 +327,16 @@ listings are confirmed live (not pending review).
 
 | Channel | Submitted | Pending | Live | URL |
 | --- | --- | --- | --- | --- |
-| GitHub Release | ❌ rc12 not tagged | publish click after merge | last live: [v0.2.0-rc.10](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.10) | keep draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) unpublished |
-| Cursor Marketplace | ❌ | not submitted | no public listing | https://cursor.com/marketplace?q=runspecimen (2026-09-18: no RunSpecimen hit) |
-| Codex Directory | ❌ | not submitted | no public listing | https://chatgpt.com/apps (2026-09-18: RunSpecimen not in catalog browse) |
-| Claude Code community | ❌ | package ready in-repo | - | - |
+| GitHub Release | ✅ published prerelease | — | [v0.2.0-rc.12](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.12) | keep draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) unpublished |
+| Cursor Marketplace | form submitted 2026-09-21 | Anysphere review | no public listing yet | https://cursor.com/marketplace/publish |
+| Codex Directory | ❌ | not submitted (Persona identity still required) | no public listing | https://chatgpt.com/apps |
+| Claude Code community | submitted 2026-09-21 | Anthropic review | not listed yet | https://platform.claude.com/plugins/submit |
 | Grok Build | ❌ | Claude-compat package ready | - | local symlink / self-host |
-| Gemini CLI gallery | ❌ | extension ready in-repo | - | - |
-| JetBrains Junie / Marketplace | ❌ | Junie catalog + IntelliJ scaffold | - | - |
+| Gemini CLI gallery | topic + root manifest on `main` (`68c334d`) | daily crawler | not indexed yet | repo-root `gemini-extension.json` |
+| JetBrains Junie / Marketplace | PR open | JetBrains review | not merged | https://github.com/JetBrains/junie-extensions/pull/16 |
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
-| PyPI | ❌ (rc12) | after GitHub Release publish of `v0.2.0-rc.12` | last live: `0.2.0rc10` | [runspecimen](https://pypi.org/project/runspecimen/) |
-| Mac App Store | ⏳ WAITING_FOR_REVIEW | Apple review of macOS **0.1.3 (5)** | not public | no `apps.apple.com` URL yet — see `apps/macos/asc-kit/STATUS.md` |
+| PyPI | ✅ | — | `0.2.0rc12` (same bytes as GitHub) | [runspecimen 0.2.0rc12](https://pypi.org/project/runspecimen/0.2.0rc12/) |
+| Mac App Store | ⏳ WAITING_FOR_REVIEW | Apple review of macOS **0.1.3 (8)** | not public | no `apps.apple.com` URL — see `apps/macos/asc-kit/STATUS.md` |
 
 **Important:** Do not claim a listing is "public" or "available" until:
 1. Submission is accepted (not just submitted)

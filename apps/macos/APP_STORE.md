@@ -130,9 +130,7 @@ Operator steps (once per machine; no credential handling in git):
 6. Verify: `pkgutil --check-signature` (installer chain), then extract and
    `codesign --verify --strict` the `.app` and nested helper; entitlements
    sandbox + inherit; `RSDistributionChannel=mas`.
-7. Only after Yahor decides to **replace** Connect build 5: leave
-   `destination=upload` (default) and bump **build 6**. Do not Submit for Review
-   from this script.
+7. Build **8** (`0.1.3`) is already uploaded and `WAITING_FOR_REVIEW`. Do not upload another build or Submit for Review from this script while that submission is waiting.
 
 ASC paste pack (metadata / screenshots checklist / reviewer demo):
 [asc-kit/](asc-kit/) — mark screenshot PNGs and Connect record as **pending** until Yahor fills them.
@@ -201,27 +199,23 @@ Shipped under `Resources/PrivacyInfo.xcprivacy`:
 | Display name | RunSpecimen |
 | Category | Developer Tools |
 | Short version | `0.1.3` (bump per ship) |
-| Build | `6` next Connect upload (build **5** is already in review) |
+| Build | `8` in review (builds **5**–**6** rejected; **7** uploaded then superseded) |
 | Min macOS | 14.0 |
 | Bundled engine | `0.2.0rc12` (must match `src/runspecimen/__version__`) |
 | Icon | `Resources/AppIcon.icns` (+ iconset / 1024 for Connect) |
 
 ## Review notes (paste into App Review)
 
-> RunSpecimen is a local safety/evidence control surface for one human-approved
-> bounded run at a time. The Mac app is a sandboxed SwiftUI shell. Enforcement is
-> the **bundled** `Contents/Helpers/runspecimen` CLI (Apache-2.0, frozen Mach-O —
-> no host Python). Approval requires an interactive PTY and the human typing
-> APPROVE — the app never auto-approves and has no agent API. App Sandbox
-> confines the UI (+ inherit helper); it does **not** claim to OS-sandbox the
-> payload under test. Certificates are hash-chained receipts, not asymmetric
-> digital signatures. The optional dashboard is loopback-only and read-only.
-> No telemetry. Workspace paths use NSOpenPanel security-scoped bookmarks.
+> Launch RunSpecimen. The Store build opens the bundled Reviewer Demo
+> automatically. Source should read Bundled Helpers — do not pip install.
+> Inspect status, then type APPROVE yourself on the PTY. The app never
+> auto-approves. App Sandbox confines the UI (+ inherit helper); it does not
+> OS-sandbox the payload under test. Data Not Collected.
 
 ### Demo path for reviewers
 
-1. Launch RunSpecimen (bundled helper resolves automatically — Source = “Bundled Helpers”).
-2. Choose workspace → `examples/showcase` (or attach a sample workspace in Review notes).
+1. Launch RunSpecimen — bundled helper + Reviewer Demo workspace open automatically (Source = “Bundled Helpers”).
+2. Use **Open Reviewer Demo** only if you need a fresh copy.
 3. Refresh status / inspect certificate (read-only).
 4. Open Approve sheet — type `APPROVE` yourself on the PTY (do not automate).
 5. Quit — confirm dashboard child is gone.
@@ -265,7 +259,7 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 - [x] `./Scripts/test_mas_sandbox_e2e.sh` (actual APPROVE prompt + still waiting; never types APPROVE)
 - [x] Store export fail-closed (`assert_store_export_ready.sh` + `test_store_export_gate.sh` negatives)
 - [x] Apple Distribution signing + **local** Store pkg export (see asc-kit evidence) — Connect **replace/upload** still Yahor
-- [ ] Next Connect upload of **0.1.3 (6)** — **pending Yahor** (do not touch WAITING_FOR_REVIEW build 5 from automation)
+- [x] Connect upload of **0.1.3 (8)** — `WAITING_FOR_REVIEW` since 2026-09-21 (submission `9c19e1cd-…`). Do not upload another build from automation.
 - [x] Privacy policy URL in-app (Connect field **pending** Yahor)
 - [ ] Screenshots uploaded into Connect Media — **pending Yahor** (local PNGs ready in [asc-kit/screenshots/](asc-kit/screenshots/))
 - [x] Reviewer demo notes paste-ready ([asc-kit/reviewer-demo.md](asc-kit/reviewer-demo.md))
@@ -273,10 +267,8 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 
 ## Remaining Yahor-only blockers
 
-1. **Decide** whether to keep App Store Connect **0.1.3 (5)** in
-   `WAITING_FOR_REVIEW` or replace it with **0.1.3 (6)** from the merged green
-   tree. Automation will not withdraw/resubmit.
-2. After a **public** GitHub + PyPI `0.2.0rc12`, retarget the product site.
+1. **Leave** App Store Connect **0.1.3 (8)** in `WAITING_FOR_REVIEW`. Builds 5 and 6 were already rejected. Automation will not withdraw or upload a replacement.
+2. Product site already pins public GitHub + PyPI `0.2.0rc12`.
    Add an `apps.apple.com` link only when Apple returns a working URL.
 3. Screenshots / privacy URL already pasted in Connect: confirm; do not Submit
    a second time from scripts.

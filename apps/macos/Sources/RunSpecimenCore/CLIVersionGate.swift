@@ -79,24 +79,46 @@ public enum CLIVersionGate {
         return .ok(parsed)
     }
 
-    public static func failureMessage(for evaluation: Evaluation) -> String? {
+    public static func failureMessage(
+        for evaluation: Evaluation,
+        channel: DistributionChannel = .current
+    ) -> String? {
         switch evaluation {
         case .ok:
             return nil
         case .tooOld(let found, let required, let raw):
+            if channel.requiresBundledHelper {
+                return """
+                CLI version mismatch: found \(found.display) (from “\(raw)”), need \(required.displayMinimum)+.
+                Mac App Store builds must use the bundled frozen engine. Use Prefer Bundled Helper in Settings. Do not install a host CLI.
+                """
+            }
             return """
             CLI version mismatch: found \(found.display) (from “\(raw)”), need \(required.displayMinimum)+.
-            Upgrade: python3 -m pip install --upgrade 'runspecimen==0.2.0rc10'
+            Upgrade: python3 -m pip install --upgrade 'runspecimen==0.2.0rc12'
             Or select a newer binary via Open panel / Settings.
             """
         case .unparseable(let raw):
             let lowered = raw.lowercased()
             if lowered.contains("need python") {
+                if channel.requiresBundledHelper {
+                    return """
+                    This Mac App Store build must ship a frozen Mach-O helper, not a host-Python launcher.
+                    \(raw.isEmpty ? "(empty)" : raw)
+                    """
+                }
                 return """
                 Bundled helper needs a host Python 3.9+ (stdlib-only package tree).
                 \(raw.isEmpty ? "(empty)" : raw)
 
                 Install Xcode Command Line Tools (`xcode-select --install`) or Python 3.9+, then reopen RunSpecimen. Local `--from-src` builds should not be App Sandboxed.
+                """
+            }
+            if channel.requiresBundledHelper {
+                return """
+                Could not parse runspecimen version from:
+                \(raw.isEmpty ? "(empty)" : raw)
+                Use Prefer Bundled Helper. Store builds do not install a host CLI.
                 """
             }
             return """

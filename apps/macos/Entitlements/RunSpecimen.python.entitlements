@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Nested PyInstaller CPython / .so / Python3.framework only.
+	     Hardened Runtime without these two keys crashes the frozen helper
+	     (ctypes, mmap, unsigned .so load). Do not put app-sandbox here —
+	     the inherit-signed helper entrypoint is the sandbox boundary. -->
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

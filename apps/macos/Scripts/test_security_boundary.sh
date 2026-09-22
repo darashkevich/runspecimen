@@ -46,6 +46,19 @@ echo "==> MAS channel fail-closed (no PATH when mas)"
 grep -q 'allowsPATHProbe' "$ROOT/Sources/RunSpecimenCore/DistributionChannel.swift" || fail "channel"
 grep -q 'requiresBundledHelper' "$ROOT/Sources/RunSpecimenApp/AppModel.swift" || fail "AppModel MAS"
 grep -q 'fail closed' "$ROOT/Sources/RunSpecimenApp/AppModel.swift" || fail "fail closed copy"
+grep -q 'does not select a host CLI' "$ROOT/Sources/RunSpecimenApp/AppModel.swift" || fail "MAS chooseCLI must refuse a host binary"
+python3 - <<'PY' || exit 1
+from pathlib import Path
+settings = Path("Sources/RunSpecimenApp/Views/Sheets/SettingsView.swift").read_text()
+menu = Path("Sources/RunSpecimenApp/RunSpecimenApp.swift").read_text()
+# Host CLI picker is local/Developer ID only. Store builds must not offer it.
+for label, text in (("Settings", settings), ("Engine menu", menu)):
+    if "Select runspecimen" not in text:
+        raise SystemExit(f"{label} lost the local CLI picker")
+    if "requiresBundledHelper" not in text:
+        raise SystemExit(f"{label} does not hide the CLI picker on MAS")
+print("MAS hides host CLI picker")
+PY
 
 echo "==> SECURITY_BOUNDARY.md documents sandbox vs payload"
 test -f "$ROOT/docs/SECURITY_BOUNDARY.md"

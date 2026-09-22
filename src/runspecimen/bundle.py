@@ -62,6 +62,59 @@ def confirm_channel_from_state_dir(state_dir: Path) -> str | None:
     return None
 
 
+def assert_retention_destination(workspace: Path, out_dir: Path) -> Path:
+    """Refuse a destination that resolves inside the workspace."""
+    workspace = resolve_workspace(workspace)
+    dest = Path(out_dir).expanduser()
+    if not dest.is_absolute():
+        dest = (Path.cwd() / dest).resolve()
+    else:
+        dest = dest.resolve()
+    if dest == workspace or _is_inside(dest, workspace):
+        raise RunSpecimenError(
+            "retain destination must be outside the workspace; "
+            "use bundle for a pack inside the workspace"
+        )
+    return dest
+
+
+def _is_inside(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
+def retain_incident_bundle(
+    *,
+    workspace: Path,
+    campaign_id: str,
+    run_id: str,
+    out_dir: Path,
+    contract_path: Path | None = None,
+    include_chain: bool = False,
+) -> dict[str, Any]:
+    dest = assert_retention_destination(workspace, out_dir)
+    manifest = write_incident_bundle(
+        workspace=workspace,
+        campaign_id=campaign_id,
+        run_id=run_id,
+        out_dir=dest,
+        contract_path=contract_path,
+        include_chain=include_chain,
+    )
+    manifest["kind"] = "retained_incident_bundle"
+    manifest["retention"] = "local_directory"
+    manifest["note"] = (
+        "Local copy outside the workspace. No upload and no retention service."
+    )
+    (dest / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return manifest
+
+
 def write_incident_bundle(
     *,
     workspace: Path,
