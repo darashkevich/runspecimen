@@ -9,7 +9,9 @@ validated wheel, source archive, plugin ZIP, report, and SHA-256 checksums.
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
+import io
 import json
 import os
 import re
@@ -27,6 +29,11 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_PYTHON_VERSION = "0.2.0rc13"
 EXPECTED_PLUGIN_VERSION = "0.2.0-rc.13"
+# Fixed metadata clock for release archives. Wall-clock gzip, tar, and zip
+# timestamps otherwise change the archive bytes on every build. 2020-01-01 UTC
+# matches the plugin zip and is representable in zip (dates before 1980 are not).
+ARCHIVE_MTIME = 1577836800
+ARCHIVE_ZIP_DATE = (2020, 1, 1, 0, 0, 0)
 SOURCE_COMPONENTS = (
     "pyproject.toml", "MANIFEST.in", "README.md", "LICENSE", "CHANGELOG.md",
     "SECURITY.md", "src", "scripts", "tests", "docs", "examples", "work",
@@ -195,6 +202,13 @@ def offline_env() -> dict[str, str]:
     return env
 
 
+def release_build_env(env: dict[str, str]) -> dict[str, str]:
+    """Pin ``SOURCE_DATE_EPOCH`` so wheel zip timestamps ignore the clock."""
+    build_env = dict(env)
+    build_env["SOURCE_DATE_EPOCH"] = str(ARCHIVE_MTIME)
+    return build_env
+
+
 def stage_source(destination: Path) -> None:
     destination.mkdir()
     ignore = shutil.ignore_patterns(".runspecimen", "__pycache__", "*.py[cod]", "*.egg-info", ".DS_Store")
@@ -327,7 +341,7 @@ def build_plugin(source: Path, output: Path) -> None:
     safe_members([name for name, _ in entries])
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, path in entries:
-            info = zipfile.ZipInfo(name, date_time=(2020, 1, 1, 0, 0, 0))
+            info = zipfile.ZipInfo(name, date_time=ARCHIVE_ZIP_DATE)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o100644 << 16
             archive.writestr(info, path.read_bytes())
@@ -536,6 +550,99 @@ def smoke_install(wheel: Path, source: Path, temp: Path, env: dict[str, str]) ->
         raise SystemExit("read-only release smoke unexpectedly approved or executed its payload")
 
 
+def normalize_sdist_timestamps(path: Path, mtime: int = ARCHIVE_MTIME) -> None:
+    """Rewrite gzip and tar timestamps without changing archived file bytes.
+
+    setuptools stores the current time in the gzip header and in tar member
+    mtimes (including pax extended headers for fractional seconds). Those
+    fields are archive metadata: names, modes, owners, and file contents stay
+    as the builder wrote them.
+    """
+    with tarfile.open(path, "r:gz") as inbound:
+        members = inbound.getmembers()
+        payloads: list[bytes | None] = []
+        for member in members:
+            if member.isdir():
+                payloads.append(None)
+            elif member.isfile():
+                extracted = inbound.extractfile(member)
+                if extracted is None:
+                    raise SystemExit(f"unreadable source archive member: {member.name}")
+                payloads.append(extracted.read())
+            else:
+                raise SystemExit(f"unsupported source archive member: {member.name}")
+
+    buffer = io.BytesIO()
+    with gzip.GzipFile(
+        filename=path.name, mode="wb", fileobj=buffer, mtime=mtime, compresslevel=9,
+    ) as compressed:
+        with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as outbound:
+            for member, payload in zip(members, payloads):
+                info = tarfile.TarInfo(member.name)
+                info.mtime = mtime
+                info.mode = member.mode
+                info.uid = member.uid
+                info.gid = member.gid
+                info.uname = member.uname or ""
+                info.gname = member.gname or ""
+                if payload is None:
+                    info.type = tarfile.DIRTYPE
+                    outbound.addfile(info)
+                else:
+                    info.type = tarfile.REGTYPE
+                    info.size = len(payload)
+                    outbound.addfile(info, io.BytesIO(payload))
+    rewritten = buffer.getvalue()
+    with tarfile.open(fileobj=io.BytesIO(rewritten), mode="r:gz") as check:
+        checked = check.getmembers()
+        if [member.name for member in checked] != [member.name for member in members]:
+            raise SystemExit("rewritten source archive changed member names")
+        for current, payload in zip(checked, payloads):
+            if current.mtime != mtime:
+                raise SystemExit(f"source archive member kept a moving timestamp: {current.name}")
+            if payload is None:
+                if not current.isdir():
+                    raise SystemExit(f"rewritten source archive changed a directory: {current.name}")
+                continue
+            extracted = check.extractfile(current)
+            if extracted is None or extracted.read() != payload:
+                raise SystemExit(f"rewritten source archive changed file contents: {current.name}")
+    path.write_bytes(rewritten)
+
+
+def build_release_archives(temp: Path, env: dict[str, str]) -> tuple[Path, Path, Path]:
+    """Stage sources in *temp* and build a timestamp-stable sdist and wheel.
+
+    Returns ``(sdist, wheel, extracted_source)``. Does not run the unit suite
+    or the install smoke test. The plugin zip is built by the caller.
+    """
+    artifacts = temp / "artifacts"
+    artifacts.mkdir()
+    source = temp / "source"
+    stage_source(source)
+    run(sys.executable, "-m", "compileall", "-q", "src", "scripts", cwd=source, env=env)
+    build_env = release_build_env(env)
+    run(
+        sys.executable, "-c",
+        "from setuptools.build_meta import build_sdist; build_sdist(" + repr(str(artifacts)) + ")",
+        cwd=source, env=build_env,
+    )
+    sdists = list(artifacts.glob("runspecimen-*.tar.gz"))
+    if len(sdists) != 1:
+        raise SystemExit(f"expected one source archive, got {sdists}")
+    normalize_sdist_timestamps(sdists[0])
+    extracted = inspect_sdist(sdists[0], temp / "extracted")
+    run(
+        sys.executable, "-m", "pip", "wheel", "--no-index", "--no-deps", "--no-build-isolation",
+        "--wheel-dir", str(artifacts), str(extracted), cwd=temp, env=build_env,
+    )
+    wheels = list(artifacts.glob("runspecimen-*.whl"))
+    if len(wheels) != 1:
+        raise SystemExit(f"expected one wheel, got {wheels}")
+    inspect_wheel(wheels[0])
+    return sdists[0], wheels[0], extracted
+
+
 def retain_artifacts(artifacts: Path, destination: Path) -> None:
     """Never replace a prior release, even when it has the same version."""
     if destination.exists() and (not destination.is_dir() or any(destination.iterdir())):
@@ -560,24 +667,9 @@ def main(argv: list[str] | None = None) -> int:
     run(sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v", env=env)
     with tempfile.TemporaryDirectory(prefix="runspecimen-release-") as directory:
         temp = Path(directory)
-        artifacts = temp / "artifacts"
-        artifacts.mkdir()
-        source = temp / "source"
-        stage_source(source)
-        run(sys.executable, "-m", "compileall", "-q", "src", "scripts", cwd=source, env=env)
-        run(sys.executable, "-c", "from setuptools.build_meta import build_sdist; build_sdist('" + str(artifacts) + "')",
-            cwd=source, env=env)
-        sdists = list(artifacts.glob("runspecimen-*.tar.gz"))
-        if len(sdists) != 1:
-            raise SystemExit(f"expected one source archive, got {sdists}")
-        extracted = inspect_sdist(sdists[0], temp / "extracted")
-        run(sys.executable, "-m", "pip", "wheel", "--no-index", "--no-deps", "--no-build-isolation",
-            "--wheel-dir", str(artifacts), str(extracted), cwd=temp, env=env)
-        wheels = list(artifacts.glob("runspecimen-*.whl"))
-        if len(wheels) != 1:
-            raise SystemExit(f"expected one wheel, got {wheels}")
-        inspect_wheel(wheels[0])
-        smoke_install(wheels[0], extracted, temp, env)
+        sdist, wheel, extracted = build_release_archives(temp, env)
+        artifacts = sdist.parent
+        smoke_install(wheel, extracted, temp, env)
         build_plugin(extracted, artifacts / f"runspecimen-plugin-{EXPECTED_PLUGIN_VERSION}.zip")
         report = {
             "ok": True, "version": EXPECTED_PYTHON_VERSION, "plugin_version": EXPECTED_PLUGIN_VERSION,
