@@ -254,10 +254,14 @@ class DistributionArtifactTests(unittest.TestCase):
     def test_homebrew_formula_pins_published_sdist(self) -> None:
         text = (ROOT / "packaging" / "homebrew" / "runspecimen.rb").read_text(encoding="utf-8")
         identity = (ROOT / "docs" / "RELEASE_IDENTITY.md").read_text(encoding="utf-8")
-        self.assertIn("bf1f1a6223a1f65504a13f98bb1ddbad773dffd458bb6b5dcf32920c43c8bfed", text)
+        self.assertIn(
+            "https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.13/runspecimen-0.2.0rc13.tar.gz",
+            text,
+        )
+        self.assertRegex(text, r'sha256 "[0-9a-f]{64}"')
+        self.assertIn('assert_match "0.2.0rc13"', text)
         self.assertIn("bf1f1a6223a1f65504a13f98bb1ddbad773dffd458bb6b5dcf32920c43c8bfed", identity)
-        self.assertIn("v0.2.0-rc.12", text)
-        self.assertIn("unreleased", text.lower())
+        self.assertNotIn("unreleased", text.lower())
 
     def test_isolation_cli(self) -> None:
         import contextlib

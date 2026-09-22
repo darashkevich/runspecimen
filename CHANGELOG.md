@@ -1,12 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.2.0rc13 - 2026-09-22
 
-Not tagged. Published `0.2.0rc12` does not include this section.
+GitHub pre-release `v0.2.0-rc.13` and PyPI `0.2.0rc13` (identical bytes, checksum-only, not SLSA-attested). Do not publish draft `v0.2.0-rc.11`. Do not move `v0.2.0-rc.12`.
 
 - Opt-in isolation backends `sandbox-exec` and `bwrap`. Default `none` does not confine the process. A declared backend that is missing fails closed. The receipt records what was applied and the residual risk. This is not an OS sandbox. The tool is identified by file hash. Validation does not execute it, and a tool replaced after approval is refused.
 - Optional workspace-local `policy` file (hash-bound). `approver` records the local OS user. `runspecimen retain` copies an incident pack outside the workspace. No control plane and no uploader.
-- Stdlib contract/path mutation tests, vertical templates, an adversarial first-run lease campaign, and a Homebrew formula that installs published `v0.2.0-rc.12`.
+- Stdlib contract/path mutation tests, vertical templates, an adversarial first-run lease campaign, and a Homebrew formula that installs this sdist. A tap is separate.
 - `runspecimen digest` and `runspecimen diff` for recorded receipts. They do not replace `verify`.
 - Dashboard skip link, contrast, reduced-motion auto-refresh, and isolation copy that matches the contract.
 

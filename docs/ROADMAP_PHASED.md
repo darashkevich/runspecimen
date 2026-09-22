@@ -112,9 +112,9 @@ optional dep over handwritten crypto). Hardware-backed keys remain later.
 
 ---
 
-## Phase 2 — Isolation via tested integrations *(in tree, unreleased)*
+## Phase 2 — Isolation via tested integrations *(0.2.0rc13)*
 
-Shipped in this working tree. Not in published `0.2.0rc12`.
+In `0.2.0rc13`. Published `0.2.0rc12` rejects the field.
 
 - Optional contract `isolation.backend`: `none` (default), `sandbox-exec` (when the binary is on PATH), `bwrap` (when the binary is on PATH).
 - A declared backend that is missing fails closed at approve, preflight, and run.
@@ -146,7 +146,7 @@ Done in this tree, without new marketplace submissions:
 
 - `examples/templates/` for a research step, an ML eval step, and a security check that names a shared policy.
 - `examples/campaigns/adversarial-first-run/` shows a second worker refused by the workspace lease.
-- `packaging/homebrew/runspecimen.rb` installs published `v0.2.0-rc.12`. It does not install this unreleased tree. A tap repository is not created here.
+- `packaging/homebrew/runspecimen.rb` installs the `v0.2.0-rc.13` sdist. A tap repository is not created here.
 
 Still outside this change: Cursor, Claude, Gemini, Junie, and OpenAI submissions already filed. Do not file them again. Windsurf, VS Code, and Amazon Q stay unsubmitted. GitHub showcase was already published with rc12.
 
@@ -165,11 +165,11 @@ Not built: browser approval, one-tap Approve, a public retention service, remote
 
 ---
 
-## Phase 6 — UX completion + site honesty *(in tree, unreleased engine)*
+## Phase 6 — UX completion + site honesty *(0.2.0rc13)*
 
 - `runspecimen digest` and `runspecimen diff` compare recorded receipts. They are not `verify`. `digest --live` reports output-byte drift only.
 - Dashboard: skip link, main landmark, stronger focus outlines, muted text darkened for contrast, auto-refresh starts off when the user prefers reduced motion, and the page states the contract's isolation backend without applying it.
-- The public page `sites/runspecimen/public/index.html` (in the portfolio repo) no longer lists Pro/Team prices. It still installs published `0.2.0rc12` and says the new commands are not in that package.
+- The public page `sites/runspecimen/public/index.html` (in the portfolio repo) no longer lists Pro/Team prices. It installs `0.2.0rc13` and says opt-in confinement is not an OS sandbox. Published `0.2.0rc12` does not include these commands.
 - No production claim that opt-in confinement is an OS sandbox.
 
 ### Domain-specific proof adapters (optional, buyer-driven)

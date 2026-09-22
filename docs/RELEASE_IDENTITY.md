@@ -1,9 +1,10 @@
 # Release identity
 
-Python/plugin cut currently public: **`0.2.0rc12`** / **`v0.2.0-rc.12`**.
-This file records what shipped; it does not authorize App Store Connect changes.
+Python/plugin cut on this commit: **`0.2.0rc13`** / **`v0.2.0-rc.13`**.
+Checksums for that release are the GitHub Release `SHA256SUMS` asset (checksum-only, not SLSA-attested).
+The table below is the previous public cut. This file does not authorize App Store Connect changes.
 
-## What is live today
+## Previous public cut (still the bytes on PyPI until `0.2.0rc13` is published)
 
 | Channel | Identity | Evidence |
 | --- | --- | --- |

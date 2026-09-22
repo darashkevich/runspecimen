@@ -64,7 +64,7 @@ all declared runtime inputs, and validate the threat model.
   adapter.
 - Claude Code plugin + Grok Build Claude-compat package: shipped in-repo
   (`docs/INTEGRATIONS.md`); marketplace submission still manual.
-- Homebrew formula in `packaging/homebrew/` pins published `0.2.0rc12`. A tap is separate.
+- Homebrew formula in `packaging/homebrew/` pins `0.2.0rc13`. A tap is separate.
 - Adapters remain free and never contain a generic shell escape hatch.
 
 Exit condition: a new user can install from an agent marketplace and produce a

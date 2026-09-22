@@ -25,12 +25,12 @@
 - [x] Wheel is built and smoke-tested from a clean target directory.
 - [x] Release smoke includes keygen/list-keys success and sign/verify-signature error handling.
 - [x] Plugin and skill validators pass.
-- [ ] Tag `v0.2.0-rc.12` after the release gate passes on the **merged green**
+- [ ] Tag `v0.2.0-rc.13` after the release gate passes on the **merged green**
   commit **and Yahor publishes that GitHub Release** (do not publish or move
-  draft `v0.2.0-rc.11`; do not retag/republish rc10).
-  Publishing the GitHub Release also uploads `0.2.0rc12` to PyPI via OIDC
+  draft `v0.2.0-rc.11`; do not move `v0.2.0-rc.12`).
+  Publishing the GitHub Release also uploads `0.2.0rc13` to PyPI via OIDC
   (identical bytes; checksum-only, not attested).
-  - Prospective release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.12
+  - Prospective release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.13
 
 Run `python3 scripts/release_check.py` before tagging. A release candidate is not
 a stable release and does not change the explicit limitations in the threat model.

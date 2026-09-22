@@ -77,7 +77,7 @@ class TestPackagingOptionalExtras(unittest.TestCase):
         good = (
             "Metadata-Version: 2.1\n"
             "Name: runspecimen\n"
-            "Version: 0.2.0rc12\n"
+            "Version: 0.2.0rc13\n"
             'Requires-Dist: pynacl>=1.5.0; extra == "ed25519"\n'
             'Requires-Dist: pynacl>=1.5.0; extra == "signing"\n'
             "Provides-Extra: ed25519\n"

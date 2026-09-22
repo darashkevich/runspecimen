@@ -6,19 +6,19 @@ by a human with appropriate credentials.
 
 ## Published release
 
-Package / plugin identity: **`0.2.0rc12`** / **`0.2.0-rc.12`**.
+Package / plugin identity: **`0.2.0rc13`** / **`0.2.0-rc.13`**.
 
-**Published:** [v0.2.0-rc.12](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.12) / PyPI `runspecimen==0.2.0rc12`. GitHub Release assets and PyPI are the same bytes (checksum-only; not SLSA-attested).
+**Published:** [v0.2.0-rc.13](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.13) / PyPI `runspecimen==0.2.0rc13`. GitHub Release assets and PyPI are the same bytes (checksum-only; not SLSA-attested).
 
-**Do not publish** the existing draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) (annotated tag peels to `ecc1709`). Do not move that tag. See [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md).
+**Do not publish** the existing draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) (annotated tag peels to `ecc1709`). Do not move that tag. Do not move `v0.2.0-rc.12`. See [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md).
 
 Published URLs:
 
-- Release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.12
-- Wheel: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/runspecimen-0.2.0rc12-py3-none-any.whl
-- Source: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/runspecimen-0.2.0rc12.tar.gz
-- Plugin archive: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/runspecimen-plugin-0.2.0-rc.12.zip
-- Checksums: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/SHA256SUMS
+- Release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.13
+- Wheel: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.13/runspecimen-0.2.0rc13-py3-none-any.whl
+- Source: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.13/runspecimen-0.2.0rc13.tar.gz
+- Plugin archive: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.13/runspecimen-plugin-0.2.0-rc.13.zip
+- Checksums: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.13/SHA256SUMS
 
 ## 1. Cursor Marketplace
 
@@ -251,14 +251,14 @@ listing later; filesystem skills/rules are the supported path today.
 
 ## 3. PyPI (Python Package Index)
 
-**Status:** **`0.2.0rc12` is published** (identical bytes to the GitHub Release). **`0.2.0rc11` draft must stay unpublished.**
+**Status:** **`0.2.0rc13` is the published package** (identical bytes to the GitHub Release). **`0.2.0rc12` stays as the previous release.** **`0.2.0rc11` draft must stay unpublished.**
 
-**Registry URL:** https://pypi.org/project/runspecimen/0.2.0rc12/
+**Registry URL:** https://pypi.org/project/runspecimen/0.2.0rc13/
 
 ### Published package
 
-- **Version:** `0.2.0rc12`
-- **Install:** `python3 -m pip install runspecimen==0.2.0rc12`
+- **Version:** `0.2.0rc13`
+- **Install:** `python3 -m pip install runspecimen==0.2.0rc13`
 - **Publishing:** GitHub Actions trusted publishing with OIDC; no PyPI API
   token is stored in GitHub.
 
@@ -307,7 +307,7 @@ Details: `apps/macos/asc-kit/STATUS.md`.
 
 ## 4. Website (runspecimen.darashkevich.com)
 
-**Status:** Live (hexaflake mark + `runspecimen==0.2.0rc12`). Marketplace links stay pending until listings are accepted.
+**Status:** Live (hexaflake mark + `runspecimen==0.2.0rc13`). Marketplace links stay pending until listings are accepted.
 
 **Current content check:** Site mentions "Public marketplace availability is not yet confirmed."
 
@@ -327,7 +327,7 @@ listings are confirmed live (not pending review).
 
 | Channel | Submitted | Pending | Live | URL |
 | --- | --- | --- | --- | --- |
-| GitHub Release | ✅ published prerelease | — | [v0.2.0-rc.12](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.12) | keep draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) unpublished |
+| GitHub Release | ✅ published prerelease | — | [v0.2.0-rc.13](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.13) | keep draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) unpublished; do not move `v0.2.0-rc.12` |
 | Cursor Marketplace | form submitted 2026-09-21 | Anysphere review | no public listing yet | https://cursor.com/marketplace/publish |
 | Codex Directory | ❌ | not submitted (Persona identity still required) | no public listing | https://chatgpt.com/apps |
 | Claude Code community | submitted 2026-09-21 | Anthropic review | not listed yet | https://platform.claude.com/plugins/submit |
@@ -335,7 +335,7 @@ listings are confirmed live (not pending review).
 | Gemini CLI gallery | topic + root manifest on `main` (`68c334d`) | daily crawler | not indexed yet | repo-root `gemini-extension.json` |
 | JetBrains Junie / Marketplace | PR open | JetBrains review | not merged | https://github.com/JetBrains/junie-extensions/pull/16 |
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
-| PyPI | ✅ | — | `0.2.0rc12` (same bytes as GitHub) | [runspecimen 0.2.0rc12](https://pypi.org/project/runspecimen/0.2.0rc12/) |
+| PyPI | ✅ | — | `0.2.0rc13` (same bytes as GitHub) | [runspecimen 0.2.0rc13](https://pypi.org/project/runspecimen/0.2.0rc13/) |
 | Mac App Store | ⏳ WAITING_FOR_REVIEW | Apple review of macOS **0.1.3 (8)** | not public | no `apps.apple.com` URL — see `apps/macos/asc-kit/STATUS.md` |
 
 **Important:** Do not claim a listing is "public" or "available" until:
@@ -356,5 +356,5 @@ After each channel goes live, verify:
 5. **Gemini CLI:** `/extensions list` after link/install; confirm MCP + hooks
 6. **Junie:** `/extensions` shows `runspecimen` after marketplace add
 7. **Windsurf:** `@runspecimen` skill resolves; rule appears under Customizations
-8. **PyPI:** `pip install runspecimen` works and `runspecimen --version` shows `0.2.0rc12`
+8. **PyPI:** `pip install runspecimen==0.2.0rc13` works and `runspecimen --version` shows `0.2.0rc13`
 9. **Website:** Update with verified live links only

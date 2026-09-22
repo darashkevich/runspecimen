@@ -16,14 +16,14 @@ Consult current Apple docs before each submission:
 
 | Channel | Role | Verdict |
 | --- | --- | --- |
-| **Target A — Mac App Store** | **Primary** | `./Scripts/build_app.sh --mas` (frozen helper **must match** `src/runspecimen/__version__`, currently **0.2.0rc12**) → `./Scripts/archive_mas.sh` → `RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh` for a local Store pkg, or default destination `upload` after Yahor decides |
+| **Target A — Mac App Store** | **Primary** | `./Scripts/build_app.sh --mas` (a future frozen helper **must match** `src/runspecimen/__version__`, now **0.2.0rc13**; build 8 froze **0.2.0rc12** and stays in review) → `./Scripts/archive_mas.sh` → `RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh` for a local Store pkg, or default destination `upload` after Yahor decides |
 | **Target B — Developer ID + notarization** | Secondary / direct download | Optional after MAS; same sandbox entitlements preferred. **Not** a Store-validation substitute |
 
 ### Why MAS-first now
 
 1. **Guideline 2.4.5(viii)** — Store builds embed a **frozen Mach-O** helper
    (`Contents/Resources/RunSpecimenEngine/`, PyInstaller **onedir** + `_internal/`)
-   built from the current engine (`0.2.0rc12` on this branch). **Onefile is not used**
+   built from the current engine (`0.2.0rc13` on this branch). **Onefile is not used**
    — its bootloader needs SysV semaphores denied by App Sandbox. No host Python /
    optionally installed PyPI CLI is required for Store builds. `--from-src`
    host-Python launchers are **local/CI only** and are rejected at runtime when
@@ -201,7 +201,7 @@ Shipped under `Resources/PrivacyInfo.xcprivacy`:
 | Short version | `0.1.3` (bump per ship) |
 | Build | `8` in review (builds **5**–**6** rejected; **7** uploaded then superseded) |
 | Min macOS | 14.0 |
-| Bundled engine | `0.2.0rc12` (must match `src/runspecimen/__version__`) |
+| Bundled engine | source `__version__` is `0.2.0rc13`; build 8 in review froze `0.2.0rc12` |
 | Icon | `Resources/AppIcon.icns` (+ iconset / 1024 for Connect) |
 
 ## Review notes (paste into App Review)
@@ -248,7 +248,7 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 
 ## Packaging checklist (MAS)
 
-- [x] `./Scripts/build_app.sh --mas` succeeds (Mach-O onedir engine == repo `0.2.0rc12`, `RunSpecimenEngine/_internal`, no `Helpers/lib/`)
+- [x] `./Scripts/build_app.sh --mas` succeeded for build 8 (Mach-O onedir engine `0.2.0rc12`, `RunSpecimenEngine/_internal`, no `Helpers/lib/`). Do not upload a rebuild while build 8 is waiting.
 - [x] Helper entitlements: `codesign -d --entitlements - …/RunSpecimenEngine/runspecimen` shows sandbox+inherit
 - [x] App Sandbox entitlements (`RunSpecimen.mas.entitlements`)
 - [x] `PrivacyInfo.xcprivacy` present
@@ -268,7 +268,7 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 ## Remaining Yahor-only blockers
 
 1. **Leave** App Store Connect **0.1.3 (8)** in `WAITING_FOR_REVIEW`. Builds 5 and 6 were already rejected. Automation will not withdraw or upload a replacement.
-2. Product site already pins public GitHub + PyPI `0.2.0rc12`.
+2. Product site pins public GitHub + PyPI `0.2.0rc13`. The Mac App Store binary in review remains 0.1.3 (8) with engine `0.2.0rc12`.
    Add an `apps.apple.com` link only when Apple returns a working URL.
 3. Screenshots / privacy URL already pasted in Connect: confirm; do not Submit
    a second time from scripts.

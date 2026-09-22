@@ -2,7 +2,7 @@
 
 Practical how-to for the local CLI. This guide matches the installed
 `runspecimen` commands and current release-candidate limits
-(`0.2.0rc12`, published on GitHub and PyPI). For a short product overview see
+(`0.2.0rc13`, published on GitHub and PyPI). For a short product overview see
 [ABOUT.md](ABOUT.md); for product intent see
 [PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
 
@@ -40,23 +40,23 @@ Requirements: Python 3.9+, POSIX (`fcntl` leases), stdlib only.
 ### From PyPI
 
 ```bash
-python3 -m pip install runspecimen==0.2.0rc12
+python3 -m pip install runspecimen==0.2.0rc13
 runspecimen --version
 ```
 
 Pin the version. Do not install from the unpublished rc11 draft.
 
-Project page: [runspecimen 0.2.0rc12 on PyPI](https://pypi.org/project/runspecimen/0.2.0rc12/)
+Project page: [runspecimen 0.2.0rc13 on PyPI](https://pypi.org/project/runspecimen/0.2.0rc13/)
 
 ### From GitHub release
 
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/runspecimen-0.2.0rc12-py3-none-any.whl
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.13/runspecimen-0.2.0rc13-py3-none-any.whl
 
 runspecimen --version
 ```
 
-Checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.12/SHA256SUMS)
+Checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.13/SHA256SUMS)
 
 ### From source clone
 
@@ -176,7 +176,7 @@ compares two receipts in one workspace. Neither checks the event chain or
 signatures; `verify` does that. `digest --live` only compares output file
 bytes to `output_digests`. A diff that finds differences still exits 0.
 
-These commands and fields are in this working tree. Published `0.2.0rc12`
+These commands and fields ship in `0.2.0rc13`. Published `0.2.0rc12`
 rejects `isolation` and `policy` as unknown and does not provide `digest`,
 `diff`, or `retain`.
 
@@ -375,7 +375,7 @@ exclude `approve`.
 | Predecessor refused | Prior run not postflighted, failed/timed out, or receipt invalid. Fix predecessor first. |
 | Second `run` refused | Expected: a run ID cannot be reused after execution starts. New contract + new `run_id`. |
 | Outputs already exist at preflight | Delete or move asserted output paths before launch (they must start absent). |
-| Untrusted payload | Default backend `none` does not confine the process. Opt-in `sandbox-exec` or `bwrap` only when declared and installed; read `isolation.residual`. They are not an OS sandbox. Published `0.2.0rc12` has neither field. |
+| Untrusted payload | Default backend `none` does not confine the process. Opt-in `sandbox-exec` or `bwrap` only when declared and installed; read `isolation.residual`. They are not an OS sandbox. Published `0.2.0rc12` has neither field; `0.2.0rc13` does. |
 
 ## Related docs
 
