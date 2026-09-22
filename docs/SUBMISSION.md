@@ -53,7 +53,7 @@ plugins/runspecimen/.cursor-plugin/plugin.json
 - [x] Plugin has valid `.cursor-plugin/plugin.json` manifest
 - [x] `name` is unique, lowercase, kebab-case: `runspecimen`
 - [x] `description` clearly explains purpose
-- [x] Logo committed and referenced: `assets/runspecimen-logo.png`
+- [x] Logo committed and referenced: `assets/logo.png`
 - [x] README.md documents usage
 - [x] All paths are relative and valid
 - [x] Plugin tested locally
@@ -94,7 +94,7 @@ Copy-out logos (hexaflake, square RGB):
 ```
 plugins/runspecimen/assets/logo.png              # 512 — interface.logo
 plugins/runspecimen/assets/composer-icon.png     # 128 — interface.composerIcon
-plugins/runspecimen/assets/runspecimen-logo.png  # 512 — Cursor plugin logo
+plugins/runspecimen/assets/logo.png  # 512 — Cursor plugin logo
 ```
 
 ### Submission steps (skills-only)

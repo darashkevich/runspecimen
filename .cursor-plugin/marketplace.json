@@ -13,7 +13,7 @@
       "source": "plugins/runspecimen",
       "description": "Guard serious local agent runs with approval, bounds, provenance, and receipts.",
       "version": "0.2.0-rc.13",
-      "logo": "plugins/runspecimen/assets/runspecimen-logo.png",
+      "logo": "plugins/runspecimen/assets/logo.png",
       "category": "Agent Orchestration",
       "tags": ["safety", "provenance", "local automation"]
     }
