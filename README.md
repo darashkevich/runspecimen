@@ -75,6 +75,10 @@ Or: `brew install darashkevich/runspecimen/runspecimen`.
 
 Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen). Pins the same `v0.2.0-rc.13` sdist as the GitHub Release (not `main`).
 
+If `runspecimen --version` lags brew, check `which -a runspecimen` — an old
+`~/.local/bin/runspecimen` often shadows `/opt/homebrew/bin/runspecimen`. Rename
+the shim and rehash; details in [docs/FAQ.md](docs/FAQ.md#why-does-runspecimen---version-show-an-older-build-than-homebrew).
+
 ### From GitHub release
 
 ```bash

@@ -98,6 +98,42 @@ assertions, use a fresh `run_id` per attempt, and chain steps with
 - Check installed CLI: `runspecimen --version` (engine package version, e.g.
   `0.2.0rc13`, also the published PyPI pin)
 
+## Why does `runspecimen --version` show an older build than Homebrew?
+
+`~/.local/bin` often precedes `/opt/homebrew/bin` on `PATH`. An old pip or
+dev install leaves a `~/.local/bin/runspecimen` shim that **shadows** Homebrew’s
+`/opt/homebrew/bin/runspecimen`, so `which runspecimen` and plugins that call
+the CLI can keep an obsolete build (for example rc11) while brew has
+`0.2.0rc13`.
+
+Check:
+
+```bash
+which -a runspecimen
+runspecimen --version
+brew --prefix runspecimen 2>/dev/null; ls -la "$(brew --prefix)/bin/runspecimen" 2>/dev/null
+```
+
+Prefer one install path. For the published bottle/sdist pin:
+
+```bash
+brew tap darashkevich/runspecimen
+brew install darashkevich/runspecimen/runspecimen
+```
+
+Then retire the obsolete user shim **by rename/backup** (do not delete other
+files under `~/.local`):
+
+```bash
+mv ~/.local/bin/runspecimen ~/.local/bin/runspecimen.bak-shadow
+hash -r
+which runspecimen
+runspecimen --version
+```
+
+Plugins (Cursor / Codex / Claude / Grok) resolve whatever `runspecimen` is first
+on that environment’s `PATH` — fix the CLI install before debugging the adapter.
+
 ## Is the dashboard safe to leave open?
 
 It listens on **loopback only** (`127.0.0.1`), has no remote service or

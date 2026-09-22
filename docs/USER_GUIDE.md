@@ -60,6 +60,12 @@ Or: `brew install darashkevich/runspecimen/runspecimen`.
 
 Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen). Installs the published `v0.2.0-rc.13` sdist (same bytes as PyPI / GitHub Release). Default backend `none` does not confine the process.
 
+**PATH shadowing:** if `~/.local/bin/runspecimen` (old pip / `bootstrap_dev`
+shim) sits ahead of Homebrew on `PATH`, you will keep seeing an older version.
+Confirm with `which -a runspecimen`, then rename the obsolete shim
+(`mv ~/.local/bin/runspecimen ~/.local/bin/runspecimen.bak-shadow`) and
+`hash -r`. See [FAQ.md](FAQ.md#why-does-runspecimen---version-show-an-older-build-than-homebrew).
+
 ### From GitHub release
 
 ```bash
@@ -292,7 +298,8 @@ Install:
 
 - **Codex:** install the `runspecimen` plugin from the Codex plugin listing
   (skill under `skills/runspecimen/`). Confirm `runspecimen` is on `PATH` in
-  the environment Codex uses.
+  the environment Codex uses, and that `which runspecimen` is the intended
+  install (Homebrew vs a shadowed `~/.local/bin` shim — see Install above).
 - **Cursor (local):** symlink `plugins/runspecimen` to
   `~/.cursor/plugins/local/runspecimen`, reload Cursor, confirm skill/rule in
   Customize.
