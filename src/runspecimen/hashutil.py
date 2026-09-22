@@ -34,10 +34,6 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def sha256_text(text: str) -> str:
-    return sha256_bytes(text.encode("utf-8"))
-
-
 def _is_excluded(rel_posix: str, name: str, excludes: list[str]) -> bool:
     for pattern in excludes:
         pat = pattern.replace("\\", "/").rstrip("/")

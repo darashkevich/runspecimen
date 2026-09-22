@@ -44,7 +44,7 @@ PLUGIN_COMPONENTS = (
     ".codex-plugin/plugin.json", ".cursor-plugin/plugin.json",
     ".claude-plugin/plugin.json", "gemini-extension.json", "extension.json",
     ".mcp.json", "mcp/.mcp.json", "GEMINI.md", "README.md",
-    "assets/runspecimen-logo.png",
+    "assets/logo.png",
     "assets/logo.png",
     "assets/composer-icon.png",
     "assets/logo.svg",

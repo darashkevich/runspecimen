@@ -163,9 +163,6 @@ class Contract:
     contract_hash: str
     raw: dict[str, Any] = field(repr=False)
 
-    @property
-    def id_pair(self) -> tuple[str, str]:
-        return self.campaign_id, self.run_id
 
     @property
     def asserted_output_paths(self) -> tuple[str, ...]:
