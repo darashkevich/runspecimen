@@ -225,9 +225,17 @@ def confinement_argv(
         return [tool, "-f", str(profile_path), *launch_argv]
 
     if backend == "bwrap":
+        # Map this process into a new user namespace as uid/gid 0 so
+        # ``--unshare-net`` can configure loopback (needed on GitHub Actions
+        # runners where the outer user lacks CAP_NET_ADMIN).
         argv = [
             tool,
             "--die-with-parent",
+            "--unshare-user",
+            "--uid",
+            "0",
+            "--gid",
+            "0",
             "--ro-bind",
             "/",
             "/",
