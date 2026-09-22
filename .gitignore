@@ -33,3 +33,4 @@ apps/macos/.swiftpm/
 .windsurf/
 
 .wrangler/
+apps/ios/build/

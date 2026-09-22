@@ -10,11 +10,11 @@
 		551180D3C83D335E1F709136 /* RunSpecimenObserveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABA0291E3FAEE87B278158B4 /* RunSpecimenObserveApp.swift */; };
 		730E00318EC0A16E41EF9194 /* CompanionSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E6180F0A8F12A57871A31B /* CompanionSession.swift */; };
 		77812F6887B1229954BCCB85 /* RSTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD27DE1469C9CD6E323B5794 /* RSTheme.swift */; };
-		1A2B3C4D5E6F708192A3B4C5 /* AdaptiveLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F60718293A4B5 /* AdaptiveLayout.swift */; };
 		9F2551880C5AA912502F6DEC /* CompanionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E77BCF1F7A993119E9CE6A /* CompanionModels.swift */; };
 		ACEFF4AF6F1B84726D53569C /* BoundaryBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB26E0BC6AF5E9D6DFB8B630 /* BoundaryBanner.swift */; };
 		CC9A0030A52DE6E72E5A8792 /* StatusObserveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1425E3AAE6F7EBB1944FDA2 /* StatusObserveView.swift */; };
 		DF67B86604016910AC073C16 /* CompanionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F92FB5B28E2DE08D564DC17 /* CompanionClient.swift */; };
+		E9364715807F203BDBC6F1D8 /* AdaptiveLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2D26500C594DF12DA6B3A42 /* AdaptiveLayout.swift */; };
 		ED854B65D03A6C25EE793C09 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB60909EFBE4E0006990A08 /* PairingView.swift */; };
 		F30AD0656468857451B7C895 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAE24715CE6EF0998517617 /* RootView.swift */; };
 /* End PBXBuildFile section */
@@ -28,8 +28,8 @@
 		BEAA469635D330E16249C35E /* RunSpecimenObserve.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = RunSpecimenObserve.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C9E6180F0A8F12A57871A31B /* CompanionSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionSession.swift; sourceTree = "<group>"; };
 		CB26E0BC6AF5E9D6DFB8B630 /* BoundaryBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoundaryBanner.swift; sourceTree = "<group>"; };
+		F2D26500C594DF12DA6B3A42 /* AdaptiveLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveLayout.swift; sourceTree = "<group>"; };
 		FD27DE1469C9CD6E323B5794 /* RSTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSTheme.swift; sourceTree = "<group>"; };
-		0A1B2C3D4E5F60718293A4B5 /* AdaptiveLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveLayout.swift; sourceTree = "<group>"; };
 		FEB60909EFBE4E0006990A08 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -37,8 +37,8 @@
 		405AD8CF1256878AC0198F90 /* Theme */ = {
 			isa = PBXGroup;
 			children = (
+				F2D26500C594DF12DA6B3A42 /* AdaptiveLayout.swift */,
 				FD27DE1469C9CD6E323B5794 /* RSTheme.swift */,
-				0A1B2C3D4E5F60718293A4B5 /* AdaptiveLayout.swift */,
 			);
 			path = Theme;
 			sourceTree = "<group>";
@@ -137,7 +137,7 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					4D1D554ECCE70DFB91431966 = {
-						DevelopmentTeam = "";
+						DevelopmentTeam = UN6KF8636A;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -166,13 +166,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E9364715807F203BDBC6F1D8 /* AdaptiveLayout.swift in Sources */,
 				ACEFF4AF6F1B84726D53569C /* BoundaryBanner.swift in Sources */,
 				DF67B86604016910AC073C16 /* CompanionClient.swift in Sources */,
 				9F2551880C5AA912502F6DEC /* CompanionModels.swift in Sources */,
 				730E00318EC0A16E41EF9194 /* CompanionSession.swift in Sources */,
 				ED854B65D03A6C25EE793C09 /* PairingView.swift in Sources */,
 				77812F6887B1229954BCCB85 /* RSTheme.swift in Sources */,
-				1A2B3C4D5E6F708192A3B4C5 /* AdaptiveLayout.swift in Sources */,
 				F30AD0656468857451B7C895 /* RootView.swift in Sources */,
 				551180D3C83D335E1F709136 /* RunSpecimenObserveApp.swift in Sources */,
 				CC9A0030A52DE6E72E5A8792 /* StatusObserveView.swift in Sources */,
@@ -218,7 +218,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = UN6KF8636A;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -257,13 +257,17 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleShortVersionString = 0.1.0;
+				INFOPLIST_KEY_CFBundleVersion = 1;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.darashkevich.runspecimen.observe;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -306,7 +310,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = UN6KF8636A;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -338,13 +342,17 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleShortVersionString = 0.1.0;
+				INFOPLIST_KEY_CFBundleVersion = 1;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.darashkevich.runspecimen.observe;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";

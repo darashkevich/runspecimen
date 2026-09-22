@@ -13,7 +13,7 @@ settings:
     INFOPLIST_KEY_CFBundleDisplayName: RunSpecimen Observe
     INFOPLIST_KEY_NSLocalNetworkUsageDescription: RunSpecimen Observe pairs only with a Mac you enable on your local network or Tailscale. Non-loopback requires TLS. It cannot approve or execute runs.
     INFOPLIST_KEY_NSBonjourServices: ""
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: "UN6KF8636A"
     CODE_SIGN_STYLE: Automatic
 targets:
   RunSpecimenObserve:
@@ -28,6 +28,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen.observe
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_KEY_CFBundleShortVersionString: "0.1.0"
+        INFOPLIST_KEY_CFBundleVersion: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: YES
         # Shipping channel: TestFlight/later — no App Store submit in this change set.
