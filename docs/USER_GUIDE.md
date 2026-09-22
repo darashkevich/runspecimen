@@ -48,6 +48,18 @@ Pin the version. Do not install from the unpublished rc11 draft.
 
 Project page: [runspecimen 0.2.0rc13 on PyPI](https://pypi.org/project/runspecimen/0.2.0rc13/)
 
+### From Homebrew
+
+```bash
+brew tap darashkevich/runspecimen
+brew install runspecimen
+runspecimen --version
+```
+
+Or: `brew install darashkevich/runspecimen/runspecimen`.
+
+Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen). Installs the published `v0.2.0-rc.13` sdist (same bytes as PyPI / GitHub Release). Default backend `none` does not confine the process.
+
 ### From GitHub release
 
 ```bash

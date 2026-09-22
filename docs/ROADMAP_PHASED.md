@@ -45,7 +45,7 @@ hardware-backed identity.
 | Ed25519 offline pubkey receipts | Shipped optional extra (see `docs/ED25519_RECEIPTS.md`) |
 | Tested isolation integrations | Published in `0.2.0rc13` (`none` / `sandbox-exec` / `bwrap`). Default `none` does not confine the process. `sandbox-exec` and `bwrap` are not an OS sandbox. Published `0.2.0rc12` rejects the field |
 | Fuzz / golden depth | Published in `0.2.0rc13` (`tests/test_fuzz_contracts.py`) |
-| Activation / adapters | Adapters shipped in-repo; Homebrew formula pins published `0.2.0rc13` |
+| Activation / adapters | Adapters shipped in-repo; public Homebrew tap pins published `0.2.0rc13` |
 | Local evidence slice | Published in `0.2.0rc13` (policy file, local OS user, `retain`). No paid control plane |
 | UX a11y + digest/diff + site copy | Published in `0.2.0rc13` (`digest`, `diff`, dashboard a11y). Public site no longer lists a price book. Proof adapters stay buyer-driven |
 
@@ -148,7 +148,7 @@ Done in this tree, without new marketplace submissions:
 
 - `examples/templates/` for a research step, an ML eval step, and a security check that names a shared policy.
 - `examples/campaigns/adversarial-first-run/` shows a second worker refused by the workspace lease.
-- `packaging/homebrew/runspecimen.rb` installs the `v0.2.0-rc.13` sdist. A tap repository is not created here.
+- `packaging/homebrew/runspecimen.rb` installs the `v0.2.0-rc.13` sdist. Public tap: [`darashkevich/homebrew-runspecimen`](https://github.com/darashkevich/homebrew-runspecimen) (`brew tap darashkevich/runspecimen && brew install runspecimen`).
 
 Still outside this change: Cursor, Claude, Gemini, Junie, and OpenAI submissions already filed. Do not file them again. Windsurf, VS Code, and Amazon Q stay unsubmitted. GitHub showcase was already published with rc12.
 

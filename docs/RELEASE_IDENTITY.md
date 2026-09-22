@@ -9,6 +9,7 @@ This file records what shipped; it does not authorize App Store Connect changes.
 | --- | --- | --- |
 | GitHub Release | **`v0.2.0-rc.13`** (published prerelease) | https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.13 · tag peels to `3601934c850dd0405590a392ccd4c052cd7a16e4` |
 | PyPI | **`0.2.0rc13`** (identical SHA-256 to GitHub) | https://pypi.org/project/runspecimen/0.2.0rc13/ |
+| Homebrew tap | **`0.2.0rc13`** (same sdist URL + sha256) | https://github.com/darashkevich/homebrew-runspecimen · `brew tap darashkevich/runspecimen && brew install runspecimen` |
 | Product site | `python3 -m pip install runspecimen==0.2.0rc13` | https://runspecimen.darashkevich.com/ |
 | Mac App Store | **not public** | Connect macOS **0.1.3 (8)** is `WAITING_FOR_REVIEW` (submission `9c19e1cd-ebd1-4705-b683-5a5fdc2671f6`, submitted 2026-09-21T05:36:49Z). That binary froze engine **0.2.0rc12**. Builds 5 and 6 were rejected and cancelled. |
 
