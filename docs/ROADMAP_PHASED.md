@@ -43,11 +43,11 @@ hardware-backed identity.
 | Contract `version` + receipt `schema_version` | Phase 0 (PR #5) |
 | Dashboard four-question IA | Phase 0 prototype (PR #5) |
 | Ed25519 offline pubkey receipts | Shipped optional extra (see `docs/ED25519_RECEIPTS.md`) |
-| Tested isolation integrations | In this working tree, unreleased (`none` / `sandbox-exec` / `bwrap`) |
-| Fuzz / golden depth | In this working tree (`tests/test_fuzz_contracts.py`) |
-| Activation / adapters | Adapters shipped in-repo; Homebrew formula pins published rc12 |
-| Local evidence slice | In this working tree (policy file, local OS user, `retain`). No paid control plane |
-| UX a11y + digest/diff + site copy | In this working tree. Public site no longer lists a price book. Proof adapters stay buyer-driven |
+| Tested isolation integrations | Published in `0.2.0rc13` (`none` / `sandbox-exec` / `bwrap`). Default `none` does not confine the process. `sandbox-exec` and `bwrap` are not an OS sandbox. Published `0.2.0rc12` rejects the field |
+| Fuzz / golden depth | Published in `0.2.0rc13` (`tests/test_fuzz_contracts.py`) |
+| Activation / adapters | Adapters shipped in-repo; Homebrew formula pins published `0.2.0rc13` |
+| Local evidence slice | Published in `0.2.0rc13` (policy file, local OS user, `retain`). No paid control plane |
+| UX a11y + digest/diff + site copy | Published in `0.2.0rc13` (`digest`, `diff`, dashboard a11y). Public site no longer lists a price book. Proof adapters stay buyer-driven |
 
 ## Frozen invariants (every phase)
 
@@ -74,13 +74,13 @@ merge still requires Yahor's later decision.
 
 ---
 
-## Phase 1 — Public-key signed receipts (Ed25519) *(next PR: `cursor/ed25519-pubkey-receipts`)*
+## Phase 1 — Public-key signed receipts (Ed25519) *(shipped optional extra)*
 
 **Priority:** Highest after Phase 0.
 
-**Status:** Implementation in progress on branch `cursor/ed25519-pubkey-receipts`
-(stacked on Phase 0 direction commit). Optional PyNaCl extra; offline pubkey
-verify; HMAC path preserved.
+**Status:** Shipped in published `0.2.0rc13` (first included in `0.2.0rc10`).
+Optional extras `runspecimen[ed25519]` and `runspecimen[signing]` (PyNaCl);
+offline public-key verify; HMAC path preserved. See `docs/ED25519_RECEIPTS.md`.
 
 **Scope**
 
@@ -120,7 +120,7 @@ In `0.2.0rc13`. Published `0.2.0rc12` rejects the field.
 - A declared backend that is missing fails closed at approve, preflight, and run.
 - `none` does not wrap argv. The receipt says the workload is not confined.
 - `sandbox-exec` is seatbelt write confinement to the workspace, with network denied unless `isolation.network` is true. It is not an OS sandbox.
-- `bwrap` bind-mounts the workspace read-write over a read-only host root, and unshares the network unless `isolation.network` is true.
+- `bwrap` bind-mounts the workspace read-write over a read-only host root, and unshares the network unless `isolation.network` is true. `bwrap` was argument-tested (argv wrapping). It was not executed on macOS. A real Linux execution test may land separately.
 - `runspecimen isolation` and `doctor` report which backends exist. They do not claim one is in effect.
 - Receipt field `isolation` (backend, enforced, network, tool, claim, residual) is bound into `certificate_id` when present. Historical receipts that omit it still verify.
 
@@ -130,7 +130,9 @@ Not in the engine: a scheduler, watcher, or coordinator. Resource limits are not
 
 ---
 
-## Phase 3 — Resilience and compatibility depth *(in tree, unreleased)*
+## Phase 3 — Resilience and compatibility depth *(0.2.0rc13)*
+
+In published `0.2.0rc13`.
 
 - `tests/test_fuzz_contracts.py` mutates contracts and paths with stdlib `random` and requires fail-closed errors. No new required dependency.
 - Terminal phases still refuse re-entry.
@@ -152,9 +154,9 @@ Still outside this change: Cursor, Claude, Gemini, Junie, and OpenAI submissions
 
 ---
 
-## Phase 5 — Local evidence slice *(in tree, unreleased; no control plane)*
+## Phase 5 — Local evidence slice *(0.2.0rc13; no control plane)*
 
-The paid Team pilot, SSO, billing, and design-partner gate are not in this
+In published `0.2.0rc13`. The paid Team pilot, SSO, billing, and design-partner gate are not in this
 tree. The local mechanics are:
 
 - Optional contract `policy` names a JSON file inside the workspace. Its SHA-256 is part of the contract hash. Ceilings, `argv0_allow`, and `require_isolation_backend` are enforced before approval.

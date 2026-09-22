@@ -267,11 +267,15 @@ into the certificate's `runtime_id`.
   `docs/ED25519_RECEIPTS.md`). Trusted Ed25519 verify requires an external
   public-key trust anchor; a key embedded only in the receipt is never enough
   for `ok: true`. Soft keys on disk are not absolute non-repudiation.
-- The executed payload is not sandboxed. Optional Ed25519 ≠ OS sandbox. CPU,
-  memory, network, filesystem, and child-process limits are not yet enforced via
-  tested isolation backends. The current hard bounds are one workspace run,
-  wall-clock duration, and captured output size. A companion app’s UI sandbox
-  (if any) does not imply payload confinement.
+- Default `isolation.backend` is `none`: the workload is not confined. Published
+  `0.2.0rc13` accepts opt-in `sandbox-exec` and `bwrap` when the contract names
+  them and the tool is installed; a missing tool fails closed. Those backends
+  can confine writes to the workspace and deny network. They are not an OS
+  sandbox. `bwrap` was argument-tested (argv wrapping). It was not executed on
+  macOS. A real Linux execution test may land separately. CPU, memory, and
+  child-process limits are not part of either backend. Published `0.2.0rc12`
+  rejects the `isolation` field. Optional Ed25519 is not an OS sandbox. A
+  companion app’s UI sandbox (if any) does not imply payload confinement.
 
 - RunSpecimen does not schedule work and does not prove scientific claims.
 - The resolved executable or interpreter is automatically hashed. Native

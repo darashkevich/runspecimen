@@ -63,11 +63,12 @@ Priority order below is a local judgment call aligned with `docs/PRODUCT_PLAN.md
 
 ## 3. Signed receipts (local key) + offline verify story
 
-<!-- APPROVE: PARTIAL — HMAC shipped; Ed25519 next -->
+<!-- APPROVE: IMPLEMENTED — HMAC shipped in rc9; Ed25519 optional extra shipped -->
 
-**Status:** HMAC shared-secret auth ✅ in rc9. **Ed25519 offline pubkey verify is
-the next prioritized slice** (optional dependency; see `docs/ROADMAP_PHASED.md`
-Phase 1). Direction approved: prefer maintained optional crypto over vendoring.
+**Status:** HMAC shared-secret auth ✅ in rc9. Ed25519 offline public-key verify ✅
+in published `0.2.0rc13` (optional extras `runspecimen[ed25519]` and
+`runspecimen[signing]`, PyNaCl). The default install stays stdlib-only. See
+`docs/ED25519_RECEIPTS.md` and `docs/ROADMAP_PHASED.md` Phase 1.
 
 **Source:** LOCAL DRAFT (not from GPT); refined by product-direction follow-up
 
@@ -82,9 +83,9 @@ without sharing a secret.
 - Key storage in `.runspecimen/keys/` with chmod 0600
 - CLI: `keygen`, `list-keys`, `sign`, `verify-signature`
 
-**Planned (Ed25519):**
-- Optional extra (e.g. PyNaCl); stdlib-only default install preserved
-- Public-key export + offline verify without private key
+**Implementation (Ed25519, shipped):**
+- Optional extras `runspecimen[ed25519]` and `runspecimen[signing]` (PyNaCl); stdlib-only default install preserved
+- Public-key export + offline verify without the private key
 - Tamper / wrong-key / missing-extra tests; honest custody language
 
 **Important limitation:** HMAC-SHA256 is a shared-secret Message Authentication Code.
@@ -93,7 +94,7 @@ independent verification under key-custody assumptions; it still does not prove
 scientific claims.
 
 **Acceptance (HMAC):** ✅ round-trip; tampered receipt fails; docs honest.
-**Acceptance (Ed25519):** pending Phase 1 PR.
+**Acceptance (Ed25519):** ✅ optional extra in the published package; offline public-key verify without the private key; wrong key and tampered body fail closed.
 
 ---
 
