@@ -15,6 +15,7 @@ import json
 import os
 import shlex
 import shutil
+import socket
 import sys
 import textwrap
 import unittest
@@ -42,6 +43,7 @@ from runspecimen.isolation import (
     confinement_argv,
     discover_tool,
     effective_plan,
+    host_capabilities,
     plans_match,
 )
 from runspecimen.paths import STDERR_FILENAME, STDOUT_FILENAME, run_state_dir
@@ -254,6 +256,145 @@ class BwrapLinuxIntegrationTests(RunSpecimenTestCase):
             self.assertTrue(tool.is_file())
             self.assertEqual(tool, Path(shutil.which("bwrap")).resolve())
             self.assertEqual(receipt["tool_sha256"], sha256_file(tool))
+
+
+
+class BwrapCapabilityAndCliTests(RunSpecimenTestCase):
+    def test_host_capabilities_selects_linux_bwrap_without_claiming_enforced(self) -> None:
+        caps = host_capabilities()
+        self.assertEqual(caps["default_backend"], "none")
+        self.assertFalse(caps["backends"]["none"]["enforced"])
+        bwrap = caps["backends"]["bwrap"]
+        self.assertEqual(bwrap.get("platform"), "linux")
+        self.assertIs(bwrap["available"], shutil.which("bwrap") is not None)
+        self.assertNotIn("enforced", bwrap)
+        blob = json.dumps(caps)
+        self.assertIn("not an os sandbox", blob.lower())
+        self.assertNotIn("is an OS sandbox", blob)
+
+    def test_isolation_cli_reports_unavailable_without_failing(self) -> None:
+        empty = self.ws.parent / f"no-bwrap-cli-{self.ws.name}"
+        empty.mkdir()
+        previous = os.environ.get("PATH", "")
+        os.environ["PATH"] = str(empty)
+        self.addCleanup(lambda: os.environ.__setitem__("PATH", previous))
+        self.addCleanup(lambda: shutil.rmtree(empty, ignore_errors=True))
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = main(["isolation"])
+        self.assertEqual(code, 0, stderr.getvalue())
+        doc = json.loads(stdout.getvalue())
+        self.assertFalse(doc["backends"]["bwrap"]["available"])
+
+
+class BwrapConstructionNetworkTests(BwrapConstructionTests):
+    def test_network_allowed_omits_unshare_net_and_records_allowed(self) -> None:
+        tool, marker = self._plant_bwrap()
+        path = write_contract(
+            self.ws,
+            "c.json",
+            base_contract(isolation={"backend": "bwrap", "network": True}),
+        )
+        contract = load_contract(path)
+        self.assertTrue(contract.isolation.network)
+        plan = effective_plan(contract.isolation)
+        self.assertEqual(plan["network"], "allowed")
+        self.assertTrue(plan["enforced"])
+        argv = confinement_argv(
+            plan,
+            [sys.executable, "work/job.py"],
+            workspace=self.ws.resolve(),
+            cwd=self.ws.resolve(),
+            profile_path=self.ws / "isolation.sb",
+        )
+        self.assertFalse(marker.exists())
+        self.assertNotIn("--unshare-net", argv)
+        self.assertEqual(argv[0], str(tool.resolve()))
+
+    def test_tool_inside_workspace_is_refused(self) -> None:
+        from runspecimen.isolation import assert_tool_outside_workspace
+
+        tool = self.ws / "bwrap"
+        tool.write_text("#!/bin/sh\n", encoding="utf-8")
+        tool.chmod(0o755)
+        plan = {
+            "backend": "bwrap",
+            "enforced": True,
+            "network": "denied",
+            "tool": str(tool),
+            "tool_sha256": sha256_file(tool),
+        }
+        with self.assertRaises(PreflightError) as ctx:
+            assert_tool_outside_workspace(plan, self.ws)
+        self.assertIn("inside the workspace", str(ctx.exception))
+
+
+@unittest.skipUnless(
+    shutil.which("bwrap"),
+    "bwrap is not installed; real confinement spawn skipped",
+)
+class BwrapLinuxNetworkAndWriteTests(RunSpecimenTestCase):
+    def test_network_is_denied_at_runtime(self) -> None:
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        self.addCleanup(listener.close)
+
+        job = textwrap.dedent(
+            f"""\
+            import socket
+            import sys
+
+            open("outputs/ran.txt", "w", encoding="utf-8").write("ran\\n")
+            try:
+                socket.create_connection(("127.0.0.1", {port}), timeout=1.0)
+            except OSError as exc:
+                print(f"network-denied errno={{exc.errno}}", flush=True)
+                sys.exit(3)
+            print("network-succeeded", flush=True)
+            open("outputs/out.json", "w", encoding="utf-8").write('{{"status":"ok"}}\\n')
+            sys.exit(0)
+            """
+        )
+        (self.ws / "work" / "job.py").write_text(job, encoding="utf-8")
+        # Contract still requires out.json on success path; denied network exits 3.
+        path = write_contract(self.ws, "c.json", base_contract(isolation={"backend": "bwrap"}))
+        approve(self.ws, path)
+        preflight(contract_path=path, workspace=self.ws)
+        result = run_contract(contract_path=path, workspace=self.ws)
+        state_dir = run_state_dir(self.ws, "camp", "run-a")
+        stdout = (state_dir / STDOUT_FILENAME).read_bytes()
+        self.assertEqual(result["exit_code"], 3)
+        self.assertIn(b"network-denied", stdout)
+        self.assertNotIn(b"network-succeeded", stdout)
+        self.assertIsNone(load_certificate(state_dir))
+        for receipt in (load_approval(state_dir)["isolation"], load_state(state_dir)["isolation"]):
+            _assert_enforced_bwrap_receipt(self, receipt)
+
+    def test_workspace_write_still_succeeds_and_is_certified(self) -> None:
+        job = textwrap.dedent(
+            """\
+            from pathlib import Path
+            Path("outputs/ran.txt").write_text("payload-ran\\n", encoding="utf-8")
+            Path("outputs/out.json").write_text('{"status":"ok"}\\n', encoding="utf-8")
+            print("ok", flush=True)
+            """
+        )
+        (self.ws / "work" / "job.py").write_text(job, encoding="utf-8")
+        path = write_contract(self.ws, "c.json", base_contract(isolation={"backend": "bwrap"}))
+        approve(self.ws, path)
+        preflight(contract_path=path, workspace=self.ws)
+        result = run_contract(contract_path=path, workspace=self.ws)
+        self.assertEqual(result["exit_code"], 0)
+        postflight(contract_path=path, workspace=self.ws)
+        state_dir = run_state_dir(self.ws, "camp", "run-a")
+        cert = load_certificate(state_dir)
+        self.assertIsNotNone(cert)
+        assert cert is not None
+        _assert_enforced_bwrap_receipt(self, cert["isolation"])
 
 
 if __name__ == "__main__":
