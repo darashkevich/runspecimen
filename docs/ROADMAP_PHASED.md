@@ -120,7 +120,7 @@ In `0.2.0rc13`. Published `0.2.0rc12` rejects the field.
 - A declared backend that is missing fails closed at approve, preflight, and run.
 - `none` does not wrap argv. The receipt says the workload is not confined.
 - `sandbox-exec` is seatbelt write confinement to the workspace, with network denied unless `isolation.network` is true. It is not an OS sandbox.
-- `bwrap` bind-mounts the workspace read-write over a read-only host root, and unshares the network unless `isolation.network` is true. `bwrap` was argument-tested (argv wrapping). It was not executed on macOS. A real Linux execution test may land separately.
+- `bwrap` bind-mounts the workspace read-write over a read-only host root, and unshares the network unless `isolation.network` is true. Linux CI runs a real `bwrap` spawn regression when bubblewrap is installed; macOS does not execute `bwrap`.
 - `runspecimen isolation` and `doctor` report which backends exist. They do not claim one is in effect.
 - Receipt field `isolation` (backend, enforced, network, tool, claim, residual) is bound into `certificate_id` when present. Historical receipts that omit it still verify.
 
