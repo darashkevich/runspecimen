@@ -23,8 +23,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
       - name: Install bubblewrap (Linux bwrap integration tests)
@@ -33,7 +33,7 @@ jobs:
       - run: python -m pip install --upgrade pip setuptools wheel
       - name: Offline release gate
         run: python scripts/release_check.py --output-dir "${{ runner.temp }}/runspecimen-release"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: runspecimen-${{ matrix.os }}-python-${{ matrix.python }}
           path: ${{ runner.temp }}/runspecimen-release/
@@ -43,8 +43,8 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install PyInstaller (MAS freeze path)
