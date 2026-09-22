@@ -274,5 +274,200 @@ class JetBrainsIdeActionTests(unittest.TestCase):
         self.assertTrue("approve" in combined.lower() or "invalid" in combined.lower() or completed.returncode == 2)
 
 
+
+class PluginApproveBoundaryExtras(unittest.TestCase):
+    """High-value gaps beyond the base approve-gate suite (Track F)."""
+
+    LIFECYCLE = frozenset({
+        "about", "dashboard", "doctor", "validate", "status",
+        "preflight", "run", "postflight", "verify",
+    })
+
+    def test_adapter_and_mcp_allowed_sets_match_lifecycle_only(self) -> None:
+        adapter_src = ADAPTER.read_text(encoding="utf-8")
+        mcp_src = MCP.read_text(encoding="utf-8")
+        self.assertIn("ALLOWED = frozenset({", adapter_src)
+        self.assertIn("ALLOWED = frozenset({", mcp_src)
+        # Import ALLOWED without executing PATH-dependent main paths.
+        import importlib.util
+
+        def load_allowed(path: Path) -> frozenset[str]:
+            spec = importlib.util.spec_from_file_location(path.stem, path)
+            assert spec and spec.loader
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return frozenset(mod.ALLOWED)
+
+        adapter_allowed = load_allowed(ADAPTER)
+        mcp_allowed = load_allowed(MCP)
+        self.assertEqual(adapter_allowed, self.LIFECYCLE)
+        self.assertEqual(mcp_allowed, self.LIFECYCLE)
+        self.assertEqual(adapter_allowed, mcp_allowed)
+        for forbidden in ("approve", "shell", "execute", "remote-confirm", "settle"):
+            self.assertNotIn(forbidden, adapter_allowed)
+            self.assertNotIn(forbidden, mcp_allowed)
+
+    def test_adapter_rejects_shell_execute_settle_names(self) -> None:
+        for action in ("shell", "execute", "remote-confirm", "settle", "approve"):
+            completed = subprocess.run(
+                [sys.executable, str(ADAPTER), action, "--workspace", str(ROOT)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(completed.returncode, 0, action)
+
+    def test_mcp_tools_list_equals_lifecycle_and_rejects_shell_execute_settle(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(MCP)],
+            input=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}) + "\n",
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        listed = json.loads(completed.stdout.strip().splitlines()[0])
+        names = {tool["name"] for tool in listed["result"]["tools"]}
+        self.assertEqual(names, self.LIFECYCLE)
+        for bad in ("approve", "shell", "execute", "settle", "remote-confirm"):
+            response = subprocess.run(
+                [sys.executable, str(MCP)],
+                input=json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {"name": bad, "arguments": {}},
+                }) + "\n",
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            doc = json.loads(response.stdout.strip().splitlines()[0])
+            self.assertTrue(doc["result"]["isError"], bad)
+
+    def test_mcp_instructions_require_tty_approve(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(MCP)],
+            input=json.dumps({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "0"},
+                },
+            }) + "\n",
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        doc = json.loads(completed.stdout.strip().splitlines()[0])
+        instructions = json.dumps(doc).lower()
+        self.assertTrue("tty" in instructions or "approve" in instructions)
+
+    def _gate(self, payload: dict, extra: list[str] | None = None) -> dict | None:
+        completed = subprocess.run(
+            [sys.executable, str(GATE), *(extra or [])],
+            input=json.dumps(payload),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        raw = (completed.stdout or "").strip()
+        return json.loads(raw) if raw else None
+
+    def test_gate_denies_printf_and_python_m_approve(self) -> None:
+        for command in (
+            "printf APPROVE | runspecimen approve --workspace . --contract c.json",
+            "python -m runspecimen approve --workspace . --contract c.json",
+            "python3 -m runspecimen approve --workspace . --contract c.json",
+        ):
+            doc = self._gate({"tool_name": "Bash", "tool_input": {"command": command}})
+            assert doc is not None
+            self.assertEqual(doc["hookSpecificOutput"]["permissionDecision"], "deny", command)
+
+    def test_gate_denies_claude_mcp_tool_name_and_nested_arguments(self) -> None:
+        doc = self._gate({
+            "tool_name": "mcp__runspecimen__approve",
+            "tool_input": {},
+        })
+        assert doc is not None
+        self.assertEqual(doc["hookSpecificOutput"]["permissionDecision"], "deny")
+        doc = self._gate({
+            "tool_name": "Bash",
+            "arguments": {"command": "runspecimen approve --workspace . --contract c.json"},
+        })
+        assert doc is not None
+        self.assertEqual(doc["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_gate_denies_companion_v1_approve_path(self) -> None:
+        doc = self._gate({
+            "tool_name": "Bash",
+            "tool_input": {"command": "curl -X POST http://127.0.0.1:9/v1/approve"},
+        })
+        assert doc is not None
+        self.assertEqual(doc["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_gate_claude_format_forced(self) -> None:
+        doc = self._gate(
+            {
+                "hook_event_name": "BeforeTool",
+                "tool_name": "Bash",
+                "tool_input": {"command": "echo APPROVE"},
+            },
+            extra=["--format", "claude"],
+        )
+        assert doc is not None
+        self.assertIn("hookSpecificOutput", doc)
+        self.assertEqual(doc["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_skills_rules_commands_forbid_typing_approve(self) -> None:
+        paths = [
+            PLUGIN / "skills" / "runspecimen" / "SKILL.md",
+            PLUGIN / "windsurf" / "skills" / "runspecimen" / "SKILL.md",
+            PLUGIN / "windsurf" / "rules" / "runspecimen.md",
+            PLUGIN / "commands" / "request-approval.md",
+            PLUGIN / "grok" / "AGENTS.md",
+            PLUGIN / "GEMINI.md",
+        ]
+        for path in paths:
+            self.assertTrue(path.is_file(), path)
+            text = path.read_text(encoding="utf-8").lower()
+            self.assertTrue(
+                "never type" in text
+                or "must not" in text
+                or "do not type" in text
+                or "do not" in text and "approve" in text,
+                path,
+            )
+            self.assertTrue("pipe" in text or "tty" in text or "real terminal" in text, path)
+
+    def test_hooks_wire_claude_and_gemini_gates(self) -> None:
+        claude = json.loads((PLUGIN / "hooks" / "claude-hooks.json").read_text(encoding="utf-8"))
+        gemini = json.loads((PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        self.assertIn("PreToolUse", claude["hooks"])
+        self.assertIn("BeforeTool", gemini["hooks"])
+        claude_blob = json.dumps(claude)
+        gemini_blob = json.dumps(gemini)
+        self.assertIn("block_approve_gate.py", claude_blob)
+        self.assertIn("block_approve_gate.py", gemini_blob)
+        gemini_ext = json.loads((PLUGIN / "gemini-extension.json").read_text(encoding="utf-8"))
+        self.assertTrue(any("approve" in str(item).lower() for item in gemini_ext.get("excludeTools", [])))
+
+    def test_plugin_scripts_have_no_network_phone_home(self) -> None:
+        forbidden_imports = ("urllib.request", "http.client", "requests", "aiohttp")
+        for path in (ADAPTER, GATE, MCP, IDE_ACTIONS):
+            text = path.read_text(encoding="utf-8")
+            for item in forbidden_imports:
+                self.assertNotIn(f"import {item}", text, path.name)
+                self.assertNotIn(f"from {item}", text, path.name)
+            # No outbound URL literals; deny-docs may say "no network phone-home".
+            for url in ("https://", "http://"):
+                residual = text.lower().replace("http://127.0.0.1", "")
+                self.assertNotIn(url, residual, path.name)
+
+
+
 if __name__ == "__main__":
     unittest.main()
