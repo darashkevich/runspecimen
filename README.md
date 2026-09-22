@@ -63,6 +63,18 @@ Pin the version. pip will not select an RC without `==0.2.0rc13`. The rc11 draft
 
 PyPI project: [runspecimen 0.2.0rc13](https://pypi.org/project/runspecimen/0.2.0rc13/)
 
+### From Homebrew
+
+```bash
+brew tap darashkevich/runspecimen
+brew install runspecimen
+runspecimen --version
+```
+
+Or: `brew install darashkevich/runspecimen/runspecimen`.
+
+Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen). Pins the same `v0.2.0-rc.13` sdist as the GitHub Release (not `main`).
+
 ### From GitHub release
 
 ```bash

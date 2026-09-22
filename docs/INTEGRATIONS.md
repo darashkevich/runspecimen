@@ -17,7 +17,7 @@ auto-approve, type `APPROVE`, or settle remote-confirm.
 | JetBrains Junie | `.junie-extension/marketplace.json` + `extension.json` + `jetbrains/` | Shipped in-repo; JetBrains marketplace **not submitted** | Claude-compat + native Junie catalog; guidelines + MCP |
 | JetBrains IntelliJ scaffold | `jetbrains/intellij-plugin/` | Scaffold + local install docs | Tools menu shells to CLI; **no** in-IDE Approve |
 | Windsurf (Cascade) | `plugins/runspecimen/windsurf/` | Shipped in-repo; store **not submitted** | Skills + rules for `.windsurf/` / `~/.codeium/windsurf/`; optional MCP |
-| Homebrew formula | `packaging/homebrew/runspecimen.rb` | In repo; installs `0.2.0rc13` | Not a tap. Default backend `none` is unconfined |
+| Homebrew tap | [`darashkevich/homebrew-runspecimen`](https://github.com/darashkevich/homebrew-runspecimen) | Live; installs `0.2.0rc13` | `brew tap darashkevich/runspecimen && brew install runspecimen`. In-repo formula at `packaging/homebrew/`. Default backend `none` is unconfined |
 | VS Code / Open VSX UI | — | Not started | Status/evidence UI later; Windsurf reuses Cursor skill/rule story |
 | iOS / macOS companion | `apps/ios`, `apps/macos-companion` | Observe + optional human remote-confirm | `can_approve` always false for plugins |
 

@@ -336,6 +336,7 @@ listings are confirmed live (not pending review).
 | JetBrains Junie / Marketplace | PR open | JetBrains review | not merged | https://github.com/JetBrains/junie-extensions/pull/16 |
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
 | PyPI | ✅ | — | `0.2.0rc13` (same bytes as GitHub) | [runspecimen 0.2.0rc13](https://pypi.org/project/runspecimen/0.2.0rc13/) |
+| Homebrew tap | ✅ | — | `0.2.0rc13` sdist from GitHub Release | [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen) |
 | Mac App Store | ⏳ WAITING_FOR_REVIEW | Apple review of macOS **0.1.3 (8)** | not public | no `apps.apple.com` URL — see `apps/macos/asc-kit/STATUS.md` |
 
 **Important:** Do not claim a listing is "public" or "available" until:
@@ -357,4 +358,5 @@ After each channel goes live, verify:
 6. **Junie:** `/extensions` shows `runspecimen` after marketplace add
 7. **Windsurf:** `@runspecimen` skill resolves; rule appears under Customizations
 8. **PyPI:** `pip install runspecimen==0.2.0rc13` works and `runspecimen --version` shows `0.2.0rc13`
-9. **Website:** Update with verified live links only
+9. **Homebrew:** `brew install darashkevich/runspecimen/runspecimen` installs `0.2.0rc13` from the published sdist
+10. **Website:** Update with verified live links only
