@@ -285,6 +285,12 @@ def verify_run_receipt(
         if state.get("runtime", {}).get("runtime_id") != live_runtime.get("runtime_id"):
             raise CertificateError("state runtime provenance does not match live runtime")
 
+    # Ordinary lifecycle gate: policy.required_verification must hold at verify.
+    if contract is not None:
+        from runspecimen.policy import enforce_required_verification
+
+        enforce_required_verification(workspace=workspace, contract=contract)
+
     return {
         "ok": True,
         "certificate_id": cert["certificate_id"],

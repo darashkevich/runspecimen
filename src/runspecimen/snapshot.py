@@ -138,6 +138,7 @@ class LocalTarSnapshotProvider:
         workspace = resolve_workspace(workspace)
         archive = self._load_and_verify_archive(workspace, record)
         dest = dest.expanduser().resolve()
+        dest_refusal = _restore_dest_refusal_reason(workspace, dest)
         # Compare archive members to current workspace (not dest) for "would change".
         members: list[str] = []
         with tarfile.open(archive, "r:gz") as tar:
@@ -156,11 +157,12 @@ class LocalTarSnapshotProvider:
                 would_overwrite.append(rel)
 
         return {
-            "ok": True,
+            "ok": dest_refusal is None,
             "provider": self.name,
             "snapshot_id": record["id"],
             "dest": str(dest),
             "restore_target_is_workspace": dest == workspace,
+            "dest_refusal": dest_refusal,
             "member_count": len(members),
             "would_add": would_add[:200],
             "would_overwrite": would_overwrite[:200],
@@ -183,23 +185,13 @@ class LocalTarSnapshotProvider:
     ) -> dict[str, Any]:
         workspace = resolve_workspace(workspace)
         dest = dest.expanduser().resolve()
-        if dest == workspace:
-            raise SnapshotError(
-                "refusing in-place restore to the live workspace; "
-                "choose --dest outside the workspace (consequential in-place restore "
-                "must use the ordinary authorization lifecycle, not this helper)"
-            )
-        # Refuse dest inside workspace control plane confusion: allow dest outside.
+        refusal = _restore_dest_refusal_reason(workspace, dest)
+        if refusal is not None:
+            raise SnapshotError(refusal)
         archive = self._load_and_verify_archive(workspace, record)
         ensure_dir(dest)
         with tarfile.open(archive, "r:gz") as tar:
-            # Python 3.12+ has filter=; use data filter when available.
-            try:
-                tar.extractall(dest, filter=tarfile.data_filter)  # type: ignore[arg-type]
-            except TypeError:
-                tar.extractall(dest)
-            except AttributeError:
-                tar.extractall(dest)
+            _safe_extractall(tar, dest)
         return {
             "ok": True,
             "provider": self.name,
@@ -208,6 +200,69 @@ class LocalTarSnapshotProvider:
             "archive_sha256": record.get("archive_sha256"),
             "note": "Restored to a separate directory; compare before any authorized replace.",
         }
+
+
+def _restore_dest_refusal_reason(workspace: Path, dest: Path) -> str | None:
+    """Return a refusal reason when dest overlaps the live workspace hierarchy."""
+    workspace = workspace.resolve()
+    dest = dest.expanduser().resolve()
+    if dest == workspace:
+        return (
+            "refusing in-place restore to the live workspace; "
+            "choose --dest outside the workspace hierarchy (consequential in-place "
+            "restore must use the ordinary authorization lifecycle, not this helper)"
+        )
+    try:
+        dest.relative_to(workspace)
+    except ValueError:
+        pass
+    else:
+        return (
+            "refusing restore into the live workspace tree; "
+            "choose --dest outside the workspace hierarchy"
+        )
+    try:
+        workspace.relative_to(dest)
+    except ValueError:
+        pass
+    else:
+        return (
+            "refusing restore to an ancestor of the live workspace; "
+            "archive members (e.g. work/) would materialize beside or over the live "
+            "tree. Choose an explicit --dest outside the workspace hierarchy."
+        )
+    return None
+
+
+def _assert_safe_restore_dest(workspace: Path, dest: Path) -> None:
+    reason = _restore_dest_refusal_reason(workspace, dest)
+    if reason is not None:
+        raise SnapshotError(reason)
+
+
+def _safe_extractall(tar: tarfile.TarFile, dest: Path) -> None:
+    """Extract archive members so paths cannot escape the explicit dest root."""
+    dest = dest.resolve()
+    for member in tar.getmembers():
+        name = member.name
+        if not name or name.startswith("/") or name.startswith("\\"):
+            raise SnapshotError(f"refusing absolute archive member path: {name!r}")
+        # Normalize and reject traversal / escape.
+        target = (dest / name).resolve()
+        try:
+            target.relative_to(dest)
+        except ValueError as exc:
+            raise SnapshotError(
+                f"archive member escapes restore dest: {name!r} -> {target}"
+            ) from exc
+        if member.issym() or member.islnk():
+            raise SnapshotError(f"refusing symlink/hardlink archive member: {name!r}")
+    try:
+        tar.extractall(dest, filter=tarfile.data_filter)  # type: ignore[arg-type]
+    except TypeError:
+        tar.extractall(dest)
+    except AttributeError:
+        tar.extractall(dest)
 
 
 _PROVIDERS: dict[str, SnapshotProvider] = {

@@ -144,17 +144,23 @@ def evaluate_freshness(
             }
         )
         authenticity = evidence.get("authenticity")
-        if authenticity and authenticity != "receipt_bound":
-            # Unauthenticated historical docs can still be freshness-evaluated,
-            # but never reported as currently applicable without authenticity.
+        if authenticity != "receipt_bound":
+            # Missing or non-receipt authenticity must never be applicable.
+            # Unauthenticated historical digests can still be freshness-evaluated
+            # for change detection, but applicability stays non-applicable.
             changes.append(
                 {
                     "kind": "authenticity",
                     "detail": (
-                        "evidence report is unauthenticated "
+                        "evidence report lacks receipt authenticity "
                         "(checksum is not receipt authenticity)"
+                        if not authenticity
+                        else (
+                            "evidence report is unauthenticated "
+                            "(checksum is not receipt authenticity)"
+                        )
                     ),
-                    "authenticity": authenticity,
+                    "authenticity": authenticity or "missing",
                 }
             )
 

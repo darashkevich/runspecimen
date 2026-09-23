@@ -43,6 +43,7 @@ _POLICY_FIELDS = {
     "nl_constraint_notes",
 }
 _BACKENDS = frozenset({"none", "sandbox-exec", "bwrap"})
+_SUPPORTED_VERIFICATION = frozenset({"requirements_check", "freshness_applicable"})
 
 
 def enforce_policy(contract: Contract, workspace: Path) -> dict[str, Any] | None:
@@ -187,12 +188,20 @@ def _template_constraints(contract: Contract, obj: dict[str, Any], workspace: Pa
 
     if "required_verification" in obj:
         req = _require_list(obj.get("required_verification"), "policy.required_verification")
+        steps: list[str] = []
         for i, item in enumerate(req):
-            _require_str(item, f"policy.required_verification[{i}]")
-        # Presence is recorded; enforcement is via requirements check command,
-        # not a silent pass at preflight.
-        if not req:
+            step = _require_str(item, f"policy.required_verification[{i}]")
+            if step not in _SUPPORTED_VERIFICATION:
+                supported = ", ".join(sorted(_SUPPORTED_VERIFICATION))
+                raise ContractError(
+                    f"policy.required_verification[{i}] unsupported step {step!r}; "
+                    f"supported: {supported}"
+                )
+            steps.append(step)
+        if not steps:
             raise ContractError("policy.required_verification must be non-empty when present")
+        # Presence is validated here; completion enforcement is in verify_run_receipt
+        # (ordinary lifecycle gate). Do not auto-weaken or fabricate approval.
 
     if "ops_requiring_distinct_run" in obj:
         ops = _require_list(
@@ -256,6 +265,119 @@ def format_refusal(
         f"policy={contract_policy!r} observed={observed_op!r}. "
         f"Next: {next_step}"
     )
+
+
+def load_policy_document(contract: Contract, workspace: Path) -> dict[str, Any] | None:
+    """Load and digest-check the workspace policy file named by the contract."""
+    ref = contract.policy
+    if ref is None:
+        return None
+    workspace = resolve_workspace(workspace)
+    path = ensure_within(workspace, Path(ref.path), label="policy.path")
+    if not path.is_file():
+        raise PreflightError(f"policy file missing: {ref.path}")
+    digest = sha256_file(path)
+    if digest != ref.sha256:
+        raise PreflightError(
+            f"policy sha256 does not match the contract "
+            f"(file {digest}, contract {ref.sha256})"
+        )
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise PreflightError(f"policy file is not JSON: {exc}") from exc
+    return _require_dict(data, "policy file")
+
+
+def enforce_required_verification(
+    *,
+    workspace: Path,
+    contract: Contract,
+) -> None:
+    """Refuse completion when policy.required_verification steps are unmet.
+
+    Hooked from verify_run_receipt (ordinary lifecycle gate). Does not fabricate
+    approval or weaken the policy.
+    """
+    from runspecimen.errors import CertificateError
+    from runspecimen.freshness import check_freshness_for_run
+    from runspecimen.requirements import load_evidence_report, load_task_manifest
+
+    obj = load_policy_document(contract, workspace)
+    if obj is None:
+        return
+    steps = obj.get("required_verification")
+    if not steps:
+        return
+    if not isinstance(steps, list) or not steps:
+        return
+
+    for i, raw in enumerate(steps):
+        step = str(raw)
+        if step not in _SUPPORTED_VERIFICATION:
+            supported = ", ".join(sorted(_SUPPORTED_VERIFICATION))
+            raise CertificateError(
+                f"policy.required_verification[{i}] unsupported step {step!r}; "
+                f"supported: {supported}"
+            )
+        if step == "requirements_check":
+            try:
+                report = load_evidence_report(
+                    workspace, contract.campaign_id, contract.run_id
+                )
+            except Exception as exc:  # noqa: BLE001
+                raise CertificateError(
+                    format_refusal(
+                        violated_constraint="required_verification:requirements_check",
+                        contract_policy=obj.get("id"),
+                        observed_op="evidence_report missing or invalid",
+                        next_step=(
+                            "Run runspecimen requirements check under the approved "
+                            "lifecycle, then verify again. Do not auto-weaken the policy."
+                        ),
+                    )
+                    + f" detail={exc}"
+                ) from exc
+            if report.get("aggregate_outcome") != "passed":
+                raise CertificateError(
+                    format_refusal(
+                        violated_constraint="required_verification:requirements_check",
+                        contract_policy=obj.get("id"),
+                        observed_op=(
+                            f"aggregate_outcome={report.get('aggregate_outcome')!r}"
+                        ),
+                        next_step=(
+                            "Capture a passed evidence report for this run, then verify. "
+                            "Do not auto-weaken the policy."
+                        ),
+                    )
+                )
+        elif step == "freshness_applicable":
+            manifest = None
+            if contract.task_manifest is not None:
+                mpath = ensure_within(
+                    workspace,
+                    Path(contract.task_manifest.path),
+                    label="task_manifest.path",
+                )
+                if mpath.is_file():
+                    manifest = load_task_manifest(mpath)
+            fresh = check_freshness_for_run(
+                workspace=workspace, contract=contract, manifest=manifest
+            )
+            if fresh.get("applicability") != "applicable":
+                raise CertificateError(
+                    format_refusal(
+                        violated_constraint="required_verification:freshness_applicable",
+                        contract_policy=obj.get("id"),
+                        observed_op=f"applicability={fresh.get('applicability')!r}",
+                        next_step=(
+                            "Ensure receipt-bound evidence still applies "
+                            "(runspecimen freshness check), then verify. "
+                            "Do not auto-weaken the policy."
+                        ),
+                    )
+                )
 
 
 def execution_constraints(

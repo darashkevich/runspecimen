@@ -244,41 +244,69 @@ def evaluate_readiness(plan: dict[str, Any]) -> dict[str, Any]:
             continue
         # If consumer evidence referenced producer hash, check invalidation.
         c_contract = contracts.get(consumer["id"])
-        if c_contract is not None:
-            try:
-                c_ws = resolve_workspace(Path(consumer["workspace"]))
-                evidence = load_evidence_report(
-                    c_ws, c_contract.campaign_id, c_contract.run_id
+        if c_contract is None:
+            blockers.append(
+                {
+                    "dependency": dep["id"],
+                    "reason": "consumer_contract_unavailable",
+                    "path": artifact_rel,
+                }
+            )
+            continue
+        try:
+            c_ws = resolve_workspace(Path(consumer["workspace"]))
+            evidence = load_evidence_report(
+                c_ws, c_contract.campaign_id, c_contract.run_id
+            )
+            # Invalidate consumer readiness when producer artifact changed vs
+            # any digest recorded under evidence_digests or a dedicated field.
+            live = sha256_file(artifact)
+            recorded = None
+            for key, digest in (evidence.get("evidence_digests") or {}).items():
+                if artifact_rel in key or key.endswith(artifact_rel):
+                    recorded = digest
+                    break
+            expected_outcome = dep.get("requires_evidence_outcome", "passed")
+            if evidence.get("aggregate_outcome") != expected_outcome:
+                blockers.append(
+                    {
+                        "dependency": dep["id"],
+                        "reason": "consumer_evidence_outcome",
+                        "expected": expected_outcome,
+                        "actual": evidence.get("aggregate_outcome"),
+                    }
                 )
-                # Invalidate consumer readiness when producer artifact changed vs
-                # any digest recorded under evidence_digests or a dedicated field.
-                live = sha256_file(artifact)
-                recorded = None
-                for key, digest in (evidence.get("evidence_digests") or {}).items():
-                    if artifact_rel in key or key.endswith(artifact_rel):
-                        recorded = digest
-                        break
-                expected_outcome = dep.get("requires_evidence_outcome", "passed")
-                if evidence.get("aggregate_outcome") != expected_outcome:
-                    blockers.append(
-                        {
-                            "dependency": dep["id"],
-                            "reason": "consumer_evidence_outcome",
-                            "expected": expected_outcome,
-                            "actual": evidence.get("aggregate_outcome"),
-                        }
-                    )
-                if recorded and recorded != live:
-                    blockers.append(
-                        {
-                            "dependency": dep["id"],
-                            "reason": "producer_artifact_changed_invalidates_consumer",
-                            "recorded": recorded,
-                            "current": live,
-                        }
-                    )
-            except Exception:  # noqa: BLE001
-                pass
+            if recorded is None:
+                blockers.append(
+                    {
+                        "dependency": dep["id"],
+                        "reason": "producer_artifact_digest_missing",
+                        "path": artifact_rel,
+                        "detail": (
+                            "declared artifact_path has no recorded digest in "
+                            "consumer evidence; readiness must not pass silently"
+                        ),
+                        "current": live,
+                    }
+                )
+            elif recorded != live:
+                blockers.append(
+                    {
+                        "dependency": dep["id"],
+                        "reason": "producer_artifact_changed_invalidates_consumer",
+                        "recorded": recorded,
+                        "current": live,
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001
+            blockers.append(
+                {
+                    "dependency": dep["id"],
+                    "reason": "producer_artifact_check_failed",
+                    "path": artifact_rel,
+                    "detail": str(exc),
+                }
+            )
 
     ready = not blockers
     return {

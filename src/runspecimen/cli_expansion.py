@@ -532,13 +532,15 @@ def _eval(args: argparse.Namespace, workspace: Path) -> int:
     if args.eval_command == "compare":
         baseline = read_json(args.baseline)
         candidate = read_json(args.candidate)
+        cmp = compare_eval_results(baseline, candidate)
         print(
             json.dumps(
-                compare_eval_results(baseline, candidate),
+                cmp,
                 indent=2,
                 sort_keys=True,
                 default=str,
             )
         )
-        return 0
+        drifted = bool(cmp.get("suite_digest_mismatch")) or bool(cmp.get("deltas"))
+        return 1 if drifted else 0
     raise RunSpecimenError(f"unknown eval command: {args.eval_command}")

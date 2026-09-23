@@ -915,9 +915,12 @@ def _fingerprint_requirement_inputs(
         elif path.is_dir():
             # Directory fingerprint via contained file hashes (sorted).
             entries: list[tuple[str, str]] = []
+            ws_resolved = workspace.resolve()
             for child in sorted(path.rglob("*")):
                 if child.is_file() and not child.is_symlink():
-                    rel_child = child.relative_to(workspace).as_posix()
+                    # Resolve both sides so macOS /var vs /private/var (and other
+                    # symlink aliases) do not break relative_to.
+                    rel_child = child.resolve().relative_to(ws_resolved).as_posix()
                     entries.append((rel_child, sha256_file(child)))
             digests[f"scope:{rel}"] = sha256_bytes(
                 canonical_json_bytes({"files": entries})

@@ -164,6 +164,55 @@ def _hook_registration_hints() -> dict[str, Any]:
     }
 
 
+def _strip_secret_maps(
+    settings: dict[str, Any] | None,
+    env: dict[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, str], list[str]]:
+    """Drop secret-like keys from settings/env; preserve non-secret values."""
+    settings = settings or {}
+    env = env or {}
+    clean_settings = {k: v for k, v in settings.items() if not _looks_secret(k)}
+    clean_env = {
+        k: str(v)
+        for k, v in env.items()
+        if not _looks_secret(k) and k.startswith("RUNSPECIMEN_")
+    }
+    excluded = sorted(
+        {k for k in settings if _looks_secret(k)}
+        | {k for k in env if _looks_secret(k)}
+    )
+    return clean_settings, clean_env, excluded
+
+
+def sanitize_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
+    """Strip secret-like keys and rebind digest (same rules as build_bundle)."""
+    assert_schema_kind(bundle.get("schema_kind"), expected="config_bundle")
+    assert_artifact_version(bundle.get("schema_version"))
+    clean_settings, clean_env, excluded = _strip_secret_maps(
+        bundle.get("settings") if isinstance(bundle.get("settings"), dict) else {},
+        bundle.get("env") if isinstance(bundle.get("env"), dict) else {},
+    )
+    prior = bundle.get("secret_keys_excluded") or []
+    if not isinstance(prior, list):
+        prior = []
+    merged_excluded = sorted(set(excluded) | {str(x) for x in prior})
+    cleaned = {
+        k: v
+        for k, v in bundle.items()
+        if k
+        not in {
+            "settings",
+            "env",
+            "secret_keys_excluded",
+            "artifact_digest",
+        }
+    }
+    cleaned["settings"] = clean_settings
+    cleaned["env"] = clean_env
+    cleaned["secret_keys_excluded"] = merged_excluded
+    return bind_artifact_digest(cleaned)
+
+
 def build_bundle(
     *,
     bundle_id: str,
@@ -171,16 +220,7 @@ def build_bundle(
     env: dict[str, str] | None = None,
     note: str = "",
 ) -> dict[str, Any]:
-    clean_settings = {k: v for k, v in settings.items() if not _looks_secret(k)}
-    clean_env = {
-        k: v
-        for k, v in (env or {}).items()
-        if not _looks_secret(k) and k.startswith("RUNSPECIMEN_")
-    }
-    excluded = sorted(
-        {k for k in settings if _looks_secret(k)}
-        | {k for k in (env or {}) if _looks_secret(k)}
-    )
+    clean_settings, clean_env, excluded = _strip_secret_maps(settings, env)
     doc = {
         "schema_kind": "config_bundle",
         "schema_version": CURRENT_ARTIFACT_SCHEMA_VERSION,
@@ -230,6 +270,8 @@ def preview_apply(workspace: Path, bundle: dict[str, Any]) -> dict[str, Any]:
 def apply_bundle(workspace: Path, bundle: dict[str, Any]) -> dict[str, Any]:
     workspace = resolve_workspace(workspace)
     preview = preview_apply(workspace, bundle)
+    # Never persist secret-like keys even if a digest-bound bundle included them.
+    cleaned = sanitize_bundle(bundle)
     root = config_root(workspace)
     ensure_dir(root)
     ensure_dir(backup_dir(workspace))
@@ -240,15 +282,16 @@ def apply_bundle(workspace: Path, bundle: dict[str, Any]) -> dict[str, Any]:
         backup_path = backup_dir(workspace) / f"active_bundle.{stamp}.json"
         shutil.copy2(active, backup_path)
     # Atomic replace of active bundle
-    atomic_write_json(active, bundle)
+    atomic_write_json(active, cleaned)
     return {
         "ok": True,
         "action": "apply",
-        "bundle_id": bundle.get("id"),
-        "bundle_digest": bundle.get("artifact_digest"),
+        "bundle_id": cleaned.get("id"),
+        "bundle_digest": cleaned.get("artifact_digest"),
         "path": str(active),
         "backup": str(backup_path) if backup_path else None,
         "conflicts_at_preview": preview.get("conflicts"),
+        "secret_keys_excluded": cleaned.get("secret_keys_excluded", []),
         "rollback_hint": (
             f"Copy backup over {active}" if backup_path else "No prior bundle to restore"
         ),
@@ -273,13 +316,16 @@ def export_bundle(workspace: Path, out_path: Path) -> dict[str, Any]:
         raise ConfigSyncError("no active config bundle to export")
     doc = read_json(active)
     verify_artifact_digest(doc)
+    # Defense in depth: never re-emit secret-like keys on export.
+    cleaned = sanitize_bundle(doc)
     out_path = out_path.expanduser().resolve()
     ensure_dir(out_path.parent)
-    atomic_write_json(out_path, doc)
+    atomic_write_json(out_path, cleaned)
     return {
         "ok": True,
         "exported": str(out_path),
-        "bundle_digest": doc.get("artifact_digest"),
+        "bundle_digest": cleaned.get("artifact_digest"),
+        "secret_keys_excluded": cleaned.get("secret_keys_excluded", []),
         "install_hint": (
             "On the target host: runspecimen config apply --workspace <ws> --bundle <file>. "
             "Do not paste secrets into bundles."
