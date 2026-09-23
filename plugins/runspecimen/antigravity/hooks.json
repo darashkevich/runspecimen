@@ -1,0 +1,26 @@
+{
+  "runspecimen-block-approve": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ./scripts/block_approve_gate.py --format antigravity",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": ".*runspecimen.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ./scripts/block_approve_gate.py --format antigravity",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

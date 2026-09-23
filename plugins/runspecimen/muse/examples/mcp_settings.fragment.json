@@ -1,0 +1,11 @@
+{
+  "mcp_servers": {
+    "runspecimen": {
+      "transport": "stdio",
+      "command": "python3",
+      "args": ["/ABS/PATH/TO/runspecimen/plugins/runspecimen/scripts/runspecimen_mcp.py"],
+      "enabled": true,
+      "mode": "optional"
+    }
+  }
+}

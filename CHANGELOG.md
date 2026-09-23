@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Antigravity CLI + Meta Muse Code adapters
+
+- Add native Antigravity (`agy`) plugin under `plugins/runspecimen/antigravity/`
+  (`plugin.json`, `mcp_config.json`, named `PreToolUse` hooks, skill, rules)
+  with documented dual path vs enterprise Gemini CLI (`BeforeTool`) and
+  `agy plugin import gemini`. Gallery **not** submitted.
+- Extend `block_approve_gate.py` with `--format antigravity` and `toolCall`
+  payload detection (decision/reason deny dialect).
+- Add Meta Muse Code pack under `plugins/runspecimen/muse/` (skill + MCP
+  fragment, no approve tool; PreToolUse gate example marked **beta**).
+  Marketplace **not** submitted.
+- Docs: cloud threads outside TTY trust boundary; one lease per approved run
+  under multi-agent/worktrees; do not treat Muse `--yolo` /
+  `--disable-approval` as RunSpecimen-compatible; companion `can_approve`
+  remains false. Ledger updates in `docs/INTEGRATIONS.md` / `docs/SUBMISSION.md`.
+
 ## 0.2.0rc13 - 2026-09-22
 
 GitHub pre-release `v0.2.0-rc.13` and PyPI `0.2.0rc13` (identical bytes, checksum-only, not SLSA-attested). Do not publish draft `v0.2.0-rc.11`. Do not move `v0.2.0-rc.12`.

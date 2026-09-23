@@ -1,8 +1,8 @@
 # RunSpecimen agent adapter
 
-This plugin teaches Codex, Cursor, Claude Code, Grok Build, Gemini CLI, Junie,
-and Windsurf to put consequential local commands behind the RunSpecimen
-lifecycle.
+This plugin teaches Codex, Cursor, Claude Code, Grok Build, Gemini CLI,
+Antigravity (`agy`), Muse Code, Junie, and Windsurf to put consequential local
+commands behind the RunSpecimen lifecycle.
 
 **Prerequisite:** the `runspecimen` CLI must be on `PATH` (`command -v
 runspecimen`). Install the engine first (`pip install .` or
@@ -29,6 +29,12 @@ does not ship the enforcement binary.
   discovery. Optional project instructions: copy `grok/AGENTS.md`.
 - **Gemini CLI:** `gemini extensions link` / `install` this directory (see
   `gemini/README.md`). Manifest: `gemini-extension.json`.
+- **Antigravity CLI (`agy`):** install `antigravity/` (see
+  `antigravity/README.md`) or `agy plugin import gemini` after the Gemini
+  extension is linked — then wire Antigravity `PreToolUse` hooks. Gallery **not**
+  submitted.
+- **Meta Muse Code:** skill + MCP fragment under `muse/` (see `muse/README.md`);
+  PreToolUse gate example is **beta**. Marketplace **not** submitted.
 - **JetBrains Junie:** add this repo as a marketplace (`.junie-extension/` or
   `.claude-plugin/`) and install `runspecimen` (see `jetbrains/README.md`).
   IntelliJ scaffold: `jetbrains/intellij-plugin/` (no in-IDE Approve).
@@ -53,18 +59,25 @@ Approve-safety layers in this package:
 1. Skill / rules / commands instruct agents to pause for human TTY approve.
 2. `scripts/runspecimen_adapter.py` and `scripts/runspecimen_mcp.py` omit
    `approve` (and remote-confirm settle) from their allow-lists.
-3. `hooks/claude-hooks.json` (Claude/Junie/Grok via plugin.json) and
-   `hooks/hooks.json` (Gemini BeforeTool) + `scripts/block_approve_gate.py`
-   deny Bash/shell or MCP tool calls that look like typing `APPROVE`, running
-   `runspecimen approve`, or settling remote-confirm. The files are split on
-   purpose: Claude rejects unknown `BeforeTool` keys in a shared hooks.json.
-4. JetBrains `ide_actions.py` / IntelliJ scaffold expose `request-approval`
+3. `hooks/claude-hooks.json` (Claude/Junie/Grok via plugin.json),
+   `hooks/hooks.json` (Gemini BeforeTool), and `antigravity/hooks.json`
+   (`PreToolUse`) + `scripts/block_approve_gate.py` deny shell or MCP tool
+   calls that look like typing `APPROVE`, running `runspecimen approve`, or
+   settling remote-confirm. Hook files stay split on purpose so host schemas
+   do not cross-contaminate.
+4. Muse ships skill + MCP without approve; optional beta `.muse/hooks.json`
+   (see `muse/examples/hooks.beta.json`).
+5. JetBrains `ide_actions.py` / IntelliJ scaffold expose `request-approval`
    handoff only — never an Approve action.
+6. Claude Code **cloud** threads cannot settle local TTY `APPROVE`. One
+   approved run → one exclusive lease (not one approval for a multi-agent
+   swarm). Muse `--yolo` / `--disable-approval` are not RunSpecimen-compatible.
+   Companion `can_approve` stays false.
 
-## MCP (Claude / Gemini / Junie / Desktop / Grok / Windsurf)
+## MCP (Claude / Gemini / Antigravity / Muse / Junie / Desktop / Grok / Windsurf)
 
-`.mcp.json` (and Gemini/Junie mirrors) starts a local stdio MCP server
-(`scripts/runspecimen_mcp.py`) that exposes only: `about`, `doctor`,
+`.mcp.json` (and Gemini/Junie/Antigravity/Muse mirrors) starts a local stdio
+MCP server (`scripts/runspecimen_mcp.py`) that exposes only: `about`, `doctor`,
 `validate`, `status`, `preflight`, `run`, `postflight`, `verify`, `dashboard`.
 No network phone-home. For hosts outside a plugin install, point an MCP server
 entry at the same script with an absolute path.

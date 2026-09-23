@@ -59,6 +59,15 @@ PLUGIN_COMPONENTS = (
     "windsurf/README.md", "windsurf/skills/runspecimen/SKILL.md",
     "windsurf/rules/runspecimen.md",
     "guidelines/runspecimen.md",
+    "antigravity/plugin.json", "antigravity/mcp_config.json",
+    "antigravity/hooks.json", "antigravity/README.md",
+    "antigravity/skills/runspecimen/SKILL.md",
+    "antigravity/rules/runspecimen.md",
+    "antigravity/scripts/block_approve_gate.py",
+    "antigravity/scripts/runspecimen_mcp.py",
+    "muse/README.md", "muse/skills/runspecimen/SKILL.md",
+    "muse/examples/mcp_settings.fragment.json",
+    "muse/examples/hooks.beta.json",
 )
 FORBIDDEN_PARTS = frozenset({".git", ".runspecimen", ".tools", "__pycache__"})
 
@@ -142,6 +151,37 @@ def check_versions() -> None:
     claude_plugin = json.loads((plugin_root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
     if claude_plugin.get("hooks") != "./hooks/claude-hooks.json":
         raise SystemExit("Claude plugin.json must point hooks at ./hooks/claude-hooks.json")
+    agy_hooks = json.loads((plugin_root / "antigravity/hooks.json").read_text(encoding="utf-8"))
+    if "runspecimen-block-approve" not in agy_hooks:
+        raise SystemExit("antigravity/hooks.json must define runspecimen-block-approve")
+    agy_pre = (agy_hooks.get("runspecimen-block-approve") or {}).get("PreToolUse")
+    if not isinstance(agy_pre, list) or not agy_pre:
+        raise SystemExit("antigravity/hooks.json must use Antigravity PreToolUse (not Gemini BeforeTool)")
+    if "BeforeTool" in json.dumps(agy_hooks):
+        raise SystemExit("antigravity/hooks.json must not include Gemini BeforeTool")
+    agy_plugin = json.loads((plugin_root / "antigravity/plugin.json").read_text(encoding="utf-8"))
+    if agy_plugin.get("name") != "runspecimen":
+        raise SystemExit("antigravity/plugin.json name must be runspecimen")
+    agy_mcp = json.loads((plugin_root / "antigravity/mcp_config.json").read_text(encoding="utf-8"))
+    if "runspecimen" not in (agy_mcp.get("mcpServers") or {}):
+        raise SystemExit("antigravity/mcp_config.json must declare runspecimen server")
+    muse_hooks = json.loads(
+        (plugin_root / "muse/examples/hooks.beta.json").read_text(encoding="utf-8")
+    )
+    if "PreToolUse" not in (muse_hooks.get("hooks") or {}):
+        raise SystemExit("muse/examples/hooks.beta.json must define PreToolUse")
+    muse_mcp = json.loads(
+        (plugin_root / "muse/examples/mcp_settings.fragment.json").read_text(encoding="utf-8")
+    )
+    if "runspecimen" not in (muse_mcp.get("mcp_servers") or {}):
+        raise SystemExit("muse MCP fragment must declare runspecimen under mcp_servers")
+    for shared_name in ("block_approve_gate.py", "runspecimen_mcp.py"):
+        shared = (plugin_root / "scripts" / shared_name).read_bytes()
+        staged = (plugin_root / "antigravity" / "scripts" / shared_name).read_bytes()
+        if shared != staged:
+            raise SystemExit(
+                f"antigravity/scripts/{shared_name} must match plugins/runspecimen/scripts/{shared_name}"
+            )
     plugin_xml = (
         plugin_root / "jetbrains/intellij-plugin/src/main/resources/META-INF/plugin.xml"
     ).read_text(encoding="utf-8")
@@ -246,6 +286,12 @@ def inspect_sdist(path: Path, destination: Path) -> Path:
             "src/runspecimen/dashboard.py", "src/runspecimen/py.typed",
             "scripts/release_check.py", "tests/test_demo_cli.py", "work/compute.py",
             "examples/demo_contract.json",
+            "packaging/homebrew/runspecimen.rb",
+            "examples/templates/research/contract.json",
+            "examples/templates/security/contract.json",
+            "examples/templates/shared-policy/policy.json",
+            "examples/templates/ml-eval/contract.json",
+            "examples/campaigns/adversarial-first-run/contract.json",
             *(f"plugins/runspecimen/{name}" for name in PLUGIN_COMPONENTS),
         )}
         if not required.issubset(names):
@@ -668,13 +714,23 @@ def main(argv: list[str] | None = None) -> int:
     with tempfile.TemporaryDirectory(prefix="runspecimen-release-") as directory:
         temp = Path(directory)
         sdist, wheel, extracted = build_release_archives(temp, env)
+        # DistributionArtifactTests must pass against the *extracted* sdist tree,
+        # not only the git checkout (catches MANIFEST.in omissions).
+        run(
+            sys.executable, "-m", "unittest",
+            "tests.test_phases.DistributionArtifactTests",
+            "-v",
+            cwd=extracted,
+            env=env,
+        )
         artifacts = sdist.parent
         smoke_install(wheel, extracted, temp, env)
         build_plugin(extracted, artifacts / f"runspecimen-plugin-{EXPECTED_PLUGIN_VERSION}.zip")
         report = {
             "ok": True, "version": EXPECTED_PYTHON_VERSION, "plugin_version": EXPECTED_PLUGIN_VERSION,
             "python": sys.version.split()[0], "platform": sys.platform,
-            "checks": ["unit-tests", "source-compile", "source-archive-contents", "wheel-from-source-archive",
+            "checks": ["unit-tests", "source-compile", "source-archive-contents",
+                       "sdist-distribution-artifact-tests", "wheel-from-source-archive",
                        "wheel-contents", "fresh-install-console-script", "installed-cli-doctor-validate-status",
                        "installed-plugin-adapter", "installed-dashboard-http", "dashboard-write-refusal",
                        "installed-keygen-listkeys", "installed-sign-verify-error-handling"],

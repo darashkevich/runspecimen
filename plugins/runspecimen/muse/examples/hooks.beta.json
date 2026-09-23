@@ -1,0 +1,27 @@
+{
+  "_comment": "BETA: Muse project hooks (.muse/hooks.json). Replace /ABS/PATH with your checkout. Trust the project folder before hooks run. Not a marketplace package.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /ABS/PATH/TO/runspecimen/plugins/runspecimen/scripts/block_approve_gate.py --format claude",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*runspecimen.*|.*runspecimen.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /ABS/PATH/TO/runspecimen/plugins/runspecimen/scripts/block_approve_gate.py --format claude",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

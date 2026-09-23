@@ -195,6 +195,76 @@ instructions; there is no separate partner plugin SDK. Do not claim a gallery li
 
 ---
 
+## 2d-bis. Antigravity CLI (`agy`)
+
+**Status:** Native plugin shipped in-repo under `plugins/runspecimen/antigravity/`.
+Gallery / marketplace **not submitted**. Dual path with enterprise Gemini CLI
+(parent extension + `BeforeTool`) is documented; do not claim a gallery listing.
+
+**References:**
+- Migration: https://www.antigravity.google/docs/cli/gcli-migration
+- Plugins: https://www.antigravity.google/docs/plugins
+- Skills: https://www.antigravity.google/docs/skills/
+- MCP: https://antigravity.google/docs/mcp/
+- Hooks: https://antigravity.google/docs/hooks/
+
+### Package locations
+
+```
+plugins/runspecimen/antigravity/plugin.json
+plugins/runspecimen/antigravity/mcp_config.json
+plugins/runspecimen/antigravity/hooks.json      # PreToolUse (Antigravity schema)
+plugins/runspecimen/antigravity/skills/
+plugins/runspecimen/antigravity/rules/
+plugins/runspecimen/antigravity/scripts/        # copies of shared gate + MCP
+plugins/runspecimen/antigravity/README.md
+```
+
+### Local install
+
+```bash
+agy plugin install "$(pwd)/plugins/runspecimen/antigravity"
+# or: agy plugin import gemini  (after linking the parent Gemini extension;
+#     then replace hooks with antigravity/hooks.json — BeforeTool ≠ PreToolUse)
+```
+
+**MANUAL ACTION REQUIRED:** Any Antigravity gallery / curated listing is
+human-only when Yahor wants it. Do not claim listing.
+
+---
+
+## 2d-ter. Meta Muse Code
+
+**Status:** Skill + MCP fragment shipped; PreToolUse gate example marked
+**beta**. Marketplace **not submitted**.
+
+**References:**
+- Extending: https://dev.meta.ai/docs/muse-code/extending/
+
+### Package locations
+
+```
+plugins/runspecimen/muse/README.md
+plugins/runspecimen/muse/skills/runspecimen/SKILL.md
+plugins/runspecimen/muse/examples/mcp_settings.fragment.json
+plugins/runspecimen/muse/examples/hooks.beta.json
+```
+
+### Local install
+
+```bash
+muse skills install "$(pwd)/plugins/runspecimen/muse/skills/runspecimen" --scope project
+# Merge examples/mcp_settings.fragment.json into Muse settings (absolute MCP path).
+# Optional beta: copy examples/hooks.beta.json → .muse/hooks.json (edit ABS paths).
+```
+
+Do **not** document Muse `--yolo` / `--disable-approval` as RunSpecimen-compatible.
+Cloud / remote threads cannot settle local TTY `APPROVE`.
+
+**MANUAL ACTION REQUIRED:** Muse marketplace submission is human-only; not done.
+
+---
+
 ## 2e. JetBrains Junie / IntelliJ
 
 **Status (2026-09-21):** Catalog PR https://github.com/JetBrains/junie-extensions/pull/16 is open. **Not merged** and not a Marketplace listing.
@@ -333,6 +403,8 @@ listings are confirmed live (not pending review).
 | Claude Code community | submitted 2026-09-21 | Anthropic review | not listed yet | https://platform.claude.com/plugins/submit |
 | Grok Build | ❌ | Claude-compat package ready | - | local symlink / self-host |
 | Gemini CLI gallery | topic + root manifest on `main` (`68c334d`) | daily crawler | not indexed yet | repo-root `gemini-extension.json` |
+| Antigravity CLI (`agy`) | ❌ | native plugin ready | not submitted | local `agy plugin install` / import path |
+| Meta Muse Code | ❌ | skill + MCP + beta hooks | not submitted | local skill/MCP install |
 | JetBrains Junie / Marketplace | PR open | JetBrains review | not merged | https://github.com/JetBrains/junie-extensions/pull/16 |
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
 | PyPI | ✅ | — | `0.2.0rc13` (same bytes as GitHub) | [runspecimen 0.2.0rc13](https://pypi.org/project/runspecimen/0.2.0rc13/) |
@@ -355,8 +427,10 @@ After each channel goes live, verify:
 3. **Claude Code:** `/plugin` discover after marketplace add; confirm skill + MCP
 4. **Grok Build:** `grok inspect` shows skill/hooks/MCP after symlink
 5. **Gemini CLI:** `/extensions list` after link/install; confirm MCP + hooks
-6. **Junie:** `/extensions` shows `runspecimen` after marketplace add
-7. **Windsurf:** `@runspecimen` skill resolves; rule appears under Customizations
-8. **PyPI:** `pip install runspecimen==0.2.0rc13` works and `runspecimen --version` shows `0.2.0rc13`
-9. **Homebrew:** `brew install darashkevich/runspecimen/runspecimen` installs `0.2.0rc13` from the published sdist
-10. **Website:** Update with verified live links only
+6. **Antigravity (`agy`):** `agy plugin list` + `/hooks` + `/mcp` after install
+7. **Muse Code:** `muse skills list` shows runspecimen; MCP optional; hooks beta
+8. **Junie:** `/extensions` shows `runspecimen` after marketplace add
+9. **Windsurf:** `@runspecimen` skill resolves; rule appears under Customizations
+10. **PyPI:** `pip install runspecimen==0.2.0rc13` works and `runspecimen --version` shows `0.2.0rc13`
+11. **Homebrew:** `brew install darashkevich/runspecimen/runspecimen` installs `0.2.0rc13` from the published sdist
+12. **Website:** Update with verified live links only

@@ -12,13 +12,13 @@ test helpers, pipe approval input, settle remote-confirm, call companion
 (Codex, Cursor, Claude Code, Grok Build, Gemini CLI, Antigravity/`agy`, Muse
 Code, Junie, Windsurf, MCP) omit `approve` on purpose.
 
-**Trust boundary:** Claude Code **cloud** project threads (and other remote host
-sessions) cannot settle local TTY `APPROVE`. Approve only on a real local
-terminal attached to the workspace. **Multi-agent / worktrees / subagents:** one
-approved run holds one exclusive lease — do not treat one human approval as
-permission for a swarm. Host flags such as Muse `--yolo` /
-`--disable-approval` are **not** RunSpecimen-compatible substitutes. Companion
-`can_approve` stays false; do not add remote approve.
+**Trust boundary:** Claude Code **cloud** project threads (and other remote /
+Muse-hosted sessions) cannot settle local TTY `APPROVE`. Approve only on a real
+local terminal attached to the workspace. **Multi-agent / worktrees /
+subagents:** one approved run holds one exclusive lease — do not treat one human
+approval as permission for a swarm. Muse `--yolo` and `--disable-approval` are
+**not** RunSpecimen-compatible; do not document or use them to skip TTY approve.
+Companion `can_approve` stays false; do not add remote approve.
 
 For a short product summary and documentation URLs, run `runspecimen about` or
 point the user at the dashboard About panel (User guide and FAQ links open on
