@@ -243,9 +243,10 @@ actor CLIService {
     }
 
     func requireCLI() throws -> URL {
+        let channel = DistributionChannel.current
         guard let cliURL else {
             throw AppError(
-                message: DistributionChannel.current.requiresBundledHelper
+                message: channel.requiresBundledHelper
                     ? "Bundled runspecimen engine is not selected. Use Prefer Bundled Helper. Store builds do not install a host CLI."
                     : "runspecimen CLI not selected. Use “Select runspecimen CLI” (Open panel), install 0.2.0rc13+, or stage a bundled helper under Contents/Helpers."
             )
@@ -253,10 +254,15 @@ actor CLIService {
         let fm = FileManager.default
         guard fm.isExecutableFile(atPath: cliURL.path) else {
             throw AppError(
-                message: DistributionChannel.current.requiresBundledHelper
+                message: channel.requiresBundledHelper
                     ? "Bundled runspecimen engine is missing or not executable at:\n\(cliURL.path)\nUse Prefer Bundled Helper. Store builds do not install a host CLI."
                     : "runspecimen CLI is missing or not executable at:\n\(cliURL.path)\nRe-select it via Open panel, or reinstall 0.2.0rc13+."
             )
+        }
+        // Enforce MAS source restriction at execution, not only in Settings UI.
+        let bundled = Self.bundledHelperURL()
+        guard BundledHelperPolicy.acceptsCLI(cliURL, channel: channel, bundled: bundled) else {
+            throw AppError(message: BundledHelperPolicy.rejectionMessage(for: channel))
         }
         return cliURL
     }

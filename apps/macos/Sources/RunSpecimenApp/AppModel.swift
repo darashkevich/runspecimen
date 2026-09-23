@@ -60,19 +60,25 @@ final class AppModel: ObservableObject {
         cliSourceLabel = nil
 
         // Discovery order (ADR-002):
-        // 1) Security-scoped bookmark (sandbox / MAS / user override)
+        // 1) Security-scoped bookmark (Developer ID / local override — never MAS external)
         // 2) Bundled Contents/Helpers/runspecimen when staged
         // 3) PATH / common PyPI install locations (Developer ID / local only — never MAS)
 
         let channel = DistributionChannel.current
 
         if let cliURL = bookmarks.loadCLI() {
-            let fm = FileManager.default
-            if fm.isExecutableFile(atPath: cliURL.path) {
-                await cli.setCLI(cliURL, source: .bookmark)
-                await refreshCLIIdentity(presentAlert: false)
+            if !BundledHelperPolicy.allowsExternalCLI(channel: channel) {
+                // MAS: discard stale external bookmarks so discovery falls through
+                // to the bundled helper (enforced again at requireCLI / run).
+                bookmarks.clearCLI()
             } else {
-                cliSetupIssue = "Saved CLI bookmark points to a missing binary:\n\(cliURL.path)\nRe-select runspecimen via Open panel."
+                let fm = FileManager.default
+                if fm.isExecutableFile(atPath: cliURL.path) {
+                    await cli.setCLI(cliURL, source: .bookmark)
+                    await refreshCLIIdentity(presentAlert: false)
+                } else {
+                    cliSetupIssue = "Saved CLI bookmark points to a missing binary:\n\(cliURL.path)\nRe-select runspecimen via Open panel."
+                }
             }
         }
 
@@ -117,9 +123,22 @@ final class AppModel: ObservableObject {
         await refreshDashboardFlag()
     }
 
-    func openReviewerDemo() async {
+    /// Open (or reopen) the bundled Reviewer Demo.
+    /// Reuses an existing Application Support copy by default so receipts and an
+    /// active demo run are not discarded. Pass `reset: true` only for an explicit
+    /// wipe; that path refuses when lease artifacts are present.
+    func openReviewerDemo(reset: Bool = false) async {
+        guard !isBusy else {
+            self.error = AppError(message: "Cannot open Reviewer Demo while a lifecycle action is in progress.")
+            return
+        }
+        if let status, status.leaseHeldByOther, reset {
+            self.error = AppError(message: "Cannot reset Reviewer Demo while another process holds the workspace lease.")
+            return
+        }
         do {
-            let dest = try ReviewerDemoWorkspace.materialize()
+            let mode: ReviewerDemoMaterializer.Mode = reset ? .resetIfIdle : .reuseExisting
+            let dest = try ReviewerDemoWorkspace.materialize(mode: mode)
             do {
                 try bookmarks.saveWorkspace(dest)
             } catch {
