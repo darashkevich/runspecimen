@@ -286,12 +286,6 @@ def inspect_sdist(path: Path, destination: Path) -> Path:
             "src/runspecimen/dashboard.py", "src/runspecimen/py.typed",
             "scripts/release_check.py", "tests/test_demo_cli.py", "work/compute.py",
             "examples/demo_contract.json",
-            "packaging/homebrew/runspecimen.rb",
-            "examples/templates/research/contract.json",
-            "examples/templates/security/contract.json",
-            "examples/templates/shared-policy/policy.json",
-            "examples/templates/ml-eval/contract.json",
-            "examples/campaigns/adversarial-first-run/contract.json",
             *(f"plugins/runspecimen/{name}" for name in PLUGIN_COMPONENTS),
         )}
         if not required.issubset(names):
