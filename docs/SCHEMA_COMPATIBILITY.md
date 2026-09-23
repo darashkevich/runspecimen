@@ -22,10 +22,11 @@ kinds/versions fail closed. They do not replace `verify`.
 - Forward compatibility: new optional fields may be added under the same
   version only when older engines that reject unknown fields are no longer
   required. Until then, unknown top-level or nested fields fail closed.
-- Optional on version 1, accepted by `0.2.0rc13` and rejected by
-  published `0.2.0rc12`: `isolation` (`backend` of `none`, `sandbox-exec`, or
-  `bwrap`, plus optional `network`) and `policy` (`id`, `path`, `sha256` of a
-  workspace-local JSON file). Absent `isolation` means backend `none`.
+- Optional on version 1, accepted by engines that list them: `isolation`,
+  `policy`, and `task_manifest` (`id`, `path`, `sha256` of a workspace-local
+  task manifest). Absent `isolation` means backend `none`. Absent
+  `task_manifest` means requirement checks cannot execute until bound and
+  human-approved.
 - Policy files remain `version: 1` with **additive optional** template fields
   (`protected_paths`, `expected_outputs`, `required_verification`,
   `ops_requiring_distinct_run`, `required_predecessor_evidence`, `template_id`,

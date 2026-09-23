@@ -89,10 +89,23 @@ class LocalDeterministicEvalProvider:
             contract = load_contract(dest / contract_rel)
             manifest = None
             if isinstance(manifest_rel, str):
+                from runspecimen.requirements import AuthorizationError
+
                 manifest = load_task_manifest(dest / manifest_rel)
-                report = run_requirements(
-                    workspace=dest, contract=contract, manifest=manifest
-                )
+                try:
+                    report = run_requirements(
+                        workspace=dest, contract=contract, manifest=manifest
+                    )
+                except AuthorizationError as exc:
+                    return {
+                        "outcome": OUTCOME_UNVERIFIED,
+                        "deterministic": True,
+                        "error": str(exc),
+                        "note": (
+                            "execution-gated without human APPROVE; "
+                            "local suite does not fabricate approval"
+                        ),
+                    }
                 return {
                     "outcome": report.get("aggregate_outcome"),
                     "deterministic": True,

@@ -154,6 +154,40 @@ def _approve_under_lease(
     isolation, policy = execution_constraints(contract, workspace)
     approver = local_approver()
     policy_line = "none" if policy is None else f"{policy['id']} ({policy['sha256'][:12]})"
+    manifest_line = "none"
+    check_lines: list[str] = []
+    if contract.task_manifest is not None:
+        from runspecimen.hashutil import sha256_file
+        from runspecimen.paths import ensure_within
+        from runspecimen.requirements import load_task_manifest
+
+        mpath = ensure_within(
+            workspace, Path(contract.task_manifest.path), label="task_manifest.path"
+        )
+        live = sha256_file(mpath)
+        if live != contract.task_manifest.sha256:
+            raise ApprovalError(
+                "task_manifest.sha256 does not match file bytes; "
+                "rebind the contract before approval"
+            )
+        manifest = load_task_manifest(mpath)
+        if manifest.id != contract.task_manifest.id:
+            raise ApprovalError(
+                f"task_manifest.id mismatch: contract={contract.task_manifest.id!r} "
+                f"file={manifest.id!r}"
+            )
+        manifest_line = (
+            f"{contract.task_manifest.id} ({contract.task_manifest.sha256[:12]}) "
+            f"path={contract.task_manifest.path}"
+        )
+        for req in manifest.requirements:
+            if req.check is None:
+                check_lines.append(f"    - {req.id}: manual_unverifiable")
+            else:
+                check_lines.append(
+                    f"    - {req.id}: {req.check.provider}/{req.check.id} "
+                    f"config={req.check.config!r}"
+                )
 
     stdout.write(
         f"Approve bounded run?\n"
@@ -170,6 +204,12 @@ def _approve_under_lease(
         f"  prior:    {contract.predecessor!r}\n"
         f"  isolation: {isolation['claim']}\n"
         f"  policy:   {policy_line}\n"
+        f"  manifest: {manifest_line}\n"
+    )
+    if check_lines:
+        stdout.write("  checks (bound before approval):\n")
+        stdout.write("\n".join(check_lines) + "\n")
+    stdout.write(
         f"  approver: {approver['user']} (local OS user)\n"
         f"  contract: {contract.contract_hash}\n"
         f"  source:   {source_hash}\n"
@@ -263,6 +303,44 @@ def complete_approval_document(
     }
     if policy is not None:
         doc["policy"] = policy
+    if contract.task_manifest is not None:
+        from runspecimen.hashutil import sha256_bytes, canonical_json_bytes
+        from runspecimen.paths import ensure_within
+        from runspecimen.requirements import load_task_manifest
+
+        mpath = ensure_within(
+            workspace, Path(contract.task_manifest.path), label="task_manifest.path"
+        )
+        manifest = load_task_manifest(mpath)
+        checks = []
+        for req in manifest.requirements:
+            if req.check is None:
+                checks.append({"requirement_id": req.id, "manual_unverifiable": True})
+            else:
+                checks.append(
+                    {
+                        "requirement_id": req.id,
+                        "provider": req.check.provider,
+                        "id": req.check.id,
+                        "identity": sha256_bytes(
+                            canonical_json_bytes(
+                                {
+                                    "provider": req.check.provider,
+                                    "id": req.check.id,
+                                    "config": req.check.config,
+                                }
+                            )
+                        ),
+                        "config": req.check.config,
+                    }
+                )
+        doc["task_manifest"] = {
+            "id": contract.task_manifest.id,
+            "path": contract.task_manifest.path,
+            "sha256": contract.task_manifest.sha256,
+            "manifest_hash": manifest.manifest_hash,
+            "checks": checks,
+        }
 
     atomic_write_json(approval_path(state_dir), doc)
     log = EventLog.for_state_dir(state_dir)

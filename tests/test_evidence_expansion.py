@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.helpers import PYTHON, RunSpecimenTestCase, base_contract, write_contract
+from tests.helpers import PYTHON, RunSpecimenTestCase, approve, base_contract, write_contract
 
 from runspecimen.artifact import bind_artifact_digest, verify_artifact_digest
 from runspecimen.atomic import atomic_write_json
@@ -21,6 +21,7 @@ from runspecimen.policy import execution_constraints
 from runspecimen.requirements import (
     OUTCOME_FAILED,
     OUTCOME_PASSED,
+    AuthorizationError,
     EvidenceError,
     load_task_manifest,
     run_requirements,
@@ -33,7 +34,7 @@ from runspecimen.certificate import verify_run_receipt
 from runspecimen.scenes import run_scenes
 
 
-def _manifest(req_id: str, provider_config: dict, *, manual: bool = False) -> dict:
+def _manifest(req_id: str, provider_config: dict, *, manual: bool = False, mid: str = "m1") -> dict:
     req: dict = {
         "id": req_id,
         "description": "demo requirement",
@@ -49,11 +50,25 @@ def _manifest(req_id: str, provider_config: dict, *, manual: bool = False) -> di
     doc = {
         "schema_kind": "task_manifest",
         "schema_version": 1,
-        "id": "m1",
+        "id": mid,
         "description": "test manifest",
         "requirements": [req],
     }
     return bind_artifact_digest(doc)
+
+
+def _approved_contract(
+    ws: Path, mpath: Path, *, run_id: str = "run-a", mid: str = "m1", **overrides
+) -> tuple[Path, object]:
+    doc = base_contract(run_id=run_id, **overrides)
+    doc["task_manifest"] = {
+        "id": mid,
+        "path": str(mpath.relative_to(ws)),
+        "sha256": sha256_file(mpath),
+    }
+    cpath = write_contract(ws, f"contract-{run_id}.json", doc)
+    approve(ws, cpath)
+    return cpath, load_contract(cpath)
 
 
 class EvidenceExpansionTests(RunSpecimenTestCase):
@@ -116,9 +131,6 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
             load_task_manifest(path)
 
     def test_missing_failed_skipped_not_success(self) -> None:
-        cpath = write_contract(self.ws, "contract.json", base_contract())
-        contract = load_contract(cpath)
-
         # fail via command_status
         m_fail = self.ws / "m_fail.json"
         atomic_write_json(
@@ -130,8 +142,10 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
                     "id": "c",
                     "config": {"argv": [PYTHON, "-c", "raise SystemExit(2)"], "exit_code": 0},
                 },
+                mid="m-fail",
             ),
         )
+        _, contract = _approved_contract(self.ws, m_fail, run_id="run-fail", mid="m-fail")
         fail_report = run_requirements(
             workspace=self.ws, contract=contract, manifest=load_task_manifest(m_fail)
         )
@@ -176,15 +190,13 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
                 }
             ),
         )
+        _, contract2 = _approved_contract(self.ws, m_skip, run_id="run-skip", mid="m-skip")
         skip_report = run_requirements(
-            workspace=self.ws, contract=contract, manifest=load_task_manifest(m_skip)
+            workspace=self.ws, contract=contract2, manifest=load_task_manifest(m_skip)
         )
         self.assertNotEqual(skip_report["aggregate_outcome"], OUTCOME_PASSED)
 
     def test_source_change_during_checks_invalidates_final_cert(self) -> None:
-        cpath = write_contract(self.ws, "contract.json", base_contract())
-        contract = load_contract(cpath)
-        # Provider that mutates source mid-check
         from runspecimen import requirements as reqmod
 
         class MutatingProvider:
@@ -203,8 +215,9 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
         mpath = self.ws / "m.json"
         atomic_write_json(
             mpath,
-            _manifest("r1", {"provider": "mutating", "id": "m", "config": {}}),
+            _manifest("r1", {"provider": "mutating", "id": "m", "config": {}}, mid="m-mut"),
         )
+        _, contract = _approved_contract(self.ws, mpath, run_id="run-mut", mid="m-mut")
         report = run_requirements(
             workspace=self.ws, contract=contract, manifest=load_task_manifest(mpath)
         )
@@ -213,8 +226,6 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
         self.assertNotEqual(report["aggregate_outcome"], OUTCOME_PASSED)
 
     def test_requirement_edit_invalidates_applicability(self) -> None:
-        cpath = write_contract(self.ws, "contract.json", base_contract())
-        contract = load_contract(cpath)
         mpath = self.ws / "m.json"
         atomic_write_json(
             mpath,
@@ -225,8 +236,10 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
                     "id": "c",
                     "config": {"argv": [PYTHON, "-c", "pass"]},
                 },
+                mid="m-edit",
             ),
         )
+        _, contract = _approved_contract(self.ws, mpath, run_id="run-edit", mid="m-edit")
         report = run_requirements(
             workspace=self.ws, contract=contract, manifest=load_task_manifest(mpath)
         )
@@ -239,8 +252,8 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
                 "id": "c",
                 "config": {"argv": [PYTHON, "-c", "pass"], "timeout_sec": 5},
             },
+            mid="m-edit",
         )
-        new_doc["id"] = "m1"
         atomic_write_json(mpath, new_doc)
         fresh = check_freshness_for_run(
             workspace=self.ws,
@@ -248,6 +261,27 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
             manifest=load_task_manifest(mpath),
         )
         self.assertEqual(fresh["applicability"], "stale")
+
+    def test_unapproved_run_requirements_refuses(self) -> None:
+        mpath = self.ws / "m.json"
+        atomic_write_json(
+            mpath,
+            _manifest(
+                "r1",
+                {
+                    "provider": "command_status",
+                    "id": "c",
+                    "config": {"argv": [PYTHON, "-c", "pass"]},
+                },
+            ),
+        )
+        cpath = write_contract(self.ws, "contract.json", base_contract())
+        with self.assertRaises(AuthorizationError):
+            run_requirements(
+                workspace=self.ws,
+                contract=load_contract(cpath),
+                manifest=load_task_manifest(mpath),
+            )
 
     def test_policy_refusal_actionable(self) -> None:
         policy = self.ws / "policy.json"
@@ -352,8 +386,6 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
         self.assertTrue(any(f.get("reason") == "referenced_input_changed" for f in flags))
 
     def test_tampered_evidence_report_detected(self) -> None:
-        cpath = write_contract(self.ws, "contract.json", base_contract())
-        contract = load_contract(cpath)
         mpath = self.ws / "m.json"
         atomic_write_json(
             mpath,
@@ -364,8 +396,10 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
                     "id": "c",
                     "config": {"argv": [PYTHON, "-c", "pass"]},
                 },
+                mid="m-tamp",
             ),
         )
+        _, contract = _approved_contract(self.ws, mpath, run_id="run-tamp", mid="m-tamp")
         report = run_requirements(
             workspace=self.ws, contract=contract, manifest=load_task_manifest(mpath)
         )
@@ -386,7 +420,6 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
         self.assertNotIn("\nAPPROVE\n", json.dumps(result))
 
     def test_cli_requirements_and_doctor(self) -> None:
-        cpath = write_contract(self.ws, "contract.json", base_contract())
         mpath = self.ws / "m.json"
         atomic_write_json(
             mpath,
@@ -397,8 +430,11 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
                     "id": "c",
                     "config": {"argv": [PYTHON, "-c", "pass"]},
                 },
+                mid="m-cli",
             ),
         )
+        cpath = write_contract(self.ws, "contract.json", base_contract())
+        # Unapproved check must refuse (not execute).
         self.assertEqual(
             main(
                 [
@@ -412,9 +448,13 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
                     str(mpath),
                 ]
             ),
-            0,
+            2,
         )
         self.assertEqual(main(["doctor", "--workspace", str(self.ws)]), 0)
+        self.assertEqual(
+            main(["requirements", "validate", "--manifest", str(mpath)]),
+            0,
+        )
 
 
 if __name__ == "__main__":

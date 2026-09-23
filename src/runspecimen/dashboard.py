@@ -315,15 +315,25 @@ def _evidence_panel(*, workspace: Path, contract: Contract) -> dict[str, Any]:
         ),
     }
     try:
-        from runspecimen.requirements import load_evidence_report
+        from runspecimen.requirements import load_evidence_report, load_task_manifest
         from runspecimen.freshness import check_freshness_for_run
+        from runspecimen.paths import ensure_within
 
         report = load_evidence_report(workspace, contract.campaign_id, contract.run_id)
         panel["check_outcome"] = report.get("aggregate_outcome")
         panel["evidence_digest"] = report.get("artifact_digest")
         panel["summary"] = report.get("summary")
         panel["final_state_certifiable"] = report.get("final_state_certifiable")
-        fresh = check_freshness_for_run(workspace=workspace, contract=contract, manifest=None)
+        panel["authenticity"] = report.get("authenticity")
+        manifest = None
+        if contract.task_manifest is not None:
+            mpath = ensure_within(
+                workspace, Path(contract.task_manifest.path), label="task_manifest.path"
+            )
+            manifest = load_task_manifest(mpath)
+        fresh = check_freshness_for_run(
+            workspace=workspace, contract=contract, manifest=manifest
+        )
         panel["applicability"] = fresh.get("applicability")
         panel["freshness_changes"] = fresh.get("changes")
     except Exception:  # noqa: BLE001

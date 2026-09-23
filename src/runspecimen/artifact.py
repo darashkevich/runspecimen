@@ -29,6 +29,7 @@ SCHEMA_KINDS = frozenset(
         "eval_suite",
         "eval_result",
         "evidence_attestation",
+        "evidence_report_pointer",
     }
 )
 

@@ -22,7 +22,7 @@ from runspecimen.contract import Contract
 from runspecimen.errors import RunSpecimenError
 from runspecimen.hashutil import hash_source, sha256_file
 from runspecimen.paths import ensure_dir, ensure_within, resolve_workspace, run_state_dir
-from runspecimen.requirements import TaskManifest, load_evidence_report
+from runspecimen.requirements import TaskManifest, load_evidence_report, load_task_manifest
 from runspecimen.runtime import runtime_provenance
 
 
@@ -43,6 +43,60 @@ def _policy_digest(contract: Contract, workspace: Path) -> str | None:
     return sha256_file(path)
 
 
+def _resolve_bound_manifest(
+    workspace: Path, contract: Contract, manifest: TaskManifest | None
+) -> tuple[TaskManifest | None, list[dict[str, Any]]]:
+    """Resolve the contract-bound manifest; missing binding is a freshness failure."""
+    changes: list[dict[str, Any]] = []
+    if contract.task_manifest is None:
+        if manifest is None:
+            changes.append(
+                {
+                    "kind": "task_manifest",
+                    "detail": (
+                        "no task_manifest bound on contract and none supplied; "
+                        "missing manifests must not yield applicable"
+                    ),
+                }
+            )
+            return None, changes
+        return manifest, changes
+
+    try:
+        bound_path = ensure_within(
+            workspace, Path(contract.task_manifest.path), label="task_manifest.path"
+        )
+        live = load_task_manifest(bound_path)
+    except Exception as exc:  # noqa: BLE001
+        changes.append(
+            {
+                "kind": "task_manifest",
+                "detail": f"bound task_manifest could not be loaded: {exc}",
+            }
+        )
+        return None, changes
+
+    if live.manifest_hash != contract.task_manifest.sha256:
+        changes.append(
+            {
+                "kind": "task_manifest",
+                "detail": "bound task_manifest bytes differ from contract.task_manifest.sha256",
+                "recorded": contract.task_manifest.sha256,
+                "current": live.manifest_hash,
+            }
+        )
+    if manifest is not None and manifest.manifest_hash != live.manifest_hash:
+        changes.append(
+            {
+                "kind": "task_manifest",
+                "detail": "caller-supplied manifest differs from contract-bound manifest",
+                "recorded": live.manifest_hash,
+                "current": manifest.manifest_hash,
+            }
+        )
+    return live, changes
+
+
 def evaluate_freshness(
     *,
     workspace: Path,
@@ -61,6 +115,11 @@ def evaluate_freshness(
     changes: list[dict[str, Any]] = []
     affected: list[str] = []
 
+    resolved_manifest, manifest_changes = _resolve_bound_manifest(
+        workspace, contract, manifest
+    )
+    changes.extend(manifest_changes)
+
     if evidence is None:
         applicability = "no_evidence"
         changes.append(
@@ -70,7 +129,35 @@ def evaluate_freshness(
             }
         )
     else:
-        verify_artifact_digest(evidence)
+        # Strip load-time authenticity annotations (not part of stored digest).
+        verify_artifact_digest(
+            {
+                k: v
+                for k, v in evidence.items()
+                if k
+                not in {
+                    "authenticity",
+                    "authenticity_binding",
+                    "authenticity_note",
+                    "approval_present",
+                }
+            }
+        )
+        authenticity = evidence.get("authenticity")
+        if authenticity and authenticity != "receipt_bound":
+            # Unauthenticated historical docs can still be freshness-evaluated,
+            # but never reported as currently applicable without authenticity.
+            changes.append(
+                {
+                    "kind": "authenticity",
+                    "detail": (
+                        "evidence report is unauthenticated "
+                        "(checksum is not receipt authenticity)"
+                    ),
+                    "authenticity": authenticity,
+                }
+            )
+
         if evidence.get("contract_hash") != contract.contract_hash:
             changes.append(
                 {
@@ -80,17 +167,66 @@ def evaluate_freshness(
                     "current": contract.contract_hash,
                 }
             )
-        if manifest is not None and evidence.get("manifest_hash") != manifest.manifest_hash:
+
+        if resolved_manifest is None:
             changes.append(
                 {
                     "kind": "task_manifest",
-                    "detail": "task requirements/check config changed",
-                    "recorded": evidence.get("manifest_hash"),
-                    "current": manifest.manifest_hash,
+                    "detail": "manifest unavailable for freshness comparison",
                 }
             )
-            if manifest is not None:
-                affected.extend(r.id for r in manifest.requirements)
+        else:
+            if evidence.get("manifest_hash") != resolved_manifest.manifest_hash:
+                changes.append(
+                    {
+                        "kind": "task_manifest",
+                        "detail": "task requirements/check config changed",
+                        "recorded": evidence.get("manifest_hash"),
+                        "current": resolved_manifest.manifest_hash,
+                    }
+                )
+                affected.extend(r.id for r in resolved_manifest.requirements)
+
+            recorded_inputs = evidence.get("input_fingerprints") or {}
+            for req in resolved_manifest.requirements:
+                from runspecimen.requirements import _fingerprint_requirement_inputs
+
+                current_fp = _fingerprint_requirement_inputs(workspace, req)
+                recorded_fp = recorded_inputs.get(req.id) or {}
+                if not recorded_fp:
+                    changes.append(
+                        {
+                            "kind": "inputs",
+                            "requirement_id": req.id,
+                            "detail": (
+                                "evidence lacks input/source_scope fingerprints; "
+                                "missing inputs must not yield applicable"
+                            ),
+                        }
+                    )
+                    affected.append(req.id)
+                    continue
+                if current_fp != recorded_fp:
+                    changes.append(
+                        {
+                            "kind": "inputs",
+                            "requirement_id": req.id,
+                            "detail": "declared inputs or source_scope changed",
+                            "recorded": recorded_fp,
+                            "current": current_fp,
+                        }
+                    )
+                    affected.append(req.id)
+                if any(v == "missing" for v in current_fp.values()):
+                    changes.append(
+                        {
+                            "kind": "inputs",
+                            "requirement_id": req.id,
+                            "detail": "declared input/source_scope path missing on disk",
+                            "current": current_fp,
+                        }
+                    )
+                    affected.append(req.id)
 
         recorded_source = evidence.get("source_hash_after") or evidence.get("source_hash_before")
         if recorded_source and recorded_source != source_hash:
@@ -105,15 +241,8 @@ def evaluate_freshness(
                     "current": source_hash,
                 }
             )
-            if manifest is not None:
-                for req in manifest.requirements:
-                    if not req.source_scope or any(
-                        True for _ in req.source_scope
-                    ):
-                        # Conservative: any source change affects requirements
-                        # unless they declare an empty scope meaning "none"
-                        # (empty scope still conservatively invalidated).
-                        affected.append(req.id)
+            if resolved_manifest is not None:
+                affected.extend(r.id for r in resolved_manifest.requirements)
 
         if evidence.get("source_changed_during_checks"):
             changes.append(
@@ -145,10 +274,9 @@ def evaluate_freshness(
                     }
                 )
 
-        # Evidence artifact digests: if recorded artifacts are missing/changed → stale.
+        # Rehash durable evidence artifacts when paths were recorded.
+        artifact_paths = evidence.get("evidence_artifact_paths") or {}
         for label, digest in (evidence.get("evidence_digests") or {}).items():
-            # Digests are content hashes of ephemeral junit files; absence is expected
-            # after cleanup. Record as informational limitation, not auto-pass.
             if not isinstance(digest, str):
                 changes.append(
                     {
@@ -156,10 +284,80 @@ def evaluate_freshness(
                         "detail": f"malformed evidence digest for {label}",
                     }
                 )
+                continue
+            rel = artifact_paths.get(label)
+            if not isinstance(rel, str) or not rel:
+                # Ephemeral provider digests (temp junit/stream) cannot be rehashed;
+                # recorded in limitations, not treated as proof of freshness.
+                continue
+            try:
+                path = ensure_within(workspace, Path(rel), label=f"evidence:{label}")
+            except Exception as exc:  # noqa: BLE001
+                changes.append(
+                    {
+                        "kind": "evidence_artifact",
+                        "detail": f"evidence artifact path invalid for {label}: {exc}",
+                    }
+                )
+                continue
+            if not path.is_file():
+                changes.append(
+                    {
+                        "kind": "evidence_artifact",
+                        "detail": f"evidence artifact missing for {label}",
+                        "path": rel,
+                        "recorded": digest,
+                    }
+                )
+                continue
+            live = sha256_file(path)
+            if live != digest.lower():
+                changes.append(
+                    {
+                        "kind": "evidence_artifact",
+                        "detail": f"evidence artifact changed for {label}",
+                        "path": rel,
+                        "recorded": digest,
+                        "current": live,
+                    }
+                )
 
-        if policy_hash is not None:
-            # Policy is part of contract hash when bound; also surface explicitly.
-            pass
+        recorded_policy = evidence.get("policy_sha256")
+        if contract.policy is not None:
+            if policy_hash is None:
+                changes.append(
+                    {
+                        "kind": "policy",
+                        "detail": "policy file missing; cannot confirm policy freshness",
+                    }
+                )
+            else:
+                if recorded_policy and recorded_policy != policy_hash:
+                    changes.append(
+                        {
+                            "kind": "policy",
+                            "detail": "policy file bytes changed since evidence capture",
+                            "recorded": recorded_policy,
+                            "current": policy_hash,
+                        }
+                    )
+                elif contract.policy.sha256 != policy_hash:
+                    changes.append(
+                        {
+                            "kind": "policy",
+                            "detail": "live policy file does not match contract.policy.sha256",
+                            "recorded": contract.policy.sha256,
+                            "current": policy_hash,
+                        }
+                    )
+        elif recorded_policy:
+            changes.append(
+                {
+                    "kind": "policy",
+                    "detail": "evidence recorded a policy hash but contract has no policy",
+                    "recorded": recorded_policy,
+                }
+            )
 
         if changes:
             applicability = "stale"
@@ -172,7 +370,7 @@ def evaluate_freshness(
     reverify_plan = {
         "requires_new_approval": bool(changes),
         "steps": [
-            "Author or retain the current contract (new run_id if execution is needed).",
+            "Author or retain the current contract with task_manifest bound (new run_id if execution is needed).",
             "Human APPROVE on a real TTY (agents must not type APPROVE).",
             "preflight → run (if execution required) → postflight.",
             "runspecimen requirements check to capture fresh evidence.",
@@ -190,7 +388,7 @@ def evaluate_freshness(
         "campaign_id": contract.campaign_id,
         "run_id": contract.run_id,
         "contract_hash": contract.contract_hash,
-        "manifest_hash": manifest.manifest_hash if manifest else None,
+        "manifest_hash": resolved_manifest.manifest_hash if resolved_manifest else None,
         "evidence_report_digest": (evidence or {}).get("artifact_digest"),
         "current_source_hash": source_hash,
         "current_runtime_id": runtime.get("runtime_id"),
@@ -205,6 +403,7 @@ def evaluate_freshness(
             "Conservative invalidation: undeclared dependencies are assumed relevant.",
             "Applicability is distinct from receipt authenticity and check outcomes.",
             "Unchanged final digest does not prove files were never temporarily modified.",
+            "Missing inputs or manifests never yield applicable.",
         ],
     }
     return bind_artifact_digest(report)

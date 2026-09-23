@@ -19,6 +19,8 @@ from runspecimen.hashutil import sha256_file
 from runspecimen.requirements import (
     OUTCOME_FAILED,
     OUTCOME_PASSED,
+    AuthorizationError,
+    EvidenceError,
     load_task_manifest,
     run_requirements,
     write_evidence_report,
@@ -109,7 +111,7 @@ def _seed_mini_workspace(root: Path) -> dict[str, Path]:
                 "inputs": ["work/app.py"],
                 "source_scope": ["work"],
                 "required_evidence": ["junit"],
-                "expected": {"tests_min": 1},
+                "expected": {"minimum_tests": 1},
             }
         ],
     }
@@ -212,42 +214,112 @@ def run_scenes(*, workspace: Path, prepare_only: bool = False) -> dict[str, Any]
             "scenes": [],
         }
 
-    # Scene 1: requirements pass
+    # Scene 1: requirements check refuses without human APPROVE
     m_pass = load_task_manifest(paths["manifest_pass"])
-    report_pass = run_requirements(workspace=demo, contract=contract, manifest=m_pass)
-    write_evidence_report(demo, contract.campaign_id, contract.run_id, report_pass)
+    refused = False
+    refuse_msg = ""
+    try:
+        run_requirements(workspace=demo, contract=contract, manifest=m_pass)
+    except AuthorizationError as exc:
+        refused = True
+        refuse_msg = str(exc)
     scenes.append(
         {
             "id": 1,
-            "name": "requirements_pass",
-            "aggregate_outcome": report_pass["aggregate_outcome"],
-            "ok": report_pass["aggregate_outcome"] == OUTCOME_PASSED,
+            "name": "requirements_refuses_unapproved",
+            "ok": refused,
+            "error": refuse_msg,
         }
     )
 
-    # Scene 2: requirements fail
-    m_fail = load_task_manifest(paths["manifest_fail"])
-    report_fail = run_requirements(workspace=demo, contract=contract, manifest=m_fail)
+    # Scene 2: unsupported expectations fail closed at validation
+    bad_expected = {
+        "schema_kind": "task_manifest",
+        "schema_version": 1,
+        "id": "bad-expected",
+        "description": "unsupported expectation",
+        "requirements": [
+            {
+                "id": "r1",
+                "description": "bad",
+                "check": {
+                    "provider": "command_status",
+                    "id": "c",
+                    "config": {"argv": ["true"]},
+                },
+                "inputs": [],
+                "source_scope": [],
+                "required_evidence": [],
+                "expected": {"not_a_real_expectation": True},
+            }
+        ],
+    }
+    bad_path = demo / "manifest_bad_expected.json"
+    atomic_write_json(bad_path, bind_artifact_digest(bad_expected))
+    expected_rejected = False
+    try:
+        load_task_manifest(bad_path)
+    except EvidenceError:
+        expected_rejected = True
     scenes.append(
         {
             "id": 2,
-            "name": "requirements_fail",
-            "aggregate_outcome": report_fail["aggregate_outcome"],
-            "ok": report_fail["aggregate_outcome"] == OUTCOME_FAILED,
+            "name": "unsupported_expected_rejected",
+            "ok": expected_rejected,
         }
     )
 
-    # Scene 3: unverified (skip + manual)
-    m_skip = load_task_manifest(paths["manifest_skip"])
-    report_skip = run_requirements(workspace=demo, contract=contract, manifest=m_skip)
+    # Scene 3: required_evidence / expected are enforced in outcome helper
+    from runspecimen.requirements import Requirement, CheckRef, _requirement_outcome
+
+    req = Requirement(
+        id="r-ev",
+        description="needs evidence",
+        check=CheckRef(provider="unittest", id="u", config={}),
+        inputs=(),
+        source_scope=(),
+        required_evidence=("never-produced.json",),
+        expected={"minimum_tests": 100},
+        rationale=None,
+        manual_unverifiable=False,
+    )
+    outcome = _requirement_outcome(
+        {"outcome": OUTCOME_PASSED, "tests": [{"name": "t", "outcome": OUTCOME_PASSED}], "artifacts": {}},
+        req,
+    )
     scenes.append(
         {
             "id": 3,
-            "name": "requirements_unverified",
-            "aggregate_outcome": report_skip["aggregate_outcome"],
-            "ok": report_skip["aggregate_outcome"] == "unverified",
+            "name": "required_evidence_and_expected_enforced",
+            "outcome": outcome,
+            "ok": outcome != OUTCOME_PASSED,
         }
     )
+
+    # Persist an unauthenticated historical evidence stub for freshness demos.
+    stub_report = bind_artifact_digest(
+        {
+            "schema_kind": "evidence_report",
+            "schema_version": 1,
+            "campaign_id": contract.campaign_id,
+            "run_id": contract.run_id,
+            "contract_hash": contract.contract_hash,
+            "manifest_id": m_pass.id,
+            "manifest_hash": m_pass.manifest_hash,
+            "source_hash_before": "a" * 64,
+            "source_hash_after": "a" * 64,
+            "source_changed_during_checks": False,
+            "final_state_certifiable": True,
+            "runtime_fingerprint": {},
+            "input_fingerprints": {},
+            "requirements": [],
+            "evidence_digests": {},
+            "summary": {"passed": 0, "failed": 0, "skipped": 0, "error": 0, "unverified": 0, "manual_unverifiable": 0, "total": 0},
+            "aggregate_outcome": "unverified",
+            "aggregate_note": "scenes stub; unauthenticated",
+        }
+    )
+    write_evidence_report(demo, contract.campaign_id, contract.run_id, stub_report)
 
     # Scene 4: valid historical receipt authenticity distinct from applicability
     # Use showcase golden certificate if present in repo; else record digest authenticity locally.
@@ -436,34 +508,55 @@ def run_scenes(*, workspace: Path, prepare_only: bool = False) -> dict[str, Any]
         cdoc["run_id"] = "run-1"
         atomic_write_json(root / "contract.json", cdoc)
         shutil.copy(paths["manifest_pass"], root / "manifest.json")
-        # Refresh evidence for each
-        creport = run_requirements(
-            workspace=root,
-            contract=load_contract(root / "contract.json"),
-            manifest=load_task_manifest(root / "manifest.json"),
+        # Unauthenticated stub evidence (scenes never fabricate APPROVE).
+        mlocal = load_task_manifest(root / "manifest.json")
+        creport = bind_artifact_digest(
+            {
+                "schema_kind": "evidence_report",
+                "schema_version": 1,
+                "campaign_id": cdoc["campaign_id"],
+                "run_id": cdoc["run_id"],
+                "contract_hash": load_contract(root / "contract.json").contract_hash,
+                "manifest_id": mlocal.id,
+                "manifest_hash": mlocal.manifest_hash,
+                "source_hash_before": "b" * 64,
+                "source_hash_after": "b" * 64,
+                "source_changed_during_checks": False,
+                "final_state_certifiable": True,
+                "runtime_fingerprint": {},
+                "input_fingerprints": {},
+                "requirements": [{"requirement_id": "req-pass", "outcome": "passed"}],
+                "evidence_digests": {},
+                "summary": {
+                    "passed": 1,
+                    "failed": 0,
+                    "skipped": 0,
+                    "error": 0,
+                    "unverified": 0,
+                    "manual_unverifiable": 0,
+                    "total": 1,
+                },
+                "aggregate_outcome": "passed",
+                "aggregate_note": "scenes stub",
+            }
         )
         write_evidence_report(root, cdoc["campaign_id"], cdoc["run_id"], creport)
 
     # Change producer artifact after consumer evidence — invalidate
     _write(producer / "outputs" / "api.json", json.dumps({"api_version": 2}) + "\n")
     # Record digest into consumer evidence manually for dependency check
-    from runspecimen.requirements import load_evidence_report
+    from runspecimen.requirements import load_evidence_report, evidence_captures_dir
     from runspecimen.atomic import read_json
     from runspecimen.artifact import verify_artifact_digest
 
-    c_evidence_path = (
-        consumer
-        / ".runspecimen"
-        / "runs"
-        / "scenes-consumer"
-        / "run-1"
-        / "evidence_report.json"
-    )
-    c_ev = read_json(c_evidence_path)
+    c_ev = load_evidence_report(consumer, "scenes-consumer", "run-1")
+    # Drop authenticity annotation fields before rebinding a tampered stub.
+    for key in ("authenticity", "authenticity_binding", "authenticity_note", "approval_present"):
+        c_ev.pop(key, None)
     c_ev["evidence_digests"]["dep:outputs/api.json"] = "0" * 64  # stale recorded digest
     c_ev.pop("artifact_digest", None)
     c_ev = bind_artifact_digest(c_ev)
-    atomic_write_json(c_evidence_path, c_ev)
+    write_evidence_report(consumer, "scenes-consumer", "run-1", c_ev)
 
     plan = {
         "schema_kind": "coordination_plan",
@@ -532,13 +625,13 @@ def run_scenes(*, workspace: Path, prepare_only: bool = False) -> dict[str, Any]
                 "fixture_version": "1",
                 "contract": "contract.json",
                 "manifest": "manifest_pass.json",
-                "expected_outcome": "passed",
+                "expected_outcome": "unverified",
                 "judgment": "deterministic",
             }
         ],
     }
     suite = bind_artifact_digest(suite)
-    # Baseline should pass
+    # Baseline stays unverified without APPROVE (no fabricated approval).
     baseline = run_eval_suite(workspace=demo, suite=suite)
     # Candidate: break fixture expectation by pointing at fail manifest
     suite_bad = json.loads(json.dumps(suite))

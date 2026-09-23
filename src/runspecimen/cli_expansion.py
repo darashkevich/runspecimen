@@ -26,7 +26,12 @@ def register_expansion_parsers(sub: Any) -> None:
     )
     _ws(p_req_check)
     p_req_check.add_argument("--contract", type=Path, required=True)
-    p_req_check.add_argument("--manifest", type=Path, required=True)
+    p_req_check.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="Task manifest (defaults to contract.task_manifest.path when bound)",
+    )
     p_req_check.add_argument(
         "--write-attestation",
         action="store_true",
@@ -208,6 +213,7 @@ def handle_expansion(args: argparse.Namespace, workspace: Path) -> int | None:
 
 def _requirements(args: argparse.Namespace, workspace: Path) -> int:
     from runspecimen.requirements import (
+        AuthorizationError,
         build_evidence_attestation,
         ci_machine_report,
         load_evidence_report,
@@ -238,10 +244,36 @@ def _requirements(args: argparse.Namespace, workspace: Path) -> int:
         return 0
     if args.requirements_command == "check":
         contract = load_contract(args.contract)
-        manifest = load_task_manifest(args.manifest)
-        report = run_requirements(
-            workspace=workspace, contract=contract, manifest=manifest
-        )
+        if args.manifest is not None:
+            manifest = load_task_manifest(args.manifest)
+        elif contract.task_manifest is not None:
+            from runspecimen.paths import ensure_within
+
+            mpath = ensure_within(
+                workspace, Path(contract.task_manifest.path), label="task_manifest.path"
+            )
+            manifest = load_task_manifest(mpath)
+        else:
+            raise RunSpecimenError(
+                "requirements check requires --manifest or a contract.task_manifest binding"
+            )
+        try:
+            report = run_requirements(
+                workspace=workspace, contract=contract, manifest=manifest
+            )
+        except AuthorizationError as exc:
+            out = {
+                "ok": False,
+                "refused": True,
+                "error": str(exc),
+                "hint": (
+                    "Bind task_manifest on the contract, then run the ordinary "
+                    "approve → preflight → run lifecycle on a real TTY. "
+                    "Agents must not type APPROVE. Unapproved check commands never execute."
+                ),
+            }
+            print(json.dumps(out, indent=2, sort_keys=True, default=str))
+            return 2
         path = write_evidence_report(
             workspace, contract.campaign_id, contract.run_id, report
         )
@@ -251,13 +283,17 @@ def _requirements(args: argparse.Namespace, workspace: Path) -> int:
             att_path = write_evidence_attestation(
                 workspace, contract.campaign_id, contract.run_id, att
             )
+        annotated = load_evidence_report(
+            workspace, contract.campaign_id, contract.run_id
+        )
         out = {
-            "ok": report.get("aggregate_outcome") == OUTCOME_PASSED
-            and report.get("final_state_certifiable") is True,
+            "ok": annotated.get("aggregate_outcome") == OUTCOME_PASSED
+            and annotated.get("final_state_certifiable") is True
+            and annotated.get("authenticity") == "receipt_bound",
             "evidence_report": str(path),
             "attestation": str(att_path) if att_path else None,
-            "ci": ci_machine_report(report),
-            "report": report,
+            "ci": ci_machine_report(annotated),
+            "report": annotated,
         }
         print(json.dumps(out, indent=2, sort_keys=True, default=str))
         return 0 if out["ok"] else 1
@@ -277,12 +313,20 @@ def _requirements(args: argparse.Namespace, workspace: Path) -> int:
 
 def _freshness(args: argparse.Namespace, workspace: Path) -> int:
     from runspecimen.freshness import check_freshness_for_run, write_freshness_report
+    from runspecimen.paths import ensure_within
     from runspecimen.requirements import load_task_manifest
 
     if args.freshness_command != "check":
         raise RunSpecimenError(f"unknown freshness command: {args.freshness_command}")
     contract = load_contract(args.contract)
-    manifest = load_task_manifest(args.manifest) if args.manifest else None
+    manifest = None
+    if args.manifest is not None:
+        manifest = load_task_manifest(args.manifest)
+    elif contract.task_manifest is not None:
+        mpath = ensure_within(
+            workspace, Path(contract.task_manifest.path), label="task_manifest.path"
+        )
+        manifest = load_task_manifest(mpath)
     report = check_freshness_for_run(
         workspace=workspace, contract=contract, manifest=manifest
     )

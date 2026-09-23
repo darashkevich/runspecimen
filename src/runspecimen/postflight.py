@@ -198,6 +198,18 @@ def _postflight_under_lease(*, contract, workspace: Path) -> dict:
         "runtime": runtime,
     }
     assertions_rec = log.append("postflight_assertions_ok", assertions_body)
+    evidence_attestation = None
+    from runspecimen.requirements import attestation_path
+    from runspecimen.atomic import read_json as _read_json
+    from runspecimen.artifact import verify_artifact_digest as _verify_att
+
+    att_file = attestation_path(workspace, contract.campaign_id, contract.run_id)
+    if att_file.is_file():
+        try:
+            evidence_attestation = _read_json(att_file)
+            _verify_att(evidence_attestation)
+        except Exception:  # noqa: BLE001
+            evidence_attestation = None
     cert = build_certificate(
         contract=contract,
         state=state,
@@ -206,6 +218,7 @@ def _postflight_under_lease(*, contract, workspace: Path) -> dict:
         event_head=assertions_rec.event_hash,
         approval=approval,
         runtime=runtime,
+        evidence_attestation=evidence_attestation if isinstance(evidence_attestation, dict) else None,
     )
     write_certificate(state_dir, cert)
     log.append(
