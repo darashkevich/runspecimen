@@ -15,6 +15,8 @@ bundled inside the sdist (MANIFEST), the in-tree `sha256` cannot be a
 self-digest of that same archive; after the GitHub Release is published, the
 tap (and a follow-up commit) record the real sdist digest from `SHA256SUMS`.
 
+Published sdist sha256 `6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3`.
+
 That asset is the release sdist. The formula does not point at git `main`.
 The release includes opt-in isolation, policy, and retain. Default backend
 `none` does not confine the process. The formula does not enable an OS sandbox.

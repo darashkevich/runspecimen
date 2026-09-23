@@ -258,9 +258,9 @@ class DistributionArtifactTests(unittest.TestCase):
             "https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/runspecimen-0.2.0rc14.tar.gz",
             text,
         )
-        self.assertRegex(text, r'sha256 "[0-9a-f]{64}"')
+        self.assertIn("6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3", text)
+        self.assertIn("6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3", identity)
         self.assertIn('assert_match "0.2.0rc14"', text)
-        # Previous public cut (rc13) checksum remains documented until rc14 publishes.
         self.assertIn("0a807d65e73adfc2af2c8e5679706ed7c4d881ffefdc36e9222507cf5168f5c5", identity)
         self.assertNotIn("unreleased", text.lower())
 
