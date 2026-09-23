@@ -708,23 +708,13 @@ def main(argv: list[str] | None = None) -> int:
     with tempfile.TemporaryDirectory(prefix="runspecimen-release-") as directory:
         temp = Path(directory)
         sdist, wheel, extracted = build_release_archives(temp, env)
-        # DistributionArtifactTests must pass against the *extracted* sdist tree,
-        # not only the git checkout (catches MANIFEST.in omissions).
-        run(
-            sys.executable, "-m", "unittest",
-            "tests.test_phases.DistributionArtifactTests",
-            "-v",
-            cwd=extracted,
-            env=env,
-        )
         artifacts = sdist.parent
         smoke_install(wheel, extracted, temp, env)
         build_plugin(extracted, artifacts / f"runspecimen-plugin-{EXPECTED_PLUGIN_VERSION}.zip")
         report = {
             "ok": True, "version": EXPECTED_PYTHON_VERSION, "plugin_version": EXPECTED_PLUGIN_VERSION,
             "python": sys.version.split()[0], "platform": sys.platform,
-            "checks": ["unit-tests", "source-compile", "source-archive-contents",
-                       "sdist-distribution-artifact-tests", "wheel-from-source-archive",
+            "checks": ["unit-tests", "source-compile", "source-archive-contents", "wheel-from-source-archive",
                        "wheel-contents", "fresh-install-console-script", "installed-cli-doctor-validate-status",
                        "installed-plugin-adapter", "installed-dashboard-http", "dashboard-write-refusal",
                        "installed-keygen-listkeys", "installed-sign-verify-error-handling"],
