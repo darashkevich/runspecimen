@@ -1,6 +1,6 @@
 {
   "name": "runspecimen",
-  "version": "0.2.0-rc.13",
+  "version": "0.2.0-rc.14",
   "description": "Approve, bound, run, postflight, and verify consequential local commands. Human TTY approve only — this extension never approves.",
   "contextFileName": "GEMINI.md",
   "mcpServers": {

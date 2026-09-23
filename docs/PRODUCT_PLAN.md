@@ -64,7 +64,7 @@ all declared runtime inputs, and validate the threat model.
   adapter.
 - Claude Code plugin + Grok Build Claude-compat package: shipped in-repo
   (`docs/INTEGRATIONS.md`); marketplace submission still manual.
-- Homebrew tap [`darashkevich/homebrew-runspecimen`](https://github.com/darashkevich/homebrew-runspecimen) installs `0.2.0rc13` (`brew tap darashkevich/runspecimen && brew install runspecimen`). In-repo formula copy: `packaging/homebrew/`.
+- Homebrew tap [`darashkevich/homebrew-runspecimen`](https://github.com/darashkevich/homebrew-runspecimen) installs `0.2.0rc14` (`brew tap darashkevich/runspecimen && brew install runspecimen`). In-repo formula copy: `packaging/homebrew/`.
 - Adapters remain free and never contain a generic shell escape hatch.
 
 Exit condition: a new user can install from an agent marketplace and produce a

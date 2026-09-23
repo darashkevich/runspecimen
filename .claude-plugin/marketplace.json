@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Run assurance for consequential local agent workloads",
-    "version": "0.2.0-rc.13"
+    "version": "0.2.0-rc.14"
   },
   "plugins": [
     {
       "name": "runspecimen",
       "source": "./plugins/runspecimen",
       "description": "Guard serious local agent runs with approval, bounds, provenance, and receipts.",
-      "version": "0.2.0-rc.13",
+      "version": "0.2.0-rc.14",
       "category": "productivity",
       "tags": ["safety", "provenance", "local automation", "agent orchestration"]
     }

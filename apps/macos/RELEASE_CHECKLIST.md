@@ -7,7 +7,7 @@ Short operator path for shipping the macOS companion. Detail:
 **Invariants:** no telemetry; Approve never auto-types `APPROVE`; receipts ≠
 digital signatures; payload is **not** OS-sandboxed by the UI sandbox alone.
 
-**Engine:** a future MAS freeze must match `src/runspecimen/__version__` (**`0.2.0rc13`**). Build **8** in review froze **`0.2.0rc12`**. Do not upload another build while it is waiting.
+**Engine:** a future MAS freeze must match `src/runspecimen/__version__` (**`0.2.0rc14`**). Build **8** in review froze **`0.2.0rc12`**. Do not upload another build while it is waiting.
 
 **Do not** upload or Submit another Mac App Store build while **0.1.3 (8)** is `WAITING_FOR_REVIEW`.
 
@@ -52,7 +52,7 @@ python3 -m pip install --user 'pyinstaller>=6'
 ./Scripts/test_security_boundary.sh
 ./Scripts/build_app.sh --mas
 # Expect:
-build/RunSpecimen.app/Contents/Helpers/runspecimen --version   # → 0.2.0rc13 on a new freeze; build 8 is 0.2.0rc12
+build/RunSpecimen.app/Contents/Helpers/runspecimen --version   # → 0.2.0rc14 on a new freeze; build 8 is 0.2.0rc12
 test ! -d build/RunSpecimen.app/Contents/Helpers/lib
 /usr/libexec/PlistBuddy -c 'Print :RSDistributionChannel' \
   build/RunSpecimen.app/Contents/Info.plist   # → mas

@@ -95,7 +95,7 @@ public enum CLIVersionGate {
             }
             return """
             CLI version mismatch: found \(found.display) (from “\(raw)”), need \(required.displayMinimum)+.
-            Upgrade: python3 -m pip install --upgrade 'runspecimen==0.2.0rc13'
+            Upgrade: python3 -m pip install --upgrade 'runspecimen==0.2.0rc14'
             Or select a newer binary via Open panel / Settings.
             """
         case .unparseable(let raw):

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.2.0rc14 - 2026-09-23
+
+GitHub pre-release `v0.2.0-rc.14` and PyPI `0.2.0rc14` (identical bytes, checksum-only, not SLSA-attested). Do not publish draft `v0.2.0-rc.11`. Do not move `v0.2.0-rc.12` or `v0.2.0-rc.13`. Stable `0.2.0` gate remains not met.
+
 ### Antigravity CLI + Meta Muse Code adapters
 
 - Add native Antigravity (`agy`) plugin under `plugins/runspecimen/antigravity/`
@@ -17,6 +21,11 @@
   under multi-agent/worktrees; do not treat Muse `--yolo` /
   `--disable-approval` as RunSpecimen-compatible; companion `can_approve`
   remains false. Ledger updates in `docs/INTEGRATIONS.md` / `docs/SUBMISSION.md`.
+
+### Independent QA fixes (#31)
+
+- Demo reuse, approver identity, and sdist inspect fixes landed on main before
+  this cut.
 
 ## 0.2.0rc13 - 2026-09-22
 

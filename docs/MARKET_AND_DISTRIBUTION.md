@@ -62,7 +62,7 @@ This boundary must stay explicit. The MVP is not an operating-system sandbox and
 | Gemini CLI gallery | Free extension: skill, commands, hooks, MCP | Gemini CLI users get the same lifecycle | Acquisition and ecosystem coverage | **In-repo ready**; gallery not submitted |
 | JetBrains Junie / IntelliJ | Junie extension + Tools-menu scaffold | Enterprise IDE users shell to the CLI | Acquisition and ecosystem coverage | **In-repo ready**; Marketplace not submitted |
 | Windsurf Cascade | Skill + rule pack (Cursor-compatible story) | Cascade users get TTY-approve workflow | Acquisition and ecosystem coverage | **In-repo ready**; store not submitted |
-| Homebrew tap | Versioned CLI install and upgrades | macOS/Linux developer installs without Python packaging knowledge | Reduces paid-trial friction | **Live** ([`darashkevich/homebrew-runspecimen`](https://github.com/darashkevich/homebrew-runspecimen); pins `0.2.0rc13`) |
+| Homebrew tap | Versioned CLI install and upgrades | macOS/Linux developer installs without Python packaging knowledge | Reduces paid-trial friction | **Live** ([`darashkevich/homebrew-runspecimen`](https://github.com/darashkevich/homebrew-runspecimen); pins `0.2.0rc14`) |
 | VS Code Marketplace / Open VSX | Approval, status, evidence, and incident-review UI | Team uses an editor-neutral control surface | Pro feature entry point | After design partners |
 | AWS/Azure/GCP marketplaces | Self-hosted control plane and support contract | Enterprise procurement buys through cloud spend | Enterprise annual contracts | Later |
 

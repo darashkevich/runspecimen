@@ -25,12 +25,12 @@
 - [x] Wheel is built and smoke-tested from a clean target directory.
 - [x] Release smoke includes keygen/list-keys success and sign/verify-signature error handling.
 - [x] Plugin and skill validators pass.
-- [x] Tag `v0.2.0-rc.13` after the release gate passes on the **merged green**
+- [x] Tag `v0.2.0-rc.14` after the release gate passes on the **merged green**
   commit **and Yahor publishes that GitHub Release** (do not publish or move
   draft `v0.2.0-rc.11`; do not move `v0.2.0-rc.12`).
-  Publishing the GitHub Release also uploads `0.2.0rc13` to PyPI via OIDC
+  Publishing the GitHub Release also uploads `0.2.0rc14` to PyPI via OIDC
   (identical bytes; checksum-only, not attested).
-  - Prospective release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.13
+  - Prospective release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.14
 
 Run `python3 scripts/release_check.py` before tagging. A release candidate is not
 a stable release and does not change the explicit limitations in the threat model.
@@ -38,7 +38,7 @@ a stable release and does not change the explicit limitations in the threat mode
 
 ## Stable 0.2.0 gate
 
-**Status: not met.** Published package remains **`0.2.0rc13`**. Do not retag,
+**Status: not met.** Published package remains **`0.2.0rc14`**. Do not retag,
 promote, or claim rc13 as stable. A release candidate is not a stable release.
 
 ### Honesty constraints (must stay true on the cut commit)
@@ -60,7 +60,7 @@ promote, or claim rc13 as stable. A release candidate is not a stable release.
 
 ### Still required before tagging `v0.2.0`
 
-- [ ] Version / classifier bump from `0.2.0rc13` → `0.2.0` (package, plugins,
+- [ ] Version / classifier bump from `0.2.0rc14` → `0.2.0` (package, plugins,
       docs identity pins) on a dedicated PR.
 - [ ] CI green on the exact cut commit (Linux 3.9–3.14, macOS 3.11/3.14, macos-app).
 - [ ] Copy audit: USER_GUIDE, THREAT_MODEL, FAQ, SUBMISSION, site pins — no

@@ -4,17 +4,21 @@
 [`darashkevich/homebrew-runspecimen`](https://github.com/darashkevich/homebrew-runspecimen).
 Keep them in sync when a release ships.
 
-It installs the published sdist `runspecimen-0.2.0rc13.tar.gz` from GitHub
-Release `v0.2.0-rc.13`:
+It installs the published sdist `runspecimen-0.2.0rc14.tar.gz` from GitHub
+Release `v0.2.0-rc.14`:
 
-<https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.13/runspecimen-0.2.0rc13.tar.gz>
+<https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/runspecimen-0.2.0rc14.tar.gz>
 
-sha256 `0a807d65e73adfc2af2c8e5679706ed7c4d881ffefdc36e9222507cf5168f5c5`
+The public tap [`darashkevich/homebrew-runspecimen`](https://github.com/darashkevich/homebrew-runspecimen)
+is the install source of truth for `sha256`. Because this formula file is also
+bundled inside the sdist (MANIFEST), the in-tree `sha256` cannot be a
+self-digest of that same archive; after the GitHub Release is published, the
+tap (and a follow-up commit) record the real sdist digest from `SHA256SUMS`.
 
 That asset is the release sdist. The formula does not point at git `main`.
 The release includes opt-in isolation, policy, and retain. Default backend
 `none` does not confine the process. The formula does not enable an OS sandbox.
-`0.2.0rc13` accepts `isolation` and `policy`. Published `0.2.0rc12` still
+`0.2.0rc14` accepts `isolation` and `policy`. Published `0.2.0rc12` still
 rejects those fields.
 
 ## Install from the tap

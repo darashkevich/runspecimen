@@ -248,7 +248,7 @@ actor CLIService {
             throw AppError(
                 message: channel.requiresBundledHelper
                     ? "Bundled runspecimen engine is not selected. Use Prefer Bundled Helper. Store builds do not install a host CLI."
-                    : "runspecimen CLI not selected. Use “Select runspecimen CLI” (Open panel), install 0.2.0rc13+, or stage a bundled helper under Contents/Helpers."
+                    : "runspecimen CLI not selected. Use “Select runspecimen CLI” (Open panel), install 0.2.0rc14+, or stage a bundled helper under Contents/Helpers."
             )
         }
         let fm = FileManager.default
@@ -256,7 +256,7 @@ actor CLIService {
             throw AppError(
                 message: channel.requiresBundledHelper
                     ? "Bundled runspecimen engine is missing or not executable at:\n\(cliURL.path)\nUse Prefer Bundled Helper. Store builds do not install a host CLI."
-                    : "runspecimen CLI is missing or not executable at:\n\(cliURL.path)\nRe-select it via Open panel, or reinstall 0.2.0rc13+."
+                    : "runspecimen CLI is missing or not executable at:\n\(cliURL.path)\nRe-select it via Open panel, or reinstall 0.2.0rc14+."
             )
         }
         // Enforce MAS source restriction at execution, not only in Settings UI.

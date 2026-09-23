@@ -1,7 +1,7 @@
 {
   "name": "runspecimen",
   "displayName": "RunSpecimen",
-  "version": "0.2.0-rc.13",
+  "version": "0.2.0-rc.14",
   "description": "Approve, bound, run, postflight, and verify consequential local commands.",
   "author": {
     "name": "RunSpecimen Contributors",
