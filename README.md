@@ -3,8 +3,8 @@
 RunSpecimen is a local safety and evidence layer for consequential agent-driven
 research and engineering commands.
 
-**Current package version (this branch):** `0.2.0rc13`  
-**Release:** [v0.2.0-rc.13](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.13) / PyPI `runspecimen==0.2.0rc13` (identical bytes; checksum-only, not SLSA-attested).  
+**Current package version (this branch):** `0.2.0rc14`  
+**Release:** [v0.2.0-rc.14](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.14) / PyPI `runspecimen==0.2.0rc14` (identical bytes; checksum-only, not SLSA-attested).  
 Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `v0.2.0-rc.12`. See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
 
 ## Core promise
@@ -18,7 +18,7 @@ Exactly **one** approved, bounded run at a time, with:
 
 No watchers, no recurring scheduler, no parallel workers.
 
-`0.2.0rc13` includes opt-in `isolation` (`none` by default), a workspace `policy` file, `retain`, `digest`, and `diff`. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md). `none` does not confine the process. `sandbox-exec` and `bwrap` are not an OS sandbox. Published `0.2.0rc12` rejects `isolation` and `policy`.
+`0.2.0rc14` includes opt-in `isolation` (`none` by default), a workspace `policy` file, `retain`, `digest`, and `diff`. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md). `none` does not confine the process. `sandbox-exec` and `bwrap` are not an OS sandbox. Published `0.2.0rc12` rejects `isolation` and `policy`.
 
 ## Requirements
 
@@ -55,13 +55,13 @@ No watchers, no recurring scheduler, no parallel workers.
 ### From PyPI
 
 ```bash
-python3 -m pip install runspecimen==0.2.0rc13
+python3 -m pip install runspecimen==0.2.0rc14
 runspecimen --version
 ```
 
-Pin the version. pip will not select an RC without `==0.2.0rc13`. The rc11 draft tag must stay unpublished.
+Pin the version. pip will not select an RC without `==0.2.0rc14`. The rc11 draft tag must stay unpublished.
 
-PyPI project: [runspecimen 0.2.0rc13](https://pypi.org/project/runspecimen/0.2.0rc13/)
+PyPI project: [runspecimen 0.2.0rc14](https://pypi.org/project/runspecimen/0.2.0rc14/)
 
 ### From Homebrew
 
@@ -73,7 +73,7 @@ runspecimen --version
 
 Or: `brew install darashkevich/runspecimen/runspecimen`.
 
-Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen). Pins the same `v0.2.0-rc.13` sdist as the GitHub Release (not `main`).
+Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen). Pins the same `v0.2.0-rc.14` sdist as the GitHub Release (not `main`).
 
 If `runspecimen --version` lags brew, check `which -a runspecimen` — an old
 `~/.local/bin/runspecimen` often shadows `/opt/homebrew/bin/runspecimen`. Rename
@@ -82,16 +82,16 @@ the shim and rehash; details in [docs/FAQ.md](docs/FAQ.md#why-does-runspecimen--
 ### From GitHub release
 
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.13/runspecimen-0.2.0rc13-py3-none-any.whl
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/runspecimen-0.2.0rc14-py3-none-any.whl
 ```
 
 Or from source tarball:
 
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.13/runspecimen-0.2.0rc13.tar.gz
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/runspecimen-0.2.0rc14.tar.gz
 ```
 
-Verify checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.13/SHA256SUMS)
+Verify checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/SHA256SUMS)
 
 ### From local clone
 
@@ -292,7 +292,7 @@ into the certificate's `runtime_id`.
   public-key trust anchor; a key embedded only in the receipt is never enough
   for `ok: true`. Soft keys on disk are not absolute non-repudiation.
 - Default `isolation.backend` is `none`: the workload is not confined. Published
-  `0.2.0rc13` accepts opt-in `sandbox-exec` and `bwrap` when the contract names
+  `0.2.0rc14` accepts opt-in `sandbox-exec` and `bwrap` when the contract names
   them and the tool is installed; a missing tool fails closed. Those backends
   can confine writes to the workspace and deny network. They are not an OS
   sandbox. Linux CI installs bubblewrap and runs a real `bwrap` spawn

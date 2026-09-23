@@ -27,7 +27,7 @@ RunSpecimen records evidence. The default isolation backend is `none`: it does
 - Workspace execution lease (one mutating lifecycle step at a time)
 - Hash-chained append-only event log
 - Verifiable local certificates after successful postflight
-- Opt-in `sandbox-exec` or `bwrap` when the contract names them and the tool is installed. A missing tool fails closed. Neither backend is an OS sandbox. `0.2.0rc13` accepts the `isolation` field. Published `0.2.0rc12` does not.
+- Opt-in `sandbox-exec` or `bwrap` when the contract names them and the tool is installed. A missing tool fails closed. Neither backend is an OS sandbox. `0.2.0rc14` accepts the `isolation` field. Published `0.2.0rc12` does not.
 
 Wall timeout, process-group cleanup, and path-inside-workspace checks are
 orchestration controls. They confine a hostile program only when a receipt

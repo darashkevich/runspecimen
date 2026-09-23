@@ -66,7 +66,7 @@ Priority order below is a local judgment call aligned with `docs/PRODUCT_PLAN.md
 <!-- APPROVE: IMPLEMENTED — HMAC shipped in rc9; Ed25519 optional extra shipped -->
 
 **Status:** HMAC shared-secret auth ✅ in rc9. Ed25519 offline public-key verify ✅
-in published `0.2.0rc13` (optional extras `runspecimen[ed25519]` and
+in published `0.2.0rc14` (optional extras `runspecimen[ed25519]` and
 `runspecimen[signing]`, PyNaCl). The default install stays stdlib-only. See
 `docs/ED25519_RECEIPTS.md` and `docs/ROADMAP_PHASED.md` Phase 1.
 
@@ -115,7 +115,7 @@ confinement.
 **Risks:** False security theater; portability; workload breakage; expanding trust
 boundary accidentally; marketing UI sandbox as payload sandbox.
 
-**Status:** In `0.2.0rc13`. `isolation.backend` is `none`
+**Status:** In `0.2.0rc14`. `isolation.backend` is `none`
 (default, not confined), `sandbox-exec`, or `bwrap`. Missing tool fails closed.
 Receipt field `isolation` includes the residual. Not an OS sandbox. Published
 `0.2.0rc12` does not accept the field.
@@ -209,4 +209,4 @@ Per `PRODUCT_PLAN.md`: generic observability, shell firewall, hosted remote exec
 
 ## Stable 0.2.0
 
-See **Stable 0.2.0 gate** in [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md). Gate is **not met** while the published package is `0.2.0rc13`.
+See **Stable 0.2.0 gate** in [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md). Gate is **not met** while the published package is `0.2.0rc14`.

@@ -27,8 +27,8 @@ from pathlib import Path, PurePosixPath
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_PYTHON_VERSION = "0.2.0rc13"
-EXPECTED_PLUGIN_VERSION = "0.2.0-rc.13"
+EXPECTED_PYTHON_VERSION = "0.2.0rc14"
+EXPECTED_PLUGIN_VERSION = "0.2.0-rc.14"
 # Fixed metadata clock for release archives. Wall-clock gzip, tar, and zip
 # timestamps otherwise change the archive bytes on every build. 2020-01-01 UTC
 # matches the plugin zip and is representable in zip (dates before 1980 are not).

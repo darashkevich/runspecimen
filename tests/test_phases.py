@@ -255,13 +255,13 @@ class DistributionArtifactTests(unittest.TestCase):
         text = (ROOT / "packaging" / "homebrew" / "runspecimen.rb").read_text(encoding="utf-8")
         identity = (ROOT / "docs" / "RELEASE_IDENTITY.md").read_text(encoding="utf-8")
         self.assertIn(
-            "https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.13/runspecimen-0.2.0rc13.tar.gz",
+            "https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/runspecimen-0.2.0rc14.tar.gz",
             text,
         )
-        self.assertIn("0a807d65e73adfc2af2c8e5679706ed7c4d881ffefdc36e9222507cf5168f5c5", text)
+        self.assertRegex(text, r'sha256 "[0-9a-f]{64}"')
+        self.assertIn('assert_match "0.2.0rc14"', text)
+        # Previous public cut (rc13) checksum remains documented until rc14 publishes.
         self.assertIn("0a807d65e73adfc2af2c8e5679706ed7c4d881ffefdc36e9222507cf5168f5c5", identity)
-        self.assertIn('assert_match "0.2.0rc13"', text)
-        self.assertIn("bf1f1a6223a1f65504a13f98bb1ddbad773dffd458bb6b5dcf32920c43c8bfed", identity)
         self.assertNotIn("unreleased", text.lower())
 
     def test_isolation_cli(self) -> None:

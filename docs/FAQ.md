@@ -96,7 +96,7 @@ assertions, use a fresh `run_id` per attempt, and chain steps with
 
 - Repository: https://github.com/darashkevich/runspecimen
 - Check installed CLI: `runspecimen --version` (engine package version, e.g.
-  `0.2.0rc13`, also the published PyPI pin)
+  `0.2.0rc14`, also the published PyPI pin)
 
 ## Why does `runspecimen --version` show an older build than Homebrew?
 
@@ -104,7 +104,7 @@ assertions, use a fresh `run_id` per attempt, and chain steps with
 dev install leaves a `~/.local/bin/runspecimen` shim that **shadows** Homebrew’s
 `/opt/homebrew/bin/runspecimen`, so `which runspecimen` and plugins that call
 the CLI can keep an obsolete build (for example rc11) while brew has
-`0.2.0rc13`.
+`0.2.0rc14`.
 
 Check:
 
