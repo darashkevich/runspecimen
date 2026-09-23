@@ -10,6 +10,7 @@ include docs/NEXT_CHANGES.md
 include docs/PRODUCT_PLAN.md
 include docs/RELEASE_CANDIDATE_REPORT.md
 include docs/RELEASE_CHECKLIST.md
+include docs/RELEASE_IDENTITY.md
 include docs/ROADMAP_PHASED.md
 include docs/SCHEMA_COMPATIBILITY.md
 include docs/SUBMISSION.md
@@ -19,12 +20,16 @@ include examples/demo_contract.json
 include examples/showcase/README.md
 include examples/showcase/contract.json
 include examples/showcase/work/compute.py
+include packaging/homebrew/runspecimen.rb
+include packaging/homebrew/README.md
 include work/compute.py
 include plugins/runspecimen/assets/logo.png
 include plugins/runspecimen/assets/logo.png
 include plugins/runspecimen/assets/logo.svg
 include plugins/runspecimen/assets/composer-icon.png
 include plugins/runspecimen/assets/composer-icon.svg
+recursive-include examples/templates *
+recursive-include examples/campaigns *
 recursive-include scripts *.py *.sh
 recursive-include tests *.py
 recursive-include plugins *.json *.md *.mdc *.py *.toml *.kt *.kts *.xml

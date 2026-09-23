@@ -31,15 +31,37 @@ CONFIRM_PHRASE = "APPROVE"
 
 
 def local_approver() -> dict[str, Any]:
-    """The OS account that settled approval on this machine. Not an SSO identity."""
+    """The OS account that settled approval on this machine. Not an SSO identity.
+
+    On POSIX, resolve the username from the real UID via ``pwd`` so ``LOGNAME`` /
+    ``USER`` environment spoofing cannot falsify the recorded identity. This does
+    not affect TTY APPROVE gates — only the display/receipt name.
+    """
+    uid = os.getuid() if hasattr(os, "getuid") else None
     try:
-        user = getpass.getuser()
+        user = _local_os_username(uid)
+    except ApprovalError:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise ApprovalError(f"cannot record the local OS user: {exc}") from exc
     if not user or any(ch.isspace() for ch in user):
         raise ApprovalError("refusing to record a blank local OS user")
-    uid = os.getuid() if hasattr(os, "getuid") else None
     return {"kind": "local_os_user", "uid": uid, "user": user}
+
+
+def _local_os_username(uid: int | None) -> str:
+    """Resolve the login name for *uid* without trusting LOGNAME/USER."""
+    if os.name == "posix" and uid is not None:
+        try:
+            import pwd
+        except ImportError as exc:  # pragma: no cover - exotic POSIX without pwd
+            raise ApprovalError("cannot resolve local OS user: pwd module unavailable") from exc
+        try:
+            return pwd.getpwuid(uid).pw_name
+        except KeyError as exc:
+            raise ApprovalError(f"cannot resolve local OS user for uid={uid}") from exc
+    # Non-POSIX fallback (e.g. Windows): getpass is the practical source.
+    return getpass.getuser()
 _TERMINAL_PHASES = frozenset({"running", "completed", "failed", "postflighted", "abandoned"})
 
 

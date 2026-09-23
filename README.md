@@ -114,21 +114,29 @@ Or manually: `python3 -m pip install --upgrade 'setuptools>=77' wheel` then
 rejects the project metadata used by `scripts/release_check.py`. Re-run the
 install after source edits.
 
-Check the host and contract before approval:
+Check the host and contract before approval. After a **pip install**, there is
+no repository `examples/` tree in the current directory — create one with
+`init-demo` (or clone the repo and use `examples/demo_contract.json`):
+
+```bash
+runspecimen init-demo --workspace ./runspecimen-demo
+cd runspecimen-demo
+runspecimen doctor --workspace .
+runspecimen validate --workspace . --contract contract.json
+```
+
+From a git checkout you can instead validate the in-tree example:
 
 ```bash
 runspecimen doctor --workspace .
 runspecimen validate --workspace . --contract examples/demo_contract.json
 ```
 
-Create a fresh, unapproved demo workspace without modifying an existing
-directory:
-
-```bash
-runspecimen init-demo --workspace ./runspecimen-demo
-```
-
 ## Typical sequence
+
+Prefer `init-demo` after a pip/Homebrew install. The block below uses the
+in-tree example path (git clone) or substitute `contract.json` inside an
+`init-demo` workspace:
 
 ```bash
 # 1) Bind approval on a real TTY (refuses pipes/CI without a TTY)
