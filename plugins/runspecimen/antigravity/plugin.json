@@ -1,0 +1,5 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "runspecimen",
+  "description": "Approve, bound, run, postflight, and verify consequential local commands. Human TTY approve only — this plugin never approves."
+}

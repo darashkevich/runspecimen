@@ -59,6 +59,15 @@ PLUGIN_COMPONENTS = (
     "windsurf/README.md", "windsurf/skills/runspecimen/SKILL.md",
     "windsurf/rules/runspecimen.md",
     "guidelines/runspecimen.md",
+    "antigravity/plugin.json", "antigravity/mcp_config.json",
+    "antigravity/hooks.json", "antigravity/README.md",
+    "antigravity/skills/runspecimen/SKILL.md",
+    "antigravity/rules/runspecimen.md",
+    "antigravity/scripts/block_approve_gate.py",
+    "antigravity/scripts/runspecimen_mcp.py",
+    "muse/README.md", "muse/skills/runspecimen/SKILL.md",
+    "muse/examples/mcp_settings.fragment.json",
+    "muse/examples/hooks.beta.json",
 )
 FORBIDDEN_PARTS = frozenset({".git", ".runspecimen", ".tools", "__pycache__"})
 
@@ -142,6 +151,37 @@ def check_versions() -> None:
     claude_plugin = json.loads((plugin_root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
     if claude_plugin.get("hooks") != "./hooks/claude-hooks.json":
         raise SystemExit("Claude plugin.json must point hooks at ./hooks/claude-hooks.json")
+    agy_hooks = json.loads((plugin_root / "antigravity/hooks.json").read_text(encoding="utf-8"))
+    if "runspecimen-block-approve" not in agy_hooks:
+        raise SystemExit("antigravity/hooks.json must define runspecimen-block-approve")
+    agy_pre = (agy_hooks.get("runspecimen-block-approve") or {}).get("PreToolUse")
+    if not isinstance(agy_pre, list) or not agy_pre:
+        raise SystemExit("antigravity/hooks.json must use Antigravity PreToolUse (not Gemini BeforeTool)")
+    if "BeforeTool" in json.dumps(agy_hooks):
+        raise SystemExit("antigravity/hooks.json must not include Gemini BeforeTool")
+    agy_plugin = json.loads((plugin_root / "antigravity/plugin.json").read_text(encoding="utf-8"))
+    if agy_plugin.get("name") != "runspecimen":
+        raise SystemExit("antigravity/plugin.json name must be runspecimen")
+    agy_mcp = json.loads((plugin_root / "antigravity/mcp_config.json").read_text(encoding="utf-8"))
+    if "runspecimen" not in (agy_mcp.get("mcpServers") or {}):
+        raise SystemExit("antigravity/mcp_config.json must declare runspecimen server")
+    muse_hooks = json.loads(
+        (plugin_root / "muse/examples/hooks.beta.json").read_text(encoding="utf-8")
+    )
+    if "PreToolUse" not in (muse_hooks.get("hooks") or {}):
+        raise SystemExit("muse/examples/hooks.beta.json must define PreToolUse")
+    muse_mcp = json.loads(
+        (plugin_root / "muse/examples/mcp_settings.fragment.json").read_text(encoding="utf-8")
+    )
+    if "runspecimen" not in (muse_mcp.get("mcp_servers") or {}):
+        raise SystemExit("muse MCP fragment must declare runspecimen under mcp_servers")
+    for shared_name in ("block_approve_gate.py", "runspecimen_mcp.py"):
+        shared = (plugin_root / "scripts" / shared_name).read_bytes()
+        staged = (plugin_root / "antigravity" / "scripts" / shared_name).read_bytes()
+        if shared != staged:
+            raise SystemExit(
+                f"antigravity/scripts/{shared_name} must match plugins/runspecimen/scripts/{shared_name}"
+            )
     plugin_xml = (
         plugin_root / "jetbrains/intellij-plugin/src/main/resources/META-INF/plugin.xml"
     ).read_text(encoding="utf-8")

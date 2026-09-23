@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "runspecimen": {
+      "command": "python3",
+      "args": ["./scripts/runspecimen_mcp.py"],
+      "cwd": "."
+    }
+  }
+}

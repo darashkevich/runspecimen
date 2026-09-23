@@ -73,3 +73,17 @@ Approve control that bypasses the CLI.
 
 **Not submitted** to the Gemini CLI extension gallery. Prefer PR + local
 install docs until Yahor explicitly publishes.
+
+## Antigravity CLI (`agy`) dual path
+
+Google's consumer CLI moved toward Antigravity (`agy`). For `agy`, use the
+native layout in `../antigravity/` (see that README) or:
+
+```bash
+agy plugin import gemini
+```
+
+after this Gemini extension is linked — then ensure Antigravity `PreToolUse`
+hooks (not Gemini `BeforeTool`) run `block_approve_gate.py --format
+antigravity`. Do **not** claim an Antigravity gallery listing.
+

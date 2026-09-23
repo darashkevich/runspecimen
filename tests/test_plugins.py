@@ -1,4 +1,4 @@
-"""Plugin adapter and approve-gate coverage for Codex/Cursor/Claude/Grok/Gemini/Junie/Windsurf."""
+"""Plugin adapter and approve-gate coverage for Codex/Cursor/Claude/Grok/Gemini/Antigravity/Muse/Junie/Windsurf."""
 
 from __future__ import annotations
 
@@ -73,6 +73,38 @@ class PluginManifestTests(unittest.TestCase):
         plugin_xml = (PLUGIN / "jetbrains" / "intellij-plugin" / "src" / "main" / "resources" / "META-INF" / "plugin.xml").read_text(encoding="utf-8")
         self.assertNotIn("ApproveAction", plugin_xml)
         self.assertIn("RequestApprovalAction", plugin_xml)
+
+    def test_antigravity_and_muse_files_present(self) -> None:
+        agy_plugin = json.loads((PLUGIN / "antigravity" / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(agy_plugin.get("name"), "runspecimen")
+        agy_mcp = json.loads((PLUGIN / "antigravity" / "mcp_config.json").read_text(encoding="utf-8"))
+        self.assertIn("runspecimen", agy_mcp["mcpServers"])
+        agy_hooks = json.loads((PLUGIN / "antigravity" / "hooks.json").read_text(encoding="utf-8"))
+        self.assertIn("PreToolUse", agy_hooks["runspecimen-block-approve"])
+        self.assertNotIn("BeforeTool", json.dumps(agy_hooks))
+        self.assertIn("block_approve_gate.py", json.dumps(agy_hooks))
+        self.assertTrue((PLUGIN / "antigravity" / "skills" / "runspecimen" / "SKILL.md").is_file())
+        self.assertTrue((PLUGIN / "antigravity" / "rules" / "runspecimen.md").is_file())
+        self.assertTrue((PLUGIN / "antigravity" / "README.md").is_file())
+        for name in ("block_approve_gate.py", "runspecimen_mcp.py"):
+            shared = (PLUGIN / "scripts" / name).read_bytes()
+            staged = (PLUGIN / "antigravity" / "scripts" / name).read_bytes()
+            self.assertEqual(shared, staged, name)
+        muse_mcp = json.loads(
+            (PLUGIN / "muse" / "examples" / "mcp_settings.fragment.json").read_text(encoding="utf-8")
+        )
+        self.assertIn("runspecimen", muse_mcp["mcp_servers"])
+        self.assertNotIn("approve", json.dumps(muse_mcp).lower())
+        muse_hooks = json.loads(
+            (PLUGIN / "muse" / "examples" / "hooks.beta.json").read_text(encoding="utf-8")
+        )
+        self.assertIn("PreToolUse", muse_hooks["hooks"])
+        self.assertIn("block_approve_gate.py", json.dumps(muse_hooks))
+        self.assertTrue((PLUGIN / "muse" / "skills" / "runspecimen" / "SKILL.md").is_file())
+        self.assertTrue((PLUGIN / "muse" / "README.md").is_file())
+        muse_readme = (PLUGIN / "muse" / "README.md").read_text(encoding="utf-8").lower()
+        self.assertIn("beta", muse_readme)
+        self.assertIn("--yolo", muse_readme)
 
 
 class AdapterAllowListTests(unittest.TestCase):
@@ -166,6 +198,46 @@ class ApproveGateTests(unittest.TestCase):
         })
         assert doc is not None
         self.assertEqual(doc.get("decision"), "deny")
+
+    def test_antigravity_toolcall_deny(self) -> None:
+        code, doc = self._run_gate(
+            {
+                "toolCall": {
+                    "name": "run_command",
+                    "args": {
+                        "CommandLine": "runspecimen approve --workspace . --contract c.json",
+                        "Cwd": "/tmp",
+                    },
+                },
+                "stepIdx": 0,
+            },
+            extra_args=["--format", "antigravity"],
+        )
+        self.assertEqual(code, 0)
+        assert doc is not None
+        self.assertEqual(doc.get("decision"), "deny")
+        self.assertIn("TTY", doc.get("reason", ""))
+        self.assertNotIn("hookSpecificOutput", doc)
+
+    def test_auto_detects_antigravity_toolcall(self) -> None:
+        _, doc = self._run_gate({
+            "toolCall": {
+                "name": "run_command",
+                "args": {"CommandLine": "echo APPROVE"},
+            },
+        })
+        assert doc is not None
+        self.assertEqual(doc.get("decision"), "deny")
+
+    def test_antigravity_allows_validate(self) -> None:
+        code, doc = self._run_gate({
+            "toolCall": {
+                "name": "run_command",
+                "args": {"CommandLine": "runspecimen validate --workspace . --contract c.json"},
+            },
+        })
+        self.assertEqual(code, 0)
+        self.assertIsNone(doc)
 
     def test_denies_mcp_tool_name_approve(self) -> None:
         _, doc = self._run_gate(
@@ -430,6 +502,9 @@ class PluginApproveBoundaryExtras(unittest.TestCase):
             PLUGIN / "commands" / "request-approval.md",
             PLUGIN / "grok" / "AGENTS.md",
             PLUGIN / "GEMINI.md",
+            PLUGIN / "antigravity" / "skills" / "runspecimen" / "SKILL.md",
+            PLUGIN / "antigravity" / "rules" / "runspecimen.md",
+            PLUGIN / "muse" / "skills" / "runspecimen" / "SKILL.md",
         ]
         for path in paths:
             self.assertTrue(path.is_file(), path)
@@ -443,6 +518,18 @@ class PluginApproveBoundaryExtras(unittest.TestCase):
             )
             self.assertTrue("pipe" in text or "tty" in text or "real terminal" in text, path)
 
+    def test_approve_safety_docs_cover_cloud_lease_and_yolo(self) -> None:
+        integrations = (ROOT / "docs" / "INTEGRATIONS.md").read_text(encoding="utf-8").lower()
+        skill = (PLUGIN / "skills" / "runspecimen" / "SKILL.md").read_text(encoding="utf-8").lower()
+        for blob in (integrations, skill):
+            self.assertIn("cloud", blob)
+            self.assertIn("lease", blob)
+            self.assertIn("can_approve", blob)
+        self.assertIn("--yolo", integrations)
+        self.assertIn("not submitted", integrations)
+        muse_readme = (PLUGIN / "muse" / "README.md").read_text(encoding="utf-8").lower()
+        self.assertIn("--disable-approval", muse_readme)
+        self.assertIn("not compatible", muse_readme)
     def test_hooks_wire_claude_and_gemini_gates(self) -> None:
         claude = json.loads((PLUGIN / "hooks" / "claude-hooks.json").read_text(encoding="utf-8"))
         gemini = json.loads((PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
@@ -454,6 +541,9 @@ class PluginApproveBoundaryExtras(unittest.TestCase):
         self.assertIn("block_approve_gate.py", gemini_blob)
         gemini_ext = json.loads((PLUGIN / "gemini-extension.json").read_text(encoding="utf-8"))
         self.assertTrue(any("approve" in str(item).lower() for item in gemini_ext.get("excludeTools", [])))
+        agy = json.loads((PLUGIN / "antigravity" / "hooks.json").read_text(encoding="utf-8"))
+        self.assertIn("block_approve_gate.py", json.dumps(agy))
+        self.assertIn("--format antigravity", json.dumps(agy))
 
     def test_plugin_scripts_have_no_network_phone_home(self) -> None:
         forbidden_imports = ("urllib.request", "http.client", "requests", "aiohttp")
