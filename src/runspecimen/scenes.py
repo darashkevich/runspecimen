@@ -423,7 +423,8 @@ def run_scenes(*, workspace: Path, prepare_only: bool = False) -> dict[str, Any]
     )
     # User change after snapshot
     _write(demo / "work" / "user_note.txt", "do not discard\n")
-    dest = demo / "restore-out"
+    # Explicit dest must sit outside the workspace hierarchy (not demo/restore-out).
+    dest = Path(tempfile.mkdtemp(prefix="rs-scenes-restore-"))
     preview_r = provider.preview_restore(workspace=demo, record=snap, dest=dest)
     # Ensure in-place refused
     in_place_refused = False
@@ -440,6 +441,7 @@ def run_scenes(*, workspace: Path, prepare_only: bool = False) -> dict[str, Any]
             "ok": in_place_refused and user_note_still and preview_r.get("ok") is True,
             "in_place_refused": in_place_refused,
             "user_note_preserved": user_note_still,
+            "restore_dest": str(dest),
         }
     )
 
