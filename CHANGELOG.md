@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Evidence expansion (ADR-005) — review branch, not released
+
+Local-first expansion answering: what was authorized, what ran, which
+requirements were checked, what evidence supports results, and whether that
+evidence still applies. See `docs/ADR-005-evidence-expansion.md`.
+
+- Task manifests + provider-collected evidence reports (`unittest` / `pytest` /
+  `command_status`); never trust agent-written `passed`.
+- Freshness/applicability reports (separate from `verify`); stale marks, no
+  history rewrite.
+- Policy template fields + actionable refusals; NL notes stay visible;
+  ambiguous stays advisory.
+- Expanded `doctor` / `config inspect|preview|apply|export|rollback` (no silent
+  sync).
+- Decision registry with MCP/adapter search (no approve).
+- Local tar snapshot create/preview/restore-to-separate-dir.
+- Usage import/summarize (`local_json`); unknown ≠ zero; idempotent imports.
+- Two-repo coordination readiness; workflow eval suite compare.
+- `runspecimen scenes` ten-scene local demo (never types APPROVE).
+- Dashboard read-only requirements/applicability panel.
+
 ## 0.2.0rc14 - 2026-09-23
 
 GitHub pre-release `v0.2.0-rc.14` and PyPI `0.2.0rc14` (identical bytes, checksum-only, not SLSA-attested). Do not publish draft `v0.2.0-rc.11`. Do not move `v0.2.0-rc.12` or `v0.2.0-rc.13`. Stable `0.2.0` gate remains not met.

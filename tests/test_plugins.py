@@ -353,6 +353,7 @@ class PluginApproveBoundaryExtras(unittest.TestCase):
     LIFECYCLE = frozenset({
         "about", "dashboard", "doctor", "validate", "status",
         "preflight", "run", "postflight", "verify",
+        "decisions_search", "requirements_report", "freshness_check",
     })
 
     def test_adapter_and_mcp_allowed_sets_match_lifecycle_only(self) -> None:

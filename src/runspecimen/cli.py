@@ -433,6 +433,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ed25519 public key file (hex) for offline verify without private key",
     )
 
+    from runspecimen.cli_expansion import register_expansion_parsers
+
+    register_expansion_parsers(sub)
+
     return parser
 
 
@@ -465,6 +469,31 @@ def main(argv: list[str] | None = None) -> int:
 
         print(json.dumps(host_capabilities(), indent=2, sort_keys=True))
         return 0
+
+    # Expansion command groups own --workspace parsing differently for some
+    # subcommands (e.g. coordination validate). Handle before requiring workspace.
+    from runspecimen.cli_expansion import handle_expansion
+
+    if args.command in {
+        "requirements",
+        "freshness",
+        "config",
+        "decisions",
+        "snapshot",
+        "usage",
+        "coordination",
+        "eval",
+        "scenes",
+    }:
+        # coordination validate/readiness may omit workspace; resolve when present
+        ws = resolve_workspace(getattr(args, "workspace", Path.cwd()))
+        try:
+            code = handle_expansion(args, ws)
+        except RunSpecimenError as exc:
+            print(f"{PRODUCT_NAME} error: {exc}", file=sys.stderr)
+            return 1
+        if code is not None:
+            return code
 
     workspace = resolve_workspace(args.workspace)
 
@@ -539,25 +568,11 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0
         if args.command == "doctor":
-            from runspecimen.isolation import host_capabilities
+            from runspecimen.configsync import inspect_environment
 
-            workspace_writable = os.access(str(workspace), os.W_OK)
-            lease = Lease.for_workspace(workspace, holder="doctor") if workspace.is_dir() else None
-            lease_held = lease.is_locked_by_other() if lease is not None else False
-            lease_meta = lease.read_meta() if lease is not None and lease_held else None
-            result = {
-                "ok": workspace.is_dir() and workspace_writable,
-                "platform": platform.platform(),
-                "python": platform.python_version(),
-                "workspace": str(workspace),
-                "workspace_writable": workspace_writable,
-                "workspace_lease_held": lease_held,
-                "active_lease": lease_meta.to_dict() if lease_meta else None,
-                "docs": dict(DOCS_URLS),
-                "isolation": host_capabilities(),
-            }
-            print(json.dumps(result, indent=2, sort_keys=True))
-            return 0 if result["ok"] else 1
+            result = inspect_environment(workspace=workspace)
+            print(json.dumps(result, indent=2, sort_keys=True, default=str))
+            return 0 if result.get("ok") else 1
         if args.command == "dashboard":
             if not 0 <= args.port <= 65535:
                 raise RunSpecimenError("dashboard port must be between 0 and 65535")

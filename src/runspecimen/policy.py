@@ -32,6 +32,15 @@ _POLICY_FIELDS = {
     "max_stderr_max_bytes",
     "argv0_allow",
     "require_isolation_backend",
+    # Additive template fields (ADR-005). Unknown keys still fail closed.
+    "protected_paths",
+    "expected_outputs",
+    "required_verification",
+    "ops_requiring_distinct_run",
+    "required_predecessor_evidence",
+    "template_id",
+    "template_version",
+    "nl_constraint_notes",
 }
 _BACKENDS = frozenset({"none", "sandbox-exec", "bwrap"})
 
@@ -73,10 +82,16 @@ def enforce_policy(contract: Contract, workspace: Path) -> dict[str, Any] | None
         _ceilings(contract, obj)
         _argv_allow(contract, obj)
         _backend_requirement(contract, obj)
+        _template_constraints(contract, obj, workspace)
     except ContractError as exc:
         raise PreflightError(str(exc)) from exc
 
-    return {"id": ref.id, "path": ref.path, "sha256": digest}
+    receipt = {"id": ref.id, "path": ref.path, "sha256": digest}
+    if "template_id" in obj:
+        receipt["template_id"] = obj["template_id"]
+    if "template_version" in obj:
+        receipt["template_version"] = obj["template_version"]
+    return receipt
 
 
 def _ceilings(contract: Contract, obj: dict[str, Any]) -> None:
@@ -123,6 +138,124 @@ def _backend_requirement(contract: Contract, obj: dict[str, Any]) -> None:
             f"contract isolation.backend {contract.isolation.backend!r} "
             f"does not satisfy policy.require_isolation_backend {backend!r}"
         )
+
+
+def _template_constraints(contract: Contract, obj: dict[str, Any], workspace: Path) -> None:
+    """Enforce additive policy template fields without a second execution engine."""
+    if "protected_paths" in obj:
+        paths = _require_list(obj.get("protected_paths"), "policy.protected_paths")
+        for i, item in enumerate(paths):
+            rel = _require_str(item, f"policy.protected_paths[{i}]")
+            ensure_within(workspace, Path(rel), label=f"policy.protected_paths[{i}]")
+            # Protected paths must not be argv script targets for mutation contracts.
+            # v1 refuses writing them via required outputs collision.
+            for out in contract.asserted_output_paths:
+                if out == rel or out.startswith(rel.rstrip("/") + "/"):
+                    raise PreflightError(
+                        format_refusal(
+                            violated_constraint="protected_paths",
+                            contract_policy=obj.get("id"),
+                            observed_op=f"asserted_output:{out}",
+                            next_step=(
+                                "Remove the protected path from outputs or obtain a "
+                                "distinct human-approved run that explicitly scopes the change. "
+                                "Contracts are never auto-weakened."
+                            ),
+                        )
+                    )
+
+    if "expected_outputs" in obj:
+        expected = _require_list(obj.get("expected_outputs"), "policy.expected_outputs")
+        expected_set = {
+            _require_str(item, f"policy.expected_outputs[{i}]")
+            for i, item in enumerate(expected)
+        }
+        required = set(contract.outputs_required)
+        missing = sorted(expected_set - required)
+        if missing:
+            raise PreflightError(
+                format_refusal(
+                    violated_constraint="expected_outputs",
+                    contract_policy=obj.get("id"),
+                    observed_op=f"outputs.required missing {missing}",
+                    next_step=(
+                        "Add the expected outputs to the contract or use a different "
+                        "policy template. Do not auto-weaken the policy."
+                    ),
+                )
+            )
+
+    if "required_verification" in obj:
+        req = _require_list(obj.get("required_verification"), "policy.required_verification")
+        for i, item in enumerate(req):
+            _require_str(item, f"policy.required_verification[{i}]")
+        # Presence is recorded; enforcement is via requirements check command,
+        # not a silent pass at preflight.
+        if not req:
+            raise ContractError("policy.required_verification must be non-empty when present")
+
+    if "ops_requiring_distinct_run" in obj:
+        ops = _require_list(
+            obj.get("ops_requiring_distinct_run"), "policy.ops_requiring_distinct_run"
+        )
+        for i, item in enumerate(ops):
+            _require_str(item, f"policy.ops_requiring_distinct_run[{i}]")
+
+    if "required_predecessor_evidence" in obj:
+        flag = obj.get("required_predecessor_evidence")
+        if not isinstance(flag, bool):
+            raise ContractError(
+                "policy.required_predecessor_evidence must be a JSON boolean"
+            )
+        if flag and contract.predecessor is None:
+            raise PreflightError(
+                format_refusal(
+                    violated_constraint="required_predecessor_evidence",
+                    contract_policy=obj.get("id"),
+                    observed_op="predecessor=null",
+                    next_step=(
+                        "Name a postflighted predecessor run in the contract before approval."
+                    ),
+                )
+            )
+
+    if "nl_constraint_notes" in obj:
+        notes = _require_list(obj.get("nl_constraint_notes"), "policy.nl_constraint_notes")
+        for i, item in enumerate(notes):
+            note = _require_dict(item, f"policy.nl_constraint_notes[{i}]")
+            _reject_unknown(
+                note,
+                {"text", "status", "derived_constraint"},
+                f"policy.nl_constraint_notes[{i}]",
+            )
+            _require_str(note.get("text"), f"policy.nl_constraint_notes[{i}].text")
+            status = _require_str(note.get("status"), f"policy.nl_constraint_notes[{i}].status")
+            if status not in {"enforced", "advisory", "ambiguous"}:
+                raise ContractError(
+                    f"policy.nl_constraint_notes[{i}].status must be "
+                    "enforced|advisory|ambiguous"
+                )
+            # Ambiguous NL stays advisory — never silently becomes enforcement.
+            if status == "ambiguous" and note.get("derived_constraint"):
+                raise ContractError(
+                    f"policy.nl_constraint_notes[{i}]: ambiguous notes must not "
+                    "carry derived_constraint (keep visible and advisory)"
+                )
+
+
+def format_refusal(
+    *,
+    violated_constraint: str,
+    contract_policy: Any,
+    observed_op: str,
+    next_step: str,
+) -> str:
+    """Actionable refusal text: constraint, policy, observed op, legitimate next step."""
+    return (
+        f"policy refusal: constraint={violated_constraint!r} "
+        f"policy={contract_policy!r} observed={observed_op!r}. "
+        f"Next: {next_step}"
+    )
 
 
 def execution_constraints(

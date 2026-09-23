@@ -284,6 +284,7 @@ def _presentation(status: dict[str, Any], contract: Contract) -> dict[str, Any]:
         phase=phase, warnings=warnings, certificate_id=certificate_id, busy=busy
     )
     happened = _happened_summary(status, certificate_id if isinstance(certificate_id, str) else None)
+    evidence_panel = _evidence_panel(workspace=Path(status.get("workspace") or "."), contract=contract)
     return {
         "phase_label": "Attention required" if warnings else _PHASE_LABELS.get(phase, phase),
         "phase_tone": "danger" if warnings else "active",
@@ -298,7 +299,36 @@ def _presentation(status: dict[str, Any], contract: Contract) -> dict[str, Any]:
         "continue_tone": continue_tone,
         "trust_ladder": _trust_ladder(status, certificate_id if isinstance(certificate_id, str) else None),
         "run_identity": f"{contract.campaign_id} / {contract.run_id}",
+        "evidence": evidence_panel,
     }
+
+
+def _evidence_panel(*, workspace: Path, contract: Contract) -> dict[str, Any]:
+    """Read-only requirements / freshness summary. Never implies live verify."""
+    panel: dict[str, Any] = {
+        "receipt_authenticity": "see trust ladder / verify in terminal",
+        "check_outcome": "none",
+        "applicability": "unknown",
+        "note": (
+            "Authentic history can contain a failed check or now-stale evidence. "
+            "This panel is read-only and is not verify."
+        ),
+    }
+    try:
+        from runspecimen.requirements import load_evidence_report
+        from runspecimen.freshness import check_freshness_for_run
+
+        report = load_evidence_report(workspace, contract.campaign_id, contract.run_id)
+        panel["check_outcome"] = report.get("aggregate_outcome")
+        panel["evidence_digest"] = report.get("artifact_digest")
+        panel["summary"] = report.get("summary")
+        panel["final_state_certifiable"] = report.get("final_state_certifiable")
+        fresh = check_freshness_for_run(workspace=workspace, contract=contract, manifest=None)
+        panel["applicability"] = fresh.get("applicability")
+        panel["freshness_changes"] = fresh.get("changes")
+    except Exception:  # noqa: BLE001
+        pass
+    return panel
 
 
 def _isolation_copy(contract: Contract) -> str:
@@ -459,6 +489,18 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
   <aside class="notice"><span class="notice-icon" aria-hidden="true">!</span><div><strong>Safety boundary</strong><p>This dashboard can inspect evidence and copy commands, but it cannot approve or execute a run. Approval must be typed by a human in a real terminal.</p></div></aside>
 
   <ol class="trust-ladder" id="trust-ladder" aria-label="Evidence trust ladder">{trust_html}</ol>
+
+  <section class="panel" aria-label="Requirements and applicability" style="margin-bottom:18px">
+    <div class="panel-header"><h2>Requirements &amp; applicability</h2>
+      <p>Separate from receipt authenticity and from live verify.</p></div>
+    <div class="panel-body">
+      <dl class="facts">
+        <div class="fact"><dt>Check / requirement outcome</dt><dd id="ev-outcome">{_escape((view.get('evidence') or {}).get('check_outcome'))}</dd></div>
+        <div class="fact"><dt>Evidence applicability</dt><dd id="ev-appl">{_escape((view.get('evidence') or {}).get('applicability'))}</dd></div>
+        <div class="fact wide"><dt>Note</dt><dd id="ev-note">{_escape((view.get('evidence') or {}).get('note'))}</dd></div>
+      </dl>
+    </div>
+  </section>
 
   <div class="refresh-toolbar"><button id="refresh-button" class="refresh-button" type="button">Refresh status</button><label><input id="auto-refresh" type="checkbox" checked> Auto-refresh every 5s</label><span id="refresh-message" class="refresh-message" role="status">Loaded local evidence. Live receipt verification has not been performed.</span></div>
   <ul id="warnings" aria-live="polite" {'hidden' if not view['warnings'] else ''}>{warnings_html}</ul>

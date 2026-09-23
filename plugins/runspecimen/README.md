@@ -77,8 +77,10 @@ Approve-safety layers in this package:
 ## MCP (Claude / Gemini / Antigravity / Muse / Junie / Desktop / Grok / Windsurf)
 
 `.mcp.json` (and Gemini/Junie/Antigravity/Muse mirrors) starts a local stdio
-MCP server (`scripts/runspecimen_mcp.py`) that exposes only: `about`, `doctor`,
-`validate`, `status`, `preflight`, `run`, `postflight`, `verify`, `dashboard`.
+MCP server (`scripts/runspecimen_mcp.py`) that exposes: `about`, `doctor`,
+`validate`, `status`, `preflight`, `run`, `postflight`, `verify`, `dashboard`,
+plus read-only `decisions_search`, `requirements_report`, and `freshness_check`.
+There is still **no** `approve` / settle tool.
 No network phone-home. For hosts outside a plugin install, point an MCP server
 entry at the same script with an absolute path.
 
