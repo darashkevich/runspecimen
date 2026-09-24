@@ -394,6 +394,9 @@ actor CLIService {
     }
 
     private func launchDashboard(arguments: [String]) throws {
+        guard DistributionChannel.current.allowsBrowserDashboard else {
+            throw AppError(message: "Browser dashboard is unavailable in the Mac App Store build.")
+        }
         stopDashboard()
         DashboardChild.shared.stop()
         let url = try requireCLI()

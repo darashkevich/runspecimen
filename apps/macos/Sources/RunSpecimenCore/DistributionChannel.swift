@@ -29,6 +29,9 @@ public enum DistributionChannel: String, Sendable, Equatable {
     /// Store builds must not depend on a host-installed PyPI CLI.
     public var allowsPATHProbe: Bool { self != .mas }
 
+    /// The Store app uses native evidence views and never starts a listening server.
+    public var allowsBrowserDashboard: Bool { self != .mas }
+
     public var label: String {
         switch self {
         case .mas: return "Mac App Store"

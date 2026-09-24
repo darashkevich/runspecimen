@@ -166,7 +166,12 @@ test -f "$APP_IN_ARCHIVE/Contents/Resources/Assets.car" || {
 }
 
 echo "==> fail-closed archive signing / entitlement / sandbox assertions"
+python3 "$ROOT/Scripts/verify_mas_runtime.py" "$APP_IN_ARCHIVE"
 ./Scripts/assert_archive_signing.sh "$APP_IN_ARCHIVE" "${ASSERT_ARGS[@]}"
+if codesign -d --entitlements - "$APP_IN_ARCHIVE" 2>/dev/null | grep -q 'com.apple.security.network.server'; then
+  echo "ERROR: rejected network.server entitlement remains in signed Store app" >&2
+  exit 1
+fi
 
 echo "==> codesign evidence (verbose)"
 echo "----- APP codesign -dv --verbose=4 -----"

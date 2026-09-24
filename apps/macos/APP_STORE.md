@@ -158,7 +158,11 @@ Xcode build phases **Embed Frozen Helper** and **Clear Codesign Xattrs** call
 | `com.apple.security.files.user-selected.read-write` | Workspace + evidence via Open panel |
 | `com.apple.security.files.user-selected.executable` | Execute user-picked CLI override (optional; Store prefers bundled helper) |
 | `com.apple.security.network.client` | Optional docs links (GitHub / privacy) in browser; no telemetry |
-| `com.apple.security.network.server` | Loopback `dashboard` only |
+
+Store builds intentionally omit `com.apple.security.network.server` (guideline
+2.4.5(i) — Apple rejected it when unused). The optional loopback browser
+dashboard is hidden/refused on MAS; native evidence views remain. Developer ID
+builds may still use `network.server` for the local dashboard.
 
 Helper child: `Entitlements/RunSpecimen.helper.entitlements` (`app-sandbox` + `inherit`).
 Applied on every MAS / frozen Mach-O nested sign (including ad-hoc local archives).

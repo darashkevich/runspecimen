@@ -29,8 +29,16 @@ final class AppModel: ObservableObject {
     let cli = CLIService()
     private let bookmarks = BookmarkStore.shared
     private var terminateObserver: NSObjectProtocol?
+    private var didBootstrap = false
+
+    func bootstrapOnce() async {
+        guard !didBootstrap else { return }
+        didBootstrap = true
+        await bootstrap()
+    }
 
     var hasWorkspace: Bool { workspaceURL != nil }
+    var isBrowserDashboardAvailable: Bool { DistributionChannel.current.allowsBrowserDashboard }
     var hasCLI: Bool { cliIdentity != nil }
     var isReady: Bool { hasWorkspace && hasCLI && contractURL != nil }
 
@@ -353,6 +361,10 @@ final class AppModel: ObservableObject {
     }
 
     func perform(_ action: LifecycleAction) async {
+        guard action != .dashboard || DistributionChannel.current.allowsBrowserDashboard else {
+            error = AppError(message: "The Store app uses native evidence views; the browser dashboard is available in the standalone CLI.")
+            return
+        }
         guard let workspaceURL, let contractURL, let contract else {
             error = AppError(message: "Select workspace and contract first.")
             return
@@ -395,6 +407,7 @@ final class AppModel: ObservableObject {
     }
 
     func isActionEnabled(_ action: LifecycleAction) -> Bool {
+        if action == .dashboard && !DistributionChannel.current.allowsBrowserDashboard { return false }
         guard isReady, !isBusy else { return false }
         if doctor?.ok == false { return action == .validate || action == .dashboard }
         let phase = status?.phase ?? "none"

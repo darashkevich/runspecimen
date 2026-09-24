@@ -31,7 +31,7 @@ struct StatusLifecycleView: View {
                 .accessibilityElement(children: .combine)
             }
 
-            Text("Dashboard and this console are read-only for evidence. Approve / run / postflight stay explicit human actions through the CLI.")
+            Text("Evidence inspection is read-only. Approve / run / postflight stay explicit human actions through the bundled engine.")
                 .font(.system(size: 12))
                 .foregroundStyle(RSTheme.soft)
                 .fixedSize(horizontal: false, vertical: true)

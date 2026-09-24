@@ -62,6 +62,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 find_pyinstaller() {
+  if [[ -n "${RS_FREEZE_PYTHON:-}" ]]; then
+    "$RS_FREEZE_PYTHON" -c 'import PyInstaller' || return 1
+    printf '%s\n' "$RS_FREEZE_PYTHON -m PyInstaller"
+    return 0
+  fi
+  if [[ "$REQUIRE" == "1" ]]; then
+    echo "MAS requires an explicit RS_FREEZE_PYTHON (non-Apple CPython); PATH discovery is unsafe." >&2
+    return 1
+  fi
   if command -v pyinstaller >/dev/null 2>&1; then
     command -v pyinstaller
     return 0
@@ -110,6 +119,17 @@ if ! PYI="$(find_pyinstaller)"; then
   exit 0
 fi
 
+if [[ "$REQUIRE" == "1" ]]; then
+  "$RS_FREEZE_PYTHON" - <<'PY'
+import sys
+if sys.version_info < (3, 12):
+    raise SystemExit("MAS freeze requires CPython 3.12 or newer")
+if any(p in sys.base_prefix for p in ("/System/Library/", "/Library/Developer/", "/Applications/Xcode")):
+    raise SystemExit("Apple-provided Python is forbidden for MAS freezing")
+print("Explicit MAS freeze runtime:", sys.executable, sys.version, sys.base_prefix)
+PY
+fi
+
 if [[ ! -f "$REPO/src/runspecimen/__main__.py" && ! -f "$REPO/src/runspecimen/cli.py" ]]; then
   echo "Missing runspecimen package under $REPO/src/runspecimen" >&2
   exit 1
@@ -140,6 +160,8 @@ $PYI \
   --workpath "$WORKDIR" \
   --specpath "$SPEC_DIR" \
   --console \
+  --exclude-module lzma \
+  --exclude-module _lzma \
   "$TRAMPOLINE"
 
 ONEDIR_APP="$DIST/runspecimen/runspecimen"
@@ -151,6 +173,10 @@ fi
 if [[ ! -d "$ONEDIR_INTERNAL" ]]; then
   echo "PyInstaller onedir missing _internal at $ONEDIR_INTERNAL" >&2
   exit 1
+fi
+
+if [[ "$REQUIRE" == "1" ]]; then
+  "$RS_FREEZE_PYTHON" "$ROOT/Scripts/verify_mas_runtime.py" "$DIST/runspecimen"
 fi
 
 # Drop any previous package-tree / onefile payload so build_app does not mix modes.
