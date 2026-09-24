@@ -85,7 +85,10 @@ if [[ -x /usr/bin/python3 ]]; then
       bad_rc=$?
       set -e
       [[ "$bad_rc" -ne 0 ]] || fail "explicit Apple python was accepted: $(cat "$bad_out")"
-      grep -Eq 'Apple-provided Python|CPython 3.12' "$bad_out" \
+      if grep -q 'Explicit MAS freeze runtime' "$bad_out"; then
+        fail "explicit Apple python reached the runtime gate: $(cat "$bad_out")"
+      fi
+      grep -Eq 'Apple-provided Python|CPython 3.12|PyInstaller' "$bad_out" \
         || fail "explicit Apple python missing reason: $(cat "$bad_out")"
       echo "OK: explicit Apple RS_FREEZE_PYTHON refused"
       ;;

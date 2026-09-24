@@ -76,7 +76,7 @@ PY
 find_pyinstaller() {
   PYI=""
   if [[ -n "${RS_FREEZE_PYTHON:-}" ]]; then
-    "$RS_FREEZE_PYTHON" -c 'import PyInstaller' || return 1
+    "$RS_FREEZE_PYTHON" -c 'import PyInstaller' >/dev/null 2>&1 || return 1
     PYI="$RS_FREEZE_PYTHON -m PyInstaller"
     return 0
   fi
@@ -90,7 +90,7 @@ find_pyinstaller() {
         if is_forbidden_apple_python "$resolved"; then
           continue
         fi
-        if "$resolved" -c 'import PyInstaller' 2>/dev/null; then
+        if "$resolved" -c 'import PyInstaller' >/dev/null 2>&1; then
           RS_FREEZE_PYTHON="$resolved"
           export RS_FREEZE_PYTHON
           PYI="$RS_FREEZE_PYTHON -m PyInstaller"
