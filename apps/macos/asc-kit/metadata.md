@@ -29,7 +29,7 @@ What you get:
 - Native status, evidence, and certificate inspection
 - Built-in Open Reviewer Demo workspace (no git checkout, no pip install)
 - Interactive Approve sheet on a real TTY
-- Optional loopback-only, read-only dashboard (cannot approve or execute)
+- Native evidence inspection without a browser server (the optional browser dashboard belongs to the separately installed CLI, not the Store app)
 - Security-scoped workspace bookmarks for App Sandbox
 
 Honest limits: App Sandbox confines the UI and its inherit helper. It does **not** OS-sandbox the payload under test. Certificates are hash-chained receipts, not asymmetric digital signatures. No telemetry.
@@ -53,9 +53,9 @@ runspecimen,evidence,approval,local,cli,developer,receipt,preflight,control
 
 | Key | Value |
 | --- | --- |
-| Short version | 0.1.3 |
-| Build | 6 |
-| Bundled engine | 0.2.0rc12 |
+| Short version | 0.1.4 (9) WAITING_FOR_REVIEW |
+| Build | 9 |
+| Bundled engine | 0.2.0rc14 source plus candidate fixes; verify exact frozen build before upload |
 | Min macOS | 14.0 |
 
 ## App Privacy

@@ -134,32 +134,27 @@ enum MasSandboxE2E {
             return
         }
 
-        // --- 3) Dashboard launch + cleanup (2.4.5(iii)) ---
+        // --- 3) Store channel refuses a listening browser dashboard (2.4.5(i)) ---
         do {
-            // Use the same runLifecycle path as the UI (omit browser focus under e2e).
-            _ = try await cli.runLifecycle(
+            var refused = false
+            do {
+                _ = try await cli.runLifecycle(
                 action: .dashboard,
                 workspace: demoURL,
                 contract: contractURL,
                 campaignID: "e2e",
                 runID: "e2e"
-            )
-            try await Task.sleep(nanoseconds: 400_000_000)
-            let runningBefore = await cli.isDashboardRunning() || DashboardChild.shared.isRunning
-            guard runningBefore else {
-                throw CheckError("dashboard did not stay running after launch")
+                )
+            } catch {
+                refused = error.localizedDescription.contains("Browser dashboard is unavailable")
             }
-            await cli.stopDashboard()
-            cli.stopDashboardSync()
-            DashboardChild.shared.stop()
-            try await Task.sleep(nanoseconds: 900_000_000)
             let runningAfter = await cli.isDashboardRunning() || DashboardChild.shared.isRunning
-            guard !runningAfter else {
-                throw CheckError("dashboard still running after stopDashboard")
+            guard refused, !runningAfter else {
+                throw CheckError("Store dashboard must be refused before creating any server")
             }
-            record("dashboard_cleanup", ok: true, detail: "launched then stopped")
+            record("dashboard_unavailable_in_store", ok: true, detail: "explicit refusal; no child/server started")
         } catch {
-            record("dashboard_cleanup", ok: false, detail: "\(error)")
+            record("dashboard_unavailable_in_store", ok: false, detail: "\(error)")
             DashboardChild.shared.stop()
             await cli.stopDashboard()
             cli.stopDashboardSync()

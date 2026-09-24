@@ -8,14 +8,16 @@ No zip attachment is required.
 > Launch RunSpecimen. The Store build opens the bundled Reviewer Demo
 > automatically (reviewer-demo / run-001 in Application Support). Source
 > should read Bundled Helpers — do not pip install and do not select an
-> external CLI. Use Workspace → Open Reviewer Demo if you need a fresh copy.
+> external CLI. Workspace → Open Reviewer Demo reopens the existing demo without deleting receipts.
 >
 > Inspect status (read-only).
 >
 > Open Approve… and type APPROVE yourself on the PTY. Do not automate. The app
 > never auto-approves and has no agent API.
 >
-> Quit and confirm the loopback dashboard child is gone.
+> Close the main window, then choose File → Show Main Window (Command-0).
+> The window reopens with its workspace preserved. This Store build has no
+> browser dashboard or listening network server; inspect evidence in native views.
 >
 > App Sandbox confines the UI and its inherit helper; it does not OS-sandbox
 > the payload under test. Certificates are hash-chained receipts, not
@@ -27,10 +29,10 @@ No zip attachment is required.
 ## Demo path (5 steps)
 
 1. Launch RunSpecimen — the bundled Reviewer Demo workspace opens automatically. Source should read **Bundled Helpers**. Do **not** pip install.
-2. If you need a fresh copy, click **Open Reviewer Demo** (or Workspace → Open Reviewer Demo).
+2. To reopen the existing demo, click **Open Reviewer Demo** (or Workspace → Open Reviewer Demo). Existing evidence is preserved.
 3. Refresh status / inspect evidence (read-only). Contract `reviewer-demo` / `run-001` is pre-selected.
 4. Open **Approve…** — type `APPROVE` yourself on the PTY (**do not automate**).
-5. Quit — confirm the loopback dashboard child is gone (Activity Monitor / no stray port).
+5. Close the window, choose **File → Show Main Window**, and verify the same workspace is shown. Quit when finished.
 
 ## Contact for Review
 
@@ -50,4 +52,4 @@ cd apps/macos
 ./Scripts/test_mas_sandbox_e2e.sh
 ```
 
-Covers workspace bookmark, dashboard cleanup, and PTY gate wait on the sandboxed app + bundled helper.
+Covers workspace bookmark, Store dashboard refusal without spawning a server, and PTY gate wait on the sandboxed app + bundled helper. Never types approval.

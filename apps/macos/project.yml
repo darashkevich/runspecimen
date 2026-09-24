@@ -66,8 +66,8 @@ targets:
         CFBundleIdentifier: com.darashkevich.runspecimen
         CFBundleName: RunSpecimen
         CFBundlePackageType: APPL
-        CFBundleShortVersionString: "0.1.3"
-        CFBundleVersion: "8"
+        CFBundleShortVersionString: "0.1.4"
+        CFBundleVersion: "9"
         ITSAppUsesNonExemptEncryption: false
         RSDistributionChannel: mas
         LSApplicationCategoryType: public.app-category.developer-tools
@@ -85,12 +85,14 @@ targets:
         com.apple.security.files.user-selected.read-write: true
         com.apple.security.files.user-selected.executable: true
         com.apple.security.network.client: true
-        com.apple.security.network.server: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen
-        MARKETING_VERSION: "0.1.3"
-        CURRENT_PROJECT_VERSION: "8"
+        # Frozen Homebrew runtime is arm64. Do not advertise an Intel slice
+        # whose engine cannot launch. A universal runtime needs its own QA.
+        ARCHS: arm64
+        MARKETING_VERSION: "0.1.4"
+        CURRENT_PROJECT_VERSION: "9"
         INFOPLIST_FILE: Config/Info-mas.plist
         PRODUCT_NAME: RunSpecimen
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
