@@ -61,6 +61,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+is_forbidden_apple_python() {
+  local py="$1"
+  "$py" - <<'PY' >/dev/null 2>&1
+import sys
+forbidden = ("/System/Library/", "/Library/Developer/", "/Applications/Xcode")
+raise SystemExit(1 if any(p in sys.base_prefix for p in forbidden) else 0)
+PY
+}
+
 find_pyinstaller() {
   if [[ -n "${RS_FREEZE_PYTHON:-}" ]]; then
     "$RS_FREEZE_PYTHON" -c 'import PyInstaller' || return 1
@@ -68,7 +77,23 @@ find_pyinstaller() {
     return 0
   fi
   if [[ "$REQUIRE" == "1" ]]; then
-    echo "MAS requires an explicit RS_FREEZE_PYTHON (non-Apple CPython); PATH discovery is unsafe." >&2
+    # Prefer an explicit non-Apple interpreter that already has PyInstaller
+    # (CI setup-python, Homebrew). Never fall back to Apple/Xcode Python.
+    local cand
+    for cand in python3.12 python3 python; do
+      if command -v "$cand" >/dev/null 2>&1; then
+        cand="$(command -v "$cand")"
+        if is_forbidden_apple_python "$cand"; then
+          continue
+        fi
+        if "$cand" -c 'import PyInstaller' 2>/dev/null; then
+          export RS_FREEZE_PYTHON="$cand"
+          printf '%s\n' "$cand -m PyInstaller"
+          return 0
+        fi
+      fi
+    done
+    echo "MAS requires a non-Apple CPython with PyInstaller (set RS_FREEZE_PYTHON)." >&2
     return 1
   fi
   if command -v pyinstaller >/dev/null 2>&1; then
