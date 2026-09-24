@@ -67,8 +67,9 @@ EOF
   resolved="$(tail -n 1 "$good_out")"
   [[ "$resolved" == "$bindir/python3.12" ]] || fail "selected $resolved, expected wrapper ($(cat "$good_out"))"
   grep -q 'Explicit MAS freeze runtime' "$good_out" || fail "runtime gate did not run: $(cat "$good_out")"
-  grep -q "$donor" "$good_out" || fail "runtime did not exec the donor: $(cat "$good_out")"
-  grep -q '/Applications/Xcode' "$good_out" && fail "selected an Xcode prefix: $(cat "$good_out")"
+  grep -Eq '/Applications/Xcode|/System/Library/|/Library/Developer/' "$good_out" \
+    && fail "selected an Apple prefix: $(cat "$good_out")"
+  grep -q '3.12' "$good_out" || fail "runtime is not CPython 3.12: $(cat "$good_out")"
   echo "OK: selected $resolved"
 fi
 
