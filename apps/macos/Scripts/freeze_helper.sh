@@ -63,32 +63,37 @@ done
 
 is_forbidden_apple_python() {
   local py="$1"
+  # Exit 0 when the interpreter is Apple/Xcode so callers can `if` it directly.
   "$py" - <<'PY' >/dev/null 2>&1
 import sys
 forbidden = ("/System/Library/", "/Library/Developer/", "/Applications/Xcode")
-raise SystemExit(1 if any(p in sys.base_prefix for p in forbidden) else 0)
+raise SystemExit(0 if any(p in sys.base_prefix for p in forbidden) else 1)
 PY
 }
 
+# Sets PYI in the current shell. For --require, also exports RS_FREEZE_PYTHON.
+# Must not be called inside a command substitution: that would drop the export.
 find_pyinstaller() {
+  PYI=""
   if [[ -n "${RS_FREEZE_PYTHON:-}" ]]; then
     "$RS_FREEZE_PYTHON" -c 'import PyInstaller' || return 1
-    printf '%s\n' "$RS_FREEZE_PYTHON -m PyInstaller"
+    PYI="$RS_FREEZE_PYTHON -m PyInstaller"
     return 0
   fi
   if [[ "$REQUIRE" == "1" ]]; then
     # Prefer an explicit non-Apple interpreter that already has PyInstaller
     # (CI setup-python, Homebrew). Never fall back to Apple/Xcode Python.
-    local cand
+    local cand resolved
     for cand in python3.12 python3 python; do
       if command -v "$cand" >/dev/null 2>&1; then
-        cand="$(command -v "$cand")"
-        if is_forbidden_apple_python "$cand"; then
+        resolved="$(command -v "$cand")"
+        if is_forbidden_apple_python "$resolved"; then
           continue
         fi
-        if "$cand" -c 'import PyInstaller' 2>/dev/null; then
-          export RS_FREEZE_PYTHON="$cand"
-          printf '%s\n' "$cand -m PyInstaller"
+        if "$resolved" -c 'import PyInstaller' 2>/dev/null; then
+          RS_FREEZE_PYTHON="$resolved"
+          export RS_FREEZE_PYTHON
+          PYI="$RS_FREEZE_PYTHON -m PyInstaller"
           return 0
         fi
       fi
@@ -97,11 +102,11 @@ find_pyinstaller() {
     return 1
   fi
   if command -v pyinstaller >/dev/null 2>&1; then
-    command -v pyinstaller
+    PYI="$(command -v pyinstaller)"
     return 0
   fi
   if python3 -c 'import PyInstaller' 2>/dev/null; then
-    printf '%s\n' "python3 -m PyInstaller"
+    PYI="python3 -m PyInstaller"
     return 0
   fi
   return 1
@@ -133,7 +138,8 @@ if [[ "$ENABLE" != "1" ]]; then
   exit 0
 fi
 
-if ! PYI="$(find_pyinstaller)"; then
+PYI=""
+if ! find_pyinstaller; then
   if [[ "$REQUIRE" == "1" ]]; then
     echo "freeze_helper: PyInstaller required for MAS / --require but not installed." >&2
     print_blockers
@@ -153,6 +159,11 @@ if any(p in sys.base_prefix for p in ("/System/Library/", "/Library/Developer/",
     raise SystemExit("Apple-provided Python is forbidden for MAS freezing")
 print("Explicit MAS freeze runtime:", sys.executable, sys.version, sys.base_prefix)
 PY
+fi
+
+if [[ "${RS_FREEZE_SELECT_ONLY:-0}" == "1" ]]; then
+  printf '%s\n' "${RS_FREEZE_PYTHON:-$PYI}"
+  exit 0
 fi
 
 if [[ ! -f "$REPO/src/runspecimen/__main__.py" && ! -f "$REPO/src/runspecimen/cli.py" ]]; then

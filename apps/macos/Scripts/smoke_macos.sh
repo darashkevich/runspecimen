@@ -63,6 +63,9 @@ echo "==> stage_helper --from-src + --verify (package-tree helper)"
 ./Scripts/stage_helper.sh --from-src --verify
 ./Scripts/stage_helper.sh --check
 
+echo "==> freeze interpreter selection (no Apple Python, no lost export)"
+./Scripts/test_freeze_python_select.sh
+
 echo "==> freeze_helper default skip (CI-safe without PyInstaller)"
 ./Scripts/freeze_helper.sh >/tmp/rs-freeze.out
 grep -q "skipped (optional)" /tmp/rs-freeze.out
