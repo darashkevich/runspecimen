@@ -8,15 +8,16 @@ import RunSpecimenCore
 struct RunSpecimenApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        WindowGroup {
+        Window("RunSpecimen", id: "main") {
             RootView()
                 .environmentObject(model)
                 .frame(minWidth: WindowPlacement.minSize.width, minHeight: WindowPlacement.minSize.height)
                 .task {
                     appDelegate.model = model
-                    await model.bootstrap()
+                    await model.bootstrapOnce()
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     DashboardChild.shared.stop()
@@ -30,7 +31,12 @@ struct RunSpecimenApp: App {
         .defaultPosition(.center)
         .defaultSize(width: WindowPlacement.defaultSize.width, height: WindowPlacement.defaultSize.height)
         .commands {
-            CommandGroup(replacing: .newItem) {}
+            CommandGroup(replacing: .newItem) {
+                Button("Show Main Window") {
+                    openWindow(id: "main")
+                }
+                .keyboardShortcut("0", modifiers: [.command])
+            }
             CommandGroup(replacing: .appInfo) {
                 Button("About RunSpecimen") {
                     model.showAbout = true
@@ -93,16 +99,18 @@ struct RunSpecimenApp: App {
                 .keyboardShortcut("5", modifiers: [.command])
                 .disabled(!model.isActionEnabled(.verify))
                 Divider()
-                Button("Open Dashboard") {
-                    Task { await model.requestPerform(.dashboard) }
+                if DistributionChannel.current.allowsBrowserDashboard {
+                    Button("Open Dashboard") {
+                        Task { await model.requestPerform(.dashboard) }
+                    }
+                    .keyboardShortcut("d", modifiers: [.command, .shift])
+                    .disabled(!model.isActionEnabled(.dashboard))
+                    Button("Stop Dashboard") {
+                        Task { await model.stopDashboard() }
+                    }
+                    .keyboardShortcut("d", modifiers: [.command, .option])
+                    .disabled(!model.dashboardRunning)
                 }
-                .keyboardShortcut("d", modifiers: [.command, .shift])
-                .disabled(!model.isActionEnabled(.dashboard))
-                Button("Stop Dashboard") {
-                    Task { await model.stopDashboard() }
-                }
-                .keyboardShortcut("d", modifiers: [.command, .option])
-                .disabled(!model.dashboardRunning)
             }
             CommandMenu("Engine") {
                 if !DistributionChannel.current.requiresBundledHelper {

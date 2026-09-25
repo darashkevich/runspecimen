@@ -16,7 +16,7 @@ struct ActionBar: View {
                     alignment: .leading,
                     spacing: 8
                 ) {
-                    ForEach(actions) { action in
+                    ForEach(actions.filter { $0 != .dashboard || model.isBrowserDashboardAvailable }) { action in
                         Button(action.title) {
                             Task { await model.requestPerform(action) }
                         }

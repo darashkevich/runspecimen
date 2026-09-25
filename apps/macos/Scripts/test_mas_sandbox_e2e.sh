@@ -104,7 +104,7 @@ names = {c["name"] for c in doc.get("checks", []) if c.get("ok")}
 for required in (
     "bundled_helper_version",
     "workspace_bookmark",
-    "dashboard_cleanup",
+    "dashboard_unavailable_in_store",
     "pty_approval_waits_for_human",
 ):
     assert required in names, (required, doc)

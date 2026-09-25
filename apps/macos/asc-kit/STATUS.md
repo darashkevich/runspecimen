@@ -1,5 +1,26 @@
 # ASC kit status (honest)
 
+## Current: 0.1.4 (9) WAITING_FOR_REVIEW (submitted 2026-09-24)
+
+Confirmed rejection of **0.1.3 (8)** (submission `9c19e1cd-…`, review 2026-09-23):
+**2.5.1** private/deprecated API refs in Apple Python 3.9 (`TrustEvaluationAgent`,
+`_lzma` symbols), **Design 4** missing main-window reopen menu, **2.4.5(i)** unused
+`network.server`. See [REJECTION-2026-09-23.md](REJECTION-2026-09-23.md).
+
+Replacement **0.1.4 (9)** built from **origin/main** `0f50a2c` (engine **0.2.0rc14**)
+plus macOS rejection fixes only — **does not include PR #34**.
+
+| Connect field | Value |
+| --- | --- |
+| Version | **0.1.4** `WAITING_FOR_REVIEW` (id `6cfe298b-92c1-460d-b83b-5687a67f2cff`) |
+| Build | **9** id `51a18894-02e3-4846-86f5-29cc345567f0` `VALID` uploaded 2026-09-24T05:32:21-07:00 |
+| Submission | `f0bb3ab1-c283-4463-8c27-e5702a35ac6a` submitted 2026-09-24T12:36:01Z `WAITING_FOR_REVIEW` |
+| Prior rejection | `9c19e1cd-…` cancelled → `COMPLETE` |
+| Package SHA-256 | `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` |
+| Delivery / buildUpload | `51a18894-02e3-4846-86f5-29cc345567f0` |
+
+ASC URL: https://appstoreconnect.apple.com/apps/6813492506/distribution/macos/version/inflight
+
 ## Resubmitted 2026-09-21 (waiting for review)
 
 Monday 02:08 CEST email: “There's an issue with your RunSpecimen (macos) submission”

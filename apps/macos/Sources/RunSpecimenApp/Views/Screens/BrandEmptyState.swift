@@ -36,7 +36,7 @@ struct BrandEmptyState: View {
                         .lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text("Native control surface for the CLI enforcement engine. Approval stays interactive on a real TTY. The dashboard remains read-only.")
+                    Text("Native control surface for the CLI enforcement engine. Approval stays interactive on a real TTY. Evidence inspection is read-only.")
                         .font(.system(size: 14))
                         .foregroundStyle(RSTheme.soft)
                         .frame(maxWidth: 520, alignment: .leading)
