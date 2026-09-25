@@ -24,5 +24,8 @@ Store builds keep the browser dashboard and `com.apple.security.network.server` 
 | Coordination | `coordination validate`, `readiness` | expansion tests | Workflows | Plan file only. No network | No auto-merge |
 | Evaluations | `eval compare` read-only; `eval run` writes a result | expansion tests | Workflows. Run asks first | Disposable workspaces | Running a suite does not approve the selected contract |
 | Scenes | `runspecimen scenes` | expansion tests | Workflows → Prepare or Run checks, after confirmation | Writes `.runspecimen/scenes-demo` | Never types `APPROVE` |
+| Receipt digest | `digest` | receipt tests | Workflows → Digest. Compare output bytes adds `--live` | Reads a stored certificate and, with `--live`, current output files | Does not verify the chain or approve |
+| Receipt diff | `diff` | receipt tests | Workflows → Diff receipts | Reads two stored certificates in the selected workspace | A missing certificate is an error. Exit 0 still means differences were printed |
+| Retain pack | `retain` | bundle tests | Workflows → Retain…, after confirmation | Copies to a folder that must be outside the workspace | Cancel copies nothing. No upload |
 
-`requirements check` and `freshness check` stay CLI-only because they execute or rewrite evidence. Digest, diff, and retain also stay CLI-only on this candidate. The browser dashboard stays in the standalone CLI and stays out of the Store build.
+`requirements check` and `freshness check` stay CLI-only because they execute or rewrite evidence. The **0.1.5 (11)** package at `3a0f483` does not include the receipt rows above; those controls are only on the follow-up branch. The browser dashboard stays in the standalone CLI and stays out of the Store build.

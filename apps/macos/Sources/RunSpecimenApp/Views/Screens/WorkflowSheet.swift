@@ -31,6 +31,9 @@ struct WorkflowSheet: View {
     @State private var exportURL: URL?
     @State private var backupURL: URL?
     @State private var usageExport: URL?
+    @State private var againstCampaign = ""
+    @State private var againstRun = ""
+    @State private var retainDest: URL?
     @State private var decisionID = ""
     @State private var rationale = ""
     @State private var classification = "human"
@@ -60,6 +63,7 @@ struct WorkflowSheet: View {
                     configSection
                     decisionSection
                     usageSection
+                    receiptSection
                     resultSection
                 }
                 .padding(16)
@@ -218,6 +222,39 @@ struct WorkflowSheet: View {
             Text("Import writes usage records. Summarize stays on Refresh read-only.")
                 .font(.system(size: 12))
                 .foregroundStyle(RSTheme.muted)
+        }
+    }
+
+    private var receiptSection: some View {
+        group("Receipts") {
+            Text("Digest and diff only read certificates already stored for this workspace. Retain copies a pack outside the workspace after confirmation. None of these approve, verify the chain, or upload.")
+                .font(.system(size: 12))
+                .foregroundStyle(RSTheme.muted)
+            HStack {
+                Button("Digest") { Task { await showDigest(live: false) } }
+                    .disabled(!canRead || model.contract == nil)
+                Button("Compare output bytes") { Task { await showDigest(live: true) } }
+                    .disabled(!canRead || model.contract == nil)
+            }
+            TextField("Other campaign", text: $againstCampaign)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel("Other campaign")
+            TextField("Other run", text: $againstRun)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel("Other run")
+            Button("Diff receipts") { Task { await showDiff() } }
+                .disabled(!canRead || model.contract == nil || againstCampaign.trimmingCharacters(in: .whitespaces).isEmpty || againstRun.trimmingCharacters(in: .whitespaces).isEmpty)
+            HStack {
+                Button("Choose retain folder") { retainDest = PanelPicker.pickDirectory(message: "Choose a folder outside this workspace") }
+                Button("Retain…") { stageRetain() }
+                    .disabled(!canRead || model.contract == nil || retainDest == nil)
+            }
+            if let retainDest {
+                Text(retainDest.path)
+                    .font(RSTheme.monoSmall)
+                    .foregroundStyle(RSTheme.muted)
+                    .lineLimit(2)
+            }
         }
     }
 
@@ -391,6 +428,60 @@ struct WorkflowSheet: View {
         model.pendingWorkflow = WorkflowRequest(
             title: "Capture decision",
             detail: "Records decision \(id) as \(classification). This is a note in the workspace. It does not approve or run.",
+            arguments: args
+        )
+    }
+
+    private func selectedRun() -> (campaign: String, run: String)? {
+        guard let contract = model.contract,
+              !contract.campaignID.isEmpty,
+              !contract.runID.isEmpty else {
+            localError = "Select a contract with a campaign and a run."
+            return nil
+        }
+        return (contract.campaignID, contract.runID)
+    }
+
+    private func showDigest(live: Bool) async {
+        guard let selected = selectedRun() else { return }
+        var command = ["digest", "--campaign-id", selected.campaign, "--run-id", selected.run]
+        if live { command.append("--live") }
+        guard let args = workspaceArgs(command) else { return }
+        await model.runWorkflow(args)
+    }
+
+    private func showDiff() async {
+        guard let selected = selectedRun() else { return }
+        let otherCampaign = againstCampaign.trimmingCharacters(in: .whitespaces)
+        let otherRun = againstRun.trimmingCharacters(in: .whitespaces)
+        guard !otherCampaign.isEmpty, !otherRun.isEmpty else {
+            localError = "Enter the other campaign and run."
+            return
+        }
+        guard let args = workspaceArgs([
+            "diff",
+            "--campaign-id", selected.campaign,
+            "--run-id", selected.run,
+            "--against-campaign-id", otherCampaign,
+            "--against-run-id", otherRun
+        ]) else { return }
+        await model.runWorkflow(args)
+    }
+
+    private func stageRetain() {
+        guard let dest = retainDest, destinationIsOutsideWorkspace(dest) else { return }
+        guard let selected = selectedRun() else { return }
+        guard let contract = model.contractURL,
+              let args = workspaceArgs([
+                "retain",
+                "--campaign-id", selected.campaign,
+                "--run-id", selected.run,
+                "--contract", contract.path,
+                "--out", dest.path
+              ]) else { return }
+        model.pendingWorkflow = WorkflowRequest(
+            title: "Retain incident pack",
+            detail: "Copies the pack for \(selected.campaign)/\(selected.run) into \(dest.path). The folder is outside this workspace. Cancel copies nothing. This does not approve or upload.",
             arguments: args
         )
     }

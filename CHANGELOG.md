@@ -24,6 +24,7 @@ evidence still applies. See `docs/ADR-005-evidence-expansion.md`.
 - `freshness show` reads a stored report and does not recompute or write one. The native pane uses that command.
 - Session restore keeps the last contract when it is a regular file inside the workspace, and the app stays running after the main window closes.
 - Native Workflows cover snapshot, coordination, evaluation, scenes, configuration apply/export/rollback, decision capture, and usage import. Writes require confirmation. The Store build still has no browser dashboard.
+- Follow-up only, not in the **0.1.5 (11)** package: Workflows can digest or diff stored receipts immediately, and can copy an incident pack outside the workspace after confirmation.
 
 ## 0.2.0rc14 - 2026-09-23
 
