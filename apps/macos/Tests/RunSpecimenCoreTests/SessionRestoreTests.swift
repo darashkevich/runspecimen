@@ -62,4 +62,26 @@ final class SessionRestoreTests: XCTestCase {
     func testLastWindowCloseDoesNotQuit() {
         XCTAssertFalse(SessionRestore.quitWhenLastWindowCloses)
     }
+
+    func testRelativePathStaysInsideWorkspace() throws {
+        let workspace = root.appendingPathComponent("workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let contract = workspace.appendingPathComponent("nested").appendingPathComponent("contract.json")
+        try FileManager.default.createDirectory(at: contract.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: contract)
+        XCTAssertEqual(SessionRestore.relativeContractPath(contract: contract, workspace: workspace), "nested/contract.json")
+        XCTAssertFalse(SessionRestore.isSafeRelativePath("../contract.json"))
+        XCTAssertFalse(SessionRestore.isSafeRelativePath("/tmp/contract.json"))
+        XCTAssertNil(SessionRestore.relativeContractPath(contract: root.appendingPathComponent("nope.json"), workspace: workspace))
+    }
+
+    func testDestinationInsideWorkspaceIsRejected() throws {
+        let workspace = root.appendingPathComponent("workspace", isDirectory: true)
+        let outside = root.appendingPathComponent("outside", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        XCTAssertTrue(SessionRestore.isInsideWorkspace(url: workspace.appendingPathComponent("restore-out"), workspace: workspace))
+        XCTAssertFalse(SessionRestore.isInsideWorkspace(url: outside, workspace: workspace))
+        XCTAssertTrue(SessionRestore.isInsideWorkspace(url: workspace, workspace: workspace))
+    }
 }

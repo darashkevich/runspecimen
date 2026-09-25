@@ -1,6 +1,6 @@
 # Reviewer demo + App Review notes
 
-**Status:** paste-ready for a future review of successor **0.1.5 (10)**. These notes were not re-pasted into the **0.1.4 (9)** submission that is already on file. Do not treat them as proof that Apple has this build.
+**Status:** paste-ready for a future review of successor **0.1.5 (11)**. These notes were not re-pasted into the **0.1.4 (9)** submission that is already on file. Do not treat them as proof that Apple has this build.
 
 ## Review notes (paste)
 
@@ -18,8 +18,11 @@
 > (Command-0). The window reopens with the same workspace and contract when
 > that contract is still a file inside the workspace. Quitting and launching
 > again restores that selection and does not reset the demo or start a run.
-> This Store build has no browser dashboard or listening network server;
-> inspect evidence with Refresh Evidence, which only reads stored reports.
+> This Store build has no browser dashboard or listening network server.
+> Refresh Evidence only reads stored reports. Workspace → Workflows can write
+> a snapshot, configuration bundle, decision, usage import, evaluation, or
+> scenes demo only after a confirmation. Cancel writes nothing. Do not expect
+> the app to type APPROVE.
 >
 > App Sandbox confines the UI and its inherit helper; it does not OS-sandbox
 > the payload under test. Certificates are hash-chained receipts, not

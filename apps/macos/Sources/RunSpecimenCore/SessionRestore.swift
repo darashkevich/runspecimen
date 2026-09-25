@@ -32,6 +32,37 @@ public enum SessionRestore {
         return contractURL
     }
 
+    /// A stored contract path may only name a file inside the workspace.
+    public static func isSafeRelativePath(_ relative: String) -> Bool {
+        !relative.isEmpty
+            && !relative.hasPrefix("/")
+            && !relative.hasPrefix("~")
+            && !relative.contains("..")
+            && !relative.contains("\0")
+    }
+
+    /// Relative path of a regular file that stays inside the workspace after symlink resolution.
+    public static func relativeContractPath(contract: URL, workspace: URL) -> String? {
+        guard let contained = containedContract(contract: contract, workspace: workspace) else { return nil }
+        let root = workspace.resolvingSymlinksInPath().standardizedFileURL
+        let prefix = root.path == "/" ? "/" : root.path + (root.path.hasSuffix("/") ? "" : "/")
+        guard contained.path.hasPrefix(prefix) else { return nil }
+        let relative = String(contained.path.dropFirst(prefix.count))
+        guard isSafeRelativePath(relative) else { return nil }
+        return relative
+    }
+
+    /// True when the resolved URL sits strictly inside the workspace.
+    /// Used to refuse snapshot restore destinations and exported files that would
+    /// overwrite the workspace that holds the receipt.
+    public static func isInsideWorkspace(url: URL, workspace: URL) -> Bool {
+        let workspaceURL = workspace.resolvingSymlinksInPath().standardizedFileURL
+        let target = url.resolvingSymlinksInPath().standardizedFileURL
+        guard workspaceURL.isFileURL, target.isFileURL else { return false }
+        let root = workspaceURL.path == "/" ? "/" : workspaceURL.path + (workspaceURL.path.hasSuffix("/") ? "" : "/")
+        return target.path.hasPrefix(root) || target.path == workspaceURL.path
+    }
+
     /// The Mac app stays running after the main window closes so File → Show
     /// Main Window and Command-0 can reopen it. Quit still happens from the
     /// application menu.

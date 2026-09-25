@@ -27,7 +27,7 @@ Published CLI and plugin: **0.2.0rc14**. That release does not include evidence-
 
 The Mac App Store package recorded as waiting for review is **0.1.4 (9)**. It freezes **0.2.0rc14** and does not include evidence expansion. It is not an App Store install, and there is no `apps.apple.com` link.
 
-A local package that reused the label 0.1.4 (9) and included evidence expansion is a different file. This branch's successor is **0.1.5 (10)**. It is not uploaded. See [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md) and [NATIVE_FEATURE_COVERAGE.md](NATIVE_FEATURE_COVERAGE.md).
+A local package that reused the label 0.1.4 (9) and included evidence expansion is a different file. Local **0.1.5 (10)** was an earlier signed app. This branch's successor is **0.1.5 (11)**. It is not uploaded. See [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md) and [NATIVE_FEATURE_COVERAGE.md](NATIVE_FEATURE_COVERAGE.md).
 
 ## How is this different from a sandbox?
 

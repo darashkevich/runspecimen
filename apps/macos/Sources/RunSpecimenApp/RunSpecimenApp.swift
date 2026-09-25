@@ -72,6 +72,10 @@ struct RunSpecimenApp: App {
                     Task { await model.refreshEvidenceDetails() }
                 }
                 .disabled(model.isBusy || !model.hasWorkspace)
+                Button("Workflows…") {
+                    model.showWorkflows = true
+                }
+                .disabled(!model.hasWorkspace)
             }
             CommandMenu("Lifecycle") {
                 Button("Validate") {
@@ -262,6 +266,10 @@ struct RootView: View {
             AboutView()
                 .environmentObject(model)
                 .frame(minWidth: 420, minHeight: 360)
+        }
+        .sheet(isPresented: $model.showWorkflows) {
+            WorkflowSheet()
+                .environmentObject(model)
         }
         .sheet(isPresented: $model.showSettings) {
             SettingsView()

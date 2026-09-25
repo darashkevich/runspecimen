@@ -54,4 +54,4 @@ rc10 GitHub Release bytes and PyPI bytes were produced by **separate rebuilds**.
 
 ## Website / Store language
 
-Product page install commands match **rc14**. Do not add an `apps.apple.com` link until Apple publishes a working URL. The package recorded as waiting for review is **0.1.4 (9)** with engine **0.2.0rc14**, and it does not include evidence expansion. Successor source on this branch is **0.1.5 (10)** and is not an uploaded artifact. Do not upload another build while **0.1.4 (9)** is the submission on file.
+Product page install commands match **rc14**. Do not add an `apps.apple.com` link until Apple publishes a working URL. The package recorded as waiting for review is **0.1.4 (9)** with engine **0.2.0rc14**, and it does not include evidence expansion. Local **0.1.5 (10)** was an earlier signed app. Successor source on this branch is **0.1.5 (11)** and is not an uploaded artifact. Do not upload another build while **0.1.4 (9)** is the submission on file. Public website copy should keep the rc14 install pin and must not describe 0.1.5 as available or approved.

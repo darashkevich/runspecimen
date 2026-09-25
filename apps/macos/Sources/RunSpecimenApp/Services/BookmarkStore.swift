@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import UniformTypeIdentifiers
 #if canImport(RunSpecimenCore)
 import RunSpecimenCore
 #endif
@@ -41,16 +42,8 @@ final class BookmarkStore {
     /// stored when the system accepts one; a failure there does not forget
     /// the path. Containment is checked on save and on load.
     func saveContract(_ url: URL, relativeTo workspace: URL) throws {
-        guard let contained = SessionRestore.containedContract(contract: url, workspace: workspace) else {
-            throw SessionRestoreError.contractOutsideWorkspace
-        }
-        let root = workspace.resolvingSymlinksInPath().standardizedFileURL
-        let prefix = root.path == "/" ? "/" : root.path + "/"
-        guard contained.path.hasPrefix(prefix) else {
-            throw SessionRestoreError.contractOutsideWorkspace
-        }
-        let relative = String(contained.path.dropFirst(prefix.count))
-        guard !relative.isEmpty, !relative.hasPrefix("/"), !relative.contains("..") else {
+        guard let contained = SessionRestore.containedContract(contract: url, workspace: workspace),
+              let relative = SessionRestore.relativeContractPath(contract: contained, workspace: workspace) else {
             throw SessionRestoreError.contractOutsideWorkspace
         }
         defaults.set(relative, forKey: contractRelativeKey)
@@ -86,7 +79,8 @@ final class BookmarkStore {
                 return contained
             }
         }
-        if let relative = defaults.string(forKey: contractRelativeKey) {
+        if let relative = defaults.string(forKey: contractRelativeKey),
+           SessionRestore.isSafeRelativePath(relative) {
             let candidate = workspace.appendingPathComponent(relative)
             if let contained = SessionRestore.containedContract(contract: candidate, workspace: workspace) {
                 activeContractURL = contained
@@ -211,6 +205,42 @@ enum PanelPicker {
         if let directory {
             panel.directoryURL = directory
         }
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
+    }
+
+    @MainActor
+    static func pickJSON(message: String) -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.json]
+        panel.message = message
+        panel.prompt = "Choose"
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
+    }
+
+    @MainActor
+    static func pickDirectory(message: String) -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = message
+        panel.prompt = "Choose Folder"
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
+    }
+
+    @MainActor
+    static func pickSaveJSON(message: String) -> URL? {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.message = message
+        panel.nameFieldStringValue = "bundle.json"
+        panel.prompt = "Export"
         guard panel.runModal() == .OK else { return nil }
         return panel.url
     }

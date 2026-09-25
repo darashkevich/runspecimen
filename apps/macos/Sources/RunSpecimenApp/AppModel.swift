@@ -23,6 +23,9 @@ final class AppModel: ObservableObject {
     @Published var sessionNote: String?
     /// Read-only evidence-expansion output. Never an approval or a run.
     @Published var expansionReadout: String = ""
+    @Published var showWorkflows = false
+    /// Consequential workflow waiting for an explicit human confirmation.
+    @Published var pendingWorkflow: WorkflowRequest?
     /// Persistent banner when CLI is missing, stale bookmark, or below 0.2.0rc9.
     @Published var cliSetupIssue: String?
     @Published var cliSourceLabel: String?
@@ -339,6 +342,32 @@ final class AppModel: ObservableObject {
     private func labeled(_ title: String, _ arguments: [String]) async -> String {
         let body = await cli.captureReadOnly(arguments)
         return "## \(title)\n\(body)"
+    }
+
+    /// Runs one expansion command and shows its JSON or error. Does not approve.
+    func runWorkflow(_ arguments: [String]) async {
+        guard !isBusy else {
+            expansionReadout = "Wait until the current action finishes."
+            return
+        }
+        guard workspaceURL != nil else {
+            expansionReadout = "Select a workspace first."
+            return
+        }
+        isBusy = true
+        defer { isBusy = false }
+        _ = bookmarks.startAccessingWorkspace()
+        expansionReadout = await cli.captureReadOnly(arguments)
+    }
+
+    func cancelWorkflow() {
+        pendingWorkflow = nil
+    }
+
+    func confirmWorkflow() async {
+        guard let request = pendingWorkflow else { return }
+        pendingWorkflow = nil
+        await runWorkflow(request.arguments)
     }
 
     func refreshCLIIdentity(presentAlert: Bool = false) async {

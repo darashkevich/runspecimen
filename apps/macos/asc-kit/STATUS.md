@@ -27,7 +27,8 @@ These identities are different artifacts. Do not treat them as the same package 
 | --- | --- | --- | --- | --- | --- |
 | Submitted, recorded `WAITING_FOR_REVIEW` on 2026-09-24 | **0.1.4 (9)** | `0f50a2c` plus rejection fixes. Excludes evidence expansion | **0.2.0rc14** | `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` | `51a18894-02e3-4846-86f5-29cc345567f0` |
 | Local candidate that reused the same version label | **0.1.4 (9)** | evidence-expansion tip plus local macOS edits | rc14 plus evidence expansion | `758f8d4651ccc4240410d9618a906fdc9cbbb9974c5c53976b9abb646138cf7f` | not submitted |
-| Successor on this branch | **0.1.5 (10)** | this branch after main is merged in | rc14 plus evidence expansion, session restore, read-only native pane | not packaged in this change | not uploaded |
+| Earlier local signed app | **0.1.5 (10)** | `b467c63` | rc14 plus evidence expansion and read-only native pane | zip `705ced0fa79ca98f951455f68e6fa4a8d08624b686c6579b60678b43e6aac8b0` | not submitted |
+| Successor on this branch | **0.1.5 (11)** | this branch after the workflow controls | rc14 plus native workflows. Package hash is recorded only after `export_mas.sh` with `destination=export` | not uploaded | not uploaded |
 
 Apple's live status was not re-read on 2026-09-25. Do not upload **0.1.5 (10)** while the recorded submission is still the one above.
 
