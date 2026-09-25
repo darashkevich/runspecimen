@@ -25,6 +25,7 @@
 		818B7FFB5C52F411A645E33F /* ActionBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4980BD2EA2EB66E8B05E2589 /* ActionBar.swift */; };
 		9293289E610B5767F5069B8C /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 395F997B04A26C24E649B9F7 /* AppModel.swift */; };
 		9568B3929A301CD70930F0C7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 526BBC943D12D87DD1A66868 /* Assets.xcassets */; };
+		B246061DBB1C9A1B33858BE3 /* SessionRestore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54600DBDAE5EE8D7814A8803 /* SessionRestore.swift */; };
 		C0EB2EB55853C627CBBC718A /* SecurityBoundary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7531B8780C3C9854D43D8CE4 /* SecurityBoundary.swift */; };
 		C243D9C8700F22A2B888FC13 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = E352B17C6C77A8BA98BACAF1 /* Models.swift */; };
 		CA561EC024C155FAB712DD64 /* libRunSpecimenCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 88F0F2985F5100DEBE7D43A3 /* libRunSpecimenCore.a */; };
@@ -33,6 +34,7 @@
 		E5F6FE3C64619C36460B0D20 /* StatusLifecycleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ED625BA3F8017FA5CE6448D /* StatusLifecycleView.swift */; };
 		E6C9E64159AA99328093C70A /* MainConsoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2320608A61C637B03E76E723 /* MainConsoleView.swift */; };
 		EAAA0509D3C5A5D0756E9069 /* AdaptiveLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AE95F2D317B76DDFCF181E2 /* AdaptiveLayout.swift */; };
+		EF2284E59A14A4118AF83ABD /* WorkflowSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECC8E962A96F6966914EF7EB /* WorkflowSheet.swift */; };
 		FC55206BBBC4A36A9FAE52A7 /* ReviewerDemoMaterializer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7658C5730B70BC86806BF9D /* ReviewerDemoMaterializer.swift */; };
 /* End PBXBuildFile section */
 
@@ -62,6 +64,7 @@
 		3F8548B718F4960684AD9F56 /* EvidenceInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceInspectorView.swift; sourceTree = "<group>"; };
 		4980BD2EA2EB66E8B05E2589 /* ActionBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionBar.swift; sourceTree = "<group>"; };
 		526BBC943D12D87DD1A66868 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		54600DBDAE5EE8D7814A8803 /* SessionRestore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRestore.swift; sourceTree = "<group>"; };
 		7531B8780C3C9854D43D8CE4 /* SecurityBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityBoundary.swift; sourceTree = "<group>"; };
 		822C2E8FBE36FF1CF3797630 /* ReviewerDemoWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewerDemoWorkspace.swift; sourceTree = "<group>"; };
 		88F0F2985F5100DEBE7D43A3 /* libRunSpecimenCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libRunSpecimenCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -75,6 +78,7 @@
 		E352B17C6C77A8BA98BACAF1 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		E6F565B47A4AF145AFF0D32B /* CLIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIService.swift; sourceTree = "<group>"; };
 		E7658C5730B70BC86806BF9D /* ReviewerDemoMaterializer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewerDemoMaterializer.swift; sourceTree = "<group>"; };
+		ECC8E962A96F6966914EF7EB /* WorkflowSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -152,6 +156,7 @@
 				A7A08563FFD0AB533D32DFDC /* DistributionChannel.swift */,
 				E7658C5730B70BC86806BF9D /* ReviewerDemoMaterializer.swift */,
 				7531B8780C3C9854D43D8CE4 /* SecurityBoundary.swift */,
+				54600DBDAE5EE8D7814A8803 /* SessionRestore.swift */,
 				CD1AAD0FBB0481F911E148D4 /* WindowPlacement.swift */,
 			);
 			path = RunSpecimenCore;
@@ -199,6 +204,7 @@
 				3F8548B718F4960684AD9F56 /* EvidenceInspectorView.swift */,
 				2320608A61C637B03E76E723 /* MainConsoleView.swift */,
 				1ED625BA3F8017FA5CE6448D /* StatusLifecycleView.swift */,
+				ECC8E962A96F6966914EF7EB /* WorkflowSheet.swift */,
 			);
 			path = Screens;
 			sourceTree = "<group>";
@@ -377,6 +383,7 @@
 				0D0D6744F7E92B0102D34529 /* SettingsView.swift in Sources */,
 				E5F6FE3C64619C36460B0D20 /* StatusLifecycleView.swift in Sources */,
 				5102999ACFB62C8B508AD3C3 /* WindowSanitizer.swift in Sources */,
+				EF2284E59A14A4118AF83ABD /* WorkflowSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -389,6 +396,7 @@
 				E0D6392F303910C4B33ECC3F /* DistributionChannel.swift in Sources */,
 				FC55206BBBC4A36A9FAE52A7 /* ReviewerDemoMaterializer.swift in Sources */,
 				C0EB2EB55853C627CBBC718A /* SecurityBoundary.swift in Sources */,
+				B246061DBB1C9A1B33858BE3 /* SessionRestore.swift in Sources */,
 				0AEFB4491F3D31B7937C6A96 /* WindowPlacement.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
