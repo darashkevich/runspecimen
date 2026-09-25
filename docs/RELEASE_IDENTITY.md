@@ -11,7 +11,7 @@ This file records what shipped; it does not authorize App Store Connect changes.
 | PyPI | **`0.2.0rc14`** (identical SHA-256 to GitHub) | https://pypi.org/project/runspecimen/0.2.0rc14/ |
 | Homebrew tap | **`0.2.0rc14`** (same sdist URL + sha256) | https://github.com/darashkevich/homebrew-runspecimen · `brew tap darashkevich/runspecimen && brew install runspecimen` |
 | Product site | `python3 -m pip install runspecimen==0.2.0rc14` | https://runspecimen.darashkevich.com/ (pin update may lag the package publish) |
-| Mac App Store | **not public** | Connect macOS **0.1.3 (8)** is `IN_REVIEW` (submission `9c19e1cd-ebd1-4705-b683-5a5fdc2671f6`, submitted 2026-09-21T05:36:49Z). That binary froze engine **0.2.0rc12**. Builds 5 and 6 were rejected and cancelled. |
+| Mac App Store | **not public** | Submitted package **0.1.4 (9)** is recorded `WAITING_FOR_REVIEW` (submission `f0bb3ab1-c283-4463-8c27-e5702a35ac6a`, 2026-09-24T12:36:01Z; Apple build `51a18894-02e3-4846-86f5-29cc345567f0`; package SHA-256 `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d`). Source was `0f50a2c` plus the rejection fixes, engine **0.2.0rc14**, and it does **not** include evidence expansion. **0.1.3 (8)** was rejected on 2026-09-23. This file was not refreshed from App Store Connect on 2026-09-25. No `apps.apple.com` link. |
 
 Install pin is required: pip will not select an RC without `==0.2.0rc14`.
 
@@ -32,7 +32,7 @@ Install pin is required: pip will not select an RC without `==0.2.0rc14`.
 | GitHub Release | **`v0.2.0-rc.13`** (published prerelease) | https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.13 · tag peels to `3601934c850dd0405590a392ccd4c052cd7a16e4` |
 | PyPI | **`0.2.0rc13`** (identical SHA-256 to GitHub) | https://pypi.org/project/runspecimen/0.2.0rc13/ |
 | Product site at publication | pinned `runspecimen==0.2.0rc13` | https://runspecimen.darashkevich.com/ now pins rc14 after site update |
-| Mac App Store | **not public** | Connect macOS **0.1.3 (8)** is `IN_REVIEW` (submission `9c19e1cd-ebd1-4705-b683-5a5fdc2671f6`, submitted 2026-09-21T05:36:49Z). Builds 5 and 6 were rejected and cancelled. |
+| Mac App Store | **not public** | Historical: **0.1.3 (8)** was submitted 2026-09-21 and later rejected. It is not the package in review. |
 
 Install pin is required: pip will not select an RC without `==0.2.0rc13`.
 
@@ -54,4 +54,4 @@ rc10 GitHub Release bytes and PyPI bytes were produced by **separate rebuilds**.
 
 ## Website / Store language
 
-Product page install commands match **rc14**. Add an `apps.apple.com` link only when Apple returns a working public URL. The binary in review is **0.1.3 (8)** with engine **0.2.0rc12**. Do not upload another build while that submission is in review.
+Product page install commands match **rc14**. Do not add an `apps.apple.com` link until Apple publishes a working URL. The package recorded as waiting for review is **0.1.4 (9)** with engine **0.2.0rc14**, and it does not include evidence expansion. Successor source on this branch is **0.1.5 (10)** and is not an uploaded artifact. Do not upload another build while **0.1.4 (9)** is the submission on file.

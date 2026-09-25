@@ -1,7 +1,6 @@
 # Reviewer demo + App Review notes
 
-**Status:** paste-ready. The Store build now embeds `Resources/ReviewerDemo`.
-No zip attachment is required.
+**Status:** paste-ready for a future review of successor **0.1.5 (10)**. These notes were not re-pasted into the **0.1.4 (9)** submission that is already on file. Do not treat them as proof that Apple has this build.
 
 ## Review notes (paste)
 
@@ -15,9 +14,12 @@ No zip attachment is required.
 > Open Approve… and type APPROVE yourself on the PTY. Do not automate. The app
 > never auto-approves and has no agent API.
 >
-> Close the main window, then choose File → Show Main Window (Command-0).
-> The window reopens with its workspace preserved. This Store build has no
-> browser dashboard or listening network server; inspect evidence in native views.
+> Close the main window. The app stays running. Choose File → Show Main Window
+> (Command-0). The window reopens with the same workspace and contract when
+> that contract is still a file inside the workspace. Quitting and launching
+> again restores that selection and does not reset the demo or start a run.
+> This Store build has no browser dashboard or listening network server;
+> inspect evidence with Refresh Evidence, which only reads stored reports.
 >
 > App Sandbox confines the UI and its inherit helper; it does not OS-sandbox
 > the payload under test. Certificates are hash-chained receipts, not

@@ -38,6 +38,36 @@ struct EvidenceInspectorView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(RSTheme.amber.opacity(0.9))
 
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Evidence expansion")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(RSTheme.soft)
+                    Spacer()
+                    Button("Refresh read-only") {
+                        Task { await model.refreshEvidenceDetails() }
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                    .disabled(model.isBusy || !model.hasWorkspace)
+                    .accessibilityHint("Reads stored requirements, freshness, decisions, config, and usage. Does not approve or run.")
+                }
+                Text("Read-only. Does not approve, run, apply configuration, restore a snapshot, or evaluate a suite.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(RSTheme.muted)
+                if model.expansionReadout.isEmpty {
+                    Text("No expansion readout yet.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(RSTheme.muted)
+                } else {
+                    Text(model.expansionReadout)
+                        .font(RSTheme.monoSmall)
+                        .foregroundStyle(RSTheme.muted)
+                        .textSelection(.enabled)
+                        .lineLimit(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if let err = model.statusError {
@@ -87,7 +117,9 @@ struct EvidenceInspectorView: View {
                             .foregroundStyle(RSTheme.muted)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                    } else if model.status == nil, !model.lastOutput.isEmpty, model.statusError == nil {
+                    }
+
+                    if model.status == nil, !model.lastOutput.isEmpty, model.statusError == nil {
                         Text("Last CLI note")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(RSTheme.soft)

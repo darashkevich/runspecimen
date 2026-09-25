@@ -180,6 +180,16 @@ cp "$ROOT/Resources/Info.plist" "$CONTENTS/Info.plist"
 
 cp "$ROOT/Resources/PrivacyInfo.xcprivacy" "$RES/PrivacyInfo.xcprivacy"
 
+# App Review first launch opens this workspace. Exclude local receipts.
+DEMO_SRC="$ROOT/Resources/ReviewerDemo"
+if [[ ! -f "$DEMO_SRC/contract.json" ]]; then
+  echo "ERROR: Missing Resources/ReviewerDemo/contract.json" >&2
+  exit 1
+fi
+rm -rf "$RES/ReviewerDemo"
+mkdir -p "$RES/ReviewerDemo"
+rsync -a --delete --exclude '.runspecimen' --exclude '.DS_Store' "$DEMO_SRC/" "$RES/ReviewerDemo/"
+
 # App icon (marketplace brand assets — opaque RGB, not pre-rounded).
 if [[ -f "$ROOT/Resources/AppIcon.icns" ]]; then
   if cp -X /etc/hosts /tmp/.rs-cp-x-test 2>/dev/null; then

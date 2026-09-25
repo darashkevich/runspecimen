@@ -21,7 +21,19 @@ plus macOS rejection fixes only — **does not include PR #34**.
 
 ASC URL: https://appstoreconnect.apple.com/apps/6813492506/distribution/macos/version/inflight
 
-## Resubmitted 2026-09-21 (waiting for review)
+These identities are different artifacts. Do not treat them as the same package because an older local build reused the text **0.1.4 (9)**.
+
+| Artifact | Version | Source | Engine features | Package SHA-256 | Apple build |
+| --- | --- | --- | --- | --- | --- |
+| Submitted, recorded `WAITING_FOR_REVIEW` on 2026-09-24 | **0.1.4 (9)** | `0f50a2c` plus rejection fixes. Excludes evidence expansion | **0.2.0rc14** | `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` | `51a18894-02e3-4846-86f5-29cc345567f0` |
+| Local candidate that reused the same version label | **0.1.4 (9)** | evidence-expansion tip plus local macOS edits | rc14 plus evidence expansion | `758f8d4651ccc4240410d9618a906fdc9cbbb9974c5c53976b9abb646138cf7f` | not submitted |
+| Successor on this branch | **0.1.5 (10)** | this branch after main is merged in | rc14 plus evidence expansion, session restore, read-only native pane | not packaged in this change | not uploaded |
+
+Apple's live status was not re-read on 2026-09-25. Do not upload **0.1.5 (10)** while the recorded submission is still the one above.
+
+## Resubmitted 2026-09-21 (historical snapshot; build 8 was later rejected)
+
+The table below is the Connect state on 2026-09-21. It is not the current submission.
 
 Monday 02:08 CEST email: “There's an issue with your RunSpecimen (macos) submission”
 for `cd198ca0` / **0.1.3 (6)**. Resolution Center text is still not in the public
@@ -78,7 +90,7 @@ What the rejected binary asked reviewers to do (build 5 / rc10):
 That is a 2.1 completeness / 2.4.5(ii)(viii) fail even without Apple’s paragraph.
 Fix in this tree: bundled `Resources/ReviewerDemo`, MAS empty state **Open Reviewer Demo**,
 no pip/Select-CLI on Store builds, metadata keywords no longer lead with “sandbox”.
-That fix shipped as **0.1.3 (6)** (rejected) and again as **0.1.3 (8)**, which is the binary now in review. Engine **0.2.0rc12**.
+That fix shipped as **0.1.3 (6)** (rejected) and again as **0.1.3 (8)**, which Apple rejected on 2026-09-23. Engine **0.2.0rc12**. The package recorded as waiting is **0.1.4 (9)**.
 
 Account Holder still owns: Resolution Center reply if Apple writes back, and the
 EU DSA trader declaration (Business → Compliance). Do not cancel the build 8 submission.
@@ -90,7 +102,7 @@ records public Connect identifiers, not secrets.
 
 ## Historical: Connect build 5 (2026-09-18)
 
-This section records what Apple had when build 5 was in review. It is **not** the current binary. The submission now in review is **0.1.3 (8)** — see the top of this file.
+This section records what Apple had when build 5 was in review. It is **not** the current binary. The package recorded as waiting is **0.1.4 (9)** — see the top of this file.
 The ASC API does **not** store a git SHA. Identity below is reconstructed from
 Connect timestamps + the git timeline.
 
@@ -135,7 +147,7 @@ Commits that **cannot** be inside Apple’s binary (all after 15:38 CEST):
 
 ### Recommendation (superseded)
 
-Build **8** is already `WAITING_FOR_REVIEW` (submitted 2026-09-21). Do not cancel it and do not attach another build from automation. The paragraphs above describe why build 5 was the wrong binary to leave in review.
+Build **8** was rejected on 2026-09-23. Do not cancel the **0.1.4 (9)** submission from automation. The paragraphs above describe why build 5 was the wrong binary to leave in review.
 
 ## Packaging checklist (this operator Mac)
 
@@ -153,13 +165,13 @@ Build **8** is already `WAITING_FOR_REVIEW` (submitted 2026-09-21). Do not cance
 | Distribution-signed archive | **Done** — `RS_MAS_EXPORT=0 ./Scripts/archive_mas.sh` from `/tmp/rs-clean-checkout` (`44ddfed`). App + helper `TeamIdentifier=UN6KF8636A`, Authority `Apple Distribution`, `codesign --verify --strict`, App Sandbox + helper inherit, `Assets.car` + `AppIcon.icns`. |
 | Local MAS `.pkg` export | **Done** — `RS_EXPORT_DESTINATION=export` + `installerSigningCertificate` + profile **UUID** (display name `RunSpecimen MAS` is not what `exportArchive` resolves). Proof: [evidence/export-mas-local-pkg-ok.txt](evidence/export-mas-local-pkg-ok.txt). SHA-256 `e6ea0a7f12f4094ed430ea1ebc956ad6db2d67ecfa0f52e1eb0ebb66283f1bbf`. Extracted app **0.1.3 (5)** `mas`, both binaries `--verify --strict`, sandbox + inherit. **This local pkg is not what Apple is reviewing** (exported after PR #15 packaging fixes). First attempt without installer cert / UUID: [evidence/export-mas-local-pkg-installer-profile-mismatch.txt](evidence/export-mas-local-pkg-installer-profile-mismatch.txt). |
 | `ExportOptions.mas.plist` committed `teamID` | Still placeholder `TEAMID`; `export_mas.sh` rewrites a temp copy (team ID + profile UUID). Default `destination=upload` — set `RS_EXPORT_DESTINATION=export` for a local pkg. Never `-allowProvisioningUpdates` without Yahor. |
-| Connect upload | **0.1.3 (8)** `WAITING_FOR_REVIEW` since 2026-09-21. Do not upload a replacement while it is waiting. |
+| Connect upload | **0.1.4 (9)** recorded `WAITING_FOR_REVIEW` since 2026-09-24. **0.1.3 (8)** was rejected. Do not upload a replacement from automation. |
 
 State ladder (do not collapse these):
 
 1. **Uploaded** — build 8 is in Connect (`c5575ef9-2444-4452-aec8-c9afdc7dd611`).
 2. **Processing** — finished; `VALID`.
-3. **Waiting for review** — current state (submission `9c19e1cd-…`, 2026-09-21).
+3. **Waiting for review** — recorded state for **0.1.4 (9)** (submission `f0bb3ab1-…`, 2026-09-24). Build 8's earlier waiting state ended in rejection.
 4. **Approved** — not yet.
 5. **Publicly available** — not yet (`AFTER_APPROVAL` will still need Apple to release it).
 

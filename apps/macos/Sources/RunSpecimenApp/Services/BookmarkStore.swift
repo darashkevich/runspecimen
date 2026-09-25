@@ -1,5 +1,8 @@
 import Foundation
 import AppKit
+#if canImport(RunSpecimenCore)
+import RunSpecimenCore
+#endif
 
 /// Persists security-scoped bookmarks for workspace folders and the CLI binary.
 /// Required for App Sandbox (Mac App Store Target A) and used for Target B parity.
@@ -10,9 +13,12 @@ final class BookmarkStore {
     private let defaults = UserDefaults.standard
     private let workspaceKey = "rs.bookmark.workspace"
     private let cliKey = "rs.bookmark.cli"
+    private let contractKey = "rs.bookmark.contract"
+    private let contractRelativeKey = "rs.contract.relative"
 
     private var activeWorkspaceURL: URL?
     private var activeCLIURL: URL?
+    private var activeContractURL: URL?
 
     func loadWorkspace() -> URL? {
         resolve(key: workspaceKey, storing: &activeWorkspaceURL)
@@ -28,6 +34,74 @@ final class BookmarkStore {
 
     func saveCLI(_ url: URL) throws {
         try persist(url, key: cliKey, storing: &activeCLIURL, readOnly: true)
+    }
+
+    /// Remembers which contract file belongs to the workspace bookmark.
+    /// The relative path is the restore key. A security-scoped bookmark is
+    /// stored when the system accepts one; a failure there does not forget
+    /// the path. Containment is checked on save and on load.
+    func saveContract(_ url: URL, relativeTo workspace: URL) throws {
+        guard let contained = SessionRestore.containedContract(contract: url, workspace: workspace) else {
+            throw SessionRestoreError.contractOutsideWorkspace
+        }
+        let root = workspace.resolvingSymlinksInPath().standardizedFileURL
+        let prefix = root.path == "/" ? "/" : root.path + "/"
+        guard contained.path.hasPrefix(prefix) else {
+            throw SessionRestoreError.contractOutsideWorkspace
+        }
+        let relative = String(contained.path.dropFirst(prefix.count))
+        guard !relative.isEmpty, !relative.hasPrefix("/"), !relative.contains("..") else {
+            throw SessionRestoreError.contractOutsideWorkspace
+        }
+        defaults.set(relative, forKey: contractRelativeKey)
+        do {
+            activeContractURL?.stopAccessingSecurityScopedResource()
+            let data = try contained.bookmarkData(
+                options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+                includingResourceValuesForKeys: nil,
+                relativeTo: workspace
+            )
+            defaults.set(data, forKey: contractKey)
+            _ = contained.startAccessingSecurityScopedResource()
+        } catch {
+            defaults.removeObject(forKey: contractKey)
+        }
+        activeContractURL = contained
+    }
+
+    func loadContract(relativeTo workspace: URL) -> URL? {
+        if let data = defaults.data(forKey: contractKey) {
+            var stale = false
+            if let url = try? URL(
+                resolvingBookmarkData: data,
+                options: [.withSecurityScope],
+                relativeTo: workspace,
+                bookmarkDataIsStale: &stale
+            ), let contained = SessionRestore.containedContract(contract: url, workspace: workspace) {
+                _ = url.startAccessingSecurityScopedResource()
+                if stale {
+                    try? saveContract(contained, relativeTo: workspace)
+                }
+                activeContractURL = contained
+                return contained
+            }
+        }
+        if let relative = defaults.string(forKey: contractRelativeKey) {
+            let candidate = workspace.appendingPathComponent(relative)
+            if let contained = SessionRestore.containedContract(contract: candidate, workspace: workspace) {
+                activeContractURL = contained
+                return contained
+            }
+        }
+        clearContract()
+        return nil
+    }
+
+    func clearContract() {
+        activeContractURL?.stopAccessingSecurityScopedResource()
+        activeContractURL = nil
+        defaults.removeObject(forKey: contractKey)
+        defaults.removeObject(forKey: contractRelativeKey)
     }
 
     /// Drops the saved CLI bookmark so discovery can fall through to
@@ -55,6 +129,7 @@ final class BookmarkStore {
     func stopAll() {
         activeWorkspaceURL?.stopAccessingSecurityScopedResource()
         activeCLIURL?.stopAccessingSecurityScopedResource()
+        activeContractURL?.stopAccessingSecurityScopedResource()
     }
 
     private func persist(_ url: URL, key: String, storing: inout URL?, readOnly: Bool) throws {

@@ -52,6 +52,13 @@ def register_expansion_parsers(sub: Any) -> None:
     _ws(p_fr_check)
     p_fr_check.add_argument("--contract", type=Path, required=True)
     p_fr_check.add_argument("--manifest", type=Path, default=None)
+    p_fr_show = fr_sub.add_parser(
+        "show",
+        help="Show the stored freshness report without recomputing or writing",
+    )
+    _ws(p_fr_show)
+    p_fr_show.add_argument("--campaign-id", required=True)
+    p_fr_show.add_argument("--run-id", required=True)
 
     # config
     p_cfg = sub.add_parser(
@@ -316,6 +323,12 @@ def _freshness(args: argparse.Namespace, workspace: Path) -> int:
     from runspecimen.paths import ensure_within
     from runspecimen.requirements import load_task_manifest
 
+    if args.freshness_command == "show":
+        from runspecimen.freshness import load_freshness_report
+
+        report = load_freshness_report(workspace, args.campaign_id, args.run_id)
+        print(json.dumps({"report": report}, indent=2, sort_keys=True, default=str))
+        return 0
     if args.freshness_command != "check":
         raise RunSpecimenError(f"unknown freshness command: {args.freshness_command}")
     contract = load_contract(args.contract)

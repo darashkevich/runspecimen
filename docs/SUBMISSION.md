@@ -365,8 +365,7 @@ from a draft. Do not publish the rc11 draft.
 
 ## 3b. Mac App Store (`com.darashkevich.runspecimen`)
 
-**Status (App Store Connect, 2026-09-21):** macOS version **0.1.3 (8)** and
-App Info are **WAITING_FOR_REVIEW** (submission `9c19e1cd-ebd1-4705-b683-5a5fdc2671f6`, submitted 2026-09-21T05:36:49Z). Builds 5 and 6 were rejected. Not publicly available. Do not upload another build while this submission is waiting.
+**Status (recorded 2026-09-24, not re-read 2026-09-25):** macOS **0.1.4 (9)** is `WAITING_FOR_REVIEW` (submission `f0bb3ab1-c283-4463-8c27-e5702a35ac6a`). Package SHA-256 `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d`. It excludes evidence expansion. **0.1.3 (8)** was rejected on 2026-09-23. Not publicly available. Do not upload another build from this document.
 
 Do **not** add a MAS link to the marketing site until Apple provides a live
 `apps.apple.com` URL. Developer ID notarization is not a Store submission.
@@ -409,7 +408,7 @@ listings are confirmed live (not pending review).
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
 | PyPI | ✅ | — | `0.2.0rc14` (same bytes as GitHub) | [runspecimen 0.2.0rc14](https://pypi.org/project/runspecimen/0.2.0rc14/) |
 | Homebrew tap | ✅ | — | `0.2.0rc14` sdist from GitHub Release | [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen) |
-| Mac App Store | ⏳ WAITING_FOR_REVIEW | Apple review of macOS **0.1.3 (8)** | not public | no `apps.apple.com` URL — see `apps/macos/asc-kit/STATUS.md` |
+| Mac App Store | ⏳ recorded WAITING_FOR_REVIEW | Apple review of macOS **0.1.4 (9)** (package `584f6868…`). **0.1.3 (8)** was rejected. Not re-read from Connect on 2026-09-25 | not public | no `apps.apple.com` URL — see `apps/macos/asc-kit/STATUS.md` |
 
 **Important:** Do not claim a listing is "public" or "available" until:
 1. Submission is accepted (not just submitted)

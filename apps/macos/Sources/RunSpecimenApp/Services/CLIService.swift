@@ -88,6 +88,16 @@ actor CLIService {
         return CLIIdentity(path: url, version: version, source: resolutionSource ?? .manual)
     }
 
+    func captureReadOnly(_ arguments: [String]) async -> String {
+        do {
+            let payload = try await runJSON(arguments: arguments)
+            return payload.pretty
+        } catch {
+            let message = (error as? AppError)?.message ?? error.localizedDescription
+            return message
+        }
+    }
+
     func doctor(workspace: URL) async throws -> DoctorReport {
         let data = try await runJSON(arguments: ["doctor", "--workspace", workspace.path])
         let obj = data.object

@@ -19,6 +19,10 @@ final class AppModel: ObservableObject {
     @Published var showSettings = false
     @Published var showAbout = false
     @Published var pathProbeNote: String?
+    /// Why a saved contract was not shown again. Does not clear receipts.
+    @Published var sessionNote: String?
+    /// Read-only evidence-expansion output. Never an approval or a run.
+    @Published var expansionReadout: String = ""
     /// Persistent banner when CLI is missing, stale bookmark, or below 0.2.0rc9.
     @Published var cliSetupIssue: String?
     @Published var cliSourceLabel: String?
@@ -122,13 +126,35 @@ final class AppModel: ObservableObject {
 
         if let ws = bookmarks.loadWorkspace() {
             workspaceURL = ws
+            restoreSavedContract(in: ws)
         } else if channel.requiresBundledHelper, ReviewerDemoWorkspace.bundledRoot() != nil {
             // App Review Macs have a clean container. Opening the bundled
             // workspace here means the reviewer never lands on an empty CTA.
             await openReviewerDemo()
         }
 
+        if contractURL != nil {
+            await loadContractSummary()
+            await runDoctor()
+            await refreshStatus()
+        }
+
         await refreshDashboardFlag()
+    }
+
+    /// Reloads the last contract when it still resolves inside the workspace.
+    /// Does not materialize the Reviewer Demo or start a lifecycle action.
+    private func restoreSavedContract(in workspace: URL) {
+        guard !isBusy else { return }
+        let hadBookmark = UserDefaults.standard.data(forKey: "rs.bookmark.contract") != nil
+        guard let saved = bookmarks.loadContract(relativeTo: workspace) else {
+            if hadBookmark {
+                sessionNote = "Saved contract is no longer inside this workspace, so it was not selected."
+            }
+            return
+        }
+        contractURL = saved
+        sessionNote = nil
     }
 
     /// Open (or reopen) the bundled Reviewer Demo.
@@ -154,6 +180,11 @@ final class AppModel: ObservableObject {
             }
             workspaceURL = dest
             contractURL = dest.appendingPathComponent(ReviewerDemoWorkspace.contractName)
+            do {
+                try bookmarks.saveContract(contractURL!, relativeTo: dest)
+            } catch {
+                sessionNote = error.localizedDescription
+            }
             contract = nil
             status = nil
             statusError = nil
@@ -169,8 +200,10 @@ final class AppModel: ObservableObject {
         guard let url = PanelPicker.pickWorkspace() else { return }
         do {
             try bookmarks.saveWorkspace(url)
+            bookmarks.clearContract()
             workspaceURL = url
             contractURL = nil
+            sessionNote = nil
             contract = nil
             status = nil
             statusError = nil
@@ -245,8 +278,23 @@ final class AppModel: ObservableObject {
     }
 
     func chooseContract() async {
+        guard let workspaceURL else {
+            self.error = AppError(message: "Select a workspace first.")
+            return
+        }
         guard let url = PanelPicker.pickContract(startingAt: workspaceURL) else { return }
+        guard SessionRestore.containedContract(contract: url, workspace: workspaceURL) != nil else {
+            self.error = AppError(message: SessionRestoreError.contractOutsideWorkspace.localizedDescription)
+            return
+        }
+        do {
+            try bookmarks.saveContract(url, relativeTo: workspaceURL)
+        } catch {
+            self.error = AppError(message: error.localizedDescription)
+            return
+        }
         contractURL = url
+        sessionNote = nil
         statusError = nil
         await loadContractSummary()
         await refreshStatus()
@@ -258,6 +306,39 @@ final class AppModel: ObservableObject {
         await loadContractSummary()
         await refreshStatus()
         await refreshDashboardFlag()
+    }
+
+    /// Reads stored evidence, freshness, decisions, config, and usage.
+    /// Does not approve, run, apply config, restore a snapshot, or type APPROVE.
+    func refreshEvidenceDetails() async {
+        guard !isBusy, let workspaceURL else { return }
+        isBusy = true
+        defer { isBusy = false }
+        _ = bookmarks.startAccessingWorkspace()
+        var sections: [String] = []
+        sections.append(await labeled("Config inspect", ["config", "inspect", "--workspace", workspaceURL.path]))
+        sections.append(await labeled("Decisions", ["decisions", "list", "--workspace", workspaceURL.path]))
+        sections.append(await labeled("Usage", ["usage", "summarize", "--workspace", workspaceURL.path]))
+        if let contract {
+            let campaign = contract.campaignID
+            let run = contract.runID
+            if !campaign.isEmpty, !run.isEmpty {
+                sections.append(await labeled(
+                    "Requirements report",
+                    ["requirements", "report", "--workspace", workspaceURL.path, "--campaign-id", campaign, "--run-id", run]
+                ))
+                sections.append(await labeled(
+                    "Freshness report",
+                    ["freshness", "show", "--workspace", workspaceURL.path, "--campaign-id", campaign, "--run-id", run]
+                ))
+            }
+        }
+        expansionReadout = sections.joined(separator: "\n\n")
+    }
+
+    private func labeled(_ title: String, _ arguments: [String]) async -> String {
+        let body = await cli.captureReadOnly(arguments)
+        return "## \(title)\n\(body)"
     }
 
     func refreshCLIIdentity(presentAlert: Bool = false) async {

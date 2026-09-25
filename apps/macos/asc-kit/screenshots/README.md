@@ -1,5 +1,7 @@
 # Screenshots (ASC)
 
+These PNGs predate the submitted **0.1.4 (9)** Store app. Do not treat them as current Store chrome until they are recaptured from that build or a later signed candidate. They are local evidence only.
+
 **Status: CAPTURED (local ad-hoc MAS app)** — real product chrome from the sandboxed
 `RunSpecimen.app` (Archive ad-hoc / `build/screenshot-RunSpecimen.app`), not mocks.
 
