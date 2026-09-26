@@ -29,7 +29,7 @@ These identities are different artifacts. Do not treat them as the same package 
 | Local candidate that reused the same version label | **0.1.4 (9)** | evidence-expansion tip plus local macOS edits | rc14 plus evidence expansion | `758f8d4651ccc4240410d9618a906fdc9cbbb9974c5c53976b9abb646138cf7f` | not submitted |
 | Earlier local signed app | **0.1.5 (10)** | `b467c63` | rc14 plus evidence expansion and read-only native pane | zip `705ced0fa79ca98f951455f68e6fa4a8d08624b686c6579b60678b43e6aac8b0` | not submitted |
 | Local Store package, not uploaded | **0.1.5 (11)** | `3a0f48351b5717fb68168be6c56ac3038f2ea11e` | rc14 plus native workflows. No confirmation-claim or pipe-drain fix | pkg `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309` | not uploaded |
-| Next local candidate | **0.1.5 (12)** | this branch after the confirmation and pipe fixes. Receipt digest, diff, and retain stay CLI-only | rc14 plus native workflows | package hash is recorded after a local `destination=export` | not uploaded |
+| Next local candidate | **0.1.5 (12)** | `c400f2d0ca82b21f2663df92f3f0c262a1ba09af` | rc14 plus native workflows, confirmation claim, and concurrent pipe drain. Receipt digest, diff, and retain stay CLI-only | pkg `6b3e9b3e1db219aafd834dd894b4ce04a8269cedb34dc116a4a154c22bb09a38` | not uploaded |
 
 App Store Connect was not queried on 2026-09-25: the local API key file is present, and the issuer ID is not stored beside it, so no request was sent. Do not upload **0.1.5 (11)** while the recorded submission is still **0.1.4 (9)**.
 
