@@ -3,6 +3,10 @@
 # Without Apple Distribution identities, archives with ad-hoc signing (-) to prove
 # the project is structurally archivable — clearly labeled, with helper sandbox+inherit.
 # Does not upload or Submit for Review.
+#
+# The exported Store package is not a local launch build. taskgated rejects its
+# Mac App Store profile outside App Store installation. Launch QA uses
+# ./Scripts/build_local_qa.sh (Apple Development signing, separate output path).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$ROOT/../.." && pwd)"

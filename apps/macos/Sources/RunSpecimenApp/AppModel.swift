@@ -183,6 +183,8 @@ final class AppModel: ObservableObject {
             }
             workspaceURL = dest
             contractURL = dest.appendingPathComponent(ReviewerDemoWorkspace.contractName)
+            expansionReadout = ""
+            cancelWorkflow()
             do {
                 try bookmarks.saveContract(contractURL!, relativeTo: dest)
             } catch {
@@ -210,6 +212,8 @@ final class AppModel: ObservableObject {
             contract = nil
             status = nil
             statusError = nil
+            expansionReadout = ""
+            cancelWorkflow()
             await runDoctor()
         } catch {
             self.error = AppError(message: error.localizedDescription)
