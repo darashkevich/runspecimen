@@ -4,14 +4,6 @@ import AppKit
 import RunSpecimenCore
 #endif
 
-/// A consequential expansion command that has not run yet.
-struct WorkflowRequest: Identifiable {
-    let id = UUID()
-    let title: String
-    let detail: String
-    let arguments: [String]
-}
-
 /// Native controls for evidence-expansion commands.
 ///
 /// Read-only commands run immediately. Commands that write files show a preview
@@ -75,12 +67,15 @@ struct WorkflowSheet: View {
             model.pendingWorkflow?.title ?? "Confirm",
             isPresented: Binding(
                 get: { model.pendingWorkflow != nil },
-                set: { if !$0 { model.cancelWorkflow() } }
+                set: { presented in
+                    if !presented { model.cancelWorkflow() }
+                }
             ),
             presenting: model.pendingWorkflow
         ) { request in
             Button(request.title) {
-                Task { await model.confirmWorkflow() }
+                guard let claimed = model.claimConfirmedWorkflow(), claimed.id == request.id else { return }
+                Task { await model.performClaimedWorkflow(claimed) }
             }
             Button("Cancel", role: .cancel) {
                 model.cancelWorkflow()
@@ -301,11 +296,11 @@ struct WorkflowSheet: View {
             localError = "Choose a contract and enter a snapshot id."
             return
         }
-        model.pendingWorkflow = WorkflowRequest(
+        model.stageWorkflow(WorkflowRequest(
             title: "Create snapshot",
             detail: "Writes snapshot \(id) from the selected contract’s source roots. This does not approve or run.",
             arguments: args
-        )
+        ))
     }
 
     private func previewRestore() async {
@@ -326,11 +321,11 @@ struct WorkflowSheet: View {
             localError = "Enter a snapshot id."
             return
         }
-        model.pendingWorkflow = WorkflowRequest(
+        model.stageWorkflow(WorkflowRequest(
             title: "Restore snapshot",
             detail: "Writes snapshot \(id) into \(dest.path). The folder is outside this workspace. Cancel leaves it unchanged.",
             arguments: args
-        )
+        ))
     }
 
     private func destinationIsOutsideWorkspace(_ dest: URL) -> Bool {
@@ -358,11 +353,11 @@ struct WorkflowSheet: View {
 
     private func stageEvalRun() {
         guard let suite = suiteURL, let args = workspaceArgs(["eval", "run", "--suite", suite.path]) else { return }
-        model.pendingWorkflow = WorkflowRequest(
+        model.stageWorkflow(WorkflowRequest(
             title: "Run evaluation",
             detail: "Runs \(suite.lastPathComponent) in disposable workspaces and writes a result. This does not approve the selected contract.",
             arguments: args
-        )
+        ))
     }
 
     private func compareEval() async {
@@ -374,13 +369,13 @@ struct WorkflowSheet: View {
         var command = ["scenes"]
         if prepareOnly { command.append("--prepare-only") }
         guard let args = workspaceArgs(command) else { return }
-        model.pendingWorkflow = WorkflowRequest(
+        model.stageWorkflow(WorkflowRequest(
             title: prepareOnly ? "Prepare scenes" : "Run scene checks",
             detail: prepareOnly
                 ? "Replaces .runspecimen/scenes-demo and prints the human approval command. The app will not type APPROVE."
                 : "Replaces .runspecimen/scenes-demo and runs the local checks. The app will not type APPROVE or start the selected contract.",
             arguments: args
-        )
+        ))
     }
 
     private func previewConfig() async {
@@ -390,29 +385,29 @@ struct WorkflowSheet: View {
 
     private func stageConfigApply() {
         guard let bundle = bundleURL, let args = workspaceArgs(["config", "apply", "--bundle", bundle.path]) else { return }
-        model.pendingWorkflow = WorkflowRequest(
+        model.stageWorkflow(WorkflowRequest(
             title: "Apply configuration",
             detail: "Writes the active bundle from \(bundle.lastPathComponent) and keeps a backup. Cancel leaves the current bundle unchanged.",
             arguments: args
-        )
+        ))
     }
 
     private func stageExport() {
         guard let export = exportURL, let args = workspaceArgs(["config", "export", "--out", export.path]) else { return }
-        model.pendingWorkflow = WorkflowRequest(
+        model.stageWorkflow(WorkflowRequest(
             title: "Export configuration",
             detail: "Writes the active bundle to \(export.path). Secrets stay excluded. Cancel writes nothing.",
             arguments: args
-        )
+        ))
     }
 
     private func stageRollback() {
         guard let backup = backupURL, let args = workspaceArgs(["config", "rollback", "--backup", backup.path]) else { return }
-        model.pendingWorkflow = WorkflowRequest(
+        model.stageWorkflow(WorkflowRequest(
             title: "Roll back configuration",
             detail: "Restores the active bundle from \(backup.lastPathComponent). Cancel leaves the current bundle unchanged.",
             arguments: args
-        )
+        ))
     }
 
     private func stageDecision() {
@@ -425,11 +420,11 @@ struct WorkflowSheet: View {
                 "--rationale", why,
                 "--classification", classification
               ]) else { return }
-        model.pendingWorkflow = WorkflowRequest(
+        model.stageWorkflow(WorkflowRequest(
             title: "Capture decision",
             detail: "Records decision \(id) as \(classification). This is a note in the workspace. It does not approve or run.",
             arguments: args
-        )
+        ))
     }
 
     private func selectedRun() -> (campaign: String, run: String)? {
@@ -489,11 +484,11 @@ struct WorkflowSheet: View {
     private func stageUsageImport() {
         guard let export = usageExport,
               let args = workspaceArgs(["usage", "import", "--provider", "local_json", "--export", export.path]) else { return }
-        model.pendingWorkflow = WorkflowRequest(
+        model.stageWorkflow(WorkflowRequest(
             title: "Import usage",
             detail: "Imports \(export.lastPathComponent). Repeating the same file does not double-count. Cancel imports nothing.",
             arguments: args
-        )
+        ))
     }
 
     @ViewBuilder

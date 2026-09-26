@@ -360,13 +360,35 @@ final class AppModel: ObservableObject {
         expansionReadout = await cli.captureReadOnly(arguments)
     }
 
-    func cancelWorkflow() {
-        pendingWorkflow = nil
+    private var workflowGate = WorkflowConfirmationGate()
+
+    func stageWorkflow(_ request: WorkflowRequest) {
+        workflowGate.present(request)
+        pendingWorkflow = workflowGate.pending
     }
 
-    func confirmWorkflow() async {
-        guard let request = pendingWorkflow else { return }
-        pendingWorkflow = nil
+    /// Dialog dismissal drops only an unclaimed request.
+    func cancelWorkflow() {
+        workflowGate.cancel()
+        pendingWorkflow = workflowGate.pending
+    }
+
+    /// Call this synchronously from the confirm button, before any `Task`.
+    func claimConfirmedWorkflow() -> WorkflowRequest? {
+        guard !isBusy else { return nil }
+        let claimed = workflowGate.confirm()
+        pendingWorkflow = workflowGate.pending
+        return claimed
+    }
+
+    func performClaimedWorkflow(_ request: WorkflowRequest) async {
+        guard workflowGate.beginExecution(of: request) else { return }
+        if isBusy {
+            workflowGate.abandonExecution()
+            expansionReadout = "Wait until the current action finishes."
+            return
+        }
+        defer { workflowGate.finishExecution() }
         await runWorkflow(request.arguments)
     }
 
