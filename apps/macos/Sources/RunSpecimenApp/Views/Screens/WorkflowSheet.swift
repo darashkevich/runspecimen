@@ -474,11 +474,11 @@ struct WorkflowSheet: View {
                 "--contract", contract.path,
                 "--out", dest.path
               ]) else { return }
-        model.pendingWorkflow = WorkflowRequest(
+        model.stageWorkflow(WorkflowRequest(
             title: "Retain incident pack",
             detail: "Copies the pack for \(selected.campaign)/\(selected.run) into \(dest.path). The folder is outside this workspace. Cancel copies nothing. This does not approve or upload.",
             arguments: args
-        )
+        ))
     }
 
     private func stageUsageImport() {
