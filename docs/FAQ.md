@@ -21,6 +21,14 @@ interactive approval expiry and predecessor gating before the next campaign
 step. It does not replace CI; you can still verify receipts in CI if you ship
 the workspace evidence with matching host runtime expectations.
 
+## Which build is public, in review, or only on this branch?
+
+Published CLI and plugin: **0.2.0rc14**. That release does not include evidence-expansion commands.
+
+The Mac App Store package recorded as waiting for review is **0.1.4 (9)**. It freezes **0.2.0rc14** and does not include evidence expansion. It is not an App Store install, and there is no `apps.apple.com` link.
+
+A local package that reused the label 0.1.4 (9) and included evidence expansion is a different file. Local **0.1.5 (10)** was an earlier signed app. Local **0.1.5 (11)** from `3a0f483` is SHA-256 `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309` and does not include the later confirmation or pipe fixes. The next local candidate is **0.1.5 (12)** from `c400f2d`, SHA-256 `6b3e9b3e1db219aafd834dd894b4ce04a8269cedb34dc116a4a154c22bb09a38`. It is not uploaded and not approved. See [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md) and [NATIVE_FEATURE_COVERAGE.md](NATIVE_FEATURE_COVERAGE.md).
+
 ## How is this different from a sandbox?
 
 A sandbox limits what a process can reach. RunSpecimen records whether an

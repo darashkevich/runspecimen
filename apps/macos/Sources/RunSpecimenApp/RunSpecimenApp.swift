@@ -31,9 +31,11 @@ struct RunSpecimenApp: App {
         .defaultPosition(.center)
         .defaultSize(width: WindowPlacement.defaultSize.width, height: WindowPlacement.defaultSize.height)
         .commands {
-            CommandGroup(replacing: .newItem) {
+            CommandGroup(after: .newItem) {
                 Button("Show Main Window") {
-                    openWindow(id: "main")
+                    let open = { openWindow(id: "main") }
+                    appDelegate.openMainWindow = open
+                    open()
                 }
                 .keyboardShortcut("0", modifiers: [.command])
             }
@@ -66,6 +68,14 @@ struct RunSpecimenApp: App {
                     Task { await model.refreshAll() }
                 }
                 .keyboardShortcut("r", modifiers: [.command])
+                Button("Refresh Evidence") {
+                    Task { await model.refreshEvidenceDetails() }
+                }
+                .disabled(model.isBusy || !model.hasWorkspace)
+                Button("Workflows…") {
+                    model.showWorkflows = true
+                }
+                .disabled(!model.hasWorkspace)
             }
             CommandMenu("Lifecycle") {
                 Button("Validate") {
@@ -156,6 +166,7 @@ struct RunSpecimenApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var model: AppModel?
+    var openMainWindow: (() -> Void)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if MasSandboxE2E.isRequested {
@@ -165,6 +176,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         WindowSanitizer.install()
+        DispatchQueue.main.async {
+            self.presentMainWindowIfNeeded()
+        }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        SessionRestore.quitWhenLastWindowCloses
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -178,8 +196,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            presentMainWindowIfNeeded()
+        }
         WindowSanitizer.apply()
         return true
+    }
+
+    /// SwiftUI remembers a closed main window. File → Show Main Window and a
+    /// later launch both need a visible window without resetting the workspace.
+    func presentMainWindowIfNeeded() {
+        if NSApp.windows.contains(where: { $0.isVisible && !$0.isSheet && $0.level == .normal }) {
+            return
+        }
+        if let openMainWindow {
+            openMainWindow()
+            return
+        }
+        guard let file = NSApp.mainMenu?.items.first(where: { $0.title == "File" })?.submenu,
+              let item = file.items.first(where: { $0.title == "Show Main Window" }),
+              let action = item.action else {
+            return
+        }
+        NSApp.sendAction(action, to: item.target, from: item)
     }
 }
 
@@ -227,6 +266,10 @@ struct RootView: View {
             AboutView()
                 .environmentObject(model)
                 .frame(minWidth: 420, minHeight: 360)
+        }
+        .sheet(isPresented: $model.showWorkflows) {
+            WorkflowSheet()
+                .environmentObject(model)
         }
         .sheet(isPresented: $model.showSettings) {
             SettingsView()

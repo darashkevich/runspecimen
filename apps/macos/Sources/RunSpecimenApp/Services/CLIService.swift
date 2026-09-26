@@ -88,6 +88,16 @@ actor CLIService {
         return CLIIdentity(path: url, version: version, source: resolutionSource ?? .manual)
     }
 
+    func captureReadOnly(_ arguments: [String]) async -> String {
+        do {
+            let payload = try await runJSON(arguments: arguments)
+            return payload.pretty
+        } catch {
+            let message = (error as? AppError)?.message ?? error.localizedDescription
+            return message
+        }
+    }
+
     func doctor(workspace: URL) async throws -> DoctorReport {
         let data = try await runJSON(arguments: ["doctor", "--workspace", workspace.path])
         let obj = data.object
@@ -356,40 +366,49 @@ actor CLIService {
 
     private func run(arguments: [String], expectJSON: Bool) async throws -> ProcessResult {
         let url = try requireCLI()
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let process = Process()
-                    let invocation = Self.processInvocation(for: url, arguments: arguments)
-                    process.executableURL = invocation.executable
-                    process.arguments = invocation.arguments
-                    process.environment = Self.augmentedEnvironment()
-                    // Bundled Helpers live next to the launcher; keep cwd stable for relative paths.
-                    if url.path.contains("/Contents/Helpers/") || url.path.contains("/RunSpecimenEngine/") {
-                        process.currentDirectoryURL = url.deletingLastPathComponent()
+        let flag = ProcessCancellationFlag()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let box = ContinuationBox(continuation)
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do {
+                        let invocation = Self.processInvocation(for: url, arguments: arguments)
+                        var directory: URL?
+                        if url.path.contains("/Contents/Helpers/") || url.path.contains("/RunSpecimenEngine/") {
+                            directory = url.deletingLastPathComponent()
+                        }
+                        let output = try BoundedProcessCapture.run(
+                            executable: invocation.executable,
+                            arguments: invocation.arguments,
+                            environment: Self.augmentedEnvironment(),
+                            currentDirectory: directory,
+                            byteLimit: 8 * 1024 * 1024,
+                            timeout: 15 * 60,
+                            isCancelled: { flag.isCancelled }
+                        )
+                        _ = expectJSON
+                        var stderr = String(data: output.stderr, encoding: .utf8) ?? ""
+                        if output.timedOut {
+                            stderr = "The engine timed out before it finished.\n" + stderr
+                        } else if output.cancelled {
+                            stderr = "The engine was cancelled before it finished.\n" + stderr
+                        }
+                        if output.stdoutTruncated || output.stderrTruncated {
+                            stderr += stderr.isEmpty ? "Output was truncated." : "\nOutput was truncated."
+                        }
+                        let failed = output.timedOut || output.cancelled
+                        box.resume(returning: ProcessResult(
+                            exitCode: failed ? 1 : output.exitCode,
+                            stdout: String(data: output.stdout, encoding: .utf8) ?? "",
+                            stderr: stderr
+                        ))
+                    } catch {
+                        box.resume(throwing: AppError(message: error.localizedDescription))
                     }
-
-                    let out = Pipe()
-                    let err = Pipe()
-                    process.standardOutput = out
-                    process.standardError = err
-                    process.standardInput = FileHandle.nullDevice
-
-                    try process.run()
-                    process.waitUntilExit()
-
-                    let stdout = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                    let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                    _ = expectJSON
-                    continuation.resume(returning: ProcessResult(
-                        exitCode: process.terminationStatus,
-                        stdout: stdout,
-                        stderr: stderr
-                    ))
-                } catch {
-                    continuation.resume(throwing: AppError(message: error.localizedDescription))
                 }
             }
+        } onCancel: {
+            flag.cancel()
         }
     }
 
@@ -469,6 +488,49 @@ actor CLIService {
             return URL(fileURLWithPath: String(cString: dir), isDirectory: true)
         }
         return FileManager.default.homeDirectoryForCurrentUser
+    }
+}
+
+/// Resumes a checked continuation at most once, including when capture throws.
+private final class ContinuationBox<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, Error>?
+
+    init(_ continuation: CheckedContinuation<T, Error>) {
+        self.continuation = continuation
+    }
+
+    func resume(returning value: T) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: value)
+    }
+
+    func resume(throwing error: Error) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(throwing: error)
+    }
+}
+
+private final class ProcessCancellationFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
     }
 }
 

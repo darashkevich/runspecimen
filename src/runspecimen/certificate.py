@@ -44,6 +44,7 @@ def build_certificate(
     event_head: str,
     approval: dict[str, Any] | None,
     runtime: dict[str, Any],
+    evidence_attestation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     body = {
         "approval_expires_at_unix": (approval or {}).get("expires_at_unix"),
@@ -72,6 +73,13 @@ def build_certificate(
     approver = (approval or {}).get("approver")
     if approver is not None:
         body["approver"] = approver
+    if evidence_attestation is not None:
+        body["evidence_attestation"] = {
+            "evidence_report_digest": evidence_attestation.get("evidence_report_digest"),
+            "attestation_digest": evidence_attestation.get("artifact_digest"),
+            "aggregate_outcome": evidence_attestation.get("aggregate_outcome"),
+            "manifest_hash": evidence_attestation.get("manifest_hash"),
+        }
     certificate_id = sha256_bytes(canonical_json_bytes(certificate_id_material(body)))
     return {"certificate_id": certificate_id, **body}
 
@@ -220,6 +228,36 @@ def verify_run_receipt(
                 confirm_channel = str(rec.body["confirm_channel"])
                 break
 
+    # When a receipt binds evidence_attestation, verify the associated report digest.
+    evidence_binding = None
+    ea = cert.get("evidence_attestation")
+    if isinstance(ea, dict) and ea.get("evidence_report_digest"):
+        from runspecimen.requirements import (
+            annotate_evidence_authenticity,
+            load_evidence_report,
+        )
+
+        try:
+            report = load_evidence_report(workspace, campaign_id, run_id)
+        except Exception as exc:  # noqa: BLE001
+            raise CertificateError(
+                f"certificate binds evidence_attestation but evidence report missing/invalid: {exc}"
+            ) from exc
+        if report.get("artifact_digest") != ea.get("evidence_report_digest"):
+            raise CertificateError(
+                "evidence report digest does not match certificate evidence_attestation"
+            )
+        report = annotate_evidence_authenticity(workspace, campaign_id, run_id, report)
+        if report.get("authenticity") != "receipt_bound":
+            raise CertificateError(
+                "evidence report is not receipt-bound despite certificate attestation field"
+            )
+        evidence_binding = {
+            "evidence_report_digest": report.get("artifact_digest"),
+            "authenticity": report.get("authenticity"),
+            "aggregate_outcome": report.get("aggregate_outcome"),
+        }
+
     if require_live_provenance:
         if contract is None:
             raise CertificateError("live provenance verification requires a contract")
@@ -247,6 +285,12 @@ def verify_run_receipt(
         if state.get("runtime", {}).get("runtime_id") != live_runtime.get("runtime_id"):
             raise CertificateError("state runtime provenance does not match live runtime")
 
+    # Ordinary lifecycle gate: policy.required_verification must hold at verify.
+    if contract is not None:
+        from runspecimen.policy import enforce_required_verification
+
+        enforce_required_verification(workspace=workspace, contract=contract)
+
     return {
         "ok": True,
         "certificate_id": cert["certificate_id"],
@@ -260,6 +304,7 @@ def verify_run_receipt(
             if confirm_channel == "remote_human_confirm"
             else None
         ),
+        "evidence_binding": evidence_binding,
     }
 
 

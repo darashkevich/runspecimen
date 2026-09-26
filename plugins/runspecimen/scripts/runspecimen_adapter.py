@@ -19,6 +19,9 @@ ALLOWED = frozenset({
     "run",
     "postflight",
     "verify",
+    "decisions_search",
+    "requirements_report",
+    "freshness_check",
 })
 
 
@@ -30,6 +33,8 @@ def main() -> int:
     parser.add_argument("--campaign-id")
     parser.add_argument("--run-id")
     parser.add_argument("--open", action="store_true")
+    parser.add_argument("--query", default="")
+    parser.add_argument("--manifest", type=Path)
     args = parser.parse_args()
 
     executable = shutil.which("runspecimen")
@@ -41,17 +46,49 @@ def main() -> int:
         return subprocess.run([executable, "about"], check=False).returncode
     if args.workspace is None:
         parser.error("--workspace is required")
-    command = [executable, args.action, "--workspace", str(args.workspace.resolve())]
-    if args.contract is not None:
-        command.extend(["--contract", str(args.contract.resolve())])
-    if args.campaign_id is not None:
-        command.extend(["--campaign-id", args.campaign_id])
-    if args.run_id is not None:
-        command.extend(["--run-id", args.run_id])
-    if args.open:
-        if args.action != "dashboard":
-            parser.error("--open is supported only for dashboard")
-        command.append("--open")
+    ws = str(args.workspace.resolve())
+    if args.action == "decisions_search":
+        command = [executable, "decisions", "search", "--workspace", ws, "--query", args.query]
+    elif args.action == "requirements_report":
+        if not args.campaign_id or not args.run_id:
+            parser.error("requirements_report requires --campaign-id and --run-id")
+        command = [
+            executable,
+            "requirements",
+            "report",
+            "--workspace",
+            ws,
+            "--campaign-id",
+            args.campaign_id,
+            "--run-id",
+            args.run_id,
+        ]
+    elif args.action == "freshness_check":
+        if args.contract is None:
+            parser.error("freshness_check requires --contract")
+        command = [
+            executable,
+            "freshness",
+            "check",
+            "--workspace",
+            ws,
+            "--contract",
+            str(args.contract.resolve()),
+        ]
+        if args.manifest is not None:
+            command.extend(["--manifest", str(args.manifest.resolve())])
+    else:
+        command = [executable, args.action, "--workspace", ws]
+        if args.contract is not None:
+            command.extend(["--contract", str(args.contract.resolve())])
+        if args.campaign_id is not None:
+            command.extend(["--campaign-id", args.campaign_id])
+        if args.run_id is not None:
+            command.extend(["--run-id", args.run_id])
+        if args.open:
+            if args.action != "dashboard":
+                parser.error("--open is supported only for dashboard")
+            command.append("--open")
     return subprocess.run(command, check=False).returncode
 
 

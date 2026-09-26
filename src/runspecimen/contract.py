@@ -161,6 +161,15 @@ class PolicyRef:
 
 
 @dataclass(frozen=True)
+class TaskManifestRef:
+    """Optional bound task manifest. Bytes are part of the contract hash."""
+
+    id: str
+    path: str
+    sha256: str
+
+
+@dataclass(frozen=True)
 class Contract:
     version: int
     campaign_id: str
@@ -176,6 +185,7 @@ class Contract:
     runtime: RuntimeSpec | None
     isolation: IsolationSpec
     policy: PolicyRef | None
+    task_manifest: TaskManifestRef | None
     path: Path
     contract_hash: str
     raw: dict[str, Any] = field(repr=False)
@@ -230,6 +240,25 @@ def _parse_policy(raw: Any) -> PolicyRef | None:
     return PolicyRef(id=policy_id, path=path, sha256=digest)
 
 
+def _parse_task_manifest_ref(raw: Any) -> TaskManifestRef | None:
+    if raw is None:
+        return None
+    obj = _require_dict(raw, "task_manifest")
+    _reject_unknown(obj, {"id", "path", "sha256"}, "task_manifest")
+    mid = _require_str(obj.get("id"), "task_manifest.id")
+    if any(ch.isspace() for ch in mid) or "/" in mid or "\\" in mid:
+        raise ContractError(
+            "task_manifest.id must be a single token without path separators"
+        )
+    path = _require_str(obj.get("path"), "task_manifest.path")
+    if path.startswith("/") or path.startswith("~"):
+        raise ContractError(
+            "task_manifest.path must be a relative path inside the workspace"
+        )
+    digest = _require_sha256_hex(obj.get("sha256"), "task_manifest.sha256")
+    return TaskManifestRef(id=mid, path=path, sha256=digest)
+
+
 def validate_caps(caps: CapsSpec) -> None:
     if not (MIN_WALL_TIMEOUT_SEC <= caps.wall_timeout_sec <= MAX_WALL_TIMEOUT_SEC):
         raise ContractError(
@@ -269,6 +298,7 @@ def parse_contract(
             "runtime",
             "isolation",
             "policy",
+            "task_manifest",
         },
         "contract",
     )
@@ -447,6 +477,7 @@ def parse_contract(
 
     isolation = _parse_isolation(data.get("isolation"))
     policy = _parse_policy(data.get("policy"))
+    task_manifest = _parse_task_manifest_ref(data.get("task_manifest"))
 
     if contract_hash is None:
         contract_hash = hash_contract_file(path)
@@ -465,6 +496,7 @@ def parse_contract(
         runtime=runtime_spec,
         isolation=isolation,
         policy=policy,
+        task_manifest=task_manifest,
         path=path.resolve(),
         contract_hash=contract_hash,
         raw=data,
@@ -513,3 +545,7 @@ def check_contract_paths(contract: Contract, workspace: Path) -> None:
         ensure_within(workspace, Path(assertion.path), label=f"json_equals path {assertion.path!r}")
     if contract.policy is not None:
         ensure_within(workspace, Path(contract.policy.path), label="policy.path")
+    if contract.task_manifest is not None:
+        ensure_within(
+            workspace, Path(contract.task_manifest.path), label="task_manifest.path"
+        )

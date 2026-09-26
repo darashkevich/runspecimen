@@ -284,6 +284,7 @@ if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/n
   test ! -d "$APP/Contents/Helpers/_internal"
   file "$APP/Contents/Resources/RunSpecimenEngine/runspecimen" | grep -q 'Mach-O'
   /usr/libexec/PlistBuddy -c 'Print :RSDistributionChannel' "$APP/Contents/Info.plist" | grep -qx mas
+  test -f "$APP/Contents/Resources/ReviewerDemo/contract.json"
   REPO_VER=$(
     python3 -c 'import pathlib,re,sys; t=pathlib.Path(sys.argv[1],"src/runspecimen/__init__.py").read_text(); m=re.search(r"__version__\s*=\s*\"([^\"]+)\"", t); assert m; print(m.group(1))' \
       "$REPO"

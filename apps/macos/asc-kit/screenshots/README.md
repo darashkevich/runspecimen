@@ -1,5 +1,9 @@
 # Screenshots (ASC)
 
+The four PNGs in this directory predate the submitted **0.1.4 (9)** Store app. They are not the **0.1.5 (11)** candidate and they are not what Apple is reviewing.
+
+Captures from the signed **0.1.5 (11)** archive app (source `3a0f483`, Apple Distribution, not the installed Store package) are in [0.1.5-11/](0.1.5-11/). Those are local evidence for the candidate. Do not upload them as the media for **0.1.4 (9)**.
+
 **Status: CAPTURED (local ad-hoc MAS app)** — real product chrome from the sandboxed
 `RunSpecimen.app` (Archive ad-hoc / `build/screenshot-RunSpecimen.app`), not mocks.
 

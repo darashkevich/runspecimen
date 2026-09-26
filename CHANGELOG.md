@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Evidence expansion (ADR-005) — review branch, not released
+
+Local-first expansion answering: what was authorized, what ran, which
+requirements were checked, what evidence supports results, and whether that
+evidence still applies. See `docs/ADR-005-evidence-expansion.md`.
+
+- Task manifests + provider-collected evidence reports (`unittest` / `pytest` /
+  `command_status`); never trust agent-written `passed`.
+- Freshness/applicability reports (separate from `verify`); stale marks, no
+  history rewrite.
+- Policy template fields + actionable refusals; NL notes stay visible;
+  ambiguous stays advisory.
+- Expanded `doctor` / `config inspect|preview|apply|export|rollback` (no silent
+  sync).
+- Decision registry with MCP/adapter search (no approve).
+- Local tar snapshot create/preview/restore-to-separate-dir.
+- Usage import/summarize (`local_json`); unknown ≠ zero; idempotent imports.
+- Two-repo coordination readiness; workflow eval suite compare.
+- `runspecimen scenes` ten-scene local demo (never types APPROVE).
+- `freshness show` reads a stored report and does not recompute or write one. The native pane uses that command.
+- Session restore keeps the last contract when it is a regular file inside the workspace, and the app stays running after the main window closes.
+- Native Workflows cover snapshot, coordination, evaluation, scenes, configuration apply/export/rollback, decision capture, and usage import. Writes require confirmation. The Store build still has no browser dashboard.
+- A confirmed workflow is claimed before its dialog dismisses, so cancellation cannot drop that claim, and a second confirm does not run it again. Engine output is read while the process is still running.
+
 ## 0.2.0rc14 - 2026-09-23
 
 GitHub pre-release `v0.2.0-rc.14` and PyPI `0.2.0rc14` (identical bytes, checksum-only, not SLSA-attested). Do not publish draft `v0.2.0-rc.11`. Do not move `v0.2.0-rc.12` or `v0.2.0-rc.13`. Stable `0.2.0` gate remains not met.
@@ -58,7 +82,7 @@ Published on GitHub as `v0.2.0-rc.12` and on PyPI as `0.2.0rc12` (identical byte
 - Fix `AppIcon.appiconset`: catalog filenames are real `icon_*@2x.png` files
   with matching pixel sizes (128@2x is 256px). `verify_app_icon.sh` checks
   Contents.json and a warning-free `actool` compile.
-- Mac App Store **0.1.3 (8)** is `WAITING_FOR_REVIEW` (submitted 2026-09-21). Builds 5 and 6 were rejected. Do not upload another binary while build 8 is waiting.
+- Mac App Store **0.1.3 (8)** was submitted 2026-09-21 and later rejected. The package recorded as waiting after that rejection is **0.1.4 (9)** (see `apps/macos/asc-kit/STATUS.md`). Do not upload a replacement from this changelog.
 
 ### Packaging
 

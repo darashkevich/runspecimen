@@ -53,9 +53,9 @@ runspecimen,evidence,approval,local,cli,developer,receipt,preflight,control
 
 | Key | Value |
 | --- | --- |
-| Short version | 0.1.4 (9) WAITING_FOR_REVIEW |
-| Build | 9 |
-| Bundled engine | 0.2.0rc14 source plus candidate fixes; verify exact frozen build before upload |
+| Short version | Submitted record **0.1.4 (9)**. Local **0.1.5 (11)** remains the earlier package. This branch's candidate is **0.1.5 (12)** and is not uploaded. |
+| Build | Submitted **9**. Earlier local package **11**. Candidate **12**. |
+| Bundled engine | Submitted package: **0.2.0rc14** without evidence expansion. This branch adds that expansion and is not the uploaded binary. |
 | Min macOS | 14.0 |
 
 ## App Privacy

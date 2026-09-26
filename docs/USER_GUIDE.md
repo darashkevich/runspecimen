@@ -33,6 +33,30 @@ mandatory postflight before a successor; tamper-evident hash-chained receipts.
 Approval always requires an interactive TTY. Agents and adapters must not
 enter `APPROVE` for you.
 
+## Requirements, evidence, and freshness (ADR-005)
+
+Separate from `verify`:
+
+```bash
+runspecimen requirements validate --manifest task_manifest.json
+runspecimen requirements check --workspace . --contract contract.json --manifest task_manifest.json
+runspecimen requirements report --workspace . --campaign-id CAMP --run-id RUN
+runspecimen freshness check --workspace . --contract contract.json --manifest task_manifest.json
+```
+
+Outcomes are provider-collected (`unittest`, optional `pytest`, `command_status`).
+Skipped, collection errors, and manual/unverifiable requirements are **not**
+success. Passing configured checks is not universal correctness. Source changes
+during checks refuse final-state certification. Freshness marks evidence
+**stale** without rewriting historical outcomes. The dashboard shows check
+outcome and applicability as distinct from receipt authenticity.
+
+Config sync is explicit: `runspecimen config preview|apply|export|rollback`.
+`doctor` never silently syncs. Snapshots restore to a separate directory by
+default (`runspecimen snapshot …`). Usage imports keep unknown amounts unknown
+(`runspecimen usage import|summarize`). Cross-repo readiness and eval compare
+are bounded (`coordination`, `eval`). Local demo: `runspecimen scenes`.
+
 ## Install
 
 Requirements: Python 3.9+, POSIX (`fcntl` leases), stdlib only.
