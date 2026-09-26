@@ -14,12 +14,14 @@
 		1C28BC134D4EB0FA328766FE /* CLIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F565B47A4AF145AFF0D32B /* CLIService.swift */; };
 		2C47316E44CE2A922CF15D1A /* RunSpecimenApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A67C161EC147254CE84D7C9 /* RunSpecimenApp.swift */; };
 		2EB57F1869DBF37A893A9F3F /* PTYApprovalSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36CDFCFCD215BA28614B65F0 /* PTYApprovalSession.swift */; };
+		300C804F31BDE247CB92E074 /* WorkflowConfirmationGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CFE70C99A8D6C5C6D039829 /* WorkflowConfirmationGate.swift */; };
 		448F074AD68DBF4196633D80 /* EvidenceInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F8548B718F4960684AD9F56 /* EvidenceInspectorView.swift */; };
 		4648EAC02365FD64C499F726 /* BundledHelperPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 276D2242A3DA92F2B6EA1E5F /* BundledHelperPolicy.swift */; };
 		483F4CF79A70E85661E22A61 /* BrandEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9E846019D6C07EC8472D3F /* BrandEmptyState.swift */; };
 		5012036C37C0F2FEF1A5793F /* RSTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23F6E6DCBD40F79418D2E40 /* RSTheme.swift */; };
 		5102999ACFB62C8B508AD3C3 /* WindowSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14E6488D9406692617588706 /* WindowSanitizer.swift */; };
 		5C5B9798DC755213726C94BF /* MasSandboxE2E.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC565DB1F27E2AED085ED2ED /* MasSandboxE2E.swift */; };
+		61DB76F7CF163C2A8DE9AC8E /* BoundedProcessCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12E3BDA32B506AA766502C63 /* BoundedProcessCapture.swift */; };
 		6FB765924CD7E4CA44AE488C /* BookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FDFE20E65ED9BB091606F63 /* BookmarkStore.swift */; };
 		746E229F2860B82A9C618DA9 /* CLIVersionGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E843DB581C76C70E4D0B336 /* CLIVersionGate.swift */; };
 		818B7FFB5C52F411A645E33F /* ActionBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4980BD2EA2EB66E8B05E2589 /* ActionBar.swift */; };
@@ -49,6 +51,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		12E3BDA32B506AA766502C63 /* BoundedProcessCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoundedProcessCapture.swift; sourceTree = "<group>"; };
 		14E6488D9406692617588706 /* WindowSanitizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowSanitizer.swift; sourceTree = "<group>"; };
 		1E843DB581C76C70E4D0B336 /* CLIVersionGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIVersionGate.swift; sourceTree = "<group>"; };
 		1ED625BA3F8017FA5CE6448D /* StatusLifecycleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusLifecycleView.swift; sourceTree = "<group>"; };
@@ -69,6 +72,7 @@
 		822C2E8FBE36FF1CF3797630 /* ReviewerDemoWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewerDemoWorkspace.swift; sourceTree = "<group>"; };
 		88F0F2985F5100DEBE7D43A3 /* libRunSpecimenCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libRunSpecimenCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		8FDFE20E65ED9BB091606F63 /* BookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStore.swift; sourceTree = "<group>"; };
+		9CFE70C99A8D6C5C6D039829 /* WorkflowConfirmationGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowConfirmationGate.swift; sourceTree = "<group>"; };
 		A7A08563FFD0AB533D32DFDC /* DistributionChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DistributionChannel.swift; sourceTree = "<group>"; };
 		AA9E846019D6C07EC8472D3F /* BrandEmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandEmptyState.swift; sourceTree = "<group>"; };
 		C23F6E6DCBD40F79418D2E40 /* RSTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSTheme.swift; sourceTree = "<group>"; };
@@ -151,6 +155,7 @@
 		848893725E33276E527EF7A4 /* RunSpecimenCore */ = {
 			isa = PBXGroup;
 			children = (
+				12E3BDA32B506AA766502C63 /* BoundedProcessCapture.swift */,
 				276D2242A3DA92F2B6EA1E5F /* BundledHelperPolicy.swift */,
 				1E843DB581C76C70E4D0B336 /* CLIVersionGate.swift */,
 				A7A08563FFD0AB533D32DFDC /* DistributionChannel.swift */,
@@ -158,6 +163,7 @@
 				7531B8780C3C9854D43D8CE4 /* SecurityBoundary.swift */,
 				54600DBDAE5EE8D7814A8803 /* SessionRestore.swift */,
 				CD1AAD0FBB0481F911E148D4 /* WindowPlacement.swift */,
+				9CFE70C99A8D6C5C6D039829 /* WorkflowConfirmationGate.swift */,
 			);
 			path = RunSpecimenCore;
 			sourceTree = "<group>";
@@ -391,6 +397,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				61DB76F7CF163C2A8DE9AC8E /* BoundedProcessCapture.swift in Sources */,
 				4648EAC02365FD64C499F726 /* BundledHelperPolicy.swift in Sources */,
 				746E229F2860B82A9C618DA9 /* CLIVersionGate.swift in Sources */,
 				E0D6392F303910C4B33ECC3F /* DistributionChannel.swift in Sources */,
@@ -398,6 +405,7 @@
 				C0EB2EB55853C627CBBC718A /* SecurityBoundary.swift in Sources */,
 				B246061DBB1C9A1B33858BE3 /* SessionRestore.swift in Sources */,
 				0AEFB4491F3D31B7937C6A96 /* WindowPlacement.swift in Sources */,
+				300C804F31BDE247CB92E074 /* WorkflowConfirmationGate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -505,7 +513,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Entitlements/RunSpecimen.mas.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				INFOPLIST_FILE = "Config/Info-mas.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -593,7 +601,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Entitlements/RunSpecimen.mas.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				INFOPLIST_FILE = "Config/Info-mas.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

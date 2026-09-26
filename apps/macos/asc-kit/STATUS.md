@@ -28,7 +28,8 @@ These identities are different artifacts. Do not treat them as the same package 
 | Submitted, recorded `WAITING_FOR_REVIEW` on 2026-09-24 | **0.1.4 (9)** | `0f50a2c` plus rejection fixes. Excludes evidence expansion | **0.2.0rc14** | `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` | `51a18894-02e3-4846-86f5-29cc345567f0` |
 | Local candidate that reused the same version label | **0.1.4 (9)** | evidence-expansion tip plus local macOS edits | rc14 plus evidence expansion | `758f8d4651ccc4240410d9618a906fdc9cbbb9974c5c53976b9abb646138cf7f` | not submitted |
 | Earlier local signed app | **0.1.5 (10)** | `b467c63` | rc14 plus evidence expansion and read-only native pane | zip `705ced0fa79ca98f951455f68e6fa4a8d08624b686c6579b60678b43e6aac8b0` | not submitted |
-| Local Store package, not uploaded | **0.1.5 (11)** | `3a0f48351b5717fb68168be6c56ac3038f2ea11e` | rc14 plus native workflows | pkg `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309` | not uploaded |
+| Local Store package, not uploaded | **0.1.5 (11)** | `3a0f48351b5717fb68168be6c56ac3038f2ea11e` | rc14 plus native workflows. No confirmation-claim or pipe-drain fix | pkg `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309` | not uploaded |
+| Next local candidate | **0.1.5 (12)** | this branch after the confirmation and pipe fixes. Receipt digest, diff, and retain stay CLI-only | rc14 plus native workflows | package hash is recorded after a local `destination=export` | not uploaded |
 
 App Store Connect was not queried on 2026-09-25: the local API key file is present, and the issuer ID is not stored beside it, so no request was sent. Do not upload **0.1.5 (11)** while the recorded submission is still **0.1.4 (9)**.
 

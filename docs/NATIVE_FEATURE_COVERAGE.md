@@ -4,7 +4,7 @@ This matrix describes the Mac candidate on this branch. It is not the Mac App St
 
 Published engine **`0.2.0rc14`** does not include the evidence-expansion commands. The submitted package **0.1.4 (9)** (SHA-256 `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d`, Apple build `51a18894-02e3-4846-86f5-29cc345567f0`) excludes this work.
 
-Local **0.1.5 (10)** zip `705ced0fa79ca98f951455f68e6fa4a8d08624b686c6579b60678b43e6aac8b0` is an earlier signed app from `b467c63`. It is not this candidate. The successor package is marketing **0.1.5**, build **11**, source `3a0f48351b5717fb68168be6c56ac3038f2ea11e`, Store pkg SHA-256 `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309`. That package is not uploaded.
+Local **0.1.5 (10)** zip `705ced0fa79ca98f951455f68e6fa4a8d08624b686c6579b60678b43e6aac8b0` is an earlier signed app from `b467c63`. Local **0.1.5 (11)** package `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309` is source `3a0f483` and does not include the confirmation or pipe fixes. The next candidate is marketing **0.1.5**, build **12**. It is not uploaded. Digest, diff, and retain stay CLI-only on this candidate; native receipt controls live only on `cursor/native-receipt-parity`.
 
 Store builds keep the browser dashboard and `com.apple.security.network.server` out. The standalone CLI still has `runspecimen dashboard`. No native control types `APPROVE`.
 
