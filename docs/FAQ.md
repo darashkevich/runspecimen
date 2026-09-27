@@ -54,6 +54,15 @@ command without a human at the keyboard. `approve` requires interactive stdin
 (`skip_tty_check`) exist for regenerating demos; they are not the production
 path.
 
+## What is the eval fast path?
+
+An opt-in exact-match step on `runspecimen eval` that can finish a configured
+phrase (`thank you`, `ok`, …) for an explicit `text_completion` task without
+calling that task's provider. It does not pass requirement checks, approve a
+run, or count a model call unless the skipped task was a model judgment. See
+[FASTPATH.md](FASTPATH.md). Disabled unless you add a `fastpath` block or
+`fastpath_config`.
+
 ## Can agents approve runs?
 
 **No.** Codex/Cursor plugins and the narrow adapter

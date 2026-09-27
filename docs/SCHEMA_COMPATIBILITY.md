@@ -6,7 +6,7 @@ authentication remains a shared-secret MAC and is not a schema version by itself
 
 Evidence-layer sidecar documents (task manifests, evidence reports, freshness
 reports, config bundles, decisions, snapshots, usage ledgers, coordination
-plans, eval suites/results) use `schema_kind` + `schema_version` +
+plans, eval suites/results, fastpath configs) use `schema_kind` + `schema_version` +
 `artifact_digest` as defined in `docs/ADR-005-evidence-expansion.md`. Unsupported
 kinds/versions fail closed. They do not replace `verify`.
 
