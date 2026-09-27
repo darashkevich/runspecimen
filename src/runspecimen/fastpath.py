@@ -246,6 +246,27 @@ def _workspace_has_live_pending_confirmation(workspace: Path) -> bool:
     return inaccessible
 
 
+def _pending_fields_are_well_typed(payload: dict[str, Any]) -> bool:
+    """Require the types that decide whether a pending record is inactive.
+
+    Missing keys are left to ``pending_is_live``. A present value of the wrong
+    type is malformed and must not be treated as consumed or expired.
+    """
+    if "consumed" in payload and not isinstance(payload["consumed"], bool):
+        return False
+    if "expires_at_unix" in payload:
+        expires = payload["expires_at_unix"]
+        if isinstance(expires, bool) or not isinstance(expires, (int, float)):
+            return False
+    for key in ("failed_attempts", "max_attempts"):
+        if key not in payload:
+            continue
+        value = payload[key]
+        if isinstance(value, bool) or not isinstance(value, int):
+            return False
+    return True
+
+
 def _pending_file_is_live(path: Path, pending_is_live: Any) -> bool:
     """Malformed or unreadable pending state stays conservative (live)."""
     try:
@@ -253,6 +274,8 @@ def _pending_file_is_live(path: Path, pending_is_live: Any) -> bool:
     except (OSError, UnicodeError, json.JSONDecodeError):
         return True
     if not isinstance(payload, dict):
+        return True
+    if not _pending_fields_are_well_typed(payload):
         return True
     if pending_is_live is None:
         return True

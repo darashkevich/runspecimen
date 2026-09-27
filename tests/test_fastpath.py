@@ -288,6 +288,36 @@ class RequestTests(unittest.TestCase):
         self.assertTrue(expired["fastpath_hit"])
 
         pending.write_text(
+            json.dumps({"consumed": False, "expires_at_unix": "not-a-time"}),
+            encoding="utf-8",
+        )
+        bad_expiry = ask("string-expiry")
+        self.assertFalse(bad_expiry["fastpath_hit"])
+        self.assertEqual(bad_expiry["reason"], "unsafe_pending_confirmation")
+
+        pending.write_text(
+            json.dumps({"consumed": "false", "expires_at_unix": time.time() + 3600}),
+            encoding="utf-8",
+        )
+        string_consumed = ask("string-consumed")
+        self.assertFalse(string_consumed["fastpath_hit"])
+        self.assertEqual(string_consumed["reason"], "unsafe_pending_confirmation")
+
+        pending.write_text(
+            json.dumps(
+                {
+                    "consumed": True,
+                    "expires_at_unix": time.time() + 3600,
+                    "failed_attempts": "0",
+                }
+            ),
+            encoding="utf-8",
+        )
+        bad_attempts = ask("string-attempts")
+        self.assertFalse(bad_attempts["fastpath_hit"])
+        self.assertEqual(bad_attempts["reason"], "unsafe_pending_confirmation")
+
+        pending.write_text(
             json.dumps({"consumed": False, "expires_at_unix": time.time() + 3600}),
             encoding="utf-8",
         )

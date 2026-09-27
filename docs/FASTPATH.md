@@ -93,8 +93,11 @@ The fast path declines, and the existing provider path runs, when:
 - the workspace has a **live** remote-confirm pending file
 
 Consumed or expired pending records do not disable routing. Unreadable or
-malformed pending state stays conservative and does. Generic `"ok"` rules must
-not swallow a confirmation or a requirement check.
+malformed pending state stays conservative and does. A present `consumed`
+value that is not a boolean, or an `expires_at_unix` value that is not a
+number, is malformed and blocks routing before the record can be treated as
+inactive. Generic `"ok"` rules must not swallow a confirmation or a
+requirement check.
 
 ## Observability
 
