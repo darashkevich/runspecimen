@@ -55,7 +55,9 @@ Config sync is explicit: `runspecimen config preview|apply|export|rollback`.
 `doctor` never silently syncs. Snapshots restore to a separate directory by
 default (`runspecimen snapshot …`). Usage imports keep unknown amounts unknown
 (`runspecimen usage import|summarize`). Cross-repo readiness and eval compare
-are bounded (`coordination`, `eval`). Local demo: `runspecimen scenes`.
+are bounded (`coordination`, `eval`). Opt-in exact-match fast path:
+`runspecimen eval complete --config … --input …` (see [FASTPATH.md](FASTPATH.md)).
+Local demo: `runspecimen scenes`.
 
 ## Install
 

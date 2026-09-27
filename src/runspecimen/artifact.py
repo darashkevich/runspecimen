@@ -28,6 +28,7 @@ SCHEMA_KINDS = frozenset(
         "coordination_plan",
         "eval_suite",
         "eval_result",
+        "fastpath_config",
         "evidence_attestation",
         "evidence_report_pointer",
     }

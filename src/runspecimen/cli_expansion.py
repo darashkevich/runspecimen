@@ -167,6 +167,13 @@ def register_expansion_parsers(sub: Any) -> None:
     p_e_cmp = eval_sub.add_parser("compare", help="Compare baseline vs candidate eval results")
     p_e_cmp.add_argument("--baseline", type=Path, required=True)
     p_e_cmp.add_argument("--candidate", type=Path, required=True)
+    p_e_complete = eval_sub.add_parser(
+        "complete",
+        help="Resolve one text input against an opt-in fastpath config (no model)",
+    )
+    _ws(p_e_complete)
+    p_e_complete.add_argument("--config", type=Path, required=True)
+    p_e_complete.add_argument("--input", required=True)
 
     # scenes (ten-scene local demo harness)
     p_scenes = sub.add_parser(
@@ -542,6 +549,15 @@ def _eval(args: argparse.Namespace, workspace: Path) -> int:
             )
         )
         return 0 if result.get("passed_deterministic") else 1
+    if args.eval_command == "complete":
+        from runspecimen.fastpath import complete_fastpath_request, load_fastpath_config
+
+        compiled = load_fastpath_config(args.config)
+        result = complete_fastpath_request(
+            workspace=workspace, text=args.input, config=compiled
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
     if args.eval_command == "compare":
         baseline = read_json(args.baseline)
         candidate = read_json(args.candidate)
