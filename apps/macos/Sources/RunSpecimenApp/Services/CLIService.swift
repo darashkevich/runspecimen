@@ -340,6 +340,7 @@ actor CLIService {
         var exitCode: Int32
         var stdout: String
         var stderr: String
+        var capture: BoundedProcessCapture.Output
     }
 
     private struct JSONPayload {
@@ -349,19 +350,12 @@ actor CLIService {
 
     private func runJSON(arguments: [String]) async throws -> JSONPayload {
         let result = try await run(arguments: arguments, expectJSON: true)
-        if result.exitCode != 0 {
-            throw AppError(message: result.stderr.isEmpty ? result.stdout : result.stderr)
+        do {
+            let decoded = try EngineReportDecoder.jsonPayload(from: result.capture)
+            return JSONPayload(object: decoded.object, pretty: decoded.pretty)
+        } catch let error as EngineReportError {
+            throw AppError(message: error.message)
         }
-        let raw = result.stdout.data(using: .utf8) ?? Data()
-        let obj = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] ?? [:]
-        let pretty: String
-        if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]),
-           let text = String(data: data, encoding: .utf8) {
-            pretty = text
-        } else {
-            pretty = result.stdout
-        }
-        return JSONPayload(object: obj, pretty: pretty)
     }
 
     private func run(arguments: [String], expectJSON: Bool) async throws -> ProcessResult {
@@ -394,13 +388,15 @@ actor CLIService {
                             stderr = "The engine was cancelled before it finished.\n" + stderr
                         }
                         if output.stdoutTruncated || output.stderrTruncated {
-                            stderr += stderr.isEmpty ? "Output was truncated." : "\nOutput was truncated."
+                            stderr = "Output was truncated. The report is incomplete.\n" + stderr
                         }
                         let failed = output.timedOut || output.cancelled
+                            || output.stdoutTruncated || output.stderrTruncated
                         box.resume(returning: ProcessResult(
                             exitCode: failed ? 1 : output.exitCode,
                             stdout: String(data: output.stdout, encoding: .utf8) ?? "",
-                            stderr: stderr
+                            stderr: stderr,
+                            capture: output
                         ))
                     } catch {
                         box.resume(throwing: AppError(message: error.localizedDescription))

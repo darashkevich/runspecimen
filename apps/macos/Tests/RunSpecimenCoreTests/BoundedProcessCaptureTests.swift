@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import RunSpecimenCore
 
@@ -105,6 +106,294 @@ final class BoundedProcessCaptureTests: XCTestCase {
         XCTAssertFalse(output.cancelled)
         XCTAssertLessThan(Date().timeIntervalSince(started), 2)
     }
+
+    func testIgnoredSIGTERMIsKilledAfterTheGracePeriod() throws {
+        let sibling = Process()
+        sibling.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        sibling.arguments = ["30"]
+        try sibling.run()
+        defer {
+            if sibling.isRunning {
+                sibling.terminate()
+                sibling.waitUntilExit()
+            }
+        }
+        let started = Date()
+        let output = try BoundedProcessCapture.run(
+            executable: python,
+            arguments: ["-c", Self.ignoreTermUntil],
+            byteLimit: 1024,
+            timeout: 0.1,
+            terminationGrace: 0.25
+        )
+        let elapsed = Date().timeIntervalSince(started)
+        XCTAssertTrue(output.timedOut)
+        XCTAssertFalse(output.cancelled)
+        XCTAssertEqual(output.exitCode, SIGKILL)
+        XCTAssertLessThan(elapsed, 1.5)
+        XCTAssertTrue(sibling.isRunning, "escalation killed a process it does not own")
+    }
+
+    func testCancellationKillsAChildThatIgnoresSIGTERM() throws {
+        let armed = Date()
+        let output = try BoundedProcessCapture.run(
+            executable: python,
+            arguments: ["-c", Self.ignoreTermUntil],
+            byteLimit: 1024,
+            timeout: 30,
+            terminationGrace: 0.25,
+            isCancelled: { Date().timeIntervalSince(armed) >= 0.2 }
+        )
+        XCTAssertTrue(output.cancelled)
+        XCTAssertFalse(output.timedOut)
+        XCTAssertEqual(output.exitCode, SIGKILL)
+        XCTAssertLessThan(Date().timeIntervalSince(armed), 1.5)
+    }
+
+    func testGrandchildThatIgnoresSIGTERMDiesWithTheOwnedGroup() throws {
+        let started = Date()
+        let output = try BoundedProcessCapture.run(
+            executable: python,
+            arguments: ["-c", Self.ignoreTermAndSpawn],
+            byteLimit: 1024,
+            timeout: 0.4,
+            terminationGrace: 0.3
+        )
+        let elapsed = Date().timeIntervalSince(started)
+        XCTAssertTrue(output.timedOut)
+        XCTAssertNotEqual(output.exitCode, 0)
+        XCTAssertNotEqual(output.exitCode, 3, "child never became its own process group")
+        XCTAssertLessThan(elapsed, 2)
+        let text = String(data: output.stdout, encoding: .utf8) ?? ""
+        let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? -1
+        if pid > 1 && kill(pid, 0) == 0 {
+            kill(pid, SIGKILL)
+            XCTFail("grandchild \(pid) was still running after the capture returned")
+        }
+    }
+
+    func testIgnoredSIGTERMWithAFullPipeStillReturns() throws {
+        let started = Date()
+        let output = try BoundedProcessCapture.run(
+            executable: python,
+            arguments: ["-c", Self.ignoreTermAndFlood],
+            byteLimit: 1000,
+            timeout: 0.2,
+            terminationGrace: 0.25
+        )
+        XCTAssertTrue(output.timedOut)
+        XCTAssertTrue(output.stdoutTruncated)
+        XCTAssertTrue(output.stderrTruncated)
+        XCTAssertEqual(output.stdout.count, 1000)
+        XCTAssertEqual(output.stderr.count, 1000)
+        XCTAssertEqual(output.exitCode, SIGKILL)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2)
+        XCTAssertThrowsError(try EngineReportDecoder.jsonPayload(from: output)) { error in
+            XCTAssertEqual(
+                (error as? EngineReportError)?.message,
+                "The engine timed out before it finished."
+            )
+        }
+    }
+
+    func testTruncatedCaptureIsNotDecodedAsAnEmptyObject() throws {
+        let output = try capture(
+            "printf '{'; dd if=/dev/zero bs=1024 count=32 status=none | tr '\\0' a; printf '}'",
+            byteLimit: 64,
+            timeout: 5
+        )
+        XCTAssertEqual(output.exitCode, 0)
+        XCTAssertTrue(output.stdoutTruncated)
+        XCTAssertThrowsError(try EngineReportDecoder.jsonPayload(from: output)) { error in
+            XCTAssertEqual(
+                (error as? EngineReportError)?.message,
+                "Output was truncated. The report is incomplete."
+            )
+        }
+    }
+
+    func testTruncatedFlagRejectsAValidLookingPrefix() {
+        let output = BoundedProcessCapture.Output(
+            exitCode: 0,
+            stdout: Data("{\"ok\":true}".utf8),
+            stderr: Data(),
+            stdoutTruncated: true,
+            stderrTruncated: false,
+            timedOut: false,
+            cancelled: false
+        )
+        XCTAssertThrowsError(try EngineReportDecoder.jsonPayload(from: output)) { error in
+            XCTAssertEqual(
+                (error as? EngineReportError)?.message,
+                "Output was truncated. The report is incomplete."
+            )
+        }
+    }
+
+    func testStderrTruncationRejectsACompleteStdoutObject() {
+        let output = BoundedProcessCapture.Output(
+            exitCode: 0,
+            stdout: Data("{\"ok\":true}".utf8),
+            stderr: Data("partial".utf8),
+            stdoutTruncated: false,
+            stderrTruncated: true,
+            timedOut: false,
+            cancelled: false
+        )
+        XCTAssertThrowsError(try EngineReportDecoder.jsonPayload(from: output)) { error in
+            XCTAssertEqual(
+                (error as? EngineReportError)?.message,
+                "Output was truncated. The report is incomplete."
+            )
+        }
+    }
+
+    func testMalformedJSONIsNotAnEmptyObject() throws {
+        let output = try capture("printf '{'", byteLimit: 1024, timeout: 5)
+        XCTAssertEqual(output.exitCode, 0)
+        XCTAssertFalse(output.stdoutTruncated)
+        XCTAssertThrowsError(try EngineReportDecoder.jsonPayload(from: output)) { error in
+            XCTAssertEqual(
+                (error as? EngineReportError)?.message,
+                "The engine report was not a complete JSON object."
+            )
+        }
+    }
+
+    func testEngineFailureIsNotAnEmptyObject() {
+        let output = BoundedProcessCapture.Output(
+            exitCode: 7,
+            stdout: Data("not-json".utf8),
+            stderr: Data("boom".utf8),
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            timedOut: false,
+            cancelled: false
+        )
+        XCTAssertThrowsError(try EngineReportDecoder.jsonPayload(from: output)) { error in
+            XCTAssertEqual((error as? EngineReportError)?.message, "boom")
+        }
+    }
+
+    func testJSONArrayAndEmptyBodyAreNotEmptyObjects() {
+        for body in ["[]", "null", "\"text\"", ""] {
+            let output = BoundedProcessCapture.Output(
+                exitCode: 0,
+                stdout: Data(body.utf8),
+                stderr: Data(),
+                stdoutTruncated: false,
+                stderrTruncated: false,
+                timedOut: false,
+                cancelled: false
+            )
+            XCTAssertThrowsError(try EngineReportDecoder.jsonPayload(from: output), "body \(body)") { error in
+                XCTAssertEqual(
+                    (error as? EngineReportError)?.message,
+                    "The engine report was not a complete JSON object."
+                )
+            }
+        }
+    }
+
+    func testParentExitDoesNotLeaveAChildThatIgnoresSIGTERM() throws {
+        let output = try BoundedProcessCapture.run(
+            executable: python,
+            arguments: ["-c", Self.parentExitsChildIgnores],
+            byteLimit: 1024,
+            timeout: 0.4,
+            terminationGrace: 0.3
+        )
+        XCTAssertTrue(output.timedOut)
+        XCTAssertFalse(output.cleanupFailed)
+        let text = String(data: output.stdout, encoding: .utf8) ?? ""
+        let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? -1
+        XCTAssertGreaterThan(pid, 1)
+        if pid > 1 && kill(pid, 0) == 0 {
+            kill(pid, SIGKILL)
+            XCTFail("child \(pid) survived after its parent exited")
+        }
+    }
+
+    func testGroupSignalRefusesTheCallerGroupAndClassifiesFailures() {
+        XCTAssertFalse(BoundedProcessCapture.groupIsSignalable(getpgrp()))
+        XCTAssertFalse(BoundedProcessCapture.groupIsSignalable(0))
+        XCTAssertFalse(BoundedProcessCapture.groupIsSignalable(1))
+        XCTAssertFalse(BoundedProcessCapture.groupIsSignalable(-4))
+        XCTAssertEqual(BoundedProcessCapture.classifyGroupSignal(rc: 0, errorNumber: 0), .signaled)
+        XCTAssertEqual(BoundedProcessCapture.classifyGroupSignal(rc: -1, errorNumber: ESRCH), .empty)
+        XCTAssertEqual(BoundedProcessCapture.classifyGroupSignal(rc: -1, errorNumber: EPERM), .failed)
+        XCTAssertEqual(
+            BoundedProcessCapture.signalOwnedGroup(pgid: getpgrp(), signal: 0),
+            .refused
+        )
+    }
+
+    func testCleanupFailureIsNotReportedAsAPlainTimeout() {
+        let output = BoundedProcessCapture.Output(
+            exitCode: -1,
+            stdout: Data(),
+            stderr: Data(),
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            timedOut: true,
+            cancelled: false,
+            cleanupFailed: true
+        )
+        XCTAssertThrowsError(try EngineReportDecoder.jsonPayload(from: output)) { error in
+            XCTAssertEqual(
+                (error as? EngineReportError)?.message,
+                "The engine stopped, but an owned descendant was still running."
+            )
+        }
+    }
+
+    func testCompleteJSONObjectDecodes() throws {
+        let output = try capture("printf '%s' '{\"ok\":true}'", byteLimit: 1024, timeout: 5)
+        let payload = try EngineReportDecoder.jsonPayload(from: output)
+        XCTAssertEqual(payload.object["ok"] as? Bool, true)
+        XCTAssertTrue(payload.pretty.contains("\"ok\""))
+    }
+
+    private let python = URL(fileURLWithPath: "/usr/bin/python3")
+    private static let ignoreTermUntil = """
+    import signal, time
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    time.sleep(3)
+    """
+    private static let ignoreTermAndSpawn = """
+    import os, signal, subprocess, sys, time
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    for _ in range(100):
+        if os.getpgid(0) == os.getpid():
+            break
+        time.sleep(0.01)
+    else:
+        sys.exit(3)
+    code = "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)"
+    child = subprocess.Popen(["/usr/bin/python3", "-c", code])
+    print(child.pid, flush=True)
+    time.sleep(30)
+    """
+    private static let parentExitsChildIgnores = """
+    import os, signal, sys, time
+    pid = os.fork()
+    if pid == 0:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        sys.stdout.write(str(os.getpid()) + "\\n")
+        sys.stdout.flush()
+        time.sleep(30)
+        os._exit(0)
+    time.sleep(30)
+    """
+    private static let ignoreTermAndFlood = """
+    import signal, sys, time
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    sys.stdout.buffer.write(b"x" * 200000)
+    sys.stdout.buffer.flush()
+    sys.stderr.buffer.write(b"y" * 200000)
+    sys.stderr.buffer.flush()
+    time.sleep(3)
+    """
 
     private func capture(
         _ script: String,

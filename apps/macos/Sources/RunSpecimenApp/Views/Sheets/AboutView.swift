@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 struct AboutView: View {
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: AppModel
 
     private var appVersion: String {
@@ -59,6 +60,15 @@ struct AboutView: View {
             Text("Apache-2.0 · runspecimen.darashkevich.com")
                 .font(.system(size: 11))
                 .foregroundStyle(RSTheme.soft)
+
+            HStack {
+                Spacer()
+                Button("Close") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+                .accessibilityLabel("Close About")
+            }
         }
         .padding(24)
         .frame(width: 440)
