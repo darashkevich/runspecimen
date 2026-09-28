@@ -1,6 +1,24 @@
 # ASC kit status (honest)
 
-## Current: 0.1.4 (9) WAITING_FOR_REVIEW (submitted 2026-09-24)
+## Current: 0.1.4 (9) READY_FOR_SALE (queried 2026-09-28)
+
+App Store Connect, app `6813492506`:
+
+| Connect field | Value |
+| --- | --- |
+| Version | **0.1.4** id `6cfe298b-92c1-460d-b83b-5687a67f2cff` |
+| State | `appStoreState=READY_FOR_SALE`, `appVersionState=READY_FOR_DISTRIBUTION`, `downloadable=true` |
+| Release | `AFTER_APPROVAL` (released when Apple approved; not held for a later developer release) |
+| Build | **9** id `51a18894-02e3-4846-86f5-29cc345567f0` `VALID` `expired=false` uploaded 2026-09-24T05:32:21-07:00 |
+| Review item | submission `f0bb3ab1-c283-4463-8c27-e5702a35ac6a` item state `APPROVED` |
+| Source | `0f50a2c` plus the rejection fixes. Excludes PR #34 and this integrated branch |
+| Package SHA-256 | `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` |
+
+Ready for Sale is public availability in Connect, not merely an approval waiting on a release button. The iTunes lookup API returned no Mac listing for this bundle in the US or GB at query time, so this file does not claim an apps.apple.com URL. Do not withdraw, replace, or edit version 0.1.4. No newer build is attached.
+
+The historical note below recorded this same version as `WAITING_FOR_REVIEW` on 2026-09-24. That was the state then.
+
+## Historical: 0.1.4 (9) WAITING_FOR_REVIEW (submitted 2026-09-24)
 
 Confirmed rejection of **0.1.3 (8)** (submission `9c19e1cd-…`, review 2026-09-23):
 **2.5.1** private/deprecated API refs in Apple Python 3.9 (`TrustEvaluationAgent`,

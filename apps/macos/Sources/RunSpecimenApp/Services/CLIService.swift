@@ -73,17 +73,11 @@ actor CLIService {
     func version() async throws -> CLIIdentity {
         let url = try requireCLI()
         let output = try await run(arguments: ["--version"], expectJSON: false)
-        let version = (output.stdout + "\n" + output.stderr)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if version.lowercased().contains("need python") {
-            throw AppError(message: CLIVersionGate.failureMessage(for: .unparseable(raw: version)) ?? version)
-        }
-        guard version.lowercased().contains("runspecimen") || version.contains(".") else {
-            throw AppError(message: "Selected binary did not report a RunSpecimen version:\n\(version)\n(exit \(output.exitCode))")
-        }
-        let evaluation = CLIVersionGate.evaluate(versionOutput: version)
-        if let message = CLIVersionGate.failureMessage(for: evaluation) {
-            throw AppError(message: message)
+        let version: String
+        do {
+            version = try CLIVersionGate.acceptedVersion(from: output.capture)
+        } catch let error as EngineReportError {
+            throw AppError(message: error.message)
         }
         return CLIIdentity(path: url, version: version, source: resolutionSource ?? .manual)
     }

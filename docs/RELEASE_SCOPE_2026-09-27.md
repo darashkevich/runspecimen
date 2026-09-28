@@ -1,6 +1,10 @@
 # Release scope — 2026-09-27
 
-This candidate is not a production release. Packaging still uses public `0.2.0rc14` identifiers. Do not replace those artifacts or retag them. Independent QA has not accepted this tip. Nothing here is merged to `main` or submitted to Apple.
+This candidate is not a production release. Packaging still uses public `0.2.0rc14` identifiers. Do not replace those artifacts or retag them. Independent QA of `cd8b860` passed its claimed fixes and is not production sign-off. Nothing here is merged to `main` or submitted to Apple.
+
+App Store Connect currently has macOS **0.1.4 (9)** `READY_FOR_SALE` (build `51a18894-02e3-4846-86f5-29cc345567f0`, source `0f50a2c` plus rejection fixes). That version stays as it is.
+
+Proposed update scope, **not agreed**: ship the stable native and engine work on this branch (capture, secrets, receipts, About/Settings, fast path) as a new version such as **0.1.6 (1)**. Keep the biometric prototype and companion transport out of that binary's behavior. They stay on the branch as a non-gate prototype until Yahor accepts that split. No Store package is built until that agreement.
 
 ## Included on `cursor/integrated-release-candidate`
 

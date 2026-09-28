@@ -4,14 +4,20 @@ import XCTest
 
 final class BiometricApprovalTests: XCTestCase {
     private var directory: URL!
+    private var frozenNow = 1_500
 
     override func setUpWithError() throws {
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("rs-bio-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        frozenNow = 1_500
+        BiometricApprovalStore.clock = { self.frozenNow }
     }
 
     override func tearDownWithError() throws {
+        BiometricApprovalStore.clock = { Int(Date().timeIntervalSince1970) }
+        BiometricApprovalStore.beforeExclusiveAccess = nil
+        BiometricApprovalStore.beforeConsumptionDecision = nil
         try? FileManager.default.removeItem(at: directory)
     }
 
@@ -22,16 +28,14 @@ final class BiometricApprovalTests: XCTestCase {
         try BiometricApprovalStore.consume(
             request: request,
             pinnedPublicKey: key.publicKey.x963Representation,
-            directory: directory,
-            now: 1_500
+            directory: directory
         )
         XCTAssertTrue(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
         XCTAssertThrowsError(
             try BiometricApprovalStore.consume(
                 request: request,
                 pinnedPublicKey: key.publicKey.x963Representation,
-                directory: directory,
-                now: 1_500
+                directory: directory
             )
         ) { error in
             XCTAssertEqual(error as? BiometricApprovalError, .replay)
@@ -52,8 +56,7 @@ final class BiometricApprovalTests: XCTestCase {
             try BiometricApprovalStore.consume(
                 request: request,
                 pinnedPublicKey: key.publicKey.x963Representation,
-                directory: directory,
-                now: 1_500
+                directory: directory
             )
         ) { error in
             XCTAssertEqual(error as? BiometricApprovalError, .tampered)
@@ -78,8 +81,7 @@ final class BiometricApprovalTests: XCTestCase {
             try BiometricApprovalStore.consume(
                 request: request,
                 pinnedPublicKey: key.publicKey.x963Representation,
-                directory: directory,
-                now: 1_500
+                directory: directory
             )
         ) { error in
             XCTAssertEqual(error as? BiometricApprovalError, .tampered)
@@ -89,8 +91,7 @@ final class BiometricApprovalTests: XCTestCase {
             try BiometricApprovalStore.consume(
                 request: request,
                 pinnedPublicKey: key.publicKey.x963Representation,
-                directory: directory,
-                now: 1_500
+                directory: directory
             )
         ) { error in
             XCTAssertEqual(error as? BiometricApprovalError, .tampered)
@@ -154,21 +155,18 @@ final class BiometricApprovalTests: XCTestCase {
             request: first,
             signature: firstSignature,
             enrollmentDirectory: enrollmentDirectory,
-            approvalDirectory: directory,
-            now: 1_000
+            approvalDirectory: directory
         )
         try BiometricApprovalStore.consumeEnrolled(
             request: first,
             enrollmentDirectory: enrollmentDirectory,
-            approvalDirectory: directory,
-            now: 1_500
+            approvalDirectory: directory
         )
         XCTAssertThrowsError(
             try BiometricApprovalStore.consumeEnrolled(
                 request: first,
                 enrollmentDirectory: enrollmentDirectory,
-                approvalDirectory: directory,
-                now: 1_500
+                approvalDirectory: directory
             )
         ) { error in
             XCTAssertEqual(error as? BiometricApprovalError, .replay)
@@ -186,6 +184,11 @@ final class BiometricApprovalTests: XCTestCase {
         XCTAssertThrowsError(try SoftwareApprovalKeyEnrollment.sign(oldKeyed, directory: enrollmentDirectory)) { error in
             XCTAssertEqual(error as? BiometricApprovalError, .revoked)
         }
+        let retired = try BiometricEnrollmentDirectory.load(keyID: oldID, directory: enrollmentDirectory)
+        XCTAssertEqual(retired.state, BiometricEnrollmentRecord.revoked)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: SoftwareApprovalKeyEnrollment.privateURL(enrollmentDirectory, oldID).path
+        ))
         var next = sample(nonce: nonce("e"), expiry: 2_000)
         next.keyID = "local-new"
         let signature = try SoftwareApprovalKeyEnrollment.sign(next, directory: enrollmentDirectory)
@@ -207,16 +210,18 @@ final class BiometricApprovalTests: XCTestCase {
             request: request,
             signature: signature,
             enrollmentDirectory: enrollmentDirectory,
-            approvalDirectory: directory,
-            now: 1_000
+            approvalDirectory: directory
         )
         let entered = DispatchSemaphore(value: 0)
         let release = DispatchSemaphore(value: 0)
         BiometricApprovalStore.beforeExclusiveAccess = {
             entered.signal()
-            release.wait()
+            _ = release.wait(timeout: .now() + 2)
         }
-        defer { BiometricApprovalStore.beforeExclusiveAccess = nil }
+        defer {
+            BiometricApprovalStore.beforeExclusiveAccess = nil
+            release.signal()
+        }
         var outcome: BiometricApprovalError?
         let finished = DispatchGroup()
         finished.enter()
@@ -225,8 +230,7 @@ final class BiometricApprovalTests: XCTestCase {
                 try BiometricApprovalStore.consumeEnrolled(
                     request: request,
                     enrollmentDirectory: self.enrollmentDirectory,
-                    approvalDirectory: self.directory,
-                    now: 1_500
+                    approvalDirectory: self.directory
                 )
             } catch let error as BiometricApprovalError {
                 outcome = error
@@ -238,7 +242,7 @@ final class BiometricApprovalTests: XCTestCase {
         XCTAssertEqual(entered.wait(timeout: .now() + 2), .success)
         try SoftwareApprovalKeyEnrollment.revoke(keyID: keyID, directory: enrollmentDirectory)
         release.signal()
-        finished.wait()
+        XCTAssertEqual(finished.wait(timeout: .now() + 2), .success)
         XCTAssertEqual(outcome, .revoked)
         XCTAssertFalse(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
     }
@@ -260,8 +264,7 @@ final class BiometricApprovalTests: XCTestCase {
         try BiometricApprovalStore.consume(
             request: request,
             pinnedPublicKey: key.publicKey.x963Representation,
-            directory: directory,
-            now: 1_500
+            directory: directory
         )
         try savedApproval.write(to: pending(request.nonce))
         try FileManager.default.removeItem(at: directory.appendingPathComponent("\(request.nonce).consumed"))
@@ -269,8 +272,7 @@ final class BiometricApprovalTests: XCTestCase {
         try BiometricApprovalStore.consume(
             request: request,
             pinnedPublicKey: key.publicKey.x963Representation,
-            directory: directory,
-            now: 1_500
+            directory: directory
         )
     }
 
@@ -284,8 +286,7 @@ final class BiometricApprovalTests: XCTestCase {
             try BiometricApprovalStore.consume(
                 request: other,
                 pinnedPublicKey: key.publicKey.x963Representation,
-                directory: directory,
-                now: 1_500
+                directory: directory
             )
         ) { error in
             XCTAssertEqual(error as? BiometricApprovalError, .mismatch)
@@ -294,8 +295,7 @@ final class BiometricApprovalTests: XCTestCase {
         try BiometricApprovalStore.consume(
             request: request,
             pinnedPublicKey: key.publicKey.x963Representation,
-            directory: directory,
-            now: 1_500
+            directory: directory
         )
     }
 
@@ -303,27 +303,66 @@ final class BiometricApprovalTests: XCTestCase {
         let key = P256.Signing.PrivateKey()
         let request = sample(nonce: nonce(), expiry: 1_200)
         try submit(request, key: key, now: 1_000)
+        frozenNow = 1_200
         XCTAssertThrowsError(
             try BiometricApprovalStore.consume(
                 request: request,
                 pinnedPublicKey: key.publicKey.x963Representation,
-                directory: directory,
-                now: 1_200
+                directory: directory
             )
         ) { error in
             XCTAssertEqual(error as? BiometricApprovalError, .expired)
         }
         XCTAssertTrue(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
+        frozenNow = 1_000
         XCTAssertThrowsError(
             try BiometricApprovalStore.consume(
                 request: request,
                 pinnedPublicKey: key.publicKey.x963Representation,
-                directory: directory,
-                now: 1_000
+                directory: directory
             )
         ) { error in
             XCTAssertEqual(error as? BiometricApprovalError, .replay)
         }
+    }
+
+    func testExpiryDuringLockWaitSpendsTheNonce() throws {
+        let key = P256.Signing.PrivateKey()
+        let request = sample(nonce: nonce("8"), expiry: 2_000)
+        try submit(request, key: key, now: 1_000)
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        BiometricApprovalStore.beforeConsumptionDecision = {
+            entered.signal()
+            _ = release.wait(timeout: .now() + 2)
+        }
+        defer {
+            BiometricApprovalStore.beforeConsumptionDecision = nil
+            release.signal()
+        }
+        var outcome: BiometricApprovalError?
+        let finished = DispatchGroup()
+        finished.enter()
+        DispatchQueue.global().async {
+            do {
+                try BiometricApprovalStore.consume(
+                    request: request,
+                    pinnedPublicKey: key.publicKey.x963Representation,
+                    directory: self.directory
+                )
+            } catch let error as BiometricApprovalError {
+                outcome = error
+            } catch {
+                outcome = .tampered
+            }
+            finished.leave()
+        }
+        XCTAssertEqual(entered.wait(timeout: .now() + 2), .success)
+        self.frozenNow = 2_500
+        release.signal()
+        XCTAssertEqual(finished.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(outcome, .expired)
+        XCTAssertTrue(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
     }
 
     func testConcurrentConsumeSpendsTheNonceOnce() throws {
@@ -340,8 +379,7 @@ final class BiometricApprovalTests: XCTestCase {
                     try BiometricApprovalStore.consume(
                         request: request,
                         pinnedPublicKey: key.publicKey.x963Representation,
-                        directory: self.directory,
-                        now: 1_500
+                        directory: self.directory
                     )
                     results.lock()
                     outcomes.append(nil)
@@ -358,7 +396,7 @@ final class BiometricApprovalTests: XCTestCase {
                 group.leave()
             }
         }
-        group.wait()
+        XCTAssertEqual(group.wait(timeout: .now() + 2), .success)
         XCTAssertEqual(outcomes.filter { $0 == nil }.count, 1)
         XCTAssertEqual(outcomes.filter { $0 == .replay }.count, 7)
     }
@@ -373,8 +411,7 @@ final class BiometricApprovalTests: XCTestCase {
                 signature: try signature(request, key: key),
                 publicKey: key.publicKey.x963Representation,
                 pinnedPublicKey: other.publicKey.x963Representation,
-                directory: directory,
-                now: 1_000
+                directory: directory
             )
         ) { error in
             XCTAssertEqual(error as? BiometricApprovalError, .tampered)
@@ -406,14 +443,29 @@ final class BiometricApprovalTests: XCTestCase {
         )
     }
 
+    func testSoftwareDoubleIsNotTheProductionPolicy() {
+        XCTAssertFalse(LocalSecureEnclaveEnrollment.ProductionPolicy.accepts(
+            backend: BiometricEnrollmentRecord.softwareBackend
+        ))
+        XCTAssertTrue(LocalSecureEnclaveEnrollment.ProductionPolicy.accepts(
+            backend: BiometricEnrollmentRecord.secureEnclaveBackend
+        ))
+    }
+
+    func testSecureEnclaveHumanHarnessIsNotRunByAutomation() throws {
+        throw XCTSkip("Yahor runs Secure Enclave enroll, sign, reload, cancel, and revoke. This test does not call that path.")
+    }
+
     private func submit(_ request: BiometricApprovalRequest, key: P256.Signing.PrivateKey, now: Int) throws {
+        let previous = frozenNow
+        frozenNow = now
+        defer { frozenNow = previous }
         try BiometricApprovalStore.submit(
             request: request,
             signature: try signature(request, key: key),
             publicKey: key.publicKey.x963Representation,
             pinnedPublicKey: key.publicKey.x963Representation,
-            directory: directory,
-            now: now
+            directory: directory
         )
     }
 
