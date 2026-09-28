@@ -12,11 +12,11 @@ Unpublished candidate on `cursor/integrated-release-candidate`. Approved macOS *
 | Engine identity | Unpublished `0.2.0rc15` / plugin `0.2.0-rc.15` | `release_check.py` local build | Manifest `docs/CANDIDATE_MANIFEST.md` | Do not replace published rc14 bytes |
 | Settings Close | AppKit button, Escape still dismisses | Development-app accessibility pass | In the macOS app | None |
 | RSBA1 local biometric consume | Store, enrollment lock, expiry inside the lock | Swift biometric suite, one human Secure Enclave skip | Not called by any run | Not hardware proof |
-| RSBA2 local, companion, and dual policies | `PolicyBoundApprovalStore` | `PolicyBoundApprovalTests` | Store only. Not the workspace lease | Execution boundary below |
-| User-mediated companion package | `importUserMediatedPackage` | Import and `present_at_mac` rejection | No socket | Automatic delivery is a separate decision |
-| iOS carried-approval screen | Observe shows the package and refuses to sign | Simulator compile succeeded. No device test | No Face ID call | Real device signing is a human step |
-| Touch ID diagnostic | `preview` does not prompt. enroll/sign/reload/cancel/revoke require `--human-invoked` | Gate test. Human path skipped | Isolated `/tmp` directory | Yahor must run the prompt |
+| RSBA2 local, companion, and dual policies | `PolicyBoundApprovalStore`. Generations are inside the signed bytes. Consume rechecks dual keys | `PolicyBoundApprovalTests`, including generation rewrite, unknown version, and a crafted same-key record | Store only. Not the workspace lease | Execution boundary in `docs/EXECUTOR_PROTECTION.md` |
+| User-mediated companion package | `importUserMediatedPackage` accepts only exact `RSBA2` | Import, unknown version, unknown key, non-canonical generation, `present_at_mac` | No socket | Automatic delivery is a separate decision |
+| iOS carried-approval screen | Shared `RSBA2Package` parser. Development software P-256 signer on the preview screen | Simulator compile. No device test. No Face ID | Signature stays on the phone | Face ID / Secure Enclave on device is a human decision. Preview is not feature completion |
+| Touch ID diagnostic | `preview` does not prompt. sign/reload/cancel print the exact request before Secure Enclave. enroll/sign/reload/cancel/revoke require `--human-invoked` | Gate test, including traversal and bare `/tmp`. Human path skipped | Directory must resolve under `/private/tmp/rs-touchid-diag`. Diagnostic keychain service is separate | Yahor must run the prompt |
 | Store browser dashboard | Excluded from the Store channel | Store policy test | Unchanged | Do not add `network.server` |
-| Privileged helper / relay | Not built | n/a | n/a | Needs an explicit decision |
+| Privileged helper / relay | Not built. Design only in `docs/EXECUTOR_PROTECTION.md` | n/a | n/a | A helper is not assumed to meet the anti-replacement goal or to be Store-feasible |
 
 Software-key tests, a writable consumed marker, and an authentication callback are not a protected execution boundary.

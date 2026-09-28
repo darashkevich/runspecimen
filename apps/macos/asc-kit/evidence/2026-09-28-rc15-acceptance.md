@@ -36,3 +36,13 @@ A large captured run was not produced. That path waits for a human APPROVE, whic
 These are not the published rc14 archives and were not uploaded. Published wheel `d720bf5163a2b250699c30e804f89708e71c1c0d22682fbb43a4644b59c45948`, sdist `6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3`, plugin zip `0073e04e21bd225da328de06ef840ead6956a8cced4510a0025fb1e2ddc7fc16` were not replaced. Homebrew still pins rc14.
 
 Swift on this tree: 75 tests, 1 skipped, 0 failures. The skip is the human Secure Enclave harness. The diagnostic binary was run without `--human-invoked` and exited 2.
+
+## Later pass on the same unpublished identity
+
+RSBA2 generations are inside the signed bytes. Import accepts only version `RSBA2`. `consumeEnrolled` reloads the live enrollment under the revocation lock. A crafted dual record that stores one public key twice is rejected and does not spend the nonce. The diagnostic directory must resolve to `/private/tmp/rs-touchid-diag` or a directory inside it. `preview` was run and exited 0. `enroll` without `--human-invoked` exited 2. Secure Enclave was not called.
+
+Swift: 89 tests, 1 skipped, 0 failures. iOS Observe simulator build succeeded. The carried-approval screen can create a development software P-256 key and sign the displayed request. That signature is not Face ID, is not sent, and is not a Mac approval.
+
+`scripts/release_check.py --output-dir /tmp/rs-qa-c072-fix-artifacts` passed on Python 3.12.14: 409 tests, 35 skipped. The wheel, sdist, and plugin zip hashes matched the earlier unpublished rc15 archives above, because those archives do not pack `apps/` or `docs/BIOMETRIC_APPROVAL.md`. They were not uploaded. Published rc14 hashes were not replaced.
+
+The development app was rebuilt at the same path. Authority remained Apple Development: jahorka@gmail.com (PK6W7JVY6D). Sandbox true. `network.server` absent. Version string 0.1.5 (13). Payload helper still `runspecimen 0.2.0rc15`. The app launched. Settings Close reported `name=Close Settings` and `description=Close Settings`, the click set sheets to 0, and Escape dismissed Settings again. The earlier workspace, receipt, retain, and resize matrix was not repeated. APPROVE was not typed. The process was quit and the shared container restored. `/Applications/RunSpecimen.app` mtime stayed 2026-09-26 13:56:03.

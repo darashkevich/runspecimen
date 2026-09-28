@@ -459,7 +459,7 @@ final class BiometricApprovalTests: XCTestCase {
         XCTAssertEqual(hex, "58f4faea64f3a77289cc1f9016c84b4c58850f195e2b95c859f86d635b79b476")
     }
 
-    func testTouchIDDiagnosticRefusesUnlessAHumanInvokesIt() {
+    func testTouchIDDiagnosticRefusesUnlessAHumanInvokesIt() throws {
         let refused = TouchIDDiagnosticGate.refusal(arguments: ["diag"])
         XCTAssertNotNil(refused)
         let outside = TouchIDDiagnosticGate.refusal(arguments: [
@@ -471,6 +471,31 @@ final class BiometricApprovalTests: XCTestCase {
         ])
         XCTAssertNil(accepted)
         XCTAssertNil(TouchIDDiagnosticGate.refusal(arguments: ["diag", "preview"]))
+        XCTAssertNotNil(TouchIDDiagnosticGate.refusal(arguments: [
+            "diag", "--human-invoked", "--directory", "/tmp/../Users/yahor/not-isolated", "--key-id", "diag-a", "enroll"
+        ]))
+        XCTAssertNotNil(TouchIDDiagnosticGate.refusal(arguments: [
+            "diag", "--human-invoked", "--directory", "/private/tmp", "--key-id", "diag-a", "enroll"
+        ]))
+        XCTAssertNotNil(TouchIDDiagnosticGate.refusal(arguments: [
+            "diag", "--human-invoked", "--directory", "/tmp", "--key-id", "diag-a", "enroll"
+        ]))
+        XCTAssertNil(TouchIDDiagnosticGate.refusal(arguments: [
+            "diag", "--human-invoked", "--directory", "/tmp/rs-touchid-diag", "--key-id", "diag-a", "enroll"
+        ]))
+        let root = "/private/tmp/rs-touchid-diag"
+        try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
+        let link = root + "/escape-probe"
+        try? FileManager.default.removeItem(atPath: link)
+        try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: "/Users")
+        defer { try? FileManager.default.removeItem(atPath: link) }
+        XCTAssertNotNil(TouchIDDiagnosticGate.refusal(arguments: [
+            "diag", "--human-invoked", "--directory", link, "--key-id", "diag-a", "enroll"
+        ]))
+        XCTAssertNotEqual(
+            LocalSecureEnclaveEnrollment.diagnosticKeychainService,
+            LocalSecureEnclaveEnrollment.productionKeychainService
+        )
     }
 
     func testSecureEnclaveHumanHarnessIsNotRunByAutomation() throws {
@@ -536,6 +561,7 @@ final class PolicyBoundApprovalTests: XCTestCase {
     override func tearDownWithError() throws {
         BiometricApprovalStore.clock = { Int(Date().timeIntervalSince1970) }
         BiometricApprovalStore.beforeConsumptionDecision = nil
+        BiometricApprovalStore.beforeExclusiveAccess = nil
         try? FileManager.default.removeItem(at: directory)
     }
 
@@ -573,8 +599,6 @@ final class PolicyBoundApprovalTests: XCTestCase {
             request: request,
             pinnedLocalKey: local.publicKey.x963Representation,
             pinnedCompanionKey: phone.publicKey.x963Representation,
-            localGeneration: 1,
-            companionGeneration: 1,
             directory: directory
         )
         XCTAssertTrue(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
@@ -592,8 +616,6 @@ final class PolicyBoundApprovalTests: XCTestCase {
             request: changed,
             pinnedLocalKey: nil,
             pinnedCompanionKey: phone.publicKey.x963Representation,
-            localGeneration: nil,
-            companionGeneration: 1,
             directory: directory
         )) { error in
             XCTAssertEqual(error as? BiometricApprovalError, .mismatch)
@@ -610,29 +632,15 @@ final class PolicyBoundApprovalTests: XCTestCase {
             request: request,
             pinnedLocalKey: nil,
             pinnedCompanionKey: other.publicKey.x963Representation,
-            localGeneration: nil,
-            companionGeneration: 1,
             directory: directory
         )) { error in
             XCTAssertEqual(error as? BiometricApprovalError, .tampered)
-        }
-        XCTAssertThrowsError(try PolicyBoundApprovalStore.consume(
-            request: request,
-            pinnedLocalKey: nil,
-            pinnedCompanionKey: phone.publicKey.x963Representation,
-            localGeneration: nil,
-            companionGeneration: 2,
-            directory: directory
-        )) { error in
-            XCTAssertEqual(error as? BiometricApprovalError, .revoked)
         }
         frozenNow = 5_000
         XCTAssertThrowsError(try PolicyBoundApprovalStore.consume(
             request: request,
             pinnedLocalKey: nil,
             pinnedCompanionKey: phone.publicKey.x963Representation,
-            localGeneration: nil,
-            companionGeneration: 1,
             directory: directory
         )) { error in
             XCTAssertEqual(error as? BiometricApprovalError, .expired)
@@ -642,8 +650,6 @@ final class PolicyBoundApprovalTests: XCTestCase {
             request: request,
             pinnedLocalKey: nil,
             pinnedCompanionKey: phone.publicKey.x963Representation,
-            localGeneration: nil,
-            companionGeneration: 1,
             directory: directory
         )) { error in
             XCTAssertEqual(error as? BiometricApprovalError, .replay)
@@ -689,8 +695,6 @@ final class PolicyBoundApprovalTests: XCTestCase {
             request: imported,
             pinnedLocalKey: nil,
             pinnedCompanionKey: phone.publicKey.x963Representation,
-            localGeneration: nil,
-            companionGeneration: 1,
             directory: directory
         )
     }
@@ -711,8 +715,6 @@ final class PolicyBoundApprovalTests: XCTestCase {
                         request: request,
                         pinnedLocalKey: local.publicKey.x963Representation,
                         pinnedCompanionKey: phone.publicKey.x963Representation,
-                        localGeneration: 1,
-                        companionGeneration: 1,
                         directory: self.directory
                     )
                     results.lock()
@@ -742,11 +744,167 @@ final class PolicyBoundApprovalTests: XCTestCase {
         var localOnly = dual
         localOnly.policy = .local
         localOnly.companionKeyID = ""
+        localOnly.companionGeneration = 0
         XCTAssertFalse(BiometricApprovalStore.verify(
             canonical: try localOnly.canonicalBytes(),
             signature: signature.signature,
             publicKey: local.publicKey.x963Representation
         ))
+    }
+
+    func testRewrittenGenerationAndUnknownVersionAreRejected() throws {
+        let phone = P256.Signing.PrivateKey()
+        let request = sample(policy: .companion, companionKeyID: "phone-key")
+        var object = try JSONSerialization.jsonObject(with: try PolicyBoundApprovalStore.package(
+            request: request,
+            local: nil,
+            companion: try signed(request, key: phone)
+        )) as! [String: String]
+        object["companion_generation"] = "2"
+        object["version"] = "UNKNOWN-FUTURE-VERSION"
+        XCTAssertThrowsError(try PolicyBoundApprovalStore.importUserMediatedPackage(
+            JSONSerialization.data(withJSONObject: object),
+            pinnedLocalKey: nil,
+            pinnedCompanionKey: phone.publicKey.x963Representation,
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .malformed("version"))
+        }
+        object["version"] = "RSBA2"
+        XCTAssertThrowsError(try PolicyBoundApprovalStore.importUserMediatedPackage(
+            JSONSerialization.data(withJSONObject: object),
+            pinnedLocalKey: nil,
+            pinnedCompanionKey: phone.publicKey.x963Representation,
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .tampered)
+        }
+        object.removeValue(forKey: "version")
+        XCTAssertThrowsError(try PolicyBoundApprovalStore.importUserMediatedPackage(
+            JSONSerialization.data(withJSONObject: object),
+            pinnedLocalKey: nil,
+            pinnedCompanionKey: phone.publicKey.x963Representation,
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .malformed("version"))
+        }
+        XCTAssertFalse(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
+        var extra = try JSONSerialization.jsonObject(with: try PolicyBoundApprovalStore.package(
+            request: request,
+            local: nil,
+            companion: try signed(request, key: phone)
+        )) as! [String: String]
+        extra["future_field"] = "1"
+        XCTAssertThrowsError(try PolicyBoundApprovalStore.importUserMediatedPackage(
+            JSONSerialization.data(withJSONObject: extra),
+            pinnedLocalKey: nil,
+            pinnedCompanionKey: phone.publicKey.x963Representation,
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .malformed("package"))
+        }
+        extra.removeValue(forKey: "future_field")
+        extra["companion_generation"] = "01"
+        XCTAssertThrowsError(try PolicyBoundApprovalStore.importUserMediatedPackage(
+            JSONSerialization.data(withJSONObject: extra),
+            pinnedLocalKey: nil,
+            pinnedCompanionKey: phone.publicKey.x963Representation,
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .malformed("enrollment"))
+        }
+    }
+
+    func testConsumeReloadsLiveEnrollmentAndRejectsARevokedEpoch() throws {
+        let phone = P256.Signing.PrivateKey()
+        let request = sample(policy: .companion, companionKeyID: "phone-key")
+        let enroll = directory.appendingPathComponent("enroll", isDirectory: true)
+        try BiometricEnrollmentDirectory.save(BiometricEnrollmentRecord(
+            keyID: "phone-key",
+            publicKey: phone.publicKey.x963Representation,
+            state: BiometricEnrollmentRecord.active,
+            backend: BiometricEnrollmentRecord.softwareBackend,
+            generation: 1
+        ), directory: enroll)
+        try submit(request, local: nil, companion: phone)
+        try BiometricEnrollmentDirectory.revoke(keyID: "phone-key", directory: enroll)
+        XCTAssertThrowsError(try PolicyBoundApprovalStore.consumeEnrolled(
+            request: request,
+            enrollmentDirectory: enroll,
+            approvalDirectory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .revoked)
+        }
+        XCTAssertFalse(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
+    }
+
+    func testRevokeWhilePolicyConsumeIsBlockedRejectsTheStaleRecord() throws {
+        let phone = P256.Signing.PrivateKey()
+        let request = sample(policy: .companion, companionKeyID: "phone-key")
+        let enroll = directory.appendingPathComponent("enroll-race", isDirectory: true)
+        try BiometricEnrollmentDirectory.save(BiometricEnrollmentRecord(
+            keyID: "phone-key",
+            publicKey: phone.publicKey.x963Representation,
+            state: BiometricEnrollmentRecord.active,
+            backend: BiometricEnrollmentRecord.softwareBackend,
+            generation: 1
+        ), directory: enroll)
+        try submit(request, local: nil, companion: phone)
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        BiometricApprovalStore.beforeExclusiveAccess = {
+            entered.signal()
+            _ = release.wait(timeout: .now() + 2)
+        }
+        defer {
+            BiometricApprovalStore.beforeExclusiveAccess = nil
+            release.signal()
+        }
+        var outcome: BiometricApprovalError?
+        let finished = DispatchGroup()
+        finished.enter()
+        DispatchQueue.global().async {
+            do {
+                try PolicyBoundApprovalStore.consumeEnrolled(
+                    request: request,
+                    enrollmentDirectory: enroll,
+                    approvalDirectory: self.directory
+                )
+            } catch let error as BiometricApprovalError {
+                outcome = error
+            } catch {
+                outcome = .tampered
+            }
+            finished.leave()
+        }
+        XCTAssertEqual(entered.wait(timeout: .now() + 2), .success)
+        try BiometricEnrollmentDirectory.revoke(keyID: "phone-key", directory: enroll)
+        release.signal()
+        XCTAssertEqual(finished.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(outcome, .revoked)
+        XCTAssertFalse(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
+    }
+
+    func testCraftedDualRecordWithOneKeyIsRejectedAtConsume() throws {
+        let local = P256.Signing.PrivateKey()
+        let phone = P256.Signing.PrivateKey()
+        let request = sample(policy: .dual, localKeyID: "mac-key", companionKeyID: "phone-key")
+        try submit(request, local: local, companion: phone)
+        let url = directory.appendingPathComponent("\(request.nonce).policy-approval")
+        var object = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: String]
+        object["companion_public_key_b64"] = object["local_public_key_b64"]
+        object["companion_signature_b64"] = object["local_signature_b64"]
+        object["companion_generation"] = object["local_generation"]
+        try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]).write(to: url)
+        XCTAssertThrowsError(try PolicyBoundApprovalStore.consume(
+            request: request,
+            pinnedLocalKey: local.publicKey.x963Representation,
+            pinnedCompanionKey: local.publicKey.x963Representation,
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .unsupportedPolicy)
+        }
+        XCTAssertFalse(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
     }
 
     private func submit(
@@ -793,7 +951,9 @@ final class PolicyBoundApprovalTests: XCTestCase {
             nonce: String(repeating: "b", count: 64),
             expiryUnix: 2_000,
             localKeyID: localKeyID,
-            companionKeyID: companionKeyID
+            companionKeyID: companionKeyID,
+            localGeneration: localKeyID.isEmpty ? 0 : 1,
+            companionGeneration: companionKeyID.isEmpty ? 0 : 1
         )
     }
 }

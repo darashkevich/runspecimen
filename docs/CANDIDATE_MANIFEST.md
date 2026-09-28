@@ -26,7 +26,7 @@ The exact git commit is the commit that introduces this manifest on `cursor/inte
 | Nested secret stripping, receipts, About and Settings close | yes | yes |
 | Fast path | yes | yes |
 | Local biometric prototype | yes, not an execution gate | exclude the prototype sources and test hooks, then verify the binary |
-| Companion transport | not built | not built |
-| Privileged helper, relay, `network.server` | not added | not added |
+| Companion transport | user-mediated RSBA2 package only. No socket, relay, or device Face ID | not built |
+| Privileged helper, relay, `network.server` | not added. Design only in `docs/EXECUTOR_PROTECTION.md` | not added |
 
 `ProductionPolicy.accepts` is a test classifier. It does not enforce a biometric execution policy.
