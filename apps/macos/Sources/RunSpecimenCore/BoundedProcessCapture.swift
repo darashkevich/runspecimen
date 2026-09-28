@@ -21,6 +21,61 @@ public enum BoundedProcessCapture {
         public var timedOut: Bool
         public var cancelled: Bool
         public var cleanupFailed: Bool = false
+        /// Set when a pipe read fails. Zero is end of stream, not an error.
+        /// `EINTR` is retried and does not set this.
+        public var streamReadError: Int32? = nil
+    }
+
+    /// What one `read` result means. A short positive count is data, not EOF.
+    public enum ReadDisposition: Equatable {
+        case data
+        case end
+        case retry
+        case failed(Int32)
+    }
+
+    public static func readDisposition(count: Int, errorNumber: Int32) -> ReadDisposition {
+        if count > 0 {
+            return .data
+        }
+        if count == 0 {
+            return .end
+        }
+        if errorNumber == EINTR {
+            return .retry
+        }
+        return .failed(errorNumber)
+    }
+
+    /// Applies injected read results in order. Used by tests and mirrored by the live drain.
+    public static func reduceReads(_ reads: [StagedRead]) -> (data: Data, error: Int32?) {
+        var data = Data()
+        for read in reads {
+            switch readDisposition(count: read.count, errorNumber: read.errorNumber) {
+            case .data:
+                let available = read.bytes.prefix(read.count)
+                data.append(available)
+            case .end:
+                return (data, nil)
+            case .retry:
+                continue
+            case .failed(let code):
+                return (data, code)
+            }
+        }
+        return (data, nil)
+    }
+
+    public struct StagedRead: Equatable {
+        public var count: Int
+        public var errorNumber: Int32
+        public var bytes: Data
+
+        public init(count: Int, errorNumber: Int32 = 0, bytes: Data = Data()) {
+            self.count = count
+            self.errorNumber = errorNumber
+            self.bytes = bytes
+        }
     }
 
     public enum GroupSignal: Equatable {
@@ -145,7 +200,8 @@ public enum BoundedProcessCapture {
             stderrTruncated: stderr.truncated,
             timedOut: timedOut,
             cancelled: cancelled,
-            cleanupFailed: cleanupFailed
+            cleanupFailed: cleanupFailed,
+            streamReadError: stdout.readError ?? stderr.readError
         )
     }
 
@@ -403,14 +459,21 @@ public enum BoundedProcessCapture {
             let fd = handle.fileDescriptor
             var storage = [UInt8](repeating: 0, count: 65_536)
             while true {
-                let count = storage.withUnsafeMutableBytes { raw -> Int in
-                    guard let base = raw.baseAddress else { return -1 }
-                    return Darwin.read(fd, base, raw.count)
+                let outcome = storage.withUnsafeMutableBytes { raw -> (Int, Int32) in
+                    guard let base = raw.baseAddress else { return (-1, EFAULT) }
+                    let count = Darwin.read(fd, base, raw.count)
+                    return (count, count < 0 ? errno : 0)
                 }
-                if count > 0 {
-                    buffer.append(Data(storage.prefix(count)))
-                } else {
-                    break
+                switch readDisposition(count: outcome.0, errorNumber: outcome.1) {
+                case .data:
+                    buffer.append(Data(storage.prefix(outcome.0)))
+                case .end:
+                    return
+                case .retry:
+                    continue
+                case .failed(let code):
+                    buffer.noteReadFailure(code)
+                    return
                 }
             }
         }
@@ -440,6 +503,9 @@ public enum EngineReportDecoder {
     public static func jsonPayload(from output: BoundedProcessCapture.Output) throws -> JSONPayload {
         if output.cleanupFailed {
             throw EngineReportError(message: "The engine stopped, but an owned descendant was still running.")
+        }
+        if let code = output.streamReadError {
+            throw EngineReportError(message: "The engine output could not be read (errno \(code)).")
         }
         if output.timedOut {
             throw EngineReportError(message: "The engine timed out before it finished.")
@@ -476,6 +542,7 @@ private final class ByteBuffer: @unchecked Sendable {
     private let lock = NSLock()
     private var storage = Data()
     private var didTruncate = false
+    private var readError: Int32?
     private let limit: Int
 
     init(limit: Int) {
@@ -506,9 +573,17 @@ private final class ByteBuffer: @unchecked Sendable {
         }
     }
 
-    func snapshot() -> (data: Data, truncated: Bool) {
+    func noteReadFailure(_ code: Int32) {
         lock.lock()
         defer { lock.unlock() }
-        return (storage, didTruncate)
+        if readError == nil {
+            readError = code
+        }
+    }
+
+    func snapshot() -> (data: Data, truncated: Bool, readError: Int32?) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (storage, didTruncate, readError)
     }
 }

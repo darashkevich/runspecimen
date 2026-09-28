@@ -14,6 +14,7 @@ public enum BiometricApprovalError: Error, Equatable, CustomStringConvertible, S
     case tampered
     case replay
     case mismatch
+    case revoked
     case unsupportedPolicy
 
     public var description: String {
@@ -28,6 +29,8 @@ public enum BiometricApprovalError: Error, Equatable, CustomStringConvertible, S
             return "The biometric approval was already consumed."
         case .mismatch:
             return "The biometric approval is not for this run."
+        case .revoked:
+            return "The biometric key is revoked. A new enrollment is required."
         case .unsupportedPolicy:
             return "Only a local biometric policy can be consumed. Companion and dual approval are not available."
         }
@@ -256,21 +259,279 @@ public enum BiometricApprovalStore {
     }
 }
 
-/// Signs one local request with a non-exportable Secure Enclave key.
+/// A pinned public key stored apart from any approval.
 ///
-/// The private-key operation requires the current biometric set. This function
-/// does not call `LAContext.evaluatePolicy` and does not accept a Boolean in
-/// its place. Unit tests must not call it: a real Touch ID or Face ID prompt
-/// is a human step.
-public enum LocalSecureEnclaveSigner {
-    public struct SignedApproval: Equatable, Sendable {
-        public var publicKey: Data
-        public var signature: Data
+/// The private key is not in this record. A public key that arrives beside a
+/// signature is not enrollment.
+public struct BiometricEnrollmentRecord: Equatable, Sendable {
+    public static let active = "active"
+    public static let revoked = "revoked"
+    public static let softwareBackend = "software-test-double"
+    public static let secureEnclaveBackend = "secure-enclave"
+
+    public var keyID: String
+    public var publicKey: Data
+    public var state: String
+    public var backend: String
+}
+
+/// Writes and reads enrollment records. It does not sign and it does not start a run.
+public enum BiometricEnrollmentDirectory {
+    public static func save(_ record: BiometricEnrollmentRecord, directory: URL) throws {
+        try validateKeyID(record.keyID)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let object: [String: String] = [
+            "backend": record.backend,
+            "key_id": record.keyID,
+            "public_key_b64": record.publicKey.base64EncodedString(),
+            "state": record.state,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        try data.write(to: recordURL(directory, record.keyID), options: .atomic)
     }
 
-    public static func sign(_ request: BiometricApprovalRequest) throws -> SignedApproval {
+    public static func load(keyID: String, directory: URL) throws -> BiometricEnrollmentRecord {
+        try validateKeyID(keyID)
+        let data: Data
+        do {
+            data = try Data(contentsOf: recordURL(directory, keyID))
+        } catch {
+            throw BiometricApprovalError.malformed("enrollment")
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+              object["key_id"] == keyID,
+              let state = object["state"],
+              let backend = object["backend"],
+              let publicKey = object["public_key_b64"].flatMap({ Data(base64Encoded: $0) }),
+              !publicKey.isEmpty,
+              state == BiometricEnrollmentRecord.active || state == BiometricEnrollmentRecord.revoked else {
+            throw BiometricApprovalError.tampered
+        }
+        return BiometricEnrollmentRecord(keyID: keyID, publicKey: publicKey, state: state, backend: backend)
+    }
+
+    public static func revoke(keyID: String, directory: URL) throws {
+        var record = try load(keyID: keyID, directory: directory)
+        record.state = BiometricEnrollmentRecord.revoked
+        try save(record, directory: directory)
+    }
+
+    static func recordURL(_ directory: URL, _ keyID: String) -> URL {
+        directory.appendingPathComponent("\(keyID).enrollment")
+    }
+
+    private static func validateKeyID(_ keyID: String) throws {
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+        guard (1...64).contains(keyID.count), keyID.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+            throw BiometricApprovalError.malformed("key_id")
+        }
+    }
+}
+
+/// Test-double keys on disk. This is not a Secure Enclave and not biometric approval.
+///
+/// The private file is loaded on every sign, so a later sign uses the enrolled key.
+public enum SoftwareApprovalKeyEnrollment {
+    public static func enroll(keyID: String, directory: URL) throws -> Data {
+        if (try? BiometricEnrollmentDirectory.load(keyID: keyID, directory: directory)) != nil {
+            throw BiometricApprovalError.replay
+        }
+        let key = P256.Signing.PrivateKey()
+        try writePrivate(key.rawRepresentation, keyID: keyID, directory: directory)
+        let record = BiometricEnrollmentRecord(
+            keyID: keyID,
+            publicKey: key.publicKey.x963Representation,
+            state: BiometricEnrollmentRecord.active,
+            backend: BiometricEnrollmentRecord.softwareBackend
+        )
+        try BiometricEnrollmentDirectory.save(record, directory: directory)
+        return record.publicKey
+    }
+
+    public static func sign(_ request: BiometricApprovalRequest, directory: URL) throws -> Data {
+        let record = try activeRecord(request.keyID, directory: directory, backend: BiometricEnrollmentRecord.softwareBackend)
+        let raw = try Data(contentsOf: privateURL(directory, request.keyID))
+        let key = try P256.Signing.PrivateKey(rawRepresentation: raw)
+        guard key.publicKey.x963Representation == record.publicKey else {
+            throw BiometricApprovalError.tampered
+        }
+        return try key.signature(for: try request.canonicalBytes()).rawRepresentation
+    }
+
+    public static func revoke(keyID: String, directory: URL) throws {
+        _ = try activeRecord(keyID, directory: directory, backend: BiometricEnrollmentRecord.softwareBackend)
+        try BiometricEnrollmentDirectory.revoke(keyID: keyID, directory: directory)
+        try? FileManager.default.removeItem(at: privateURL(directory, keyID))
+    }
+
+    /// Enrolls `newKeyID`, then revokes `oldKeyID`. The new public key is a different key.
+    public static func rotate(from oldKeyID: String, to newKeyID: String, directory: URL) throws -> Data {
+        let publicKey = try enroll(keyID: newKeyID, directory: directory)
+        try revoke(keyID: oldKeyID, directory: directory)
+        return publicKey
+    }
+
+    static func privateURL(_ directory: URL, _ keyID: String) -> URL {
+        directory.appendingPathComponent("\(keyID).software-key")
+    }
+
+    private static func activeRecord(_ keyID: String, directory: URL, backend: String) throws -> BiometricEnrollmentRecord {
+        let record = try BiometricEnrollmentDirectory.load(keyID: keyID, directory: directory)
+        guard record.backend == backend else {
+            throw BiometricApprovalError.malformed("backend")
+        }
+        guard record.state == BiometricEnrollmentRecord.active else {
+            throw BiometricApprovalError.revoked
+        }
+        return record
+    }
+
+    private static func writePrivate(_ data: Data, keyID: String, directory: URL) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = privateURL(directory, keyID)
+        let fd = open(url.path, O_CREAT | O_EXCL | O_WRONLY, 0o600)
+        guard fd >= 0 else {
+            throw BiometricApprovalError.malformed("private key")
+        }
+        defer { close(fd) }
+        let wrote = data.withUnsafeBytes { raw -> Int in
+            guard let base = raw.baseAddress else { return -1 }
+            return Darwin.write(fd, base, raw.count)
+        }
+        guard wrote == data.count else {
+            throw BiometricApprovalError.malformed("private key")
+        }
+    }
+}
+
+extension BiometricApprovalStore {
+    /// Pins the key from the enrollment record. The signature's accompanying public key is not consulted.
+    public static func submitEnrolled(
+        request: BiometricApprovalRequest,
+        signature: Data,
+        enrollmentDirectory: URL,
+        approvalDirectory: URL,
+        now: Int
+    ) throws {
+        let record = try BiometricEnrollmentDirectory.load(keyID: request.keyID, directory: enrollmentDirectory)
+        guard record.state == BiometricEnrollmentRecord.active else {
+            throw BiometricApprovalError.revoked
+        }
+        try submit(
+            request: request,
+            signature: signature,
+            publicKey: record.publicKey,
+            pinnedPublicKey: record.publicKey,
+            directory: approvalDirectory,
+            now: now
+        )
+    }
+
+    public static func consumeEnrolled(
+        request: BiometricApprovalRequest,
+        enrollmentDirectory: URL,
+        approvalDirectory: URL,
+        now: Int
+    ) throws {
+        let record = try BiometricEnrollmentDirectory.load(keyID: request.keyID, directory: enrollmentDirectory)
+        guard record.state == BiometricEnrollmentRecord.active else {
+            throw BiometricApprovalError.revoked
+        }
+        try consume(
+            request: request,
+            pinnedPublicKey: record.publicKey,
+            directory: approvalDirectory,
+            now: now
+        )
+    }
+}
+
+/// Enrolls one Secure Enclave key and signs later requests with that same key.
+///
+/// Each private-key operation requires the current biometric set. These
+/// functions do not call `LAContext.evaluatePolicy` and do not accept a
+/// Boolean in its place. Unit tests must not call them.
+///
+/// The key blob is stored in the keychain. The enrollment record stores only
+/// the public key. Losing the biometric set makes the key unusable; recovery
+/// is `retireUnusableKey` followed by a new `enroll`, not an exported copy.
+public enum LocalSecureEnclaveEnrollment {
+    private static let service = "com.darashkevich.runspecimen.biometric"
+
+    public static func enroll(keyID: String, directory: URL) throws -> Data {
+        if (try? BiometricEnrollmentDirectory.load(keyID: keyID, directory: directory)) != nil {
+            throw BiometricApprovalError.replay
+        }
+        let context = biometricContext()
+        let key = try SecureEnclave.P256.Signing.PrivateKey(
+            accessControl: try accessControl(),
+            authenticationContext: context
+        )
+        try saveBlob(key.dataRepresentation, keyID: keyID)
+        let record = BiometricEnrollmentRecord(
+            keyID: keyID,
+            publicKey: key.publicKey.x963Representation,
+            state: BiometricEnrollmentRecord.active,
+            backend: BiometricEnrollmentRecord.secureEnclaveBackend
+        )
+        do {
+            try BiometricEnrollmentDirectory.save(record, directory: directory)
+        } catch {
+            deleteBlob(keyID: keyID)
+            throw error
+        }
+        return record.publicKey
+    }
+
+    public static func sign(_ request: BiometricApprovalRequest, directory: URL) throws -> Data {
+        let record = try BiometricEnrollmentDirectory.load(keyID: request.keyID, directory: directory)
+        guard record.backend == BiometricEnrollmentRecord.secureEnclaveBackend else {
+            throw BiometricApprovalError.malformed("backend")
+        }
+        guard record.state == BiometricEnrollmentRecord.active else {
+            throw BiometricApprovalError.revoked
+        }
+        let blob = try loadBlob(keyID: request.keyID)
+        let key = try SecureEnclave.P256.Signing.PrivateKey(
+            dataRepresentation: blob,
+            authenticationContext: biometricContext()
+        )
+        guard key.publicKey.x963Representation == record.publicKey else {
+            throw BiometricApprovalError.tampered
+        }
+        return try key.signature(for: try request.canonicalBytes()).rawRepresentation
+    }
+
+    public static func revoke(keyID: String, directory: URL) throws {
+        let record = try BiometricEnrollmentDirectory.load(keyID: keyID, directory: directory)
+        guard record.backend == BiometricEnrollmentRecord.secureEnclaveBackend else {
+            throw BiometricApprovalError.malformed("backend")
+        }
+        deleteBlob(keyID: keyID)
+        try BiometricEnrollmentDirectory.revoke(keyID: keyID, directory: directory)
+    }
+
+    public static func rotate(from oldKeyID: String, to newKeyID: String, directory: URL) throws -> Data {
+        let publicKey = try enroll(keyID: newKeyID, directory: directory)
+        try revoke(keyID: oldKeyID, directory: directory)
+        return publicKey
+    }
+
+    /// Drops a key that can no longer be used. It does not create a replacement key.
+    public static func retireUnusableKey(keyID: String, directory: URL) throws {
+        deleteBlob(keyID: keyID)
+        if (try? BiometricEnrollmentDirectory.load(keyID: keyID, directory: directory)) != nil {
+            try BiometricEnrollmentDirectory.revoke(keyID: keyID, directory: directory)
+        }
+    }
+
+    private static func biometricContext() -> LAContext {
         let context = LAContext()
         context.localizedFallbackTitle = ""
+        return context
+    }
+
+    private static func accessControl() throws -> SecAccessControl {
         var cfError: Unmanaged<CFError>?
         guard let access = SecAccessControlCreateWithFlags(
             nil,
@@ -280,14 +541,45 @@ public enum LocalSecureEnclaveSigner {
         ) else {
             throw BiometricApprovalError.malformed("access control")
         }
-        let key = try SecureEnclave.P256.Signing.PrivateKey(
-            accessControl: access,
-            authenticationContext: context
-        )
-        let signature = try key.signature(for: try request.canonicalBytes())
-        return SignedApproval(
-            publicKey: key.publicKey.x963Representation,
-            signature: signature.rawRepresentation
-        )
+        return access
+    }
+
+    private static func saveBlob(_ data: Data, keyID: String) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: keyID,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+        ]
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw BiometricApprovalError.malformed("keychain")
+        }
+    }
+
+    private static func loadBlob(keyID: String) throws -> Data {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: keyID,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else {
+            throw BiometricApprovalError.malformed("keychain")
+        }
+        return data
+    }
+
+    private static func deleteBlob(keyID: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: keyID,
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }

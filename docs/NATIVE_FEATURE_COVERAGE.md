@@ -29,4 +29,4 @@ Store builds keep the browser dashboard and `com.apple.security.network.server` 
 | Retain pack | `retain` | bundle tests | Workflows → Retain…, after confirmation | Copies to a folder that must be outside the workspace | Cancel copies nothing. No upload |
 | Eval fast path | `eval complete`, suite `fastpath` | `tests/test_fastpath.py` | CLI only | Exact text completion when the task opts in | Does not pass a requirement check or approve |
 
-`requirements check` and `freshness check` stay CLI-only because they execute or rewrite evidence. The eval fast path stays CLI-only. The browser dashboard stays in the standalone CLI and stays out of the Store build. Hardware-backed biometric approval is not implemented.
+`requirements check` and `freshness check` stay CLI-only because they execute or rewrite evidence. The eval fast path stays CLI-only. The browser dashboard stays in the standalone CLI and stays out of the Store build. Local biometric enrollment and one-time consumption exist as a RunSpecimenCore prototype. No native control calls them, and they are not in the submitted Store binary.

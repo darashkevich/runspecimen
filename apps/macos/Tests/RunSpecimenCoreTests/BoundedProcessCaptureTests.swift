@@ -348,6 +348,45 @@ final class BoundedProcessCaptureTests: XCTestCase {
         }
     }
 
+    func testInterruptedReadIsRetriedAndAHardReadErrorIsNotSuccess() {
+        XCTAssertEqual(BoundedProcessCapture.readDisposition(count: 4, errorNumber: EINTR), .data)
+        XCTAssertEqual(BoundedProcessCapture.readDisposition(count: 0, errorNumber: EINTR), .end)
+        XCTAssertEqual(BoundedProcessCapture.readDisposition(count: -1, errorNumber: EINTR), .retry)
+        XCTAssertEqual(BoundedProcessCapture.readDisposition(count: -1, errorNumber: EIO), .failed(EIO))
+
+        let ready = BoundedProcessCapture.reduceReads([
+            .init(count: -1, errorNumber: EINTR),
+            .init(count: 5, bytes: Data("READY".utf8)),
+            .init(count: 0),
+        ])
+        XCTAssertEqual(ready.data, Data("READY".utf8))
+        XCTAssertNil(ready.error)
+
+        let failed = BoundedProcessCapture.reduceReads([
+            .init(count: 2, bytes: Data("ok".utf8)),
+            .init(count: -1, errorNumber: EIO),
+        ])
+        XCTAssertEqual(failed.data, Data("ok".utf8))
+        XCTAssertEqual(failed.error, EIO)
+
+        let output = BoundedProcessCapture.Output(
+            exitCode: 0,
+            stdout: Data("{\"ok\":true}".utf8),
+            stderr: Data(),
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            timedOut: false,
+            cancelled: false,
+            streamReadError: EIO
+        )
+        XCTAssertThrowsError(try EngineReportDecoder.jsonPayload(from: output)) { error in
+            XCTAssertEqual(
+                (error as? EngineReportError)?.message,
+                "The engine output could not be read (errno \(EIO))."
+            )
+        }
+    }
+
     func testCleanupFailureIsNotReportedAsAPlainTimeout() {
         let output = BoundedProcessCapture.Output(
             exitCode: -1,

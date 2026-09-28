@@ -1,12 +1,12 @@
 # Biometric approval
 
-Status: **local binding only, not an execution gate, not shipped**.
+Status: **local prototype, not an execution gate, not shipped**.
 
-`BiometricApprovalStore` canonicalizes one local request and consumes it once. The bytes cover the policy (`local`), Mac id, workspace id, run id, contract fingerprint, input fingerprint, execution bounds, nonce, expiry, and key id. Consume checks a pinned P-256 public key, the signature, and the live request. A second consume is a replay. A changed signature or a different key is tamper and does not spend the nonce. A different contract, input fingerprint, or bound is a mismatch and does not spend the nonce. Expiry spends the nonce so a later clock change cannot reuse it. Companion and dual policies cannot be constructed or consumed.
+`BiometricApprovalStore` canonicalizes one local request and consumes it once. The bytes cover the policy (`local`), Mac id, workspace id, run id, contract fingerprint, input fingerprint, execution bounds, nonce, expiry, and key id. Consume checks the public key in the enrollment record, not a public key that arrived with the signature. A second consume is a replay. A changed signature or a different key is tamper and does not spend the nonce. Each signed field is bound. A different contract, input fingerprint, or bound is a mismatch and does not spend the nonce. Expiry spends the nonce so a later clock change cannot reuse it. Companion and dual policies cannot be constructed or consumed.
 
-`LocalSecureEnclaveSigner` builds a non-exportable Secure Enclave key with `biometryCurrentSet` and `privateKeyUsage`, then signs those bytes. It does not call `LAContext.evaluatePolicy` and it does not take an authentication-success Boolean. Unit tests do not call it. A software P-256 key in tests is a test double, not biometric approval. Yahor still has to complete a real Touch ID prompt before that signer can be treated as exercised.
+Enrollment is separate from an approval. `SoftwareApprovalKeyEnrollment` is a test double: it stores a software P-256 key and signs later requests with that same key. `LocalSecureEnclaveEnrollment` creates one non-exportable Secure Enclave key (`biometryCurrentSet` and `privateKeyUsage`), stores the key blob in the keychain, and later signs by loading that blob. It does not call `LAContext.evaluatePolicy` and it does not take an authentication-success Boolean. Revoke and rotate drop the old key. If the biometric set changes, recovery is `retireUnusableKey` and a new enrollment, not an exported private key. Unit tests do not call the Secure Enclave path. Yahor still has to complete a real Touch ID prompt before that path can be treated as exercised.
 
-This store does not start a run. The existing PTY `APPROVE` path is unchanged. An agent that can replace the user-writable CLI, or that runs in the same user session as the executor, still bypasses a check that lives only in the app. A Secure Enclave signature does not fix a replaced executor.
+This store does not start a run. The existing PTY `APPROVE` path is unchanged. No run entry point calls the store. The approval directory is user-writable: restoring the approval file and deleting the consumed marker consumes the nonce again. That is a limit of this prototype, not a shipped bypass. An agent that can replace the user-writable CLI, or that runs in the same user session as the executor, still bypasses a check that lives only in the app. A Secure Enclave signature does not fix a replaced executor.
 
 ## What a signature would mean
 
@@ -26,12 +26,18 @@ TTY `approve` checks that stdin and stdout are terminals and that the line is ex
 
 An agent that can replace the user-writable CLI, or that runs inside the same user session as the executor, can still skip a check that lives only in that CLI. A Secure Enclave signature does not fix a replaced executor. Putting the check in a privileged helper, or in an App Store binary the agent cannot rewrite, is a different product boundary.
 
-## Decision
+## Decisions still required
 
-The first increment is local Mac signing only. Companion approval still needs a path from the iPhone to the Mac, and that path is not chosen. The rejected Mac App Store entitlement was a listening server. The remaining choices are:
+These are separate. Choosing one does not choose the other. Neither is implemented.
 
-1. **User-mediated transfer.** The phone signs, and the person moves the signature onto the Mac (share sheet or a file). No listening socket. Easy to mishandle, and it is not an automatic pairing.
-2. **Outbound relay.** The Mac uses the existing outbound client entitlement to reach a service the phone also reaches. That service must not hold approval keys. It is new infrastructure, a privacy disclosure, and an outage dependency.
-3. **Privileged local helper.** A helper the agent cannot replace enforces the signature. That is a privileged component and a material change to the sandbox story.
+**Executor protection.** Where the check has to live before it can refuse a same-user agent.
 
-Do not add a network server entitlement, a relay, or a privileged helper until one of these is chosen. Do not describe biometric approval as shipped.
+1. Leave enforcement in the app and the user-writable CLI. No new entitlement. A replaced binary or a restored approval directory still wins. This is the current prototype.
+2. A privileged helper that holds enrollment and the workspace lease. That is a privileged component and a material sandbox change.
+
+**Companion transport.** How an iPhone signature would reach the Mac. Local enrollment does not need this.
+
+1. User-mediated transfer. The person moves the signature onto the Mac. No listening socket. Easy to mishandle, and it is not automatic pairing.
+2. Outbound relay. The Mac uses the existing outbound client entitlement. The relay holds no approval keys. That is new infrastructure, a privacy disclosure, and an outage dependency.
+
+A listening server was the rejected Mac App Store entitlement. Do not add `com.apple.security.network.server`, a relay, or a privileged helper until the matching decision is explicit. Do not connect consumption to the lease before the executor decision is accepted. Do not describe biometric approval as shipped.
