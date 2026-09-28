@@ -15,9 +15,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "4D1D554ECCE70DFB91431966"
-               BuildableName = "RunSpecimenObserve.app"
-               BlueprintName = "RunSpecimenObserve"
+               BlueprintIdentifier = "3FE169B56D9C3D3B5DCFBFCC"
+               BuildableName = "RunSpecimenObserveDev.app"
+               BlueprintName = "RunSpecimenObserveDev"
                ReferencedContainer = "container:RunSpecimenObserve.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -32,27 +32,14 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "4D1D554ECCE70DFB91431966"
-            BuildableName = "RunSpecimenObserve.app"
-            BlueprintName = "RunSpecimenObserve"
+            BlueprintIdentifier = "3FE169B56D9C3D3B5DCFBFCC"
+            BuildableName = "RunSpecimenObserveDev.app"
+            BlueprintName = "RunSpecimenObserveDev"
             ReferencedContainer = "container:RunSpecimenObserve.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "5765A1F4F691D601C889827F"
-               BuildableName = "ObserveSchemaTests.xctest"
-               BlueprintName = "ObserveSchemaTests"
-               ReferencedContainer = "container:RunSpecimenObserve.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
       </Testables>
-      <CommandLineArguments>
-      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
@@ -68,9 +55,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "4D1D554ECCE70DFB91431966"
-            BuildableName = "RunSpecimenObserve.app"
-            BlueprintName = "RunSpecimenObserve"
+            BlueprintIdentifier = "3FE169B56D9C3D3B5DCFBFCC"
+            BuildableName = "RunSpecimenObserveDev.app"
+            BlueprintName = "RunSpecimenObserveDev"
             ReferencedContainer = "container:RunSpecimenObserve.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -85,9 +72,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "4D1D554ECCE70DFB91431966"
-            BuildableName = "RunSpecimenObserve.app"
-            BlueprintName = "RunSpecimenObserve"
+            BlueprintIdentifier = "3FE169B56D9C3D3B5DCFBFCC"
+            BuildableName = "RunSpecimenObserveDev.app"
+            BlueprintName = "RunSpecimenObserveDev"
             ReferencedContainer = "container:RunSpecimenObserve.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

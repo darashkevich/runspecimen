@@ -1,15 +1,17 @@
 import CryptoKit
 import Foundation
 
-/// A software P-256 key used only while developing the carried-package flow.
+/// A software P-256 key compiled only into the development Observe target.
 ///
 /// This is not a Secure Enclave key and it does not call Face ID. A signature
-/// from this key is not a Mac approval and it is not physical presence.
+/// from this key is not a Mac approval and it is not biometric completion.
 struct DevelopmentPairingRecord: Equatable {
     var keyID: String
     var generation: Int
     var publicKeyX963B64: String
-    static let backend = "software-development"
+    var role: String
+    var backend: String
+    var provenance: String
 }
 
 enum DevelopmentCompanionSigner {
@@ -21,13 +23,28 @@ enum DevelopmentCompanionSigner {
         DevelopmentPairingRecord(
             keyID: keyID,
             generation: generation,
-            publicKeyX963B64: key.publicKey.x963Representation.base64EncodedString()
+            publicKeyX963B64: key.publicKey.x963Representation.base64EncodedString(),
+            role: EnrollmentIdentity.roleCompanion,
+            backend: EnrollmentIdentity.backendSoftwareDevelopment,
+            provenance: EnrollmentIdentity.provenanceDevelopment
+        )
+    }
+
+    static func authorizesExecution(_ record: DevelopmentPairingRecord) -> Bool {
+        EnrollmentIdentity.allowsExecution(
+            role: record.role,
+            backend: record.backend,
+            provenance: record.provenance,
+            state: EnrollmentIdentity.stateActive
         )
     }
 
     /// Signs the shared RSBA2 bytes. Refuses a local-only policy and a package
     /// whose companion key id or generation does not match this development record.
     static func sign(fields: RSBA2Package.Fields, record: DevelopmentPairingRecord, key: P256.Signing.PrivateKey) throws -> Data {
+        guard authorizesExecution(record) == false else {
+            throw RSBA2Package.ParseFailure.malformed("enrollment")
+        }
         guard fields.policy == "companion" || fields.policy == "dual" else {
             throw RSBA2Package.ParseFailure.malformed("policy")
         }

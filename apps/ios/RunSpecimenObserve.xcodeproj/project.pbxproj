@@ -7,41 +7,101 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0352AAFCBC2562A924301334 /* CompanionApprovalPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A770B9FAB0B4D0E31CF4A64 /* CompanionApprovalPreview.swift */; };
+		0AF3AF26058BC97FE02C04E9 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAE24715CE6EF0998517617 /* RootView.swift */; };
+		0FCC3AB58D3C1531D7B3BA7D /* RSTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD27DE1469C9CD6E323B5794 /* RSTheme.swift */; };
+		159547C49C64CDD870A65691 /* apple-touch-icon.png in Resources */ = {isa = PBXBuildFile; fileRef = DF9E43D9D8F6D4D4D18CFD30 /* apple-touch-icon.png */; };
+		18F349163051F1EFB143F9DF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6F77D7734FC627143F9C6B11 /* Assets.xcassets */; };
+		1C7F9C572958D86AC31DB49F /* CompanionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F92FB5B28E2DE08D564DC17 /* CompanionClient.swift */; };
+		1E42961958644EBE992094B8 /* CompanionApprovalPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB049071AC18F6157EDDF2F4 /* CompanionApprovalPreviewView.swift */; };
+		1F7A325DA873E3A55761B032 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB60909EFBE4E0006990A08 /* PairingView.swift */; };
+		2019ECEF8A95672E458A0397 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6F77D7734FC627143F9C6B11 /* Assets.xcassets */; };
+		2C588E244912C0AE00564961 /* DevelopmentCompanionSignView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 579CD1E4F1A9F5A13673BF67 /* DevelopmentCompanionSignView.swift */; };
+		43666DAD55A82C14D615CD04 /* CompanionSecureEnclaveEnrollment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 303DAB53830A36E39215494A /* CompanionSecureEnclaveEnrollment.swift */; };
+		45057E8879E0E5CB7B749A10 /* BoundaryBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB26E0BC6AF5E9D6DFB8B630 /* BoundaryBanner.swift */; };
+		484FA601AD300487184F26E5 /* CompanionHardwareApprovalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E18B40D2B7A6AD44110C637 /* CompanionHardwareApprovalView.swift */; };
 		551180D3C83D335E1F709136 /* RunSpecimenObserveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABA0291E3FAEE87B278158B4 /* RunSpecimenObserveApp.swift */; };
-		E4A1C0DE0000000000000002 /* CompanionApprovalPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A1C0DE0000000000000001 /* CompanionApprovalPreview.swift */; };
-		C072B19B0000000000000002 /* RSBA2Package.swift in Sources */ = {isa = PBXBuildFile; fileRef = C072B19B0000000000000001 /* RSBA2Package.swift */; };
-		C072B19B0000000000000004 /* DevelopmentCompanionSigner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C072B19B0000000000000003 /* DevelopmentCompanionSigner.swift */; };
-		E4A1C0DE0000000000000004 /* CompanionApprovalPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A1C0DE0000000000000003 /* CompanionApprovalPreviewView.swift */; };
+		68A1F78ED049CCC55B094B30 /* RunSpecimenObserveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABA0291E3FAEE87B278158B4 /* RunSpecimenObserveApp.swift */; };
 		730E00318EC0A16E41EF9194 /* CompanionSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E6180F0A8F12A57871A31B /* CompanionSession.swift */; };
 		77812F6887B1229954BCCB85 /* RSTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD27DE1469C9CD6E323B5794 /* RSTheme.swift */; };
+		7830580895FF5184BF6ADF7E /* SchemaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 561075E95870606683FBC66D /* SchemaTests.swift */; };
+		873FC47E8AA4CE31E4E2B99F /* mark.svg in Resources */ = {isa = PBXBuildFile; fileRef = 4B646DFB9E62C7B92D5E9457 /* mark.svg */; };
+		8B188AAEA312072CA7787220 /* CompanionApprovalPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A770B9FAB0B4D0E31CF4A64 /* CompanionApprovalPreview.swift */; };
+		8FD69F570947A1A2C7EAE437 /* RSBA2Package.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBDC04B8157799B111AEDF06 /* RSBA2Package.swift */; };
 		9F2551880C5AA912502F6DEC /* CompanionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E77BCF1F7A993119E9CE6A /* CompanionModels.swift */; };
+		A69CDBC4CA58C035FD8DA42B /* AdaptiveLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2D26500C594DF12DA6B3A42 /* AdaptiveLayout.swift */; };
 		ACEFF4AF6F1B84726D53569C /* BoundaryBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB26E0BC6AF5E9D6DFB8B630 /* BoundaryBanner.swift */; };
+		B02094A8A56CAB7CD7AB96E3 /* DevelopmentCompanionSigner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 737DB085CE33C4BA6B8B1C69 /* DevelopmentCompanionSigner.swift */; };
+		C02DD06E71C886F4C2B2A075 /* CompanionApprovalPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB049071AC18F6157EDDF2F4 /* CompanionApprovalPreviewView.swift */; };
+		C91EFA8E420A8CE6755D8779 /* StatusObserveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1425E3AAE6F7EBB1944FDA2 /* StatusObserveView.swift */; };
 		CC9A0030A52DE6E72E5A8792 /* StatusObserveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1425E3AAE6F7EBB1944FDA2 /* StatusObserveView.swift */; };
+		CDDD5F23A7567FFC11A2B9BE /* RSBA2Package.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBDC04B8157799B111AEDF06 /* RSBA2Package.swift */; };
+		D0EAEB3EED93B9CF4A101476 /* mark.svg in Resources */ = {isa = PBXBuildFile; fileRef = 4B646DFB9E62C7B92D5E9457 /* mark.svg */; };
 		DF67B86604016910AC073C16 /* CompanionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F92FB5B28E2DE08D564DC17 /* CompanionClient.swift */; };
+		E8CF3266A74B11B03F21067D /* CompanionHardwareApprovalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E18B40D2B7A6AD44110C637 /* CompanionHardwareApprovalView.swift */; };
 		E9364715807F203BDBC6F1D8 /* AdaptiveLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2D26500C594DF12DA6B3A42 /* AdaptiveLayout.swift */; };
 		ED854B65D03A6C25EE793C09 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB60909EFBE4E0006990A08 /* PairingView.swift */; };
+		EE03F06ED87D88CAE9E0E0C9 /* CompanionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E77BCF1F7A993119E9CE6A /* CompanionModels.swift */; };
+		EEF616E5284574EC408670FD /* apple-touch-icon.png in Resources */ = {isa = PBXBuildFile; fileRef = DF9E43D9D8F6D4D4D18CFD30 /* apple-touch-icon.png */; };
 		F30AD0656468857451B7C895 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAE24715CE6EF0998517617 /* RootView.swift */; };
+		F4C213BEA38C9EAC15097250 /* CompanionSecureEnclaveEnrollment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 303DAB53830A36E39215494A /* CompanionSecureEnclaveEnrollment.swift */; };
+		F4F232C1BC278A0522FC9374 /* CompanionSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E6180F0A8F12A57871A31B /* CompanionSession.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		87BDC24C70804F2E5B3D0BCB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6BF9A08FC707FD0336170C82 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4D1D554ECCE70DFB91431966;
+			remoteInfo = RunSpecimenObserve;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		01E77BCF1F7A993119E9CE6A /* CompanionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionModels.swift; sourceTree = "<group>"; };
-		E4A1C0DE0000000000000001 /* CompanionApprovalPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionApprovalPreview.swift; sourceTree = "<group>"; };
-		C072B19B0000000000000001 /* RSBA2Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RSBA2Package.swift; path = ../macos/Sources/RunSpecimenCore/RSBA2Package.swift; sourceTree = SOURCE_ROOT; };
-		C072B19B0000000000000003 /* DevelopmentCompanionSigner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopmentCompanionSigner.swift; sourceTree = "<group>"; };
-		E4A1C0DE0000000000000003 /* CompanionApprovalPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionApprovalPreviewView.swift; sourceTree = "<group>"; };
+		1E18B40D2B7A6AD44110C637 /* CompanionHardwareApprovalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionHardwareApprovalView.swift; sourceTree = "<group>"; };
+		2A770B9FAB0B4D0E31CF4A64 /* CompanionApprovalPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionApprovalPreview.swift; sourceTree = "<group>"; };
 		2AAE24715CE6EF0998517617 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		303DAB53830A36E39215494A /* CompanionSecureEnclaveEnrollment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionSecureEnclaveEnrollment.swift; sourceTree = "<group>"; };
+		4B646DFB9E62C7B92D5E9457 /* mark.svg */ = {isa = PBXFileReference; path = mark.svg; sourceTree = "<group>"; };
+		561075E95870606683FBC66D /* SchemaTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemaTests.swift; sourceTree = "<group>"; };
+		579CD1E4F1A9F5A13673BF67 /* DevelopmentCompanionSignView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopmentCompanionSignView.swift; sourceTree = "<group>"; };
 		5F92FB5B28E2DE08D564DC17 /* CompanionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionClient.swift; sourceTree = "<group>"; };
+		6F77D7734FC627143F9C6B11 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		704BB881AA608E64C1544791 /* RunSpecimenObserveDev.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = RunSpecimenObserveDev.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7205FFEDAD45C5DD7E763965 /* ObserveSchemaTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ObserveSchemaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		737DB085CE33C4BA6B8B1C69 /* DevelopmentCompanionSigner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopmentCompanionSigner.swift; sourceTree = "<group>"; };
 		A1425E3AAE6F7EBB1944FDA2 /* StatusObserveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusObserveView.swift; sourceTree = "<group>"; };
 		ABA0291E3FAEE87B278158B4 /* RunSpecimenObserveApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunSpecimenObserveApp.swift; sourceTree = "<group>"; };
 		BEAA469635D330E16249C35E /* RunSpecimenObserve.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = RunSpecimenObserve.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C9E6180F0A8F12A57871A31B /* CompanionSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionSession.swift; sourceTree = "<group>"; };
+		CB049071AC18F6157EDDF2F4 /* CompanionApprovalPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionApprovalPreviewView.swift; sourceTree = "<group>"; };
 		CB26E0BC6AF5E9D6DFB8B630 /* BoundaryBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoundaryBanner.swift; sourceTree = "<group>"; };
+		DF9E43D9D8F6D4D4D18CFD30 /* apple-touch-icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "apple-touch-icon.png"; sourceTree = "<group>"; };
+		EBDC04B8157799B111AEDF06 /* RSBA2Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSBA2Package.swift; sourceTree = "<group>"; };
 		F2D26500C594DF12DA6B3A42 /* AdaptiveLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveLayout.swift; sourceTree = "<group>"; };
 		FD27DE1469C9CD6E323B5794 /* RSTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSTheme.swift; sourceTree = "<group>"; };
 		FEB60909EFBE4E0006990A08 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		36F8BE8C3E50337E70C61250 /* ObserveSchemaTests */ = {
+			isa = PBXGroup;
+			children = (
+				561075E95870606683FBC66D /* SchemaTests.swift */,
+			);
+			path = ObserveSchemaTests;
+			sourceTree = "<group>";
+		};
+		38E979E60A14FDB6FC5A99AE /* macos */ = {
+			isa = PBXGroup;
+			children = (
+				FF842A90D25D070D4343C186 /* Sources */,
+			);
+			path = macos;
+			sourceTree = "<group>";
+		};
 		405AD8CF1256878AC0198F90 /* Theme */ = {
 			isa = PBXGroup;
 			children = (
@@ -49,6 +109,14 @@
 				FD27DE1469C9CD6E323B5794 /* RSTheme.swift */,
 			);
 			path = Theme;
+			sourceTree = "<group>";
+		};
+		4149D9E449BFCDC0646B03A5 /* RunSpecimenCore */ = {
+			isa = PBXGroup;
+			children = (
+				EBDC04B8157799B111AEDF06 /* RSBA2Package.swift */,
+			);
+			path = RunSpecimenCore;
 			sourceTree = "<group>";
 		};
 		7B67E51B0B1620760AEA3731 /* Services */ = {
@@ -63,8 +131,9 @@
 		91BF2C2D7591A23170C8CCF4 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				E4A1C0DE0000000000000003 /* CompanionApprovalPreviewView.swift */,
 				CB26E0BC6AF5E9D6DFB8B630 /* BoundaryBanner.swift */,
+				CB049071AC18F6157EDDF2F4 /* CompanionApprovalPreviewView.swift */,
+				1E18B40D2B7A6AD44110C637 /* CompanionHardwareApprovalView.swift */,
 				FEB60909EFBE4E0006990A08 /* PairingView.swift */,
 				2AAE24715CE6EF0998517617 /* RootView.swift */,
 				A1425E3AAE6F7EBB1944FDA2 /* StatusObserveView.swift */,
@@ -75,9 +144,30 @@
 		95EF76E0A246F57C4FF0B5FE /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				7205FFEDAD45C5DD7E763965 /* ObserveSchemaTests.xctest */,
 				BEAA469635D330E16249C35E /* RunSpecimenObserve.app */,
+				704BB881AA608E64C1544791 /* RunSpecimenObserveDev.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		9C64B025B8A273E413074ECA /* apps */ = {
+			isa = PBXGroup;
+			children = (
+				38E979E60A14FDB6FC5A99AE /* macos */,
+			);
+			name = apps;
+			path = ..;
+			sourceTree = "<group>";
+		};
+		9EF6EE5A5C3CD07F62C1F673 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				DF9E43D9D8F6D4D4D18CFD30 /* apple-touch-icon.png */,
+				6F77D7734FC627143F9C6B11 /* Assets.xcassets */,
+				4B646DFB9E62C7B92D5E9457 /* mark.svg */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		BC25B8401AAA1B2AD362D3BC /* RunSpecimenObserve */ = {
@@ -95,17 +185,25 @@
 		C2072A9DD14ECA579AA3B59C /* Models */ = {
 			isa = PBXGroup;
 			children = (
-				E4A1C0DE0000000000000001 /* CompanionApprovalPreview.swift */,
-				C072B19B0000000000000003 /* DevelopmentCompanionSigner.swift */,
-				C072B19B0000000000000001 /* RSBA2Package.swift */,
+				2A770B9FAB0B4D0E31CF4A64 /* CompanionApprovalPreview.swift */,
 				01E77BCF1F7A993119E9CE6A /* CompanionModels.swift */,
+				303DAB53830A36E39215494A /* CompanionSecureEnclaveEnrollment.swift */,
 			);
 			path = Models;
+			sourceTree = "<group>";
+		};
+		C5EC6FF012858AA1DB7EC1B5 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				36F8BE8C3E50337E70C61250 /* ObserveSchemaTests */,
+			);
+			path = Tests;
 			sourceTree = "<group>";
 		};
 		CC9ECDB7C1862A093007A86A /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				EEEA02A0D9B3E7428763159E /* ObserveDevSigner */,
 				BC25B8401AAA1B2AD362D3BC /* RunSpecimenObserve */,
 			);
 			path = Sources;
@@ -114,19 +212,58 @@
 		DD035AEB42A830C2E57EFA3B = {
 			isa = PBXGroup;
 			children = (
+				9C64B025B8A273E413074ECA /* apps */,
+				9EF6EE5A5C3CD07F62C1F673 /* Resources */,
 				CC9ECDB7C1862A093007A86A /* Sources */,
+				C5EC6FF012858AA1DB7EC1B5 /* Tests */,
 				95EF76E0A246F57C4FF0B5FE /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		EEEA02A0D9B3E7428763159E /* ObserveDevSigner */ = {
+			isa = PBXGroup;
+			children = (
+				737DB085CE33C4BA6B8B1C69 /* DevelopmentCompanionSigner.swift */,
+				579CD1E4F1A9F5A13673BF67 /* DevelopmentCompanionSignView.swift */,
+			);
+			path = ObserveDevSigner;
+			sourceTree = "<group>";
+		};
+		FF842A90D25D070D4343C186 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				4149D9E449BFCDC0646B03A5 /* RunSpecimenCore */,
+			);
+			path = Sources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		3FE169B56D9C3D3B5DCFBFCC /* RunSpecimenObserveDev */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EC4079D280AA29C1065BA864 /* Build configuration list for PBXNativeTarget "RunSpecimenObserveDev" */;
+			buildPhases = (
+				E152706240CCE618F8EC1E0C /* Sources */,
+				A8A9F680CDB0F6449DA8698E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RunSpecimenObserveDev;
+			packageProductDependencies = (
+			);
+			productName = RunSpecimenObserveDev;
+			productReference = 704BB881AA608E64C1544791 /* RunSpecimenObserveDev.app */;
+			productType = "com.apple.product-type.application";
+		};
 		4D1D554ECCE70DFB91431966 /* RunSpecimenObserve */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = BEA7B6E8C30CFBC90FBDB99B /* Build configuration list for PBXNativeTarget "RunSpecimenObserve" */;
 			buildPhases = (
 				BBFDF614A702930E6A3AFED5 /* Sources */,
+				8F217D210BBD212A767CB56E /* Resources */,
 			);
 			buildRules = (
 			);
@@ -139,6 +276,24 @@
 			productReference = BEAA469635D330E16249C35E /* RunSpecimenObserve.app */;
 			productType = "com.apple.product-type.application";
 		};
+		5765A1F4F691D601C889827F /* ObserveSchemaTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8B4623FA0C9AC63ED04638DF /* Build configuration list for PBXNativeTarget "ObserveSchemaTests" */;
+			buildPhases = (
+				5E96E5FB2F489916B9CA5F65 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				88B5ADCAF14D8235FAFDAF03 /* PBXTargetDependency */,
+			);
+			name = ObserveSchemaTests;
+			packageProductDependencies = (
+			);
+			productName = ObserveSchemaTests;
+			productReference = 7205FFEDAD45C5DD7E763965 /* ObserveSchemaTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -148,7 +303,15 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					3FE169B56D9C3D3B5DCFBFCC = {
+						DevelopmentTeam = UN6KF8636A;
+						ProvisioningStyle = Automatic;
+					};
 					4D1D554ECCE70DFB91431966 = {
+						DevelopmentTeam = UN6KF8636A;
+						ProvisioningStyle = Automatic;
+					};
+					5765A1F4F691D601C889827F = {
 						DevelopmentTeam = UN6KF8636A;
 						ProvisioningStyle = Automatic;
 					};
@@ -169,25 +332,59 @@
 			projectRoot = "";
 			targets = (
 				4D1D554ECCE70DFB91431966 /* RunSpecimenObserve */,
+				3FE169B56D9C3D3B5DCFBFCC /* RunSpecimenObserveDev */,
+				5765A1F4F691D601C889827F /* ObserveSchemaTests */,
 			);
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		8F217D210BBD212A767CB56E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2019ECEF8A95672E458A0397 /* Assets.xcassets in Resources */,
+				EEF616E5284574EC408670FD /* apple-touch-icon.png in Resources */,
+				D0EAEB3EED93B9CF4A101476 /* mark.svg in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A8A9F680CDB0F6449DA8698E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				18F349163051F1EFB143F9DF /* Assets.xcassets in Resources */,
+				159547C49C64CDD870A65691 /* apple-touch-icon.png in Resources */,
+				873FC47E8AA4CE31E4E2B99F /* mark.svg in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
+		5E96E5FB2F489916B9CA5F65 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7830580895FF5184BF6ADF7E /* SchemaTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BBFDF614A702930E6A3AFED5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				E9364715807F203BDBC6F1D8 /* AdaptiveLayout.swift in Sources */,
 				ACEFF4AF6F1B84726D53569C /* BoundaryBanner.swift in Sources */,
-				E4A1C0DE0000000000000002 /* CompanionApprovalPreview.swift in Sources */,
-				C072B19B0000000000000002 /* RSBA2Package.swift in Sources */,
-				C072B19B0000000000000004 /* DevelopmentCompanionSigner.swift in Sources */,
-				E4A1C0DE0000000000000004 /* CompanionApprovalPreviewView.swift in Sources */,
+				8B188AAEA312072CA7787220 /* CompanionApprovalPreview.swift in Sources */,
+				C02DD06E71C886F4C2B2A075 /* CompanionApprovalPreviewView.swift in Sources */,
 				DF67B86604016910AC073C16 /* CompanionClient.swift in Sources */,
+				E8CF3266A74B11B03F21067D /* CompanionHardwareApprovalView.swift in Sources */,
 				9F2551880C5AA912502F6DEC /* CompanionModels.swift in Sources */,
+				43666DAD55A82C14D615CD04 /* CompanionSecureEnclaveEnrollment.swift in Sources */,
 				730E00318EC0A16E41EF9194 /* CompanionSession.swift in Sources */,
 				ED854B65D03A6C25EE793C09 /* PairingView.swift in Sources */,
+				8FD69F570947A1A2C7EAE437 /* RSBA2Package.swift in Sources */,
 				77812F6887B1229954BCCB85 /* RSTheme.swift in Sources */,
 				F30AD0656468857451B7C895 /* RootView.swift in Sources */,
 				551180D3C83D335E1F709136 /* RunSpecimenObserveApp.swift in Sources */,
@@ -195,7 +392,39 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E152706240CCE618F8EC1E0C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A69CDBC4CA58C035FD8DA42B /* AdaptiveLayout.swift in Sources */,
+				45057E8879E0E5CB7B749A10 /* BoundaryBanner.swift in Sources */,
+				0352AAFCBC2562A924301334 /* CompanionApprovalPreview.swift in Sources */,
+				1E42961958644EBE992094B8 /* CompanionApprovalPreviewView.swift in Sources */,
+				1C7F9C572958D86AC31DB49F /* CompanionClient.swift in Sources */,
+				484FA601AD300487184F26E5 /* CompanionHardwareApprovalView.swift in Sources */,
+				EE03F06ED87D88CAE9E0E0C9 /* CompanionModels.swift in Sources */,
+				F4C213BEA38C9EAC15097250 /* CompanionSecureEnclaveEnrollment.swift in Sources */,
+				F4F232C1BC278A0522FC9374 /* CompanionSession.swift in Sources */,
+				2C588E244912C0AE00564961 /* DevelopmentCompanionSignView.swift in Sources */,
+				B02094A8A56CAB7CD7AB96E3 /* DevelopmentCompanionSigner.swift in Sources */,
+				1F7A325DA873E3A55761B032 /* PairingView.swift in Sources */,
+				CDDD5F23A7567FFC11A2B9BE /* RSBA2Package.swift in Sources */,
+				0FCC3AB58D3C1531D7B3BA7D /* RSTheme.swift in Sources */,
+				0AF3AF26058BC97FE02C04E9 /* RootView.swift in Sources */,
+				68A1F78ED049CCC55B094B30 /* RunSpecimenObserveApp.swift in Sources */,
+				C91EFA8E420A8CE6755D8779 /* StatusObserveView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		88B5ADCAF14D8235FAFDAF03 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4D1D554ECCE70DFB91431966 /* RunSpecimenObserve */;
+			targetProxy = 87BDC24C70804F2E5B3D0BCB /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		1F624418B47C253F854B6A83 /* Debug */ = {
@@ -253,6 +482,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "RunSpecimen Observe";
 				INFOPLIST_KEY_NSBonjourServices = "";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "RunSpecimen Observe uses Face ID to sign a carried approval request with a key that stays in this iPhone's Secure Enclave. It does not approve a Mac run by itself.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "RunSpecimen Observe pairs only with a Mac you enable on your local network or Tailscale. Non-loopback requires TLS. It cannot approve or execute runs.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -264,6 +494,67 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		33BBAA0EF91F683CC5DB5634 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.darashkevich.runspecimen.observe.schema-tests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RunSpecimenObserve.app/RunSpecimenObserve";
+			};
+			name = Debug;
+		};
+		533017050FDB6B75600EABC1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.darashkevich.runspecimen.observe.schema-tests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RunSpecimenObserve.app/RunSpecimenObserve";
+			};
+			name = Release;
+		};
+		6DB33E43418EAD7EAE8E005E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "RunSpecimen Observe Dev";
+				INFOPLIST_KEY_CFBundleShortVersionString = 0.1.0;
+				INFOPLIST_KEY_CFBundleVersion = 1;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.darashkevich.runspecimen.observe.dev;
+				PRODUCT_NAME = RunSpecimenObserveDev;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) RS_OBSERVE_DEV_SIGNER";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -339,6 +630,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "RunSpecimen Observe";
 				INFOPLIST_KEY_NSBonjourServices = "";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "RunSpecimen Observe uses Face ID to sign a carried approval request with a key that stays in this iPhone's Secure Enclave. It does not approve a Mac run by itself.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "RunSpecimen Observe pairs only with a Mac you enable on your local network or Tailscale. Non-loopback requires TLS. It cannot approve or execute runs.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -349,6 +641,31 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		8D8798FC38828AD8AB7D1ED0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "RunSpecimen Observe Dev";
+				INFOPLIST_KEY_CFBundleShortVersionString = 0.1.0;
+				INFOPLIST_KEY_CFBundleVersion = 1;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.darashkevich.runspecimen.observe.dev;
+				PRODUCT_NAME = RunSpecimenObserveDev;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) RS_OBSERVE_DEV_SIGNER";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
@@ -387,11 +704,29 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		8B4623FA0C9AC63ED04638DF /* Build configuration list for PBXNativeTarget "ObserveSchemaTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				33BBAA0EF91F683CC5DB5634 /* Debug */,
+				533017050FDB6B75600EABC1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		BEA7B6E8C30CFBC90FBDB99B /* Build configuration list for PBXNativeTarget "RunSpecimenObserve" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				7049FA213EEF135718513778 /* Debug */,
 				E7702ACCD7FC6A3AA54223CB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EC4079D280AA29C1065BA864 /* Build configuration list for PBXNativeTarget "RunSpecimenObserveDev" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6DB33E43418EAD7EAE8E005E /* Debug */,
+				8D8798FC38828AD8AB7D1ED0 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

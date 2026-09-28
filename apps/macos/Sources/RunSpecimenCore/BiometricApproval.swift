@@ -304,13 +304,17 @@ public enum BiometricApprovalStore {
 public struct BiometricEnrollmentRecord: Equatable, Sendable {
     public static let active = "active"
     public static let revoked = "revoked"
-    public static let softwareBackend = "software-test-double"
-    public static let secureEnclaveBackend = "secure-enclave"
+    public static let softwareBackend = EnrollmentIdentity.backendSoftwareTest
+    public static let secureEnclaveBackend = EnrollmentIdentity.backendSecureEnclave
 
     public var keyID: String
     public var publicKey: Data
     public var state: String
     public var backend: String
+    /// `local` or `companion`. A swapped role does not satisfy the other slot.
+    public var role: String
+    /// `production`, `software-test`, `software-development`, or `diagnostic`.
+    public var provenance: String
     /// Increases when the key is revoked. Consumers recheck it under the enrollment lock.
     public var generation: Int = 1
 }
@@ -324,11 +328,48 @@ public enum BiometricEnrollmentDirectory {
             "backend": record.backend,
             "generation": String(record.generation),
             "key_id": record.keyID,
+            "provenance": record.provenance,
             "public_key_b64": record.publicKey.base64EncodedString(),
+            "role": record.role,
             "state": record.state,
         ]
         let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         try data.write(to: recordURL(directory, record.keyID), options: .atomic)
+    }
+
+    public static func save(_ record: BiometricEnrollmentRecord, directoryFD: Int32) throws {
+        try validateKeyID(record.keyID)
+        let data = try JSONSerialization.data(withJSONObject: json(record), options: [.sortedKeys])
+        let temporary = ".\(record.keyID).enrollment.tmp"
+        let finalName = "\(record.keyID).enrollment"
+        let fd = openat(directoryFD, temporary, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw BiometricApprovalError.malformed("enrollment") }
+        let wrote = data.withUnsafeBytes { raw -> Int in
+            guard let base = raw.baseAddress else { return -1 }
+            return Darwin.write(fd, base, raw.count)
+        }
+        close(fd)
+        guard wrote == data.count else { throw BiometricApprovalError.malformed("enrollment") }
+        if renameat(directoryFD, temporary, directoryFD, finalName) != 0 {
+            _ = unlinkat(directoryFD, temporary, 0)
+            throw BiometricApprovalError.malformed("enrollment")
+        }
+    }
+
+    public static func load(keyID: String, directoryFD: Int32) throws -> BiometricEnrollmentRecord {
+        try validateKeyID(keyID)
+        let fd = openat(directoryFD, "\(keyID).enrollment", O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { throw BiometricApprovalError.malformed("enrollment") }
+        defer { close(fd) }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let count = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
+            if count == 0 { break }
+            if count < 0 { throw BiometricApprovalError.malformed("enrollment") }
+            data.append(buffer, count: count)
+        }
+        return try record(from: data, keyID: keyID)
     }
 
     public static func load(keyID: String, directory: URL) throws -> BiometricEnrollmentRecord {
@@ -339,17 +380,36 @@ public enum BiometricEnrollmentDirectory {
         } catch {
             throw BiometricApprovalError.malformed("enrollment")
         }
+        return try record(from: data, keyID: keyID)
+    }
+
+    private static func json(_ record: BiometricEnrollmentRecord) -> [String: String] {
+        [
+            "backend": record.backend,
+            "generation": String(record.generation),
+            "key_id": record.keyID,
+            "provenance": record.provenance,
+            "public_key_b64": record.publicKey.base64EncodedString(),
+            "role": record.role,
+            "state": record.state,
+        ]
+    }
+
+    private static func record(from data: Data, keyID: String) throws -> BiometricEnrollmentRecord {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: String],
               object["key_id"] == keyID,
               let state = object["state"],
               let backend = object["backend"],
+              let role = object["role"],
+              let provenance = object["provenance"],
               let publicKey = object["public_key_b64"].flatMap({ Data(base64Encoded: $0) }),
               !publicKey.isEmpty,
-              state == BiometricEnrollmentRecord.active || state == BiometricEnrollmentRecord.revoked else {
+              state == BiometricEnrollmentRecord.active || state == BiometricEnrollmentRecord.revoked,
+              EnrollmentIdentity.isRecognized(role: role, backend: backend, provenance: provenance) else {
             throw BiometricApprovalError.tampered
         }
-        let generation = Int(object["generation"] ?? "1") ?? 0
-        guard generation > 0 else {
+        let generationText = object["generation"] ?? ""
+        guard let generation = Int(generationText), generation > 0, String(generation) == generationText else {
             throw BiometricApprovalError.tampered
         }
         return BiometricEnrollmentRecord(
@@ -357,6 +417,8 @@ public enum BiometricEnrollmentDirectory {
             publicKey: publicKey,
             state: state,
             backend: backend,
+            role: role,
+            provenance: provenance,
             generation: generation
         )
     }
@@ -423,7 +485,9 @@ public enum SoftwareApprovalKeyEnrollment {
             keyID: keyID,
             publicKey: key.publicKey.x963Representation,
             state: BiometricEnrollmentRecord.active,
-            backend: BiometricEnrollmentRecord.softwareBackend
+            backend: BiometricEnrollmentRecord.softwareBackend,
+            role: EnrollmentIdentity.roleLocal,
+            provenance: EnrollmentIdentity.provenanceSoftwareTest
         )
         try BiometricEnrollmentDirectory.save(record, directory: directory)
         return record.publicKey
@@ -509,6 +573,10 @@ extension BiometricApprovalStore {
             guard record.state == BiometricEnrollmentRecord.active else {
                 throw BiometricApprovalError.revoked
             }
+            guard record.role == EnrollmentIdentity.roleLocal,
+                  EnrollmentIdentity.acceptsPrototype(role: record.role, backend: record.backend, provenance: record.provenance) else {
+                throw BiometricApprovalError.unsupportedPolicy
+            }
             try submit(
                 request: request,
                 signature: signature,
@@ -530,6 +598,10 @@ extension BiometricApprovalStore {
             let record = try BiometricEnrollmentDirectory.load(keyID: request.keyID, directory: enrollmentDirectory)
             guard record.state == BiometricEnrollmentRecord.active else {
                 throw BiometricApprovalError.revoked
+            }
+            guard record.role == EnrollmentIdentity.roleLocal,
+                  EnrollmentIdentity.acceptsPrototype(role: record.role, backend: record.backend, provenance: record.provenance) else {
+                throw BiometricApprovalError.unsupportedPolicy
             }
             try consume(
                 request: request,
@@ -555,8 +627,14 @@ public enum LocalSecureEnclaveEnrollment {
     public static let diagnosticKeychainService = "com.darashkevich.runspecimen.biometric.diagnostic"
     private static let service = productionKeychainService
 
-    public static func enroll(keyID: String, directory: URL, keychainService: String = productionKeychainService) throws -> Data {
-        if (try? BiometricEnrollmentDirectory.load(keyID: keyID, directory: directory)) != nil {
+    public static func enroll(keyID: String, directory: URL, directoryFD: Int32? = nil, keychainService: String = productionKeychainService) throws -> Data {
+        let existing: BiometricEnrollmentRecord?
+        if let directoryFD {
+            existing = try? BiometricEnrollmentDirectory.load(keyID: keyID, directoryFD: directoryFD)
+        } else {
+            existing = try? BiometricEnrollmentDirectory.load(keyID: keyID, directory: directory)
+        }
+        if existing != nil {
             throw BiometricApprovalError.replay
         }
         let context = biometricContext()
@@ -565,14 +643,23 @@ public enum LocalSecureEnclaveEnrollment {
             authenticationContext: context
         )
         try saveBlob(key.dataRepresentation, keyID: keyID, service: keychainService)
+        let provenance = keychainService == Self.diagnosticKeychainService
+            ? EnrollmentIdentity.provenanceDiagnostic
+            : EnrollmentIdentity.provenanceProduction
         let record = BiometricEnrollmentRecord(
             keyID: keyID,
             publicKey: key.publicKey.x963Representation,
             state: BiometricEnrollmentRecord.active,
-            backend: BiometricEnrollmentRecord.secureEnclaveBackend
+            backend: BiometricEnrollmentRecord.secureEnclaveBackend,
+            role: EnrollmentIdentity.roleLocal,
+            provenance: provenance
         )
         do {
-            try BiometricEnrollmentDirectory.save(record, directory: directory)
+            if let directoryFD {
+                try BiometricEnrollmentDirectory.save(record, directoryFD: directoryFD)
+            } else {
+                try BiometricEnrollmentDirectory.save(record, directory: directory)
+            }
         } catch let saveError {
             try? deleteBlob(keyID: keyID, service: keychainService)
             throw saveError
@@ -580,8 +667,13 @@ public enum LocalSecureEnclaveEnrollment {
         return record.publicKey
     }
 
-    public static func sign(_ request: BiometricApprovalRequest, directory: URL, keychainService: String = productionKeychainService) throws -> Data {
-        let record = try BiometricEnrollmentDirectory.load(keyID: request.keyID, directory: directory)
+    public static func sign(_ request: BiometricApprovalRequest, directory: URL, directoryFD: Int32? = nil, keychainService: String = productionKeychainService) throws -> Data {
+        let record: BiometricEnrollmentRecord
+        if let directoryFD {
+            record = try BiometricEnrollmentDirectory.load(keyID: request.keyID, directoryFD: directoryFD)
+        } else {
+            record = try BiometricEnrollmentDirectory.load(keyID: request.keyID, directory: directory)
+        }
         guard record.backend == BiometricEnrollmentRecord.secureEnclaveBackend else {
             throw BiometricApprovalError.malformed("backend")
         }
@@ -599,7 +691,22 @@ public enum LocalSecureEnclaveEnrollment {
         return try key.signature(for: try request.canonicalBytes()).rawRepresentation
     }
 
-    public static func revoke(keyID: String, directory: URL, keychainService: String = productionKeychainService) throws {
+    public static func revoke(keyID: String, directory: URL, directoryFD: Int32? = nil, keychainService: String = productionKeychainService) throws {
+        if let directoryFD {
+            let record = try BiometricEnrollmentDirectory.load(keyID: keyID, directoryFD: directoryFD)
+            guard record.backend == BiometricEnrollmentRecord.secureEnclaveBackend else {
+                throw BiometricApprovalError.malformed("backend")
+            }
+            guard record.state == BiometricEnrollmentRecord.active else {
+                throw BiometricApprovalError.revoked
+            }
+            try deleteBlob(keyID: keyID, service: keychainService)
+            var revoked = record
+            revoked.state = BiometricEnrollmentRecord.revoked
+            revoked.generation += 1
+            try BiometricEnrollmentDirectory.save(revoked, directoryFD: directoryFD)
+            return
+        }
         try BiometricEnrollmentDirectory.withExclusiveAccess(directory) {
             let record = try BiometricEnrollmentDirectory.load(keyID: keyID, directory: directory)
             guard record.backend == BiometricEnrollmentRecord.secureEnclaveBackend else {
@@ -956,14 +1063,55 @@ public enum PolicyBoundApprovalStore {
             let local = try liveRecord(
                 keyID: request.localKeyID,
                 generation: request.localGeneration,
+                expectedRole: EnrollmentIdentity.roleLocal,
                 required: request.policy != .companion,
-                directory: enrollmentDirectory
+                directory: enrollmentDirectory,
+                forExecution: false
             )
             let companion = try liveRecord(
                 keyID: request.companionKeyID,
                 generation: request.companionGeneration,
+                expectedRole: EnrollmentIdentity.roleCompanion,
                 required: request.policy != .local,
-                directory: enrollmentDirectory
+                directory: enrollmentDirectory,
+                forExecution: false
+            )
+            if request.policy == .dual, let local, let companion, local.publicKey == companion.publicKey {
+                throw BiometricApprovalError.unsupportedPolicy
+            }
+            try consume(
+                request: request,
+                pinnedLocalKey: local?.publicKey,
+                pinnedCompanionKey: companion?.publicKey,
+                directory: approvalDirectory
+            )
+        }
+    }
+
+    /// Execution-shaped consume. Software, development, and diagnostic keys fail closed.
+    /// Nothing in the app calls this before a run. A passing software test is not this function.
+    public static func consumeForExecution(
+        request: PolicyBoundApprovalRequest,
+        enrollmentDirectory: URL,
+        approvalDirectory: URL
+    ) throws {
+        BiometricApprovalStore.beforeExclusiveAccess?()
+        try BiometricEnrollmentDirectory.withExclusiveAccess(enrollmentDirectory) {
+            let local = try liveRecord(
+                keyID: request.localKeyID,
+                generation: request.localGeneration,
+                expectedRole: EnrollmentIdentity.roleLocal,
+                required: request.policy != .companion,
+                directory: enrollmentDirectory,
+                forExecution: true
+            )
+            let companion = try liveRecord(
+                keyID: request.companionKeyID,
+                generation: request.companionGeneration,
+                expectedRole: EnrollmentIdentity.roleCompanion,
+                required: request.policy != .local,
+                directory: enrollmentDirectory,
+                forExecution: true
             )
             if request.policy == .dual, let local, let companion, local.publicKey == companion.publicKey {
                 throw BiometricApprovalError.unsupportedPolicy
@@ -1071,8 +1219,10 @@ public enum PolicyBoundApprovalStore {
     private static func liveRecord(
         keyID: String,
         generation: Int,
+        expectedRole: String,
         required: Bool,
-        directory: URL
+        directory: URL,
+        forExecution: Bool
     ) throws -> BiometricEnrollmentRecord? {
         guard required else { return nil }
         guard generation > 0 else { throw BiometricApprovalError.malformed("enrollment") }
@@ -1082,6 +1232,21 @@ public enum PolicyBoundApprovalStore {
         }
         guard record.generation == generation else {
             throw BiometricApprovalError.revoked
+        }
+        guard record.role == expectedRole else {
+            throw BiometricApprovalError.unsupportedPolicy
+        }
+        if forExecution {
+            guard EnrollmentIdentity.allowsExecution(
+                role: record.role,
+                backend: record.backend,
+                provenance: record.provenance,
+                state: record.state
+            ) else {
+                throw BiometricApprovalError.unsupportedPolicy
+            }
+        } else if !EnrollmentIdentity.acceptsPrototype(role: record.role, backend: record.backend, provenance: record.provenance) {
+            throw BiometricApprovalError.unsupportedPolicy
         }
         return record
     }
@@ -1240,49 +1405,228 @@ public enum TouchIDDiagnosticGate {
 
     /// Canonical containment. A `..` segment or a symlink that leaves the diagnostic root is rejected.
     /// `/tmp` is a symlink to `/private/tmp`, including when the leaf directory does not exist yet.
+    static let rootPath = "/private/tmp/rs-touchid-diag"
+    static let hopLimit = 16
+
     static func isIsolated(_ path: String) -> Bool {
-        let resolved = canonicalPath(path)
-        if resolved == "/tmp" || resolved == "/private/tmp" {
-            return false
-        }
-        let root = "/private/tmp/rs-touchid-diag"
-        return resolved == root || resolved.hasPrefix(root + "/")
+        guard let resolved = canonicalPath(path) else { return false }
+        return contains(resolved)
     }
 
-    /// Resolves existing symlinks, including `/tmp`, without requiring the final component to exist.
-    /// `URL.standardizedFileURL` maps `/private/tmp` back to `/tmp`, so this walk stays lexical.
-    private static func canonicalPath(_ path: String) -> String {
-        var parts = lexical(path).split(separator: "/").map(String.init)
+    /// Opens a directory the caller owns inside the diagnostic root.
+    ///
+    /// The walk uses `openat` and `AT_SYMLINK_NOFOLLOW`. A symlink is followed only
+    /// by reading its target and continuing in filesystem order. Hop exhaustion,
+    /// a path that leaves the root, and a directory someone else can write are refusals.
+    public static func openOwnedDirectory(_ path: String) throws -> Int32 {
+        guard isIsolated(path) else { throw BiometricApprovalError.malformed("directory") }
+        let fd = try walk(path)
+        var info = stat()
+        guard fstat(fd, &info) == 0 else {
+            close(fd)
+            throw BiometricApprovalError.malformed("directory")
+        }
+        let type = info.st_mode & S_IFMT
+        guard type == S_IFDIR, info.st_uid == getuid(), (info.st_mode & 0o022) == 0 else {
+            close(fd)
+            throw BiometricApprovalError.malformed("directory")
+        }
+        guard let opened = openedPath(of: fd), contains(opened) else {
+            close(fd)
+            throw BiometricApprovalError.malformed("directory")
+        }
+        return fd
+    }
+
+    static func writeExclusive(directoryFD: Int32, name: String, data: Data) throws {
+        try validateComponent(name)
+        let fd = openat(directoryFD, name, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw BiometricApprovalError.malformed("directory") }
+        defer { close(fd) }
+        let wrote = data.withUnsafeBytes { raw -> Int in
+            guard let base = raw.baseAddress else { return -1 }
+            return Darwin.write(fd, base, raw.count)
+        }
+        guard wrote == data.count else { throw BiometricApprovalError.malformed("directory") }
+    }
+
+    static func readExclusive(directoryFD: Int32, name: String) throws -> Data {
+        try validateComponent(name)
+        let fd = openat(directoryFD, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { throw BiometricApprovalError.malformed("directory") }
+        defer { close(fd) }
+        var out = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let count = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
+            if count == 0 { break }
+            if count < 0 { throw BiometricApprovalError.malformed("directory") }
+            out.append(buffer, count: count)
+        }
+        return out
+    }
+
+    public static func openedPath(of fd: Int32) -> String? {
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let result = buffer.withUnsafeMutableBufferPointer { pointer -> Int32 in
+            guard let base = pointer.baseAddress else { return -1 }
+            return fcntl(fd, F_GETPATH, base)
+        }
+        guard result == 0 else { return nil }
+        return String(cString: buffer)
+    }
+
+    /// Resolves in filesystem order. Returns nil on hop exhaustion, a missing
+    /// intermediate, or an unreadable symlink. A missing final component is kept.
+    static func canonicalPath(_ path: String) -> String? {
+        guard path.hasPrefix("/"), !path.contains("\0") else { return nil }
+        var components = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        var resolved: [String] = []
         var index = 0
-        var built = ""
         var hops = 0
-        while index < parts.count {
-            let next = built + "/" + parts[index]
-            if hops < 16, let dest = try? FileManager.default.destinationOfSymbolicLink(atPath: next) {
-                hops += 1
-                let absolute = dest.hasPrefix("/") ? lexical(dest) : lexical((built.isEmpty ? "" : built) + "/" + dest)
-                let rest = Array(parts[(index + 1)...])
-                parts = absolute.split(separator: "/").map(String.init) + rest
-                index = 0
-                built = ""
+        while index < components.count {
+            let part = components[index]
+            if part == "." {
+                index += 1
                 continue
             }
-            built = next
+            if part == ".." {
+                guard !resolved.isEmpty else { return nil }
+                resolved.removeLast()
+                index += 1
+                continue
+            }
+            let next = "/" + (resolved + [part]).joined(separator: "/")
+            var info = stat()
+            if lstat(next, &info) != 0 {
+                guard index == components.count - 1 else { return nil }
+                resolved.append(part)
+                break
+            }
+            if (info.st_mode & S_IFMT) == S_IFLNK {
+                hops += 1
+                guard hops <= hopLimit else { return nil }
+                guard let dest = readLink(at: next) else { return nil }
+                let rest = Array(components[(index + 1)...])
+                let destParts = dest.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+                if dest.hasPrefix("/") {
+                    resolved.removeAll()
+                }
+                components = destParts + rest
+                index = 0
+                continue
+            }
+            resolved.append(part)
             index += 1
         }
-        return built.isEmpty ? "/" : built
+        if resolved.isEmpty { return "/" }
+        return "/" + resolved.joined(separator: "/")
     }
 
-    private static func lexical(_ path: String) -> String {
-        var out: [String] = []
-        for piece in path.split(separator: "/", omittingEmptySubsequences: true) {
-            if piece == "." { continue }
-            if piece == ".." {
-                if !out.isEmpty { out.removeLast() }
+    private static func contains(_ resolved: String) -> Bool {
+        if resolved == "/tmp" || resolved == "/private/tmp" || resolved == "/" {
+            return false
+        }
+        return resolved == rootPath || resolved.hasPrefix(rootPath + "/")
+    }
+
+    private static func walk(_ path: String) throws -> Int32 {
+        var components = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        var fd = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard fd >= 0 else { throw BiometricApprovalError.malformed("directory") }
+        var index = 0
+        var hops = 0
+        while index < components.count {
+            let part = components[index]
+            if part == "." {
+                index += 1
                 continue
             }
-            out.append(String(piece))
+            if part == ".." {
+                let parent = openat(fd, "..", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                guard parent >= 0 else {
+                    close(fd)
+                    throw BiometricApprovalError.malformed("directory")
+                }
+                close(fd)
+                fd = parent
+                index += 1
+                continue
+            }
+            var info = stat()
+            if fstatat(fd, part, &info, AT_SYMLINK_NOFOLLOW) != 0 {
+                guard errno == ENOENT, index == components.count - 1, mkdirat(fd, part, 0o700) == 0 else {
+                    close(fd)
+                    throw BiometricApprovalError.malformed("directory")
+                }
+                guard let child = openChild(fd, part) else {
+                    close(fd)
+                    throw BiometricApprovalError.malformed("directory")
+                }
+                close(fd)
+                return child
+            }
+            if (info.st_mode & S_IFMT) == S_IFLNK {
+                hops += 1
+                guard hops <= hopLimit else {
+                    close(fd)
+                    throw BiometricApprovalError.malformed("directory")
+                }
+                guard let dest = readLink(atDirectory: fd, name: part) else {
+                    close(fd)
+                    throw BiometricApprovalError.malformed("directory")
+                }
+                let rest = Array(components[(index + 1)...])
+                let destParts = dest.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+                if dest.hasPrefix("/") {
+                    close(fd)
+                    fd = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+                    guard fd >= 0 else { throw BiometricApprovalError.malformed("directory") }
+                }
+                components = destParts + rest
+                index = 0
+                continue
+            }
+            guard (info.st_mode & S_IFMT) == S_IFDIR, let child = openChild(fd, part) else {
+                close(fd)
+                throw BiometricApprovalError.malformed("directory")
+            }
+            close(fd)
+            fd = child
+            index += 1
         }
-        return "/" + out.joined(separator: "/")
+        return fd
+    }
+
+    private static func openChild(_ directory: Int32, _ name: String) -> Int32? {
+        let fd = openat(directory, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        return fd >= 0 ? fd : nil
+    }
+
+    private static func readLink(at path: String) -> String? {
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let count = buffer.withUnsafeMutableBufferPointer { pointer -> Int in
+            guard let base = pointer.baseAddress else { return -1 }
+            return readlink(path, base, pointer.count - 1)
+        }
+        guard count > 0 else { return nil }
+        return String(decoding: buffer.prefix(count).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }
+
+    private static func readLink(atDirectory directory: Int32, name: String) -> String? {
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let count = buffer.withUnsafeMutableBufferPointer { pointer -> Int in
+            guard let base = pointer.baseAddress else { return -1 }
+            return readlinkat(directory, name, base, pointer.count - 1)
+        }
+        guard count > 0 else { return nil }
+        return String(decoding: buffer.prefix(count).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }
+
+    private static func validateComponent(_ name: String) throws {
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+        guard (1...64).contains(name.count), !name.contains("/"), name.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+            throw BiometricApprovalError.malformed("directory")
+        }
     }
 }

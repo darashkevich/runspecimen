@@ -1,5 +1,49 @@
 import Foundation
 
+/// Role, backend, and provenance shared by the Mac store and the iOS companion.
+///
+/// `allowsExecution` is the check a future run path must call. A software key
+/// never passes it. Passing a software consume in tests is not biometric completion.
+public enum EnrollmentIdentity {
+    public static let roleLocal = "local"
+    public static let roleCompanion = "companion"
+    public static let backendSecureEnclave = "secure-enclave"
+    public static let backendSoftwareTest = "software-test-double"
+    public static let backendSoftwareDevelopment = "software-development"
+    public static let provenanceProduction = "production"
+    public static let provenanceSoftwareTest = "software-test"
+    public static let provenanceDevelopment = "software-development"
+    public static let provenanceDiagnostic = "diagnostic"
+    public static let stateActive = "active"
+
+    public static func allowsExecution(role: String, backend: String, provenance: String, state: String) -> Bool {
+        (role == roleLocal || role == roleCompanion)
+            && backend == backendSecureEnclave
+            && provenance == provenanceProduction
+            && state == stateActive
+    }
+
+    /// Prototype consume may use a software test double. Development and diagnostic keys never pass.
+    public static func acceptsPrototype(role: String, backend: String, provenance: String) -> Bool {
+        guard role == roleLocal || role == roleCompanion else { return false }
+        if backend == backendSoftwareDevelopment || provenance == provenanceDevelopment || provenance == provenanceDiagnostic {
+            return false
+        }
+        if backend == backendSoftwareTest && provenance == provenanceSoftwareTest { return true }
+        if backend == backendSecureEnclave && provenance == provenanceProduction { return true }
+        return false
+    }
+
+    /// Records the store can read. Development and diagnostic identities are recognized so consume can reject them.
+    public static func isRecognized(role: String, backend: String, provenance: String) -> Bool {
+        if acceptsPrototype(role: role, backend: backend, provenance: provenance) { return true }
+        guard role == roleLocal || role == roleCompanion else { return false }
+        if backend == backendSecureEnclave && provenance == provenanceDiagnostic { return true }
+        if backend == backendSoftwareDevelopment && provenance == provenanceDevelopment { return true }
+        return false
+    }
+}
+
 /// Shared RSBA2 bytes and package schema.
 ///
 /// The iOS app compiles this same file. A package version other than `RSBA2`
@@ -121,8 +165,11 @@ public enum RSBA2Package {
         return lines
     }
 
-    /// Rejects a missing version, an unknown version, and keys outside the schema.
+    public static let maximumPackageBytes = 16_384
+
+    /// A successful parse is a complete request. Missing, empty, and non-canonical fields fail here.
     public static func parse(_ data: Data) throws -> Fields {
+        guard data.count <= maximumPackageBytes else { throw ParseFailure.malformed("package") }
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: String] else {
             throw ParseFailure.malformed("package")
         }
@@ -142,43 +189,120 @@ public enum RSBA2Package {
         guard let policy = object["policy"], ["local", "companion", "dual"].contains(policy) else {
             throw ParseFailure.malformed("policy")
         }
-        let localGeneration = generation(object["local_generation"])
-        let companionGeneration = generation(object["companion_generation"])
-        switch policy {
-        case "local":
-            guard localGeneration > 0, companionGeneration == 0 else { throw ParseFailure.malformed("enrollment") }
-        case "companion":
-            guard companionGeneration > 0, localGeneration == 0 else { throw ParseFailure.malformed("enrollment") }
-        default:
-            guard localGeneration > 0, companionGeneration > 0 else { throw ParseFailure.malformed("enrollment") }
+        let macID = try text(object, "mac_id", minimum: 1, maximum: 128)
+        let workspaceID = try text(object, "workspace_id", minimum: 1, maximum: 128)
+        let runID = try text(object, "run_id", minimum: 1, maximum: 128)
+        let contract = try hex(object, "contract_sha256", count: 64)
+        let inputs = try hex(object, "inputs_sha256", count: 64)
+        let bounds = try text(object, "bounds", minimum: 1, maximum: 256)
+        let nonce = try hex(object, "nonce", minimum: 32, maximum: 64)
+        let expiry = try canonicalInteger(object, "expiry_unix")
+        let localKeyID = try roleKey(object, "local_key_id", required: policy != "companion")
+        let companionKeyID = try roleKey(object, "companion_key_id", required: policy != "local")
+        let localGeneration = try roleGeneration(object, "local_generation", required: policy != "companion")
+        let companionGeneration = try roleGeneration(object, "companion_generation", required: policy != "local")
+        if policy == "dual", localKeyID == companionKeyID {
+            throw ParseFailure.malformed("policy")
         }
-        guard let expiry = Int(object["expiry_unix"] ?? "") else {
-            throw ParseFailure.malformed("expiry_unix")
-        }
+        let localPublic = try signatureMaterial(object, publicKey: "local_public_key_b64", signature: "local_signature_b64", allowed: policy != "companion")
+        let companionPublic = try signatureMaterial(object, publicKey: "companion_public_key_b64", signature: "companion_signature_b64", allowed: policy != "local")
         return Fields(
             policy: policy,
-            macID: object["mac_id"] ?? "",
-            workspaceID: object["workspace_id"] ?? "",
-            runID: object["run_id"] ?? "",
-            contractSHA256: object["contract_sha256"] ?? "",
-            inputsSHA256: object["inputs_sha256"] ?? "",
-            bounds: object["bounds"] ?? "",
-            nonce: object["nonce"] ?? "",
+            macID: macID,
+            workspaceID: workspaceID,
+            runID: runID,
+            contractSHA256: contract,
+            inputsSHA256: inputs,
+            bounds: bounds,
+            nonce: nonce,
             expiryUnix: expiry,
-            localKeyID: object["local_key_id"] ?? "",
-            companionKeyID: object["companion_key_id"] ?? "",
+            localKeyID: localKeyID,
+            companionKeyID: companionKeyID,
             localGeneration: localGeneration,
             companionGeneration: companionGeneration,
-            localPublicKeyB64: object["local_public_key_b64"],
-            localSignatureB64: object["local_signature_b64"],
-            companionPublicKeyB64: object["companion_public_key_b64"],
-            companionSignatureB64: object["companion_signature_b64"]
+            localPublicKeyB64: localPublic.publicKey,
+            localSignatureB64: localPublic.signature,
+            companionPublicKeyB64: companionPublic.publicKey,
+            companionSignatureB64: companionPublic.signature
         )
     }
 
-    private static func generation(_ text: String?) -> Int {
-        guard let text, let value = Int(text), value > 0, String(value) == text else { return 0 }
+    private static func text(_ object: [String: String], _ key: String, minimum: Int, maximum: Int) throws -> String {
+        guard let value = object[key] else { throw ParseFailure.malformed(key) }
+        guard (minimum...maximum).contains(value.count), !value.contains("\0"), !value.isEmpty else {
+            throw ParseFailure.malformed(key)
+        }
         return value
+    }
+
+    private static func hex(_ object: [String: String], _ key: String, count: Int) throws -> String {
+        try hex(object, key, minimum: count, maximum: count)
+    }
+
+    private static func hex(_ object: [String: String], _ key: String, minimum: Int, maximum: Int) throws -> String {
+        let value = try text(object, key, minimum: minimum, maximum: maximum)
+        let digits = CharacterSet(charactersIn: "0123456789abcdef")
+        guard value.unicodeScalars.allSatisfy({ digits.contains($0) }) else {
+            throw ParseFailure.malformed(key)
+        }
+        return value
+    }
+
+    private static func canonicalInteger(_ object: [String: String], _ key: String) throws -> Int {
+        guard let text = object[key] else { throw ParseFailure.malformed(key) }
+        guard let value = Int(text), value > 0, String(value) == text else {
+            throw ParseFailure.malformed(key)
+        }
+        return value
+    }
+
+    private static func roleKey(_ object: [String: String], _ key: String, required: Bool) throws -> String {
+        if !required {
+            if object[key] != nil { throw ParseFailure.malformed("policy") }
+            return ""
+        }
+        let value = try text(object, key, minimum: 1, maximum: 64)
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+        guard value.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+            throw ParseFailure.malformed(key)
+        }
+        return value
+    }
+
+    private static func roleGeneration(_ object: [String: String], _ key: String, required: Bool) throws -> Int {
+        if !required {
+            if object[key] != nil { throw ParseFailure.malformed("enrollment") }
+            return 0
+        }
+        guard let text = object[key], let value = Int(text), value > 0, String(value) == text else {
+            throw ParseFailure.malformed("enrollment")
+        }
+        return value
+    }
+
+    private static func signatureMaterial(
+        _ object: [String: String],
+        publicKey keyName: String,
+        signature signatureName: String,
+        allowed: Bool
+    ) throws -> (publicKey: String?, signature: String?) {
+        let publicKey = object[keyName]
+        let signature = object[signatureName]
+        if !allowed {
+            if publicKey != nil || signature != nil { throw ParseFailure.malformed("policy") }
+            return (nil, nil)
+        }
+        if publicKey == nil && signature == nil { return (nil, nil) }
+        guard let publicKey, let signature, !publicKey.contains("\0"), !signature.contains("\0") else {
+            throw ParseFailure.malformed("signature")
+        }
+        guard let publicBytes = Data(base64Encoded: publicKey), publicBytes.count == 65 else {
+            throw ParseFailure.malformed("public_key")
+        }
+        guard let signatureBytes = Data(base64Encoded: signature), signatureBytes.count == 64 else {
+            throw ParseFailure.malformed("signature")
+        }
+        return (publicKey, signature)
     }
 
     private static func validate(name: String, value: String) throws {

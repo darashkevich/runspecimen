@@ -498,6 +498,161 @@ final class BiometricApprovalTests: XCTestCase {
         )
     }
 
+    func testSymlinkParentHopLimitAndDirectoryReplacementStayInsideTheDiagnosticRoot() throws {
+        let root = TouchIDDiagnosticGate.rootPath
+        try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
+        let fixture = root + "/order-" + UUID().uuidString
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("codex-out-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(atPath: fixture, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside.appendingPathComponent("child"), withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(atPath: fixture)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        try FileManager.default.createSymbolicLink(
+            atPath: fixture + "/link",
+            withDestinationPath: outside.appendingPathComponent("child").path
+        )
+        let raw = fixture + "/link/../probe"
+        XCTAssertFalse(TouchIDDiagnosticGate.isIsolated(raw))
+        let actualParent = (fixture + "/link/..").withCString { realpath($0, nil) }
+        XCTAssertNotNil(actualParent)
+        if let actualParent {
+            defer { free(actualParent) }
+            XCTAssertFalse(String(cString: actualParent).hasPrefix(root + "/"))
+        }
+        XCTAssertTrue(TouchIDDiagnosticGate.isIsolated(fixture + "/missing-leaf"))
+        XCTAssertNil(TouchIDDiagnosticGate.canonicalPath(fixture + "/missing/deeper"))
+
+        var previous = fixture
+        for hop in 0..<17 {
+            let name = fixture + "/hop\(hop)"
+            try FileManager.default.createSymbolicLink(atPath: name, withDestinationPath: previous)
+            previous = name
+        }
+        XCTAssertFalse(TouchIDDiagnosticGate.isIsolated(fixture + "/hop16"))
+
+        let owned = root + "/owned-" + UUID().uuidString
+        let fd = try TouchIDDiagnosticGate.openOwnedDirectory(owned)
+        defer { close(fd) }
+        try TouchIDDiagnosticGate.writeExclusive(directoryFD: fd, name: "marker", data: Data("in".utf8))
+        let aside = owned + "-aside"
+        try FileManager.default.moveItem(atPath: owned, toPath: aside)
+        try FileManager.default.createSymbolicLink(atPath: owned, withDestinationPath: outside.path)
+        defer {
+            try? FileManager.default.removeItem(atPath: owned)
+            try? FileManager.default.removeItem(atPath: aside)
+        }
+        XCTAssertThrowsError(try TouchIDDiagnosticGate.openOwnedDirectory(owned))
+        XCTAssertEqual(try TouchIDDiagnosticGate.readExclusive(directoryFD: fd, name: "marker"), Data("in".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outside.appendingPathComponent("marker").path))
+
+        let modeName = root + "/mode-" + UUID().uuidString
+        let writable = try TouchIDDiagnosticGate.openOwnedDirectory(modeName)
+        let modePath = TouchIDDiagnosticGate.openedPath(of: writable)
+        close(writable)
+        if let modePath {
+            chmod(modePath, 0o777)
+            XCTAssertThrowsError(try TouchIDDiagnosticGate.openOwnedDirectory(modePath))
+            chmod(modePath, 0o700)
+        }
+
+        let hold = "/private/tmp/rs-touchid-diag-hold-" + UUID().uuidString
+        try FileManager.default.moveItem(atPath: root, toPath: hold)
+        defer {
+            try? FileManager.default.removeItem(atPath: root)
+            try? FileManager.default.moveItem(atPath: hold, toPath: root)
+        }
+        try FileManager.default.createSymbolicLink(atPath: root, withDestinationPath: outside.path)
+        XCTAssertFalse(TouchIDDiagnosticGate.isIsolated(root))
+        XCTAssertFalse(TouchIDDiagnosticGate.isIsolated(root + "/probe"))
+    }
+
+    func testCompanionCanonicalVectorDigestIsStable() throws {
+        let bytes = try RSBA2Package.canonicalBytes(
+            policy: "companion",
+            macID: "mac-vector",
+            workspaceID: "ws-vector",
+            runID: "run-vector",
+            contractSHA256: String(repeating: "11", count: 32),
+            inputsSHA256: String(repeating: "22", count: 32),
+            bounds: "bounds-vector",
+            nonce: String(repeating: "bb", count: 32),
+            expiryUnix: 1_700_000_000,
+            localKeyID: "",
+            companionKeyID: "phone-vector",
+            localGeneration: 0,
+            companionGeneration: 1
+        )
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(digest, "7f0b15d280bc57ac4416fc0e170e2480117bd78e316b570ed6d84ce6d73abced")
+    }
+
+    func testShippingObserveTargetExcludesTheSoftwareSigner() throws {
+        let ios = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("ios")
+        let project = try String(contentsOf: ios.appendingPathComponent("RunSpecimenObserve.xcodeproj/project.pbxproj"), encoding: .utf8)
+        let shipping = try sourcesPhase(named: "RunSpecimenObserve", in: project)
+        XCTAssertFalse(shipping.contains("DevelopmentCompanionSigner.swift"))
+        XCTAssertFalse(shipping.contains("DevelopmentCompanionSignView.swift"))
+        XCTAssertTrue(shipping.contains("CompanionSecureEnclaveEnrollment.swift"))
+        let development = try sourcesPhase(named: "RunSpecimenObserveDev", in: project)
+        XCTAssertTrue(development.contains("DevelopmentCompanionSigner.swift"))
+        XCTAssertFalse(try configurationText(named: "RunSpecimenObserve", in: project).contains("RS_OBSERVE_DEV_SIGNER"))
+        XCTAssertTrue(try configurationText(named: "RunSpecimenObserveDev", in: project).contains("RS_OBSERVE_DEV_SIGNER"))
+        let scheme = try String(contentsOf: ios.appendingPathComponent("RunSpecimenObserve.xcodeproj/xcshareddata/xcschemes/RunSpecimenObserve.xcscheme"), encoding: .utf8)
+        XCTAssertFalse(scheme.contains("RunSpecimenObserveDev"))
+        let preview = try String(
+            contentsOf: ios.appendingPathComponent("Sources/RunSpecimenObserve/Views/CompanionApprovalPreviewView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertFalse(preview.contains("DevelopmentCompanionSigner"))
+        XCTAssertTrue(preview.contains("onChange(of: packageText)"))
+    }
+
+    private func sourcesPhase(named target: String, in text: String) throws -> String {
+        guard let name = text.range(of: "\t\t\tname = \(target);\n"),
+              let native = text[..<name.lowerBound].range(of: "isa = PBXNativeTarget;", options: .backwards),
+              let sources = text[native.lowerBound..<name.upperBound].range(of: #"([A-F0-9]+) /\* Sources \*/"#, options: .regularExpression)
+        else {
+            throw BiometricApprovalError.malformed("target")
+        }
+        let identifier = String(text[sources]).split(separator: " ").first.map(String.init) ?? ""
+        guard let start = text.range(of: "\t\t\(identifier) /* Sources */ = {"),
+              let end = text[start.upperBound...].range(of: "\t\t};")
+        else {
+            throw BiometricApprovalError.malformed("sources")
+        }
+        return String(text[start.lowerBound..<end.upperBound])
+    }
+
+    private func configurationText(named target: String, in text: String) throws -> String {
+        let marker = "/* Build configuration list for PBXNativeTarget \"\(target)\" */ = {"
+        guard let listName = text.range(of: marker),
+              let listStart = text[..<listName.lowerBound].range(of: "\t\t", options: .backwards),
+              let listEnd = text[listName.upperBound...].range(of: "\t\t};")
+        else {
+            throw BiometricApprovalError.malformed("configuration")
+        }
+        let list = String(text[listStart.lowerBound..<listEnd.upperBound])
+        var collected = list
+        let pattern = #"[A-F0-9]{24}"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return collected }
+        let nsList = list as NSString
+        for match in regex.matches(in: list, range: NSRange(location: 0, length: nsList.length)) {
+            let identifier = nsList.substring(with: match.range)
+            guard let start = text.range(of: "\t\t\(identifier) /* "),
+                  let end = text[start.upperBound...].range(of: "\t\t};")
+            else { continue }
+            collected += String(text[start.lowerBound..<end.upperBound])
+        }
+        return collected
+    }
+
     func testSecureEnclaveHumanHarnessIsNotRunByAutomation() throws {
         throw XCTSkip("Yahor runs Secure Enclave enroll, sign, reload, cancel, and revoke. This test does not call that path.")
     }
@@ -824,6 +979,8 @@ final class PolicyBoundApprovalTests: XCTestCase {
             publicKey: phone.publicKey.x963Representation,
             state: BiometricEnrollmentRecord.active,
             backend: BiometricEnrollmentRecord.softwareBackend,
+            role: EnrollmentIdentity.roleCompanion,
+            provenance: EnrollmentIdentity.provenanceSoftwareTest,
             generation: 1
         ), directory: enroll)
         try submit(request, local: nil, companion: phone)
@@ -847,6 +1004,8 @@ final class PolicyBoundApprovalTests: XCTestCase {
             publicKey: phone.publicKey.x963Representation,
             state: BiometricEnrollmentRecord.active,
             backend: BiometricEnrollmentRecord.softwareBackend,
+            role: EnrollmentIdentity.roleCompanion,
+            provenance: EnrollmentIdentity.provenanceSoftwareTest,
             generation: 1
         ), directory: enroll)
         try submit(request, local: nil, companion: phone)
@@ -905,6 +1064,122 @@ final class PolicyBoundApprovalTests: XCTestCase {
             XCTAssertEqual(error as? BiometricApprovalError, .unsupportedPolicy)
         }
         XCTAssertFalse(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
+    }
+
+    func testParseRejectsMissingEmptyNulAndInconsistentFields() throws {
+        let phone = P256.Signing.PrivateKey()
+        let request = sample(policy: .companion, companionKeyID: "phone-key")
+        let original = try JSONSerialization.jsonObject(with: try PolicyBoundApprovalStore.package(
+            request: request,
+            local: nil,
+            companion: try signed(request, key: phone)
+        )) as! [String: String]
+        func expect(_ mutate: (inout [String: String]) -> Void, _ field: String) throws {
+            var object = original
+            mutate(&object)
+            let data = try JSONSerialization.data(withJSONObject: object)
+            XCTAssertThrowsError(try PolicyBoundApprovalStore.importUserMediatedPackage(
+                data,
+                pinnedLocalKey: nil,
+                pinnedCompanionKey: phone.publicKey.x963Representation,
+                directory: directory
+            )) { error in
+                XCTAssertEqual(error as? BiometricApprovalError, .malformed(field))
+            }
+        }
+        try expect({ $0.removeValue(forKey: "mac_id") }, "mac_id")
+        try expect({ $0["mac_id"] = "" }, "mac_id")
+        try expect({ $0["workspace_id"] = "ws\0id" }, "workspace_id")
+        try expect({ $0["bounds"] = String(repeating: "x", count: 300) }, "bounds")
+        var inconsistent = original
+        inconsistent["local_key_id"] = "mac-key"
+        XCTAssertThrowsError(try PolicyBoundApprovalStore.importUserMediatedPackage(
+            try JSONSerialization.data(withJSONObject: inconsistent),
+            pinnedLocalKey: nil,
+            pinnedCompanionKey: phone.publicKey.x963Representation,
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .unsupportedPolicy)
+        }
+        try expect({ $0["contract_sha256"] = "abcd" }, "contract_sha256")
+        try expect({ $0["companion_generation"] = "01" }, "enrollment")
+        XCTAssertFalse(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
+    }
+
+    func testSwappedRoleAndSoftwareKeysDoNotAuthorizeExecution() throws {
+        let phone = P256.Signing.PrivateKey()
+        let local = P256.Signing.PrivateKey()
+        let request = sample(policy: .companion, companionKeyID: "phone-key")
+        let enroll = directory.appendingPathComponent("roles", isDirectory: true)
+        try BiometricEnrollmentDirectory.save(BiometricEnrollmentRecord(
+            keyID: "phone-key",
+            publicKey: phone.publicKey.x963Representation,
+            state: BiometricEnrollmentRecord.active,
+            backend: BiometricEnrollmentRecord.softwareBackend,
+            role: EnrollmentIdentity.roleLocal,
+            provenance: EnrollmentIdentity.provenanceSoftwareTest,
+            generation: 1
+        ), directory: enroll)
+        try submit(request, local: nil, companion: phone)
+        XCTAssertThrowsError(try PolicyBoundApprovalStore.consumeEnrolled(
+            request: request,
+            enrollmentDirectory: enroll,
+            approvalDirectory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .unsupportedPolicy)
+        }
+        try BiometricEnrollmentDirectory.save(BiometricEnrollmentRecord(
+            keyID: "phone-key",
+            publicKey: phone.publicKey.x963Representation,
+            state: BiometricEnrollmentRecord.active,
+            backend: EnrollmentIdentity.backendSoftwareDevelopment,
+            role: EnrollmentIdentity.roleCompanion,
+            provenance: EnrollmentIdentity.provenanceDevelopment,
+            generation: 1
+        ), directory: enroll)
+        XCTAssertThrowsError(try PolicyBoundApprovalStore.consumeEnrolled(
+            request: request,
+            enrollmentDirectory: enroll,
+            approvalDirectory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .unsupportedPolicy)
+        }
+        XCTAssertFalse(EnrollmentIdentity.allowsExecution(
+            role: EnrollmentIdentity.roleCompanion,
+            backend: EnrollmentIdentity.backendSoftwareTest,
+            provenance: EnrollmentIdentity.provenanceSoftwareTest,
+            state: EnrollmentIdentity.stateActive
+        ))
+        var dual = sample(policy: .dual, localKeyID: "mac-key", companionKeyID: "phone-key")
+        dual.nonce = String(repeating: "c", count: 64)
+        try BiometricEnrollmentDirectory.save(BiometricEnrollmentRecord(
+            keyID: "mac-key",
+            publicKey: local.publicKey.x963Representation,
+            state: BiometricEnrollmentRecord.active,
+            backend: BiometricEnrollmentRecord.softwareBackend,
+            role: EnrollmentIdentity.roleLocal,
+            provenance: EnrollmentIdentity.provenanceSoftwareTest,
+            generation: 1
+        ), directory: enroll)
+        try BiometricEnrollmentDirectory.save(BiometricEnrollmentRecord(
+            keyID: "phone-key",
+            publicKey: phone.publicKey.x963Representation,
+            state: BiometricEnrollmentRecord.active,
+            backend: BiometricEnrollmentRecord.softwareBackend,
+            role: EnrollmentIdentity.roleCompanion,
+            provenance: EnrollmentIdentity.provenanceSoftwareTest,
+            generation: 1
+        ), directory: enroll)
+        try submit(dual, local: local, companion: phone)
+        XCTAssertThrowsError(try PolicyBoundApprovalStore.consumeForExecution(
+            request: dual,
+            enrollmentDirectory: enroll,
+            approvalDirectory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .unsupportedPolicy)
+        }
+        XCTAssertFalse(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
+        XCTAssertFalse(BiometricApprovalStore.isConsumed(nonce: dual.nonce, directory: directory))
     }
 
     private func submit(

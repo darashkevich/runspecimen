@@ -1,51 +1,73 @@
 # Executor and state protection
 
-Status: **design for a decision. Nothing in this document is built, installed, or authorized.**
+Status: **recommendation. Nothing in this document is built, installed, or authorized.** A privileged helper is not part of the candidate.
 
-The goal is that a same-user agent cannot replace the program that decides a run may start, and cannot roll back an approval that was already consumed. The current macOS app and the `runspecimen` CLI are files the logged-in user can rewrite. A Secure Enclave signature does not fix a replaced executor. Restoring the approval directory and deleting the consumed marker spends the nonce again. Those are properties of this tree, not a future claim.
+The check that decides a run may start still lives in code the logged-in user can replace, and the approval files still live in a directory that user can restore. A Secure Enclave signature does not fix either fact. This note says where that check should live for a Mac App Store app, what that choice does and does not stop, and the one authorization that is still open.
 
-This is separate from companion transport. A carried RSBA2 file, an outbound relay, and a listening server are about how bytes move. They do not hold the workspace lease and they do not stop a replaced CLI. `com.apple.security.network.server` stays rejected. No relay is built.
+## Recommendation
 
-## Trust assumptions
+Keep enforcement inside the sandboxed Mac App Store app. Keep approval state in that app's container. Do not add a privileged helper, a setuid binary, or a new entitlement to the Store app.
 
-- The person using the Mac can be prompted. A prompt is not proof that the process which later starts the run is the process that showed the prompt.
-- Enrollment records, pending approvals, and consumed markers live in a directory the user can write.
-- The CLI on `PATH`, a Homebrew prefix, and a development-signed `.app` the user can replace are all user-writable.
-- A signature verifies bytes. It does not pin the binary that verifies them.
-- The approved App Store app **0.1.4 (9)** is a different, already-shipped build. This design does not change it. It also does not say that an App Store binary by itself is a protected executor.
+A same-user agent and a root or admin compromise are different threats. The Store-feasible path accepts the first: a person or agent who can run another binary, rewrite a user-owned CLI, or restore a container backup still wins. It refuses the second as a product feature. Guideline 2.4.5(v) does not allow a Mac App Store app to escalate to root or use setuid.
 
-## What has to be true before a run starts
+## What has to hold before a run starts
 
-Whatever component is allowed to start a run has to do all of the following in one place the agent cannot swap out:
+These are properties of the component that is allowed to start a run. The prototype store does the first two for a directory the user can write. It does not do the rest, and no run path calls `consumeForExecution`.
 
-1. Load the live enrollment under the same lock that revocation uses. A revoked or missing generation fails closed.
-2. Check the RSBA2 signatures, the exact version, the generations inside the signed bytes, and the dual-key inequality at that moment. A caller-supplied generation is not accepted.
-3. Take the workspace lease only after those checks, and record the consumed marker in state that a user-writable restore cannot put back.
-4. Refuse to start if the binary, the policy, or the state store is not the one that was measured.
+1. Load the live enrollment under the same lock revocation uses. Role, backend, provenance, generation, and public key come from that record. A software key, a development key, a diagnostic key, or a swapped role fails closed. Two software keys are not Mac-plus-phone authentication.
+2. Verify the RSBA2 signatures against the canonical bytes, including the generations inside those bytes, and reject a dual request whose public keys are equal. Do this at consume, not from caller-supplied fields.
+3. Record the consumed marker in state the same component owns, in the same critical section as the workspace lease. A restore of an older marker must not make the nonce usable again.
+4. Refuse to start when the binary that performs the check is not the measured Store binary.
 
-The store in this tree does steps 1 and 2 for a prototype directory. It does not do steps 3 or 4. Do not connect `consumeEnrolled` to the lease until the location below is chosen.
+## Resource ownership
+
+| Resource | Owner in the recommended design | What a same-user agent can still do |
+| --- | --- | --- |
+| Store app binary | System install path, updated only through the Mac App Store (guideline 2.4.5(vii)) | Launch a different `runspecimen` from a writable path |
+| Approval and enrollment files | App container. Guideline 2.5.2: the app may not read or write outside that container | Restore a backup of the container, or copy the files out and back |
+| Secure Enclave key | User keychain, `biometryCurrentSet`, non-exportable | Use the key only through a prompt. Cannot copy the private key into a helper |
+| Workspace lease | Same component that consumed the approval | Skip the component by running another binary |
+| Companion package | A file a person carries. No socket, no relay | Substitute a different file. Import still checks the signature |
+
+A root or admin process can ignore the sandbox, the container, and the user keychain. That is not the threat a Store app is allowed to close with a privileged helper.
+
+## IPC
+
+There is no helper and no XPC service in this candidate, so there is no new caller to authenticate.
+
+If a later authorization adds a process, the checks that would be required are: the service is inside `Contents/XPCServices` of the same bundle, every Mach-O in that bundle is sandboxed (QA1773), and the service accepts only a connection whose responsible process matches the Store app (WWDC 2023 session 10266, environment and spawn constraints). An XPC service in the bundle is replaced when the bundle is replaced. It does not resist a same-user agent, and it is not a root helper. Those constraints are not implemented.
+
+## Update, downgrade, and recovery
+
+- Updates to the Store app come from the Mac App Store. A sidecar installer, a downloaded helper, or a second update channel conflicts with 2.4.5(iv) and 2.4.5(vii).
+- A downgrade that skips the consume check is a failure. The recommended design has one binary and one container. It does not have a helper version to pin.
+- Biometric-set change makes the Secure Enclave key unusable. Recovery is retire the public record and enroll again. The private key is not exported.
+- Container restore is a same-user rollback of the consumed marker. The recommended design does not pretend to stop it. Stopping it would require state the user cannot restore, which a sandboxed app does not have.
+- Losing the device or the biometric set does not require a root helper. It requires a new enrollment.
 
 ## Options
 
-**Leave the check in the user-writable app and CLI.** No new entitlement. This is what the code does today. It cannot meet an anti-replacement or anti-rollback goal. A person or agent who can write the binary or the approval directory wins.
+**Sandboxed App Store app, state in the container.** Recommended. No new entitlement. Matches 2.4.5(i), 2.4.5(ii), 2.4.5(v), and 2.5.2. Does not stop a same-user agent who runs another binary or restores the container. This is the only option that stays on the Store track without a new privilege.
 
-**A privileged helper.** Not authorized. Not implemented. A helper would have to be the only process that can read the protected state and the only process that can spawn the run. Even then:
+**Developer ID privileged helper (`SMJobBless`).** Not recommended for the Store app. Not authorized. Not built. Apple's archived EvenBetterAuthorizationSample documents that helper as outside the Mac App Store, and that Mac App Store apps are not allowed to use elevated privileges. A third-party daemon is not itself sandboxed. A root helper also does not receive the app's Secure Enclave keys, which stay in the user keychain. It would still need a pinned signature, a downgrade refusal, a recovery path, and an IPC check of the caller. None of that is a reason to build it before the question below is answered. It is not assumed to be Store-compatible.
 
-- A Mac App Store app generally cannot install a root helper with `SMJobBless`. Planning as if a helper is available inside the Store sandbox is not supported by the current entitlement set.
-- A same-user XPC service inside the app bundle is replaced when the app bundle is replaced. It does not resist a same-user agent.
-- Secure Enclave keys created by the app live in the user keychain. A root helper does not automatically receive those keys or the app's keychain access group. Moving the key into a helper is a new key-lifecycle design, not a flag.
-- The helper would need its own update, downgrade, and recovery story: a pinned code signature, a version that cannot be rolled back to a helper that skips the check, and a recovery path when the biometric set changes. None of that is specified as an implementation here.
-- IPC from the app to a helper must authenticate the caller. A helper that accepts any same-user connection is the app again.
+## Sources
 
-**An App Store binary the user cannot rewrite in place.** The installed Store app is owned by the system install path, but the user can still run another `runspecimen` from a writable location, and the approval directory used by a prototype remains writable. Store distribution alone does not protect state. Whether a future Store version can hold protected state without a helper is part of the decision, not a conclusion.
+Fetched from the current App Store Review Guidelines, https://developer.apple.com/app-store/review/guidelines/, on 2026-09-28:
 
-## Store feasibility
+- **2.4.5(i)** Mac App Store apps must be sandboxed and follow the macOS File System documentation.
+- **2.4.5(ii)** They must be self-contained single app bundles and cannot install code or resources in shared locations.
+- **2.4.5(iv)** They may not download or install standalone apps, kexts, additional code, or resources to add functionality.
+- **2.4.5(v)** They may not request escalation to root privileges or use setuid attributes.
+- **2.4.5(vii)** They must use the Mac App Store to distribute updates.
+- **2.5.2** Apps should be self-contained and may not read or write data outside the designated container area, nor download, install, or execute code which changes features.
 
-- Do not add a helper, a relay, or a new entitlement in order to try this.
-- Do not assume the helper option is compatible with the Mac App Store sandbox.
-- Do not overwrite `/Applications/RunSpecimen.app` or the approved **0.1.4 (9)** record while this is undecided.
-- The development app used for acceptance is signed with Apple Development and is not a Store package.
+Also: archived EvenBetterAuthorizationSample (SMJobBless is for outside the Mac App Store); archived Creating XPC Services (the service lives in the app bundle); WWDC 2023 session 10266, "Protect your Mac app with environment constraints"; Technical Q&A QA1773 (every Mach-O in a sandboxed bundle, including an XPC service or an inherit helper, must have `com.apple.security.app-sandbox`).
 
-## What this document does not decide
+## Authorization
 
-Yahor still chooses where the consume check lives before a run may start. Until that choice is explicit, the prototype stays unwired: no lease, no helper, no relay, no Face ID on iOS, and no claim that biometric approval is an execution gate.
+One question, and it is an authorization rather than a design exercise:
+
+**Do you authorize a non-App Store Developer ID privileged helper that owns approval state outside the sandbox, or do you keep enforcement inside the sandboxed App Store app, knowing a same-user agent can replace the CLI and restore the container?**
+
+Until that is answered, the candidate keeps the second option and does not build the first. `consumeForExecution` stays unwired. No helper, relay, or new entitlement is added.

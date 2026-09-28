@@ -35,28 +35,32 @@ guard let directory = argumentValue("--directory"),
     exit(2)
 }
 
-let folder = URL(fileURLWithPath: directory, isDirectory: true)
 let keychain = LocalSecureEnclaveEnrollment.diagnosticKeychainService
 do {
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let directoryFD = try TouchIDDiagnosticGate.openOwnedDirectory(directory)
+    defer { close(directoryFD) }
+    guard let opened = TouchIDDiagnosticGate.openedPath(of: directoryFD) else {
+        throw BiometricApprovalError.malformed("directory")
+    }
+    let folder = URL(fileURLWithPath: opened, isDirectory: true)
     switch command {
     case "enroll":
-        let publicKey = try LocalSecureEnclaveEnrollment.enroll(keyID: keyID, directory: folder, keychainService: keychain)
+        let publicKey = try LocalSecureEnclaveEnrollment.enroll(keyID: keyID, directory: folder, directoryFD: directoryFD, keychainService: keychain)
         print("enrolled \(publicKey.base64EncodedString())")
     case "sign", "reload":
         let request = diagnosticRequest(keyID: keyID)
         printExactRequest(request)
-        let signature = try LocalSecureEnclaveEnrollment.sign(request, directory: folder, keychainService: keychain)
+        let signature = try LocalSecureEnclaveEnrollment.sign(request, directory: folder, directoryFD: directoryFD, keychainService: keychain)
         print("signed \(signature.base64EncodedString())")
     case "cancel":
         let request = diagnosticRequest(keyID: keyID)
         printExactRequest(request)
         FileHandle.standardError.write(Data("Answer the prompt by cancelling it. A cancel must not store an approval.\n".utf8))
-        _ = try LocalSecureEnclaveEnrollment.sign(request, directory: folder, keychainService: keychain)
+        _ = try LocalSecureEnclaveEnrollment.sign(request, directory: folder, directoryFD: directoryFD, keychainService: keychain)
         FileHandle.standardError.write(Data("The prompt completed instead of cancelling.\n".utf8))
         exit(1)
     case "revoke":
-        try LocalSecureEnclaveEnrollment.revoke(keyID: keyID, directory: folder, keychainService: keychain)
+        try LocalSecureEnclaveEnrollment.revoke(keyID: keyID, directory: folder, directoryFD: directoryFD, keychainService: keychain)
         print("revoked")
     default:
         FileHandle.standardError.write(Data("Unknown command.\n".utf8))
