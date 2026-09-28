@@ -191,7 +191,7 @@ struct FooterHint: View {
     var body: some View {
         Text(storeBuild
              ? "Mac App Store · Bundled engine · Local-only · Apache-2.0 · Data Not Collected"
-             : "Install: python3 -m pip install 'runspecimen==0.2.0rc14'   ·   Local-only · Apache-2.0")
+             : "Published pin runspecimen==0.2.0rc14. This build's engine is unpublished 0.2.0rc15. Local-only · Apache-2.0")
             .font(RSTheme.monoSmall)
             .foregroundStyle(RSTheme.soft)
     }

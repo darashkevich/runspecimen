@@ -217,7 +217,8 @@ public enum BiometricApprovalStore {
 
     /// Read at the submit and consume decision, after the approval lock is held.
     /// A timestamp captured before a wait is not used.
-    public static var clock: () -> Int = { Int(Date().timeIntervalSince1970) }
+    /// Internal so another module cannot replace the production clock.
+    static var clock: () -> Int = { Int(Date().timeIntervalSince1970) }
 
     /// Test seam. Runs inside the approval lock, immediately before the expiry decision.
     static var beforeConsumptionDecision: (() -> Void)?
@@ -625,7 +626,7 @@ public enum LocalSecureEnclaveEnrollment {
         }
     }
 
-    /// Production biometric policy. The software P-256 file is a test double and is not accepted.
+    /// Backend-string classifier for tests. No enroll, sign, consume, or run path calls it.
     public enum ProductionPolicy {
         public static func accepts(backend: String) -> Bool {
             backend == BiometricEnrollmentRecord.secureEnclaveBackend
@@ -700,5 +701,49 @@ public enum LocalSecureEnclaveEnrollment {
         if let error = keychainDeletionError(status: status) {
             throw error
         }
+    }
+}
+
+/// Argument gate for the development Touch ID diagnostic.
+///
+/// A refusal returns before any Secure Enclave call. Passing the gate is not
+/// authentication and does not approve a run.
+public enum TouchIDDiagnosticGate {
+    public static func refusal(arguments: [String]) -> String? {
+        if !arguments.contains("--human-invoked") {
+            return "Refusing to call Secure Enclave. Re-run only when you will answer the Touch ID prompt yourself, and pass --human-invoked."
+        }
+        guard let directory = value(after: "--directory", in: arguments) else {
+            return "Pass --directory /private/tmp/rs-touchid-diag. The diagnostic will not use the app container."
+        }
+        if !isIsolated(directory) {
+            return "The diagnostic directory must be under /tmp or /private/tmp."
+        }
+        guard let keyID = value(after: "--key-id", in: arguments) else {
+            return "Pass --key-id diag-... so this diagnostic cannot select another enrollment."
+        }
+        if !keyID.hasPrefix("diag-") || keyID.count > 64 {
+            return "The key id must start with diag- and stay within 64 characters."
+        }
+        guard let command = arguments.last, ["enroll", "sign", "reload", "cancel", "revoke"].contains(command) else {
+            return "Pass one command: enroll, sign, reload, cancel, or revoke."
+        }
+        _ = command
+        return nil
+    }
+
+    private static func value(after flag: String, in arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: flag), arguments.index(after: index) < arguments.endIndex else {
+            return nil
+        }
+        let value = arguments[arguments.index(after: index)]
+        if value.hasPrefix("-") || value.isEmpty {
+            return nil
+        }
+        return value
+    }
+
+    private static func isIsolated(_ path: String) -> Bool {
+        path == "/tmp" || path.hasPrefix("/tmp/") || path == "/private/tmp" || path.hasPrefix("/private/tmp/")
     }
 }

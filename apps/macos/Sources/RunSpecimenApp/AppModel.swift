@@ -123,7 +123,7 @@ final class AppModel: ObservableObject {
             if channel.requiresBundledHelper {
                 cliSetupIssue = "Mac App Store build: bundled runspecimen helper missing or not executable. This build fails closed — no host Python / PATH / pip fallback."
             } else {
-                cliSetupIssue = "runspecimen CLI not found. Install 0.2.0rc14+ then select the binary:\npython3 -m pip install 'runspecimen==0.2.0rc14'\n\nOr stage a helper into Contents/Helpers (see Helpers/README.md)."
+                cliSetupIssue = "runspecimen CLI not found. This build's engine is unpublished 0.2.0rc15. The published pin remains:\npython3 -m pip install 'runspecimen==0.2.0rc14'\n\nOr stage a helper into Contents/Helpers (see Helpers/README.md)."
             }
         }
 

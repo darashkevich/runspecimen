@@ -8,7 +8,8 @@ let package = Package(
     ],
     products: [
         .library(name: "RunSpecimenCore", targets: ["RunSpecimenCore"]),
-        .executable(name: "RunSpecimen", targets: ["RunSpecimenApp"])
+        .executable(name: "RunSpecimen", targets: ["RunSpecimenApp"]),
+        .executable(name: "RunSpecimenTouchIDDiagnostic", targets: ["RunSpecimenTouchIDDiagnostic"])
     ],
     targets: [
         .target(
@@ -19,6 +20,11 @@ let package = Package(
             name: "RunSpecimenApp",
             dependencies: ["RunSpecimenCore"],
             path: "Sources/RunSpecimenApp"
+        ),
+        .executableTarget(
+            name: "RunSpecimenTouchIDDiagnostic",
+            dependencies: ["RunSpecimenCore"],
+            path: "Sources/RunSpecimenTouchIDDiagnostic"
         ),
         .testTarget(
             name: "RunSpecimenCoreTests",

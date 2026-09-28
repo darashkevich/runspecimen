@@ -452,6 +452,19 @@ final class BiometricApprovalTests: XCTestCase {
         ))
     }
 
+    func testTouchIDDiagnosticRefusesUnlessAHumanInvokesIt() {
+        let refused = TouchIDDiagnosticGate.refusal(arguments: ["diag"])
+        XCTAssertNotNil(refused)
+        let outside = TouchIDDiagnosticGate.refusal(arguments: [
+            "diag", "--human-invoked", "--directory", "/Users/yahor", "--key-id", "diag-a", "enroll"
+        ])
+        XCTAssertNotNil(outside)
+        let accepted = TouchIDDiagnosticGate.refusal(arguments: [
+            "diag", "--human-invoked", "--directory", "/private/tmp/rs-touchid-diag", "--key-id", "diag-a", "enroll"
+        ])
+        XCTAssertNil(accepted)
+    }
+
     func testSecureEnclaveHumanHarnessIsNotRunByAutomation() throws {
         throw XCTSkip("Yahor runs Secure Enclave enroll, sign, reload, cancel, and revoke. This test does not call that path.")
     }

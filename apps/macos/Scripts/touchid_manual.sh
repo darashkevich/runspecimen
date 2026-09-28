@@ -1,13 +1,11 @@
 #!/bin/sh
-# Human Touch ID checklist for LocalSecureEnclaveEnrollment.
-# This script does not enroll, sign, prompt, or revoke. Yahor runs those steps.
+# Points at the development Touch ID diagnostic. This script does not call it
+# with --human-invoked, so it does not enroll, sign, or prompt.
 set -eu
-echo "Touch ID harness: not executed."
-echo "Run these yourself against a development build. Do not point them at /Applications/RunSpecimen.app."
-echo "1. Enroll a Secure Enclave key and complete the Touch ID prompt."
-echo "2. Sign one canonical request with that key and complete Touch ID again."
-echo "3. Quit and relaunch, then sign a second request so the key is loaded from the keychain."
-echo "4. Start a sign and cancel the prompt. The request must not be stored as approved."
-echo "5. Revoke the key. A later sign must fail, and a failed keychain delete must leave the record active."
-echo "Unit tests do not call LocalSecureEnclaveEnrollment.enroll or sign."
+echo "Touch ID diagnostic is apps/macos/Sources/RunSpecimenTouchIDDiagnostic."
+echo "It calls LocalSecureEnclaveEnrollment only after --human-invoked."
+echo "Example, which you must run yourself:"
+echo "  swift run --package-path apps/macos RunSpecimenTouchIDDiagnostic --human-invoked --directory /private/tmp/rs-touchid-diag --key-id diag-yours enroll"
+echo "Commands: enroll, sign, reload, cancel, revoke."
+echo "cancel asks you to dismiss the prompt. This script does not type APPROVE and does not start that command."
 exit 2
