@@ -387,6 +387,55 @@ final class BoundedProcessCaptureTests: XCTestCase {
         }
     }
 
+    func testPlainTextLifecycleTreatsReadAndCleanupFailuresAsFailure() {
+        let readError = BoundedProcessCapture.Output(
+            exitCode: 0,
+            stdout: Data("ok".utf8),
+            stderr: Data("child said hi".utf8),
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            timedOut: false,
+            cancelled: false,
+            streamReadError: EIO
+        )
+        let readReport = EngineReportDecoder.plainText(from: readError)
+        XCTAssertEqual(readReport.exitCode, 1)
+        XCTAssertEqual(readReport.stdout, "ok")
+        XCTAssertEqual(
+            readReport.stderr,
+            "The engine output could not be read (errno \(EIO)).\nchild said hi"
+        )
+
+        let cleanup = BoundedProcessCapture.Output(
+            exitCode: 0,
+            stdout: Data(),
+            stderr: Data(),
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            timedOut: false,
+            cancelled: false,
+            cleanupFailed: true
+        )
+        let cleanupReport = EngineReportDecoder.plainText(from: cleanup)
+        XCTAssertEqual(cleanupReport.exitCode, 1)
+        XCTAssertEqual(
+            cleanupReport.stderr,
+            "The engine stopped, but an owned descendant was still running."
+        )
+
+        let clean = BoundedProcessCapture.Output(
+            exitCode: 0,
+            stdout: Data("done".utf8),
+            stderr: Data(),
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            timedOut: false,
+            cancelled: false
+        )
+        XCTAssertEqual(EngineReportDecoder.plainText(from: clean).exitCode, 0)
+        XCTAssertNil(EngineReportDecoder.failureMessage(from: clean))
+    }
+
     func testCleanupFailureIsNotReportedAsAPlainTimeout() {
         let output = BoundedProcessCapture.Output(
             exitCode: -1,

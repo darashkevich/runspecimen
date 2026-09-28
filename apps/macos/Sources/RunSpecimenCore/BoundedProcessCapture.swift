@@ -500,21 +500,48 @@ public enum EngineReportDecoder {
         public var pretty: String
     }
 
-    public static func jsonPayload(from output: BoundedProcessCapture.Output) throws -> JSONPayload {
+    /// Capture problems that make the bytes unusable, for both JSON and plain text.
+    /// Nil means the child exit code is the result.
+    public static func failureMessage(from output: BoundedProcessCapture.Output) -> String? {
         if output.cleanupFailed {
-            throw EngineReportError(message: "The engine stopped, but an owned descendant was still running.")
+            return "The engine stopped, but an owned descendant was still running."
         }
         if let code = output.streamReadError {
-            throw EngineReportError(message: "The engine output could not be read (errno \(code)).")
+            return "The engine output could not be read (errno \(code))."
         }
         if output.timedOut {
-            throw EngineReportError(message: "The engine timed out before it finished.")
+            return "The engine timed out before it finished."
         }
         if output.cancelled {
-            throw EngineReportError(message: "The engine was cancelled before it finished.")
+            return "The engine was cancelled before it finished."
         }
         if output.stdoutTruncated || output.stderrTruncated {
-            throw EngineReportError(message: "Output was truncated. The report is incomplete.")
+            return "Output was truncated. The report is incomplete."
+        }
+        return nil
+    }
+
+    /// What `CLIService.run` returns to plain-text lifecycle callers.
+    /// A capture failure forces exit code 1 even when the child exited 0, and keeps stderr.
+    public struct PlainText: Equatable {
+        public var exitCode: Int32
+        public var stdout: String
+        public var stderr: String
+    }
+
+    public static func plainText(from output: BoundedProcessCapture.Output) -> PlainText {
+        let stdout = String(data: output.stdout, encoding: .utf8) ?? ""
+        let stderr = String(data: output.stderr, encoding: .utf8) ?? ""
+        if let message = failureMessage(from: output) {
+            let combined = stderr.isEmpty ? message : message + "\n" + stderr
+            return PlainText(exitCode: 1, stdout: stdout, stderr: combined)
+        }
+        return PlainText(exitCode: output.exitCode, stdout: stdout, stderr: stderr)
+    }
+
+    public static func jsonPayload(from output: BoundedProcessCapture.Output) throws -> JSONPayload {
+        if let message = failureMessage(from: output) {
+            throw EngineReportError(message: message)
         }
         if output.exitCode != 0 {
             let stderr = String(data: output.stderr, encoding: .utf8) ?? ""

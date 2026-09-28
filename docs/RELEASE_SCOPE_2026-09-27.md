@@ -8,13 +8,13 @@ This candidate is not a production release. Packaging still uses public `0.2.0rc
 | --- | --- | --- | --- | --- |
 | Evidence-expansion engine and native workflows (requirements, freshness, config, decisions, snapshots, usage, coordination, eval, scenes) | PR #34 line through `92fd4cc`, plus this branch | Python evidence tests; Swift workflow gate | macOS app and CLI | Not merged. Store binary in review does not contain it |
 | Confirmation-dialog race and concurrent pipe drain | `d7c61a9` and the capture helper on this branch | `WorkflowConfirmationGateTests`, capture drain tests | macOS | None in unit tests |
-| Explicit truncation and malformed JSON errors | Capture decoder on this branch | `BoundedProcessCaptureTests` | macOS | None in unit tests |
+| Explicit truncation, malformed JSON, and plain-text capture failures | Capture decoder and `CLIService.run` on this branch | `BoundedProcessCaptureTests`, including injected read and cleanup failures for the plain-text path | macOS | None in unit tests |
 | Owned process-group cleanup after the leader exits | This branch, `BoundedProcessCapture.swift` | Parent-exits, ignored SIGTERM, grandchild, flood, cancellation, cleanup-failure classification | macOS | A descendant that leaves the owned group cannot be killed safely. That case is reported only when the group signal fails or a member remains |
 | Nested config secret names | This branch, `configsync.py` | `ConfigSecretStripTests` | CLI | Key-name matching does not see secrets under ordinary names or inside notes |
 | About sheet Close and Escape | This branch, `AboutView.swift` | Clicked on the development-signed app built from `f77a7c9` | macOS | That app is not a Store package and is not the later biometric commit |
 | Receipt digest, diff, and confirmed retain | Ported onto the workflow sheet on this branch | Existing CLI receipt tests. Native sheet has no separate UI test | macOS and CLI | Retain still needs a confirmed workflow. It does not approve |
 | Deterministic eval fast path | PR #38, merged onto this branch | `tests/test_fastpath.py` | CLI only | Must not be described as a native control |
-| Local biometric prototype | This branch, `BiometricApproval.swift` | Software-key enrollment, field binding, tamper, replay, restart, and user-writable rollback tests | macOS | Not an execution gate. Secure Enclave signing has not had a real Touch ID prompt. Companion transport and privileged enforcement are separate undecided choices |
+| Local biometric prototype | This branch, `BiometricApproval.swift` | Software-key enrollment, field binding, tamper, replay, restart, user-writable rollback, and a blocked consume that loses to revoke | macOS | Not an execution gate. Secure Enclave signing has not had a real Touch ID prompt. Companion transport and privileged enforcement are separate undecided choices |
 
 ## Preserved and not merged into this candidate
 

@@ -6,6 +6,8 @@ Status: **local prototype, not an execution gate, not shipped**.
 
 Enrollment is separate from an approval. `SoftwareApprovalKeyEnrollment` is a test double: it stores a software P-256 key and signs later requests with that same key. `LocalSecureEnclaveEnrollment` creates one non-exportable Secure Enclave key (`biometryCurrentSet` and `privateKeyUsage`), stores the key blob in the keychain, and later signs by loading that blob. It does not call `LAContext.evaluatePolicy` and it does not take an authentication-success Boolean. Revoke and rotate drop the old key. If the biometric set changes, recovery is `retireUnusableKey` and a new enrollment, not an exported private key. Unit tests do not call the Secure Enclave path. Yahor still has to complete a real Touch ID prompt before that path can be treated as exercised.
 
+Revoke and consume take the same enrollment lock. Consume reloads the key state and generation after that lock is acquired, so a revocation that finished while the consumer was waiting is not accepted. A keychain delete that returns anything other than success or "not found" is a failure and does not count as removal.
+
 This store does not start a run. The existing PTY `APPROVE` path is unchanged. No run entry point calls the store. The approval directory is user-writable: restoring the approval file and deleting the consumed marker consumes the nonce again. That is a limit of this prototype, not a shipped bypass. An agent that can replace the user-writable CLI, or that runs in the same user session as the executor, still bypasses a check that lives only in the app. A Secure Enclave signature does not fix a replaced executor.
 
 ## What a signature would mean

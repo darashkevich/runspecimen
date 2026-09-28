@@ -381,21 +381,11 @@ actor CLIService {
                             isCancelled: { flag.isCancelled }
                         )
                         _ = expectJSON
-                        var stderr = String(data: output.stderr, encoding: .utf8) ?? ""
-                        if output.timedOut {
-                            stderr = "The engine timed out before it finished.\n" + stderr
-                        } else if output.cancelled {
-                            stderr = "The engine was cancelled before it finished.\n" + stderr
-                        }
-                        if output.stdoutTruncated || output.stderrTruncated {
-                            stderr = "Output was truncated. The report is incomplete.\n" + stderr
-                        }
-                        let failed = output.timedOut || output.cancelled
-                            || output.stdoutTruncated || output.stderrTruncated
+                        let reported = EngineReportDecoder.plainText(from: output)
                         box.resume(returning: ProcessResult(
-                            exitCode: failed ? 1 : output.exitCode,
-                            stdout: String(data: output.stdout, encoding: .utf8) ?? "",
-                            stderr: stderr,
+                            exitCode: reported.exitCode,
+                            stdout: reported.stdout,
+                            stderr: reported.stderr,
                             capture: output
                         ))
                     } catch {

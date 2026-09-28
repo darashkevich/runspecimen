@@ -198,6 +198,60 @@ final class BiometricApprovalTests: XCTestCase {
         )
     }
 
+    func testRevokeWhileConsumeIsBlockedRejectsTheStaleActiveRecord() throws {
+        let keyID = "local-test"
+        _ = try SoftwareApprovalKeyEnrollment.enroll(keyID: keyID, directory: enrollmentDirectory)
+        let request = sample(nonce: nonce("1"), expiry: 2_000)
+        let signature = try SoftwareApprovalKeyEnrollment.sign(request, directory: enrollmentDirectory)
+        try BiometricApprovalStore.submitEnrolled(
+            request: request,
+            signature: signature,
+            enrollmentDirectory: enrollmentDirectory,
+            approvalDirectory: directory,
+            now: 1_000
+        )
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        BiometricApprovalStore.beforeExclusiveAccess = {
+            entered.signal()
+            release.wait()
+        }
+        defer { BiometricApprovalStore.beforeExclusiveAccess = nil }
+        var outcome: BiometricApprovalError?
+        let finished = DispatchGroup()
+        finished.enter()
+        DispatchQueue.global().async {
+            do {
+                try BiometricApprovalStore.consumeEnrolled(
+                    request: request,
+                    enrollmentDirectory: self.enrollmentDirectory,
+                    approvalDirectory: self.directory,
+                    now: 1_500
+                )
+            } catch let error as BiometricApprovalError {
+                outcome = error
+            } catch {
+                outcome = .tampered
+            }
+            finished.leave()
+        }
+        XCTAssertEqual(entered.wait(timeout: .now() + 2), .success)
+        try SoftwareApprovalKeyEnrollment.revoke(keyID: keyID, directory: enrollmentDirectory)
+        release.signal()
+        finished.wait()
+        XCTAssertEqual(outcome, .revoked)
+        XCTAssertFalse(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
+    }
+
+    func testKeychainDeleteFailureIsNotReportedAsRemoval() {
+        XCTAssertNil(LocalSecureEnclaveEnrollment.keychainDeletionError(status: errSecSuccess))
+        XCTAssertNil(LocalSecureEnclaveEnrollment.keychainDeletionError(status: errSecItemNotFound))
+        XCTAssertEqual(
+            LocalSecureEnclaveEnrollment.keychainDeletionError(status: errSecAuthFailed),
+            .malformed("keychain")
+        )
+    }
+
     func testUserWritableConsumedMarkerCanBeRolledBack() throws {
         let key = P256.Signing.PrivateKey()
         let request = sample(nonce: nonce("f"), expiry: 2_000)
