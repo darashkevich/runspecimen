@@ -38,6 +38,8 @@ public enum BoundedProcessCapture {
         byteLimit: Int = 8 * 1024 * 1024,
         timeout: TimeInterval? = nil,
         terminationGrace: TimeInterval = defaultTerminationGrace,
+        readyMarker: Data? = nil,
+        readyDeadline: TimeInterval = 5,
         isCancelled: @escaping @Sendable () -> Bool = { false }
     ) throws -> Output {
         let pipes = try openPipes()
@@ -83,17 +85,36 @@ public enum BoundedProcessCapture {
         var timedOut = false
         var cancelled = false
         var alreadyReaped: Int32?
-        let started = Date()
+        let startup = Date()
+        // A nil marker arms the timeout immediately. A marker holds the timeout
+        // and cancellation until the child has printed it, so a slow start
+        // cannot be mistaken for an ignored signal.
+        var armed: Date? = readyMarker == nil ? startup : nil
         while alreadyReaped == nil {
             if let status = tryReap(pid) {
                 alreadyReaped = status
                 break
             }
+            if armed == nil {
+                if let readyMarker, stdoutBuffer.contains(readyMarker) {
+                    armed = Date()
+                } else if Date().timeIntervalSince(startup) >= readyDeadline {
+                    _ = stopOwnedGroup(ownedPgid, grace: max(0, terminationGrace))
+                    _ = reapPid(pid, limit: max(0, terminationGrace))
+                    try? stdoutHandle.close()
+                    try? stderrHandle.close()
+                    _ = readers.wait(timeout: .now() + 1)
+                    throw EngineReportError(message: "The child was not ready before the startup deadline.")
+                } else {
+                    Thread.sleep(forTimeInterval: 0.01)
+                    continue
+                }
+            }
             if isCancelled() {
                 cancelled = true
                 break
             }
-            if let timeout, Date().timeIntervalSince(started) >= timeout {
+            if let timeout, let armed, Date().timeIntervalSince(armed) >= timeout {
                 timedOut = true
                 break
             }
@@ -373,15 +394,22 @@ public enum BoundedProcessCapture {
         return -1
     }
 
+    /// One `read` returns the bytes already in the pipe. Filling a 64 KiB
+    /// buffer would hide a short readiness line until the child exits.
     private static func drain(_ handle: FileHandle, into buffer: ByteBuffer, group: DispatchGroup) {
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
             defer { group.leave() }
+            let fd = handle.fileDescriptor
+            var storage = [UInt8](repeating: 0, count: 65_536)
             while true {
-                do {
-                    guard let chunk = try handle.read(upToCount: 65_536), !chunk.isEmpty else { break }
-                    buffer.append(chunk)
-                } catch {
+                let count = storage.withUnsafeMutableBytes { raw -> Int in
+                    guard let base = raw.baseAddress else { return -1 }
+                    return Darwin.read(fd, base, raw.count)
+                }
+                if count > 0 {
+                    buffer.append(Data(storage.prefix(count)))
+                } else {
                     break
                 }
             }
@@ -452,6 +480,13 @@ private final class ByteBuffer: @unchecked Sendable {
 
     init(limit: Int) {
         self.limit = max(0, limit)
+    }
+
+    func contains(_ marker: Data) -> Bool {
+        guard !marker.isEmpty else { return true }
+        lock.lock()
+        defer { lock.unlock() }
+        return storage.range(of: marker) != nil
     }
 
     func append(_ data: Data) {

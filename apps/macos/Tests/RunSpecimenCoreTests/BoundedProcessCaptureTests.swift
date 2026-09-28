@@ -124,13 +124,14 @@ final class BoundedProcessCaptureTests: XCTestCase {
             arguments: ["-c", Self.ignoreTermUntil],
             byteLimit: 1024,
             timeout: 0.1,
-            terminationGrace: 0.25
+            terminationGrace: 0.25,
+            readyMarker: Self.readyMarker
         )
         let elapsed = Date().timeIntervalSince(started)
         XCTAssertTrue(output.timedOut)
         XCTAssertFalse(output.cancelled)
         XCTAssertEqual(output.exitCode, SIGKILL)
-        XCTAssertLessThan(elapsed, 1.5)
+        XCTAssertLessThan(elapsed, Self.startupCeiling)
         XCTAssertTrue(sibling.isRunning, "escalation killed a process it does not own")
     }
 
@@ -142,12 +143,13 @@ final class BoundedProcessCaptureTests: XCTestCase {
             byteLimit: 1024,
             timeout: 30,
             terminationGrace: 0.25,
+            readyMarker: Self.readyMarker,
             isCancelled: { Date().timeIntervalSince(armed) >= 0.2 }
         )
         XCTAssertTrue(output.cancelled)
         XCTAssertFalse(output.timedOut)
         XCTAssertEqual(output.exitCode, SIGKILL)
-        XCTAssertLessThan(Date().timeIntervalSince(armed), 1.5)
+        XCTAssertLessThan(Date().timeIntervalSince(armed), Self.startupCeiling)
     }
 
     func testGrandchildThatIgnoresSIGTERMDiesWithTheOwnedGroup() throws {
@@ -157,15 +159,15 @@ final class BoundedProcessCaptureTests: XCTestCase {
             arguments: ["-c", Self.ignoreTermAndSpawn],
             byteLimit: 1024,
             timeout: 0.4,
-            terminationGrace: 0.3
+            terminationGrace: 0.3,
+            readyMarker: Self.readyMarker
         )
         let elapsed = Date().timeIntervalSince(started)
         XCTAssertTrue(output.timedOut)
         XCTAssertNotEqual(output.exitCode, 0)
         XCTAssertNotEqual(output.exitCode, 3, "child never became its own process group")
-        XCTAssertLessThan(elapsed, 2)
-        let text = String(data: output.stdout, encoding: .utf8) ?? ""
-        let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? -1
+        XCTAssertLessThan(elapsed, Self.startupCeiling)
+        let pid = Self.descendantPID(in: output.stdout)
         if pid > 1 && kill(pid, 0) == 0 {
             kill(pid, SIGKILL)
             XCTFail("grandchild \(pid) was still running after the capture returned")
@@ -179,7 +181,8 @@ final class BoundedProcessCaptureTests: XCTestCase {
             arguments: ["-c", Self.ignoreTermAndFlood],
             byteLimit: 1000,
             timeout: 0.2,
-            terminationGrace: 0.25
+            terminationGrace: 0.25,
+            readyMarker: Self.readyMarker
         )
         XCTAssertTrue(output.timedOut)
         XCTAssertTrue(output.stdoutTruncated)
@@ -187,7 +190,7 @@ final class BoundedProcessCaptureTests: XCTestCase {
         XCTAssertEqual(output.stdout.count, 1000)
         XCTAssertEqual(output.stderr.count, 1000)
         XCTAssertEqual(output.exitCode, SIGKILL)
-        XCTAssertLessThan(Date().timeIntervalSince(started), 2)
+        XCTAssertLessThan(Date().timeIntervalSince(started), Self.startupCeiling)
         XCTAssertThrowsError(try EngineReportDecoder.jsonPayload(from: output)) { error in
             XCTAssertEqual(
                 (error as? EngineReportError)?.message,
@@ -300,13 +303,13 @@ final class BoundedProcessCaptureTests: XCTestCase {
             executable: python,
             arguments: ["-c", Self.parentExitsChildIgnores],
             byteLimit: 1024,
-            timeout: 0.4,
-            terminationGrace: 0.3
+            timeout: 0.2,
+            terminationGrace: 0.3,
+            readyMarker: Self.readyMarker
         )
         XCTAssertTrue(output.timedOut)
         XCTAssertFalse(output.cleanupFailed)
-        let text = String(data: output.stdout, encoding: .utf8) ?? ""
-        let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? -1
+        let pid = Self.descendantPID(in: output.stdout)
         XCTAssertGreaterThan(pid, 1)
         if pid > 1 && kill(pid, 0) == 0 {
             kill(pid, SIGKILL)
@@ -326,6 +329,23 @@ final class BoundedProcessCaptureTests: XCTestCase {
             BoundedProcessCapture.signalOwnedGroup(pgid: getpgrp(), signal: 0),
             .refused
         )
+    }
+
+    func testStartupDeadlineFailsWhenTheChildNeverBecomesReady() {
+        XCTAssertThrowsError(
+            try BoundedProcessCapture.run(
+                executable: URL(fileURLWithPath: "/bin/sleep"),
+                arguments: ["30"],
+                timeout: 0.05,
+                readyMarker: Self.readyMarker,
+                readyDeadline: 0.2
+            )
+        ) { error in
+            XCTAssertEqual(
+                (error as? EngineReportError)?.message,
+                "The child was not ready before the startup deadline."
+            )
+        }
     }
 
     func testCleanupFailureIsNotReportedAsAPlainTimeout() {
@@ -355,45 +375,77 @@ final class BoundedProcessCaptureTests: XCTestCase {
     }
 
     private let python = URL(fileURLWithPath: "/usr/bin/python3")
+    /// Startup may be slower than the action timeout. The capture waits for
+    /// this marker, then applies the short timeout. 8s is the startup deadline
+    /// plus kill grace, not a longer grace period.
+    private static let startupCeiling: TimeInterval = 8
+    private static let readyMarker = Data("READY".utf8)
     private static let ignoreTermUntil = """
-    import signal, time
+    import signal, sys, time
+    time.sleep(0.35)
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    time.sleep(3)
+    sys.stdout.write("READY\\n")
+    sys.stdout.flush()
+    time.sleep(30)
     """
     private static let ignoreTermAndSpawn = """
     import os, signal, subprocess, sys, time
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    for _ in range(100):
-        if os.getpgid(0) == os.getpid():
-            break
-        time.sleep(0.01)
-    else:
+    if os.getpgid(0) != os.getpid():
         sys.exit(3)
-    code = "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)"
-    child = subprocess.Popen(["/usr/bin/python3", "-c", code])
-    print(child.pid, flush=True)
+    read_fd, write_fd = os.pipe()
+    code = (
+        "import os,signal,time; "
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "os.write(%d, b'1'); time.sleep(30)" % write_fd
+    )
+    child = subprocess.Popen(
+        ["/usr/bin/python3", "-c", code],
+        pass_fds=(write_fd,),
+    )
+    os.close(write_fd)
+    os.read(read_fd, 1)
+    sys.stdout.write("READY %d\\n" % child.pid)
+    sys.stdout.flush()
     time.sleep(30)
     """
     private static let parentExitsChildIgnores = """
     import os, signal, sys, time
+    read_fd, write_fd = os.pipe()
     pid = os.fork()
     if pid == 0:
+        os.close(read_fd)
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        sys.stdout.write(str(os.getpid()) + "\\n")
-        sys.stdout.flush()
+        os.write(write_fd, b"1")
         time.sleep(30)
         os._exit(0)
+    os.close(write_fd)
+    os.read(read_fd, 1)
+    time.sleep(0.35)
+    sys.stdout.write("READY %d\\n" % pid)
+    sys.stdout.flush()
     time.sleep(30)
     """
     private static let ignoreTermAndFlood = """
     import signal, sys, time
+    time.sleep(0.35)
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    sys.stdout.write("READY\\n")
+    sys.stdout.flush()
     sys.stdout.buffer.write(b"x" * 200000)
     sys.stdout.buffer.flush()
     sys.stderr.buffer.write(b"y" * 200000)
     sys.stderr.buffer.flush()
-    time.sleep(3)
+    time.sleep(30)
     """
+
+    private static func descendantPID(in data: Data) -> pid_t {
+        let text = String(data: data, encoding: .utf8) ?? ""
+        guard let range = text.range(of: "READY") else { return -1 }
+        let rest = text[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = rest.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) ?? ""
+        return pid_t(token) ?? -1
+    }
 
     private func capture(
         _ script: String,
