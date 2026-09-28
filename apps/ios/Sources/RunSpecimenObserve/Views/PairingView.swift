@@ -107,6 +107,11 @@ struct PairingView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(RSTheme.elevated)
                 }
+
+                NavigationLink("Review a carried approval") {
+                    CompanionApprovalPreviewView()
+                }
+                .accessibilityHint("Shows a package a person carried. Does not call Face ID.")
             }
             .padding(20)
             .rsReadableWidth(720)

@@ -2,6 +2,26 @@ import Foundation
 import RunSpecimenCore
 
 let arguments = CommandLine.arguments
+if arguments.last == "preview" {
+    let request = PolicyBoundApprovalRequest(
+        policy: .companion,
+        macID: "preview-mac",
+        workspaceID: "preview-workspace",
+        runID: "preview-run",
+        contractSHA256: String(repeating: "ab", count: 32),
+        inputsSHA256: String(repeating: "cd", count: 32),
+        bounds: "timeout_seconds=1",
+        nonce: String(repeating: "a", count: 64),
+        expiryUnix: 1_700_000_000,
+        companionKeyID: "preview-phone"
+    )
+    for line in BiometricRequestPresentation.lines(for: request) {
+        print(line)
+    }
+    print("Preview only. No Secure Enclave call and no approval was stored.")
+    exit(0)
+}
+
 if let reason = TouchIDDiagnosticGate.refusal(arguments: arguments) {
     FileHandle.standardError.write(Data((reason + "\n").utf8))
     exit(2)

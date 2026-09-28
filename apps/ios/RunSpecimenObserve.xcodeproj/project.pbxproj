@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		551180D3C83D335E1F709136 /* RunSpecimenObserveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABA0291E3FAEE87B278158B4 /* RunSpecimenObserveApp.swift */; };
+		E4A1C0DE0000000000000002 /* CompanionApprovalPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A1C0DE0000000000000001 /* CompanionApprovalPreview.swift */; };
+		E4A1C0DE0000000000000004 /* CompanionApprovalPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A1C0DE0000000000000003 /* CompanionApprovalPreviewView.swift */; };
 		730E00318EC0A16E41EF9194 /* CompanionSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E6180F0A8F12A57871A31B /* CompanionSession.swift */; };
 		77812F6887B1229954BCCB85 /* RSTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD27DE1469C9CD6E323B5794 /* RSTheme.swift */; };
 		9F2551880C5AA912502F6DEC /* CompanionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E77BCF1F7A993119E9CE6A /* CompanionModels.swift */; };
@@ -21,6 +23,8 @@
 
 /* Begin PBXFileReference section */
 		01E77BCF1F7A993119E9CE6A /* CompanionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionModels.swift; sourceTree = "<group>"; };
+		E4A1C0DE0000000000000001 /* CompanionApprovalPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionApprovalPreview.swift; sourceTree = "<group>"; };
+		E4A1C0DE0000000000000003 /* CompanionApprovalPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionApprovalPreviewView.swift; sourceTree = "<group>"; };
 		2AAE24715CE6EF0998517617 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		5F92FB5B28E2DE08D564DC17 /* CompanionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionClient.swift; sourceTree = "<group>"; };
 		A1425E3AAE6F7EBB1944FDA2 /* StatusObserveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusObserveView.swift; sourceTree = "<group>"; };
@@ -55,6 +59,7 @@
 		91BF2C2D7591A23170C8CCF4 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				E4A1C0DE0000000000000003 /* CompanionApprovalPreviewView.swift */,
 				CB26E0BC6AF5E9D6DFB8B630 /* BoundaryBanner.swift */,
 				FEB60909EFBE4E0006990A08 /* PairingView.swift */,
 				2AAE24715CE6EF0998517617 /* RootView.swift */,
@@ -86,6 +91,7 @@
 		C2072A9DD14ECA579AA3B59C /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				E4A1C0DE0000000000000001 /* CompanionApprovalPreview.swift */,
 				01E77BCF1F7A993119E9CE6A /* CompanionModels.swift */,
 			);
 			path = Models;
@@ -168,6 +174,8 @@
 			files = (
 				E9364715807F203BDBC6F1D8 /* AdaptiveLayout.swift in Sources */,
 				ACEFF4AF6F1B84726D53569C /* BoundaryBanner.swift in Sources */,
+				E4A1C0DE0000000000000002 /* CompanionApprovalPreview.swift in Sources */,
+				E4A1C0DE0000000000000004 /* CompanionApprovalPreviewView.swift in Sources */,
 				DF67B86604016910AC073C16 /* CompanionClient.swift in Sources */,
 				9F2551880C5AA912502F6DEC /* CompanionModels.swift in Sources */,
 				730E00318EC0A16E41EF9194 /* CompanionSession.swift in Sources */,

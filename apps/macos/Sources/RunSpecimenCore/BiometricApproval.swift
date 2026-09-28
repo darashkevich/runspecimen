@@ -32,7 +32,7 @@ public enum BiometricApprovalError: Error, Equatable, CustomStringConvertible, S
         case .revoked:
             return "The biometric key is revoked. A new enrollment is required."
         case .unsupportedPolicy:
-            return "Only a local biometric policy can be consumed. Companion and dual approval are not available."
+            return "The signatures do not match the biometric policy. Local, companion, and dual each require their own keys."
         }
     }
 }
@@ -154,7 +154,10 @@ public enum BiometricApprovalStore {
             }
             let consumed = consumedURL(directory, request.nonce)
             let pending = pendingURL(directory, request.nonce)
-            if FileManager.default.fileExists(atPath: consumed.path) || FileManager.default.fileExists(atPath: pending.path) {
+            let policyPending = PolicyBoundApprovalStore.pendingURL(directory, request.nonce)
+            if FileManager.default.fileExists(atPath: consumed.path)
+                || FileManager.default.fileExists(atPath: pending.path)
+                || FileManager.default.fileExists(atPath: policyPending.path) {
                 throw BiometricApprovalError.replay
             }
             let payload = try encode(StoredBiometricApproval(
@@ -237,6 +240,10 @@ public enum BiometricApprovalStore {
 
     private static func pendingURL(_ directory: URL, _ nonce: String) -> URL {
         directory.appendingPathComponent("\(nonce).approval")
+    }
+
+    static func consumedMarker(_ directory: URL, _ nonce: String) -> URL {
+        consumedURL(directory, nonce)
     }
 
     private static func consumedURL(_ directory: URL, _ nonce: String) -> URL {
@@ -704,12 +711,430 @@ public enum LocalSecureEnclaveEnrollment {
     }
 }
 
+/// Who must sign. The policy is inside the signed bytes, so changing it invalidates the signature.
+public enum BiometricApprovalPolicy: String, Equatable, Sendable {
+    case local = "local"
+    case companion = "companion"
+    case dual = "dual"
+}
+
+/// One signature over an RSBA2 request. The public key is the enrolled key, not a key that arrived only with the signature.
+public struct PolicyApprovalSignature: Equatable, Sendable {
+    public var publicKey: Data
+    public var signature: Data
+    public var enrollmentGeneration: Int
+
+    public init(publicKey: Data, signature: Data, enrollmentGeneration: Int) {
+        self.publicKey = publicKey
+        self.signature = signature
+        self.enrollmentGeneration = enrollmentGeneration
+    }
+}
+
+/// RSBA2 request. RSBA1 local bytes stay unchanged.
+///
+/// A companion signature is evidence from the phone. It is not evidence that the person is at the Mac.
+public struct PolicyBoundApprovalRequest: Equatable, Sendable {
+    public static let version = "RSBA2"
+
+    public var policy: BiometricApprovalPolicy
+    public var macID: String
+    public var workspaceID: String
+    public var runID: String
+    public var contractSHA256: String
+    public var inputsSHA256: String
+    public var bounds: String
+    public var nonce: String
+    public var expiryUnix: Int
+    public var localKeyID: String
+    public var companionKeyID: String
+
+    public init(
+        policy: BiometricApprovalPolicy,
+        macID: String,
+        workspaceID: String,
+        runID: String,
+        contractSHA256: String,
+        inputsSHA256: String,
+        bounds: String,
+        nonce: String,
+        expiryUnix: Int,
+        localKeyID: String = "",
+        companionKeyID: String = ""
+    ) {
+        self.policy = policy
+        self.macID = macID
+        self.workspaceID = workspaceID
+        self.runID = runID
+        self.contractSHA256 = contractSHA256
+        self.inputsSHA256 = inputsSHA256
+        self.bounds = bounds
+        self.nonce = nonce
+        self.expiryUnix = expiryUnix
+        self.localKeyID = localKeyID
+        self.companionKeyID = companionKeyID
+    }
+
+    public func canonicalBytes() throws -> Data {
+        var fields: [(String, String)] = [
+            ("policy", policy.rawValue),
+            ("mac_id", macID),
+            ("workspace_id", workspaceID),
+            ("run_id", runID),
+            ("contract_sha256", contractSHA256),
+            ("inputs_sha256", inputsSHA256),
+            ("bounds", bounds),
+            ("nonce", nonce),
+            ("expiry_unix", String(expiryUnix)),
+        ]
+        switch policy {
+        case .local:
+            guard companionKeyID.isEmpty else { throw BiometricApprovalError.unsupportedPolicy }
+            fields.append(("local_key_id", localKeyID))
+        case .companion:
+            guard localKeyID.isEmpty else { throw BiometricApprovalError.unsupportedPolicy }
+            fields.append(("companion_key_id", companionKeyID))
+        case .dual:
+            guard localKeyID != companionKeyID else { throw BiometricApprovalError.unsupportedPolicy }
+            fields.append(("local_key_id", localKeyID))
+            fields.append(("companion_key_id", companionKeyID))
+        }
+        var out = Data(Self.version.utf8)
+        for (name, value) in fields {
+            try Self.validate(name: name, value: value)
+            out.append(Self.lengthPrefixed(name))
+            out.append(Self.lengthPrefixed(value))
+        }
+        return out
+    }
+
+    private static func validate(name: String, value: String) throws {
+        guard !value.isEmpty, !value.contains("\0") else {
+            throw BiometricApprovalError.malformed(name)
+        }
+        if name == "nonce" {
+            let hex = CharacterSet(charactersIn: "0123456789abcdef")
+            guard (32...64).contains(value.count), value.unicodeScalars.allSatisfy({ hex.contains($0) }) else {
+                throw BiometricApprovalError.malformed("nonce")
+            }
+        }
+        if name == "local_key_id" || name == "companion_key_id" {
+            let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+            guard (1...64).contains(value.count), value.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+                throw BiometricApprovalError.malformed(name)
+            }
+        }
+    }
+
+    private static func lengthPrefixed(_ text: String) -> Data {
+        let bytes = Data(text.utf8)
+        var length = UInt32(bytes.count).bigEndian
+        var out = Data(bytes: &length, count: 4)
+        out.append(bytes)
+        return out
+    }
+}
+
+/// Sentences a person must be able to read before any biometric prompt.
+public enum BiometricRequestPresentation {
+    public static func lines(for request: PolicyBoundApprovalRequest) -> [String] {
+        var lines = [
+            "Policy: \(request.policy.rawValue)",
+            "Mac: \(request.macID)",
+            "Workspace: \(request.workspaceID)",
+            "Run: \(request.runID)",
+            "Contract: \(request.contractSHA256)",
+            "Inputs: \(request.inputsSHA256)",
+            "Bounds: \(request.bounds)",
+            "Nonce: \(request.nonce)",
+            "Expiry unix: \(request.expiryUnix)",
+        ]
+        switch request.policy {
+        case .local:
+            lines.append("Local key: \(request.localKeyID)")
+            lines.append("This Mac biometric signature does not show that a phone approved, and it does not show that the person understood the command.")
+        case .companion:
+            lines.append("Companion key: \(request.companionKeyID)")
+            lines.append("This phone signature is not physical presence at the Mac.")
+        case .dual:
+            lines.append("Local key: \(request.localKeyID)")
+            lines.append("Companion key: \(request.companionKeyID)")
+            lines.append("Dual policy needs both signatures over this same request. The phone signature is not physical presence at the Mac.")
+        }
+        return lines
+    }
+}
+
+/// Verifies local, companion, and dual signatures and consumes the nonce once.
+///
+/// This store does not start a run and does not hold the workspace lease.
+/// A software key used in tests is not a Secure Enclave key.
+public enum PolicyBoundApprovalStore {
+    public static func submit(
+        request: PolicyBoundApprovalRequest,
+        local: PolicyApprovalSignature?,
+        companion: PolicyApprovalSignature?,
+        pinnedLocalKey: Data?,
+        pinnedCompanionKey: Data?,
+        directory: URL
+    ) throws {
+        let canonical = try request.canonicalBytes()
+        let localSignature = try requiredSignature(
+            request.policy == .companion ? nil : local,
+            pinned: pinnedLocalKey,
+            canonical: canonical,
+            required: request.policy != .companion
+        )
+        let companionSignature = try requiredSignature(
+            request.policy == .local ? nil : companion,
+            pinned: pinnedCompanionKey,
+            canonical: canonical,
+            required: request.policy != .local
+        )
+        if request.policy == .local, companion != nil { throw BiometricApprovalError.unsupportedPolicy }
+        if request.policy == .companion, local != nil { throw BiometricApprovalError.unsupportedPolicy }
+        if request.policy == .dual, let localSignature, let companionSignature, localSignature.publicKey == companionSignature.publicKey {
+            throw BiometricApprovalError.unsupportedPolicy
+        }
+        try withLock(directory) {
+            guard request.expiryUnix > BiometricApprovalStore.clock() else {
+                throw BiometricApprovalError.expired
+            }
+            let consumed = BiometricApprovalStore.consumedMarker(directory, request.nonce)
+            let legacy = directory.appendingPathComponent("\(request.nonce).approval")
+            let pending = pendingURL(directory, request.nonce)
+            if FileManager.default.fileExists(atPath: consumed.path)
+                || FileManager.default.fileExists(atPath: legacy.path)
+                || FileManager.default.fileExists(atPath: pending.path) {
+                throw BiometricApprovalError.replay
+            }
+            let payload = try encode(
+                canonical: canonical,
+                local: localSignature,
+                companion: companionSignature
+            )
+            try payload.write(to: pending, options: .atomic)
+        }
+    }
+
+    public static func consume(
+        request: PolicyBoundApprovalRequest,
+        pinnedLocalKey: Data?,
+        pinnedCompanionKey: Data?,
+        localGeneration: Int?,
+        companionGeneration: Int?,
+        directory: URL
+    ) throws {
+        let canonical = try request.canonicalBytes()
+        try withLock(directory) {
+            let consumed = BiometricApprovalStore.consumedMarker(directory, request.nonce)
+            if FileManager.default.fileExists(atPath: consumed.path) {
+                throw BiometricApprovalError.replay
+            }
+            let stored: StoredPolicyApproval
+            do {
+                stored = try decode(Data(contentsOf: pendingURL(directory, request.nonce)))
+            } catch let error as BiometricApprovalError {
+                throw error
+            } catch {
+                throw BiometricApprovalError.tampered
+            }
+            guard stored.canonical == canonical else {
+                throw BiometricApprovalError.mismatch
+            }
+            try match(stored.local, pinned: pinnedLocalKey, generation: localGeneration, canonical: canonical, required: request.policy != .companion)
+            try match(stored.companion, pinned: pinnedCompanionKey, generation: companionGeneration, canonical: canonical, required: request.policy != .local)
+            BiometricApprovalStore.beforeConsumptionDecision?()
+            if request.expiryUnix <= BiometricApprovalStore.clock() {
+                try Data("expired\n".utf8).write(to: consumed, options: .atomic)
+                throw BiometricApprovalError.expired
+            }
+            try Data("consumed\n".utf8).write(to: consumed, options: .atomic)
+            try? FileManager.default.removeItem(at: pendingURL(directory, request.nonce))
+        }
+    }
+
+    /// Accepts a file a person carried from the phone. It does not open a socket.
+    public static func importUserMediatedPackage(
+        _ data: Data,
+        pinnedLocalKey: Data?,
+        pinnedCompanionKey: Data?,
+        directory: URL
+    ) throws -> PolicyBoundApprovalRequest {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            throw BiometricApprovalError.malformed("package")
+        }
+        if object["present_at_mac"] != nil {
+            throw BiometricApprovalError.malformed("presence")
+        }
+        guard let policy = object["policy"].flatMap(BiometricApprovalPolicy.init(rawValue:)) else {
+            throw BiometricApprovalError.unsupportedPolicy
+        }
+        let request = PolicyBoundApprovalRequest(
+            policy: policy,
+            macID: object["mac_id"] ?? "",
+            workspaceID: object["workspace_id"] ?? "",
+            runID: object["run_id"] ?? "",
+            contractSHA256: object["contract_sha256"] ?? "",
+            inputsSHA256: object["inputs_sha256"] ?? "",
+            bounds: object["bounds"] ?? "",
+            nonce: object["nonce"] ?? "",
+            expiryUnix: Int(object["expiry_unix"] ?? "") ?? 0,
+            localKeyID: object["local_key_id"] ?? "",
+            companionKeyID: object["companion_key_id"] ?? ""
+        )
+        let local = signature(object, prefix: "local")
+        let companion = signature(object, prefix: "companion")
+        try submit(
+            request: request,
+            local: local,
+            companion: companion,
+            pinnedLocalKey: pinnedLocalKey,
+            pinnedCompanionKey: pinnedCompanionKey,
+            directory: directory
+        )
+        return request
+    }
+
+    public static func package(
+        request: PolicyBoundApprovalRequest,
+        local: PolicyApprovalSignature?,
+        companion: PolicyApprovalSignature?
+    ) throws -> Data {
+        var object: [String: String] = [
+            "bounds": request.bounds,
+            "contract_sha256": request.contractSHA256,
+            "expiry_unix": String(request.expiryUnix),
+            "inputs_sha256": request.inputsSHA256,
+            "mac_id": request.macID,
+            "nonce": request.nonce,
+            "policy": request.policy.rawValue,
+            "run_id": request.runID,
+            "version": PolicyBoundApprovalRequest.version,
+            "workspace_id": request.workspaceID,
+        ]
+        if !request.localKeyID.isEmpty { object["local_key_id"] = request.localKeyID }
+        if !request.companionKeyID.isEmpty { object["companion_key_id"] = request.companionKeyID }
+        if let local {
+            object["local_generation"] = String(local.enrollmentGeneration)
+            object["local_public_key_b64"] = local.publicKey.base64EncodedString()
+            object["local_signature_b64"] = local.signature.base64EncodedString()
+        }
+        if let companion {
+            object["companion_generation"] = String(companion.enrollmentGeneration)
+            object["companion_public_key_b64"] = companion.publicKey.base64EncodedString()
+            object["companion_signature_b64"] = companion.signature.base64EncodedString()
+        }
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    static func pendingURL(_ directory: URL, _ nonce: String) -> URL {
+        directory.appendingPathComponent("\(nonce).policy-approval")
+    }
+
+    private static func requiredSignature(
+        _ signature: PolicyApprovalSignature?,
+        pinned: Data?,
+        canonical: Data,
+        required: Bool
+    ) throws -> PolicyApprovalSignature? {
+        guard required else { return nil }
+        guard let signature, let pinned, signature.publicKey == pinned,
+              BiometricApprovalStore.verify(canonical: canonical, signature: signature.signature, publicKey: pinned) else {
+            throw BiometricApprovalError.tampered
+        }
+        guard signature.enrollmentGeneration > 0 else {
+            throw BiometricApprovalError.malformed("enrollment")
+        }
+        return signature
+    }
+
+    private static func match(
+        _ stored: PolicyApprovalSignature?,
+        pinned: Data?,
+        generation: Int?,
+        canonical: Data,
+        required: Bool
+    ) throws {
+        guard required else {
+            if stored != nil { throw BiometricApprovalError.unsupportedPolicy }
+            return
+        }
+        guard let stored, let pinned, stored.publicKey == pinned,
+              BiometricApprovalStore.verify(canonical: canonical, signature: stored.signature, publicKey: pinned) else {
+            throw BiometricApprovalError.tampered
+        }
+        if let generation, stored.enrollmentGeneration != generation {
+            throw BiometricApprovalError.revoked
+        }
+    }
+
+    private static func signature(_ object: [String: String], prefix: String) -> PolicyApprovalSignature? {
+        guard let publicKey = object["\(prefix)_public_key_b64"].flatMap({ Data(base64Encoded: $0) }),
+              let signature = object["\(prefix)_signature_b64"].flatMap({ Data(base64Encoded: $0) }),
+              let generation = object["\(prefix)_generation"].flatMap(Int.init),
+              generation > 0 else {
+            return nil
+        }
+        return PolicyApprovalSignature(publicKey: publicKey, signature: signature, enrollmentGeneration: generation)
+    }
+
+    private static func encode(
+        canonical: Data,
+        local: PolicyApprovalSignature?,
+        companion: PolicyApprovalSignature?
+    ) throws -> Data {
+        var object: [String: String] = [
+            "canonical_b64": canonical.base64EncodedString(),
+        ]
+        if let local {
+            object["local_generation"] = String(local.enrollmentGeneration)
+            object["local_public_key_b64"] = local.publicKey.base64EncodedString()
+            object["local_signature_b64"] = local.signature.base64EncodedString()
+        }
+        if let companion {
+            object["companion_generation"] = String(companion.enrollmentGeneration)
+            object["companion_public_key_b64"] = companion.publicKey.base64EncodedString()
+            object["companion_signature_b64"] = companion.signature.base64EncodedString()
+        }
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    private static func decode(_ data: Data) throws -> StoredPolicyApproval {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: String],
+              let canonical = object["canonical_b64"].flatMap({ Data(base64Encoded: $0) }) else {
+            throw BiometricApprovalError.tampered
+        }
+        return StoredPolicyApproval(canonical: canonical, local: signature(object, prefix: "local"), companion: signature(object, prefix: "companion"))
+    }
+
+    private static func withLock<T>(_ directory: URL, _ body: () throws -> T) throws -> T {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let lockURL = directory.appendingPathComponent("consume.lock")
+        let fd = open(lockURL.path, O_CREAT | O_RDWR, 0o600)
+        guard fd >= 0 else { throw BiometricApprovalError.malformed("lock") }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX) == 0 else { throw BiometricApprovalError.malformed("lock") }
+        defer { _ = flock(fd, LOCK_UN) }
+        return try body()
+    }
+}
+
+private struct StoredPolicyApproval {
+    var canonical: Data
+    var local: PolicyApprovalSignature?
+    var companion: PolicyApprovalSignature?
+}
+
 /// Argument gate for the development Touch ID diagnostic.
 ///
 /// A refusal returns before any Secure Enclave call. Passing the gate is not
 /// authentication and does not approve a run.
 public enum TouchIDDiagnosticGate {
     public static func refusal(arguments: [String]) -> String? {
+        if arguments.last == "preview" {
+            return nil
+        }
         if !arguments.contains("--human-invoked") {
             return "Refusing to call Secure Enclave. Re-run only when you will answer the Touch ID prompt yourself, and pass --human-invoked."
         }
@@ -725,8 +1150,14 @@ public enum TouchIDDiagnosticGate {
         if !keyID.hasPrefix("diag-") || keyID.count > 64 {
             return "The key id must start with diag- and stay within 64 characters."
         }
-        guard let command = arguments.last, ["enroll", "sign", "reload", "cancel", "revoke"].contains(command) else {
-            return "Pass one command: enroll, sign, reload, cancel, or revoke."
+        guard let command = arguments.last else {
+            return "Pass one command: preview, enroll, sign, reload, cancel, or revoke."
+        }
+        if command == "preview" {
+            return nil
+        }
+        guard ["enroll", "sign", "reload", "cancel", "revoke"].contains(command) else {
+            return "Pass one command: preview, enroll, sign, reload, cancel, or revoke."
         }
         _ = command
         return nil
