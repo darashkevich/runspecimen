@@ -337,6 +337,44 @@ public enum BiometricEnrollmentDirectory {
         try data.write(to: recordURL(directory, record.keyID), options: .atomic)
     }
 
+    /// Stores the public key from a file a person carried.
+    ///
+    /// The file's backend and provenance strings are ignored. A label of
+    /// `secure-enclave` does not make the key production enrollment.
+    public static func pinCarriedCompanion(_ data: Data, directory: URL) throws -> BiometricEnrollmentRecord {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            throw BiometricApprovalError.malformed("enrollment")
+        }
+        guard let keyID = object["key_id"] else {
+            throw BiometricApprovalError.malformed("enrollment")
+        }
+        try validateKeyID(keyID)
+        if let role = object["role"], role != EnrollmentIdentity.roleCompanion {
+            throw BiometricApprovalError.unsupportedPolicy
+        }
+        guard let publicKey = object["public_key_x963_b64"].flatMap({ Data(base64Encoded: $0) }),
+              publicKey.count == 65 else {
+            throw BiometricApprovalError.malformed("public_key")
+        }
+        guard let generationText = object["generation"],
+              let generation = Int(generationText),
+              generation > 0,
+              String(generation) == generationText else {
+            throw BiometricApprovalError.malformed("enrollment")
+        }
+        let record = BiometricEnrollmentRecord(
+            keyID: keyID,
+            publicKey: publicKey,
+            state: BiometricEnrollmentRecord.active,
+            backend: EnrollmentIdentity.backendUnverified,
+            role: EnrollmentIdentity.roleCompanion,
+            provenance: EnrollmentIdentity.provenanceCarriedPin,
+            generation: generation
+        )
+        try save(record, directory: directory)
+        return record
+    }
+
     public static func save(_ record: BiometricEnrollmentRecord, directoryFD: Int32) throws {
         try validateKeyID(record.keyID)
         let data = try JSONSerialization.data(withJSONObject: json(record), options: [.sortedKeys])
@@ -344,12 +382,14 @@ public enum BiometricEnrollmentDirectory {
         let finalName = "\(record.keyID).enrollment"
         let fd = openat(directoryFD, temporary, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw BiometricApprovalError.malformed("enrollment") }
-        let wrote = data.withUnsafeBytes { raw -> Int in
-            guard let base = raw.baseAddress else { return -1 }
-            return Darwin.write(fd, base, raw.count)
+        do {
+            try DescriptorIO.writeAll(fd, data)
+        } catch {
+            close(fd)
+            _ = unlinkat(directoryFD, temporary, 0)
+            throw error
         }
         close(fd)
-        guard wrote == data.count else { throw BiometricApprovalError.malformed("enrollment") }
         if renameat(directoryFD, temporary, directoryFD, finalName) != 0 {
             _ = unlinkat(directoryFD, temporary, 0)
             throw BiometricApprovalError.malformed("enrollment")
@@ -1125,6 +1165,31 @@ public enum PolicyBoundApprovalStore {
         }
     }
 
+    /// Asks a consume function whether a request would be allowed, and does not start a run.
+    ///
+    /// The app and the CLI do not call this. A test double can stand in for consume.
+    public struct ExecutionEvaluation: Equatable, Sendable {
+        public var started: Bool
+        public var consumeSucceeded: Bool
+        public var reason: String
+    }
+
+    public static func evaluateExecution(
+        request: PolicyBoundApprovalRequest,
+        enrollmentDirectory: URL,
+        approvalDirectory: URL,
+        consume: (PolicyBoundApprovalRequest, URL, URL) throws -> Void
+    ) -> ExecutionEvaluation {
+        do {
+            try consume(request, enrollmentDirectory, approvalDirectory)
+            return ExecutionEvaluation(started: false, consumeSucceeded: true, reason: "consumed")
+        } catch let error as BiometricApprovalError {
+            return ExecutionEvaluation(started: false, consumeSucceeded: false, reason: "\(error)")
+        } catch {
+            return ExecutionEvaluation(started: false, consumeSucceeded: false, reason: "malformed")
+        }
+    }
+
     /// Accepts a file a person carried from the phone. It does not open a socket.
     public static func importUserMediatedPackage(
         _ data: Data,
@@ -1359,6 +1424,65 @@ private struct StoredPolicyApproval {
 ///
 /// A refusal returns before any Secure Enclave call. Passing the gate is not
 /// authentication and does not approve a run.
+enum DescriptorIO {
+    static var writeChunk: (Int32, UnsafeRawPointer, Int) -> Int = { fd, buffer, count in
+        Darwin.write(fd, buffer, count)
+    }
+    static var readChunk: (Int32, UnsafeMutableRawPointer, Int) -> Int = { fd, buffer, count in
+        Darwin.read(fd, buffer, count)
+    }
+    static var syncFile: (Int32) -> Int32 = { fd in
+        fsync(fd)
+    }
+
+    static func writeAll(_ fd: Int32, _ data: Data) throws {
+        if !data.isEmpty {
+            try data.withUnsafeBytes { raw in
+                guard let base = raw.baseAddress else {
+                    throw BiometricApprovalError.malformed("directory")
+                }
+                var offset = 0
+                while offset < raw.count {
+                    let wrote = writeChunk(fd, base.advanced(by: offset), raw.count - offset)
+                    if wrote < 0 {
+                        if errno == EINTR { continue }
+                        throw BiometricApprovalError.malformed("directory")
+                    }
+                    if wrote == 0 {
+                        throw BiometricApprovalError.malformed("directory")
+                    }
+                    offset += wrote
+                }
+            }
+        }
+        if syncFile(fd) != 0 {
+            throw BiometricApprovalError.malformed("directory")
+        }
+    }
+
+    static func readAll(_ fd: Int32, count expected: Int) throws -> Data {
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while data.count < expected {
+            let remaining = expected - data.count
+            let count = buffer.withUnsafeMutableBytes { raw -> Int in
+                guard let base = raw.baseAddress else { return -1 }
+                return readChunk(fd, base, min(remaining, raw.count))
+            }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw BiometricApprovalError.malformed("directory")
+            }
+            if count == 0 { break }
+            data.append(contentsOf: buffer.prefix(count))
+        }
+        guard data.count == expected else {
+            throw BiometricApprovalError.malformed("directory")
+        }
+        return data
+    }
+}
+
 public enum TouchIDDiagnosticGate {
     public static func refusal(arguments: [String]) -> String? {
         if arguments.last == "preview" {
@@ -1442,12 +1566,14 @@ public enum TouchIDDiagnosticGate {
         try validateComponent(name)
         let fd = openat(directoryFD, name, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw BiometricApprovalError.malformed("directory") }
-        defer { close(fd) }
-        let wrote = data.withUnsafeBytes { raw -> Int in
-            guard let base = raw.baseAddress else { return -1 }
-            return Darwin.write(fd, base, raw.count)
+        do {
+            try DescriptorIO.writeAll(fd, data)
+            close(fd)
+        } catch {
+            close(fd)
+            _ = unlinkat(directoryFD, name, 0)
+            throw error
         }
-        guard wrote == data.count else { throw BiometricApprovalError.malformed("directory") }
     }
 
     static func readExclusive(directoryFD: Int32, name: String) throws -> Data {
@@ -1455,15 +1581,14 @@ public enum TouchIDDiagnosticGate {
         let fd = openat(directoryFD, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { throw BiometricApprovalError.malformed("directory") }
         defer { close(fd) }
-        var out = Data()
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        while true {
-            let count = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
-            if count == 0 { break }
-            if count < 0 { throw BiometricApprovalError.malformed("directory") }
-            out.append(buffer, count: count)
+        var st = stat()
+        guard fstat(fd, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else {
+            throw BiometricApprovalError.malformed("directory")
         }
-        return out
+        guard st.st_size >= 0, st.st_size <= 65_536 else {
+            throw BiometricApprovalError.malformed("directory")
+        }
+        return try DescriptorIO.readAll(fd, count: Int(st.st_size))
     }
 
     public static func openedPath(of fd: Int32) -> String? {

@@ -699,6 +699,58 @@ final class BiometricApprovalTests: XCTestCase {
             keyID: "local-test"
         )
     }
+
+    func testInterruptedOrPartialWritesLeaveNoFile() throws {
+        let owned = TouchIDDiagnosticGate.rootPath + "/partial-" + UUID().uuidString
+        let fd = try TouchIDDiagnosticGate.openOwnedDirectory(owned)
+        defer {
+            close(fd)
+            DescriptorIO.writeChunk = { Darwin.write($0, $1, $2) }
+            DescriptorIO.readChunk = { Darwin.read($0, $1, $2) }
+            DescriptorIO.syncFile = { fsync($0) }
+            try? FileManager.default.removeItem(atPath: owned)
+        }
+        var attempts = 0
+        DescriptorIO.writeChunk = { file, buffer, count in
+            attempts += 1
+            if attempts == 1 {
+                errno = EINTR
+                return -1
+            }
+            return Darwin.write(file, buffer, count)
+        }
+        try TouchIDDiagnosticGate.writeExclusive(directoryFD: fd, name: "retried", data: Data("abcdef".utf8))
+        attempts = 0
+        DescriptorIO.writeChunk = { file, buffer, count in
+            attempts += 1
+            if attempts == 1 {
+                _ = Darwin.write(file, buffer, 1)
+                errno = EIO
+                return -1
+            }
+            return Darwin.write(file, buffer, count)
+        }
+        XCTAssertThrowsError(try TouchIDDiagnosticGate.writeExclusive(directoryFD: fd, name: "partial", data: Data("abcdef".utf8)))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: owned + "/partial"))
+        DescriptorIO.writeChunk = { Darwin.write($0, $1, $2) }
+        DescriptorIO.syncFile = { _ in
+            errno = EIO
+            return -1
+        }
+        XCTAssertThrowsError(try TouchIDDiagnosticGate.writeExclusive(directoryFD: fd, name: "unsynced", data: Data("abcdef".utf8)))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: owned + "/unsynced"))
+        DescriptorIO.syncFile = { fsync($0) }
+        var reads = 0
+        DescriptorIO.readChunk = { file, buffer, count in
+            reads += 1
+            if reads == 1 {
+                errno = EINTR
+                return -1
+            }
+            return Darwin.read(file, buffer, count)
+        }
+        XCTAssertEqual(try TouchIDDiagnosticGate.readExclusive(directoryFD: fd, name: "retried"), Data("abcdef".utf8))
+    }
 }
 
 final class PolicyBoundApprovalTests: XCTestCase {
@@ -1180,6 +1232,117 @@ final class PolicyBoundApprovalTests: XCTestCase {
         }
         XCTAssertFalse(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
         XCTAssertFalse(BiometricApprovalStore.isConsumed(nonce: dual.nonce, directory: directory))
+    }
+
+    func testCarriedPinIgnoresTheFilesSecureEnclaveLabel() throws {
+        let phone = P256.Signing.PrivateKey()
+        let carried: [String: String] = [
+            "backend": EnrollmentIdentity.backendSecureEnclave,
+            "provenance": EnrollmentIdentity.provenanceProduction,
+            "role": EnrollmentIdentity.roleCompanion,
+            "state": "active",
+            "key_id": "phone-key",
+            "generation": "2",
+            "public_key_x963_b64": phone.publicKey.x963Representation.base64EncodedString(),
+        ]
+        let record = try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            try JSONSerialization.data(withJSONObject: carried),
+            directory: directory
+        )
+        XCTAssertEqual(record.backend, EnrollmentIdentity.backendUnverified)
+        XCTAssertEqual(record.provenance, EnrollmentIdentity.provenanceCarriedPin)
+        XCTAssertEqual(record.generation, 2)
+        XCTAssertFalse(EnrollmentIdentity.allowsExecution(
+            role: record.role,
+            backend: record.backend,
+            provenance: record.provenance,
+            state: record.state
+        ))
+        var swapped = carried
+        swapped["role"] = EnrollmentIdentity.roleLocal
+        XCTAssertThrowsError(try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            try JSONSerialization.data(withJSONObject: swapped),
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .unsupportedPolicy)
+        }
+    }
+
+    func testPostAuthenticationRejectsAChangedOrExpiredEnrollment() throws {
+        let key = Data(repeating: 4, count: 65)
+        let before = CompanionEnrollmentSnapshot(
+            keyID: "phone-key",
+            publicKey: key,
+            role: EnrollmentIdentity.roleCompanion,
+            backend: EnrollmentIdentity.backendSecureEnclave,
+            provenance: EnrollmentIdentity.provenanceProduction,
+            state: EnrollmentIdentity.stateActive,
+            generation: 1
+        )
+        func reject(_ mutate: (inout CompanionEnrollmentSnapshot) -> Void, now: Int = 1_000) {
+            var after = before
+            mutate(&after)
+            XCTAssertThrowsError(try CompanionPostAuthentication.accept(
+                before: before,
+                after: after,
+                expiryUnix: 2_000,
+                now: now
+            ))
+        }
+        reject { $0.state = BiometricEnrollmentRecord.revoked; $0.generation = 2 }
+        reject { $0.generation = 2 }
+        reject { $0.publicKey = Data(repeating: 5, count: 65) }
+        reject { $0.backend = EnrollmentIdentity.backendSoftwareTest; $0.provenance = EnrollmentIdentity.provenanceSoftwareTest }
+        reject { $0.provenance = EnrollmentIdentity.provenanceDiagnostic }
+        reject({ _ in }, now: 2_000)
+        XCTAssertNoThrow(try CompanionPostAuthentication.accept(
+            before: before,
+            after: before,
+            expiryUnix: 2_000,
+            now: 1_000
+        ))
+    }
+
+    func testExecutionEvaluationNeverStartsARun() throws {
+        let request = sample(policy: .companion, companionKeyID: "phone-key")
+        var calls = 0
+        let refused = PolicyBoundApprovalStore.evaluateExecution(
+            request: request,
+            enrollmentDirectory: directory,
+            approvalDirectory: directory
+        ) { _, _, _ in
+            calls += 1
+            throw BiometricApprovalError.unsupportedPolicy
+        }
+        XCTAssertEqual(calls, 1)
+        XCTAssertFalse(refused.started)
+        XCTAssertFalse(refused.consumeSucceeded)
+        XCTAssertEqual(refused.reason, BiometricApprovalError.unsupportedPolicy.description)
+        let accepted = PolicyBoundApprovalStore.evaluateExecution(
+            request: request,
+            enrollmentDirectory: directory,
+            approvalDirectory: directory
+        ) { _, _, _ in
+            calls += 1
+        }
+        XCTAssertEqual(calls, 2)
+        XCTAssertFalse(accepted.started)
+        XCTAssertTrue(accepted.consumeSucceeded)
+        XCTAssertEqual(accepted.reason, "consumed")
+        let app = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/RunSpecimenApp")
+        guard let enumerator = FileManager.default.enumerator(at: app, includingPropertiesForKeys: nil) else {
+            XCTFail("missing app sources")
+            return
+        }
+        for case let file as URL in enumerator where file.pathExtension == "swift" {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            XCTAssertFalse(text.contains("evaluateExecution"), file.lastPathComponent)
+            XCTAssertFalse(text.contains("consumeForExecution"), file.lastPathComponent)
+        }
     }
 
     private func submit(

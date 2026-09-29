@@ -63,15 +63,46 @@ struct AboutView: View {
 
             HStack {
                 Spacer()
-                Button("Close") {
+                CloseAboutControl {
                     dismiss()
                 }
-                .keyboardShortcut(.cancelAction)
-                .accessibilityLabel("Close About")
             }
         }
         .padding(24)
         .frame(width: 440)
+    }
+}
+
+/// AppKit button so Accessibility sees the title. The SwiftUI button did not.
+private struct CloseAboutControl: NSViewRepresentable {
+    var action: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(
+            title: "Close About",
+            target: context.coordinator,
+            action: #selector(Coordinator.press)
+        )
+        button.bezelStyle = .rounded
+        button.setAccessibilityLabel("Close About")
+        button.setAccessibilityIdentifier("Close About")
+        button.keyEquivalent = "\u{1b}"
+        return button
+    }
+
+    func updateNSView(_ button: NSButton, context: Context) {
+        context.coordinator.action = action
+        button.title = "Close About"
+    }
+
+    final class Coordinator: NSObject {
+        var action: () -> Void
+        init(action: @escaping () -> Void) { self.action = action }
+        @objc func press() { action() }
     }
 }
 

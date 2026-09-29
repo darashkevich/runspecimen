@@ -30,6 +30,10 @@ struct WorkflowSheet: View {
     @State private var rationale = ""
     @State private var classification = "human"
     @State private var localError: String?
+    @State private var pairingText = ""
+    @State private var packageText = ""
+    @State private var expectedPolicy = "package"
+    @State private var carriedStatus = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -56,6 +60,7 @@ struct WorkflowSheet: View {
                     decisionSection
                     usageSection
                     receiptSection
+                    carriedSection
                     resultSection
                 }
                 .padding(16)
@@ -489,6 +494,113 @@ struct WorkflowSheet: View {
             detail: "Imports \(export.lastPathComponent). Repeating the same file does not double-count. Cancel imports nothing.",
             arguments: args
         ))
+    }
+
+    private var carriedSection: some View {
+        group("Carried approval") {
+            Text("The package policy is imported as written. A different choice does not switch it, and nothing here starts a run.")
+                .font(.system(size: 12))
+                .foregroundStyle(RSTheme.muted)
+            Text("Carried public key")
+                .font(.system(size: 12))
+                .foregroundStyle(RSTheme.muted)
+            TextEditor(text: $pairingText)
+                .font(RSTheme.monoSmall)
+                .frame(minHeight: 48)
+                .accessibilityLabel("Carried public key")
+            Button("Pin carried public key") { pinCarriedKey() }
+                .disabled(pairingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Text("Approval package")
+                .font(.system(size: 12))
+                .foregroundStyle(RSTheme.muted)
+            TextEditor(text: $packageText)
+                .font(RSTheme.monoSmall)
+                .frame(minHeight: 48)
+                .accessibilityLabel("Approval package")
+            Picker("Expected policy", selection: $expectedPolicy) {
+                Text("Policy in the package").tag("package")
+                Text("Local").tag("local")
+                Text("Companion").tag("companion")
+                Text("Dual").tag("dual")
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Expected policy")
+            HStack {
+                Button("Import this package") { importCarriedPackage() }
+                    .disabled(packageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Export package text…") { exportCarriedPackage() }
+                    .disabled(packageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if !carriedStatus.isEmpty {
+                Text(carriedStatus)
+                    .font(.system(size: 12))
+                    .foregroundStyle(RSTheme.ink)
+                    .accessibilityLabel("Carried approval status")
+                    .accessibilityValue(carriedStatus)
+            }
+        }
+    }
+
+    private var carriedDirectory: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("RunSpecimen/carried-approvals", isDirectory: true)
+    }
+
+    private func pinCarriedKey() {
+        guard let data = pairingText.data(using: .utf8) else { return }
+        do {
+            let record = try BiometricEnrollmentDirectory.pinCarriedCompanion(data, directory: carriedDirectory)
+            carriedStatus = "Pinned \(record.keyID) as an unverified carried key. The file's Secure Enclave label was not accepted."
+        } catch {
+            carriedStatus = "The carried key was not pinned."
+        }
+    }
+
+    private func importCarriedPackage() {
+        guard let data = packageText.data(using: .utf8) else { return }
+        let fields: RSBA2Package.Fields
+        do {
+            fields = try RSBA2Package.parse(data)
+        } catch {
+            carriedStatus = "The package was not imported. It is malformed."
+            return
+        }
+        if expectedPolicy != "package", expectedPolicy != fields.policy {
+            carriedStatus = "The package policy is \(fields.policy). This control will not switch it to \(expectedPolicy)."
+            return
+        }
+        let localPin = pinnedKey(fields.localKeyID)
+        let companionPin = pinnedKey(fields.companionKeyID)
+        do {
+            let request = try PolicyBoundApprovalStore.importUserMediatedPackage(
+                data,
+                pinnedLocalKey: localPin,
+                pinnedCompanionKey: companionPin,
+                directory: carriedDirectory
+            )
+            carriedStatus = "Imported policy \(request.policy.rawValue). This did not start a run."
+        } catch {
+            carriedStatus = "The package was not imported. No other policy was tried."
+        }
+    }
+
+    private func pinnedKey(_ keyID: String) -> Data? {
+        guard !keyID.isEmpty else { return nil }
+        return try? BiometricEnrollmentDirectory.load(keyID: keyID, directory: carriedDirectory).publicKey
+    }
+
+    private func exportCarriedPackage() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "approval.json"
+        panel.message = "Export the package text. This does not send it."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try Data(packageText.utf8).write(to: url, options: .atomic)
+            carriedStatus = "Exported the package text. This did not start a run."
+        } catch {
+            carriedStatus = "The package text was not exported."
+        }
     }
 
     @ViewBuilder

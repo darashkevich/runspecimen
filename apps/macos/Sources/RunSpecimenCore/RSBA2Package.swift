@@ -10,10 +10,13 @@ public enum EnrollmentIdentity {
     public static let backendSecureEnclave = "secure-enclave"
     public static let backendSoftwareTest = "software-test-double"
     public static let backendSoftwareDevelopment = "software-development"
+    public static let backendUnverified = "unverified"
     public static let provenanceProduction = "production"
     public static let provenanceSoftwareTest = "software-test"
     public static let provenanceDevelopment = "software-development"
     public static let provenanceDiagnostic = "diagnostic"
+    /// A public key a person carried. The file's backend label is not copied.
+    public static let provenanceCarriedPin = "carried-pin"
     public static let stateActive = "active"
 
     public static func allowsExecution(role: String, backend: String, provenance: String, state: String) -> Bool {
@@ -40,7 +43,67 @@ public enum EnrollmentIdentity {
         guard role == roleLocal || role == roleCompanion else { return false }
         if backend == backendSecureEnclave && provenance == provenanceDiagnostic { return true }
         if backend == backendSoftwareDevelopment && provenance == provenanceDevelopment { return true }
+        if backend == backendUnverified && provenance == provenanceCarriedPin { return true }
         return false
+    }
+}
+
+/// Enrollment facts checked again after a biometric wait.
+///
+/// Passing this check is not evidence that the person understood the command.
+/// It only says the stored key is still the one that was about to sign.
+public struct CompanionEnrollmentSnapshot: Equatable, Sendable {
+    public var keyID: String
+    public var publicKey: Data
+    public var role: String
+    public var backend: String
+    public var provenance: String
+    public var state: String
+    public var generation: Int
+
+    public init(
+        keyID: String,
+        publicKey: Data,
+        role: String,
+        backend: String,
+        provenance: String,
+        state: String,
+        generation: Int
+    ) {
+        self.keyID = keyID
+        self.publicKey = publicKey
+        self.role = role
+        self.backend = backend
+        self.provenance = provenance
+        self.state = state
+        self.generation = generation
+    }
+}
+
+public enum CompanionPostAuthentication {
+    /// Discards a signature when the live record changed during the wait, or the request expired.
+    public static func accept(
+        before: CompanionEnrollmentSnapshot,
+        after: CompanionEnrollmentSnapshot,
+        expiryUnix: Int,
+        now: Int
+    ) throws {
+        guard after.keyID == before.keyID,
+              after.publicKey == before.publicKey,
+              after.role == before.role,
+              after.generation == before.generation,
+              after.state == EnrollmentIdentity.stateActive,
+              EnrollmentIdentity.allowsExecution(
+                role: after.role,
+                backend: after.backend,
+                provenance: after.provenance,
+                state: after.state
+              ) else {
+            throw RSBA2Package.ParseFailure.malformed("enrollment")
+        }
+        guard expiryUnix > now else {
+            throw RSBA2Package.ParseFailure.malformed("expiry_unix")
+        }
     }
 }
 

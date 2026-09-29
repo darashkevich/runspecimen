@@ -76,3 +76,28 @@ App path unchanged. Authority Apple Development: jahorka@gmail.com (PK6W7JVY6D).
 The process was quit by its QA binary pid. The shared container was restored from the backup taken before launch. `/Applications/RunSpecimen.app` mtime stayed 2026-09-26 13:56:03.
 
 Scan of this QA bundle: `TrustEvaluationAgent` absent, `com.apple.security.network.server` absent, `_lzma` still present in the bundled CPython `Python` binary. That last string is the original private-API rejection’s library name inside the frozen interpreter. This pass did not submit the app and did not treat the scan as a Store clearance.
+
+## Post-authentication and carried pin, 2026-09-29
+
+Swift on this tree: 98 tests, 1 skipped, 0 failures. The skip is `testSecureEnclaveHumanHarnessIsNotRunByAutomation`. iOS ObserveSchemaTests on the iPhone 17 simulator: 6 passed. They call `automationRefused()` and the file-only revocation and stale-display helpers. They do not call Secure Enclave. `preview` exited 0. `enroll` without `--human-invoked` exited 2.
+
+A carried pairing file that says `secure-enclave` / `production` is stored as `unverified` / `carried-pin`. `consumeForExecution` is still not called by a run. `evaluateExecution` records a consume double and leaves `started` false. Partial and interrupted diagnostic writes remove the new file.
+
+The development app was rebuilt at `/private/tmp/rs-local-qa-next/DerivedData/Build/Products/Release/RunSpecimen.app`. Version 0.1.5 (13). Apple Development: jahorka@gmail.com (PK6W7JVY6D). Sandbox true. `network.server` absent. Bundled CLI `runspecimen 0.2.0rc15`.
+
+GUI on that binary, without typing an approval phrase:
+
+- Reviewer demo showed Doctor OK, Python 3.12.14, Chain OK, and CLI source Bundled Helpers. Opening beta, alpha, and empty-other showed “Select a contract” and the new workspace path.
+- Malformed, unreadable, and outside-workspace contracts showed the same alerts as the previous pass.
+- Digest, then Compare and Diff, showed `RunSpecimen error: certificate not found for reviewer-demo/run-001`.
+- Pin carried public key, for a file labeled secure-enclave, showed “Pinned phone-key as an unverified carried key. The file's Secure Enclave label was not accepted.”
+- Choosing Local for a companion package showed “The package policy is companion. This control will not switch it to local.” Choosing the package policy again showed “The package was not imported. No other policy was tried.”
+- Validate on the reviewer demo left no error sheet. The window resized to 1200×820.
+- Settings Close is the AppKit button `Close Settings`. The click set sheets to 0. Escape dismissed Settings again.
+- About showed 0.1.5 (13) and `runspecimen 0.2.0rc15`. Close About is now an AppKit button. The click set sheets to 0.
+- File > Close left 0 windows. File > Show Main Window brought RunSpecimen back. A second launch came up with no sheet.
+- Retain’s confirmation was not identified in this pass. The retain folder stayed empty. No run was started.
+
+The QA process was quit by its own pid. The shared container was restored from the backup taken before launch. `/Applications/RunSpecimen.app` mtime stayed 2026-09-26 13:56:03.
+
+This is not a Store archive, not a device biometric proof, and not an execution boundary. `_lzma` was not removed. The executor question in `docs/EXECUTOR_PROTECTION.md` is still open.

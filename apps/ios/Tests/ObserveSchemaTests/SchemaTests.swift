@@ -46,28 +46,102 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(digest, "7f0b15d280bc57ac4416fc0e170e2480117bd78e316b570ed6d84ce6d73abced")
     }
 
-    func testHardwarePathsReturnBeforeSecureEnclaveWithoutAHumanTap() throws {
+    func testAutomationRefusalDoesNotTouchEnrollmentFiles() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-gate-" + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let fields = try RSBA2Package.parse(JSONSerialization.data(withJSONObject: package()))
-        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.enroll(keyID: "phone-vector", directory: directory, humanTap: false)) { error in
-            XCTAssertEqual(error as? CompanionHardwareRefusal, .humanTapRequired)
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.automationRefused()) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .automationRefused)
         }
-        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.sign(fields: fields, directory: directory, humanTap: false)) { error in
-            XCTAssertEqual(error as? CompanionHardwareRefusal, .humanTapRequired)
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.inspect(keyID: "../phone", directory: directory))
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.inspect(keyID: "phone-vector", directory: directory)) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .missing)
         }
-        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.revoke(keyID: "phone-vector", directory: directory, humanTap: false)) { error in
-            XCTAssertEqual(error as? CompanionHardwareRefusal, .humanTapRequired)
+        try Data("not-json".utf8).write(to: directory.appendingPathComponent("phone-vector.pairing.json"))
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.inspect(keyID: "phone-vector", directory: directory)) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("enrollment"))
         }
         let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-        XCTAssertTrue(names.isEmpty)
-        XCTAssertFalse(EnrollmentIdentity.allowsExecution(
-            role: EnrollmentIdentity.roleCompanion,
-            backend: EnrollmentIdentity.backendSoftwareDevelopment,
-            provenance: EnrollmentIdentity.provenanceDevelopment,
-            state: EnrollmentIdentity.stateActive
+        XCTAssertEqual(names, ["phone-vector.pairing.json"])
+    }
+
+    func testRevocationRecordIsWrittenBeforeAFailedKeyDeletion() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-revoke-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(record, directory: directory) {}
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.persistRevocation(record, directory: directory) { _ in
+            throw CompanionHardwareRefusal.malformed("keychain")
+        }) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("keychain-cleanup"))
+        }
+        let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
+        XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.revoked)
+        XCTAssertEqual(stored.generation, 2)
+        let retried = try CompanionSecureEnclaveEnrollment.persistRevocation(stored, directory: directory) { _ in }
+        XCTAssertEqual(retried.generation, 2)
+        XCTAssertEqual(retried.state, CompanionSecureEnclaveEnrollment.revoked)
+    }
+
+    func testSignatureIsDiscardedWhenTheRecordChangesDuringTheWait() throws {
+        let before = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1).snapshot
+        var revoked = before
+        revoked.state = CompanionSecureEnclaveEnrollment.revoked
+        revoked.generation = 2
+        let signature = Data(repeating: 9, count: 64)
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.signatureIfStillValid(
+            produced: signature,
+            before: before,
+            after: revoked,
+            expiryUnix: 1_700_000_000,
+            now: 1_600_000_000
         ))
+        var expired = before
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.signatureIfStillValid(
+            produced: signature,
+            before: before,
+            after: expired,
+            expiryUnix: 1_700_000_000,
+            now: 1_700_000_000
+        )) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("expiry_unix"))
+        }
+        let kept = try CompanionSecureEnclaveEnrollment.signatureIfStillValid(
+            produced: signature,
+            before: before,
+            after: before,
+            expiryUnix: 1_700_000_000,
+            now: 1_600_000_000
+        )
+        XCTAssertEqual(kept, signature)
+    }
+
+    func testDisplayedPackageMustMatchTheBytesThatWouldBeSigned() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-stale-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fields = try RSBA2Package.parse(try JSONSerialization.data(withJSONObject: package()))
+        var edited = try package()
+        edited["bounds"] = "changed-bounds"
+        let editedText = String(decoding: try JSONSerialization.data(withJSONObject: edited), as: UTF8.self)
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.signDisplayed(
+            packageText: editedText,
+            displayed: fields,
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .staleRequest)
+        }
+    }
+
+    private func sampleRecord(state: String, generation: Int) -> CompanionPairingRecord {
+        CompanionPairingRecord(
+            keyID: "phone-vector",
+            publicKey: Data(repeating: 4, count: 65),
+            role: EnrollmentIdentity.roleCompanion,
+            backend: EnrollmentIdentity.backendSecureEnclave,
+            provenance: EnrollmentIdentity.provenanceProduction,
+            state: state,
+            generation: generation
+        )
     }
 
     private func package() throws -> [String: String] {

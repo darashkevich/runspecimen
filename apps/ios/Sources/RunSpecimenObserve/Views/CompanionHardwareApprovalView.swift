@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// The only screen that may pass `humanTap: true`.
+/// Buttons on this screen call the Secure Enclave directly.
 ///
-/// Nothing on this screen calls the Secure Enclave until the person taps a button.
+/// Nothing calls it until the person taps. The tap is only the call site.
+/// Face ID on the key operation is the authentication.
 struct CompanionHardwareApprovalView: View {
     @State private var keyID = "iphone-companion"
+    @State private var replacementKeyID = "iphone-companion-2"
     @State private var packageText = ""
     @State private var lines: [String] = []
     @State private var fields: RSBA2Package.Fields?
@@ -29,6 +31,14 @@ struct CompanionHardwareApprovalView: View {
                     .accessibilityHint("Asks for Face ID and creates a Secure Enclave key. Does not approve a Mac run by itself.")
                 Button("Revoke this iPhone key") { revokeKey() }
                     .accessibilityHint("Asks for Face ID and revokes the enrolled key.")
+                TextField("Replacement key id", text: $replacementKeyID)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .padding(12)
+                    .background(RSTheme.elevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                Button("Rotate to the replacement key") { rotateKey() }
+                    .accessibilityHint("Asks for Face ID, enrolls the replacement key, then revokes the current key. Does not approve a Mac run.")
                 if !pairingText.isEmpty {
                     Text(pairingText)
                         .font(.system(.footnote, design: .monospaced))
@@ -82,7 +92,7 @@ struct CompanionHardwareApprovalView: View {
     private func enroll() {
         signatureText = ""
         do {
-            let record = try CompanionSecureEnclaveEnrollment.enroll(keyID: keyID, directory: directory, humanTap: true)
+            let record = try CompanionSecureEnclaveEnrollment.enroll(keyID: keyID, directory: directory)
             let carried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: record.keyID, directory: directory)
             pairingText = String(decoding: carried, as: UTF8.self)
             message = "Enrolled generation \(record.generation). Carry the public record to the Mac. This did not approve a run."
@@ -92,10 +102,35 @@ struct CompanionHardwareApprovalView: View {
         }
     }
 
+    private func rotateKey() {
+        signatureText = ""
+        do {
+            let record = try CompanionSecureEnclaveEnrollment.rotate(
+                from: keyID,
+                to: replacementKeyID,
+                directory: directory
+            )
+            keyID = record.keyID
+            let carried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: record.keyID, directory: directory)
+            pairingText = String(decoding: carried, as: UTF8.self)
+            message = "Replacement key generation \(record.generation) is enrolled. The previous key is revoked. This did not approve a run."
+        } catch let error as CompanionHardwareRefusal {
+            if case .malformed("rotation-incomplete") = error {
+                message = "The replacement key was enrolled, and the previous key was not revoked. No run was approved."
+            } else {
+                pairingText = ""
+                message = "Rotation did not finish. No Mac run was approved."
+            }
+        } catch {
+            pairingText = ""
+            message = "Rotation did not finish. No Mac run was approved."
+        }
+    }
+
     private func revokeKey() {
         signatureText = ""
         do {
-            try CompanionSecureEnclaveEnrollment.revoke(keyID: keyID, directory: directory, humanTap: true)
+            try CompanionSecureEnclaveEnrollment.revoke(keyID: keyID, directory: directory)
             pairingText = ""
             message = "This iPhone key is revoked. A later signature with the old generation will not verify."
         } catch {
@@ -118,7 +153,11 @@ struct CompanionHardwareApprovalView: View {
             return
         }
         do {
-            let signature = try CompanionSecureEnclaveEnrollment.sign(fields: fields, directory: directory, humanTap: true)
+            let signature = try CompanionSecureEnclaveEnrollment.signDisplayed(
+                packageText: packageText,
+                displayed: fields,
+                directory: directory
+            )
             signatureText = signature.base64EncodedString()
             message = "Face ID signed this request on this iPhone. The signature was not sent. It is not physical presence at the Mac, and it does not start a run."
         } catch {
