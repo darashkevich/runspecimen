@@ -19,7 +19,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DEFAULT_REPO="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Scripts -> macos -> apps -> repository root. Two levels up is apps/,
+# and "$RS_REPO/apps/macos" then becomes apps/apps/macos.
+DEFAULT_REPO="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 export RS_REPO="${RS_REPO:-$DEFAULT_REPO}"
 VERIFY="$SCRIPT_DIR/verify_mas_runtime.py"
 

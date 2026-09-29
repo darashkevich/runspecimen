@@ -3,12 +3,15 @@
 These tests drive release_source_prelude.sh. They do not freeze PyInstaller
 or call xcodebuild. A dirty or unexpected checkout must exit before the
 freeze command. A commit created by that command must fail the release.
+Entrypoints that leave RS_REPO unset must resolve the repository root.
+The production re-entry runs archive_mas.sh with RS_REPO removed.
 """
 
 from __future__ import annotations
 
 import os
 import pathlib
+import shutil
 import subprocess
 import unittest
 
@@ -165,6 +168,122 @@ class ReleaseSourcePreludeTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("before any compilation", completed.stderr)
         self.assertNotIn("freezing self-contained helper", completed.stdout)
+
+    def _run_real_entrypoint(
+        self,
+        argv: list[str],
+        *,
+        cwd: pathlib.Path,
+        seen: pathlib.Path,
+    ) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        for key in (
+            "RS_REPO",
+            "RS_RELEASE_GATE",
+            "RS_RELEASE_ISOLATED",
+            "RS_EXPECTED_GIT_COMMIT",
+            "RS_PRELUDE_ONLY",
+            "RS_SOURCE_STATE_DIR",
+        ):
+            env.pop(key, None)
+        env["RS_FREEZE_CMD"] = f'printf %s "$RS_REPO" > "{seen}"'
+        env["RS_GENERATE_CMD"] = "true"
+        return subprocess.run(argv, cwd=cwd, capture_output=True, text=True, env=env)
+
+    def test_direct_prelude_without_rs_repo_uses_repository_root(self) -> None:
+        seen = self.root / "seen-repo"
+        completed = self._run_real_entrypoint(
+            ["bash", "apps/macos/Scripts/release_source_prelude.sh"],
+            cwd=ROOT,
+            seen=seen,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+        self.assertEqual(pathlib.Path(seen.read_text(encoding="utf-8")).resolve(), ROOT.resolve())
+        self.assertNotEqual(pathlib.Path(seen.read_text(encoding="utf-8")).resolve(), (ROOT / "apps").resolve())
+
+    def test_prelude_started_from_macos_directory_without_rs_repo(self) -> None:
+        seen = self.root / "seen-from-macos"
+        completed = self._run_real_entrypoint(
+            ["bash", "Scripts/release_source_prelude.sh"],
+            cwd=ROOT / "apps" / "macos",
+            seen=seen,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+        self.assertEqual(pathlib.Path(seen.read_text(encoding="utf-8")).resolve(), ROOT.resolve())
+
+    def test_production_archive_reentry_unsets_rs_repo(self) -> None:
+        """The release path re-execs archive_mas.sh with RS_REPO removed.
+
+        A stub archive stands in for xcodebuild. It follows the same
+        isolated-versus-caller branch as archive_mas.sh and then runs the
+        prelude. The fixture repo is committed so the detached worktree
+        contains those scripts. This test does not set RS_REPO or
+        RS_PRELUDE_ONLY.
+        """
+        repo = self.root / "fixture"
+        scripts = repo / "apps" / "macos" / "Scripts"
+        scripts.mkdir(parents=True)
+        shutil.copy(PRELUDE, scripts / "release_source_prelude.sh")
+        shutil.copy(ROOT / "apps" / "macos" / "Scripts" / "verify_mas_runtime.py", scripts / "verify_mas_runtime.py")
+        archive = scripts / "archive_mas.sh"
+        archive.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            'cd "$(dirname "$0")/.."\n'
+            'if [[ "${RS_RELEASE_GATE:-}" == "1" && "${RS_RELEASE_ISOLATED:-}" != "1" ]]; then\n'
+            "  ./Scripts/release_source_prelude.sh\n"
+            "  exit $?\n"
+            "fi\n"
+            "./Scripts/release_source_prelude.sh\n"
+            'printf %s "$(cd "$(dirname "$0")/../../.." && pwd)" > "${RS_ARCHIVE_ROOT_SEEN:?}"\n',
+            encoding="utf-8",
+        )
+        os.chmod(archive, 0o755)
+        os.chmod(scripts / "release_source_prelude.sh", 0o755)
+        (repo / "tracked.txt").write_text("one\n", encoding="utf-8")
+        _git(repo, "init", "-q")
+        _git(repo, "add", "tracked.txt", "apps")
+        _git(
+            repo,
+            "-c",
+            "user.email=qa@example.com",
+            "-c",
+            "user.name=QA",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            "fixture",
+        )
+        sha = _git(repo, "rev-parse", "HEAD")
+        seen = self.root / "isolated-repo"
+        archive_seen = self.root / "archive-root"
+        env = os.environ.copy()
+        for key in ("RS_REPO", "RS_RELEASE_ISOLATED", "RS_PRELUDE_ONLY", "RS_SOURCE_STATE_DIR"):
+            env.pop(key, None)
+        env["RS_RELEASE_GATE"] = "1"
+        env["RS_EXPECTED_GIT_COMMIT"] = sha
+        env["RS_SEEN_REPO"] = str(seen)
+        env["RS_ARCHIVE_ROOT_SEEN"] = str(archive_seen)
+        env["RS_FREEZE_CMD"] = 'test -d "$RS_REPO/apps/macos" && printf %s "$RS_REPO" > "$RS_SEEN_REPO"'
+        env["RS_GENERATE_CMD"] = "true"
+        completed = subprocess.run(
+            ["bash", "apps/macos/Scripts/archive_mas.sh"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+        isolated = pathlib.Path(seen.read_text(encoding="utf-8")).resolve()
+        self.assertNotEqual(isolated, repo.resolve())
+        self.assertTrue(str(isolated).endswith("/candidate") or isolated.name == "candidate")
+        self.assertFalse(isolated.exists())
+        self.assertNotIn("/apps/apps/", str(isolated))
+        self.assertEqual(pathlib.Path(archive_seen.read_text(encoding="utf-8")).name, "candidate")
+        self.assertEqual(_git(repo, "rev-parse", "HEAD"), sha)
+        self.assertEqual(_git(repo, "status", "--porcelain"), "")
 
     def test_development_freeze_still_runs_on_a_dirty_tree(self) -> None:
         _init_repo(self.repo)

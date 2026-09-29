@@ -67,4 +67,24 @@ Use the shipping scheme, not `RunSpecimenObserveDev`. The buttons are on the com
 
 A Release build of the phone app does not contain `beforeFinalSignatureDecision`. A Debug run from Xcode does, because that is the build the unit tests host. Use Release for the human check.
 
-A signature is evidence the hardware key signed those bytes after a biometric check. It is not evidence you understood a command, and it does not start a run. A run still requires you to type `APPROVE` yourself, and only after you have chosen which executor guarantee is required.
+A signature is evidence the hardware key signed those bytes after a biometric check. It is not evidence you understood a command, and it does not start a run. `runspecimen run` still asks for a typed phrase. That phrase is guarantee (1). It is not local Touch ID, paired-iPhone approval, or dual approval, and it must not be used as a substitute for those once they are required.
+
+## Human acceptance session
+
+Do this yourself. An agent must not tap Touch ID or Face ID, type the approval phrase, or write that you did.
+
+The binaries above are still the `5c3957a` diagnostic and the unsigned iPhone build. They can exercise hardware signing. They cannot exercise a bounded run under guarantee (2), because that holder is not installed and `consumeForExecution` is not on the run path. Diagnostic signing is not execution acceptance.
+
+What you can check now, on these binaries:
+
+1. Mac: `preview`, then `enroll` without `--human-invoked` (expect exit 2). Then the `--human-invoked` enroll, sign, cancel, and revoke commands in the Mac section. Cancel must not produce a signature. A later sign after revoke must not produce a signature.
+2. iPhone: install a Release build of `RunSpecimenObserve` by the Xcode steps above. Enroll, cancel once, enroll again, rotate, sign, edit-after-show, and revoke. Carry the file to the Mac and pin it. The Mac must not treat a file's Secure Enclave label as hardware provenance.
+3. Quit and reopen the diagnostic directory. A revoked key must stay revoked.
+
+What waits until the holder in `docs/EXECUTOR_PROTECTION.md` is authorized and actually built:
+
+4. Protected pairing: compare the Mac fingerprint and the iPhone fingerprint on the two screens, then complete both signatures. Carried file only.
+5. One policy at a time: local Touch ID, then explicitly selected paired iPhone, then dual. Each must fail closed if you cancel. None may fall through to a typed phrase.
+6. One harmless bounded command in a disposable workspace, after you have read the request. Then repeat the same request and confirm the replay is rejected. Check the receipt for that run yourself.
+
+Both devices need those later steps if both ship. Completing only the diagnostic list is not that session.
