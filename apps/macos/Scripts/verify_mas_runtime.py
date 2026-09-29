@@ -12,10 +12,12 @@ symbols, it is not a ``liblzma`` load command, and the approved 0.1.4 (9)
 binary contains the same string. Do not treat that string as a rejection and
 do not strip it out of CPython.
 
-`scan` reports symbols only. `record-identity` writes the full file map,
-artifact hash, git commit, and dirty flag after signing. `verify-identity`
-fails when that manifest is missing, the stage differs, or any later byte
-differs. A caller-supplied source label is not that attestation.
+`scan` reports symbols only. `record-identity` writes an integrity record:
+the file map, artifact hash, and caller-supplied git metadata. That record
+is not an independent cryptographic source attestation. `verify-identity`
+fails when the manifest is missing, the stage differs, or any later byte
+differs. The release export gate also requires `--release-gate` and the
+expected candidate SHA, and it rejects a dirty source.
 """
 from __future__ import annotations
 
@@ -105,15 +107,113 @@ def os_readlink(path: pathlib.Path) -> str:
     return os.readlink(path)
 
 
+INTEGRITY_NOTE = (
+    "Integrity record of artifact bytes plus caller-supplied git metadata. "
+    "Not an independent cryptographic source attestation."
+)
+
+
 def provenance_errors(git_commit: str, git_dirty: object, stage: str) -> list[str]:
     errors = []
     if not isinstance(git_commit, str) or _COMMIT.fullmatch(git_commit) is None:
-        errors.append("git commit is not a 40-character source attestation")
+        errors.append("git commit is not a 40-character hex SHA")
     if not isinstance(git_dirty, bool):
         errors.append("git dirty flag is missing from the identity")
     if stage not in {SIGNED_ARCHIVE_STAGE, FROZEN_HELPER_STAGE}:
         errors.append(f"unknown identity stage: {stage}")
     return errors
+
+
+def release_gate_errors(
+    git_commit: str,
+    git_dirty: object,
+    expected_commit: str | None,
+    *,
+    recorded_release_gate: object = True,
+) -> list[str]:
+    """Policy for the Store export gate. A passing integrity record is not this."""
+    errors = []
+    if recorded_release_gate is not True:
+        errors.append("identity was not recorded under the release source gate")
+    if git_dirty is not False:
+        errors.append("release identity rejects a dirty source")
+    if not isinstance(expected_commit, str) or _COMMIT.fullmatch(expected_commit) is None:
+        errors.append("release identity requires the expected candidate SHA")
+    elif git_commit != expected_commit:
+        errors.append("release identity commit does not match the expected candidate")
+    return errors
+
+
+def git_source(repo: pathlib.Path) -> tuple[str, bool]:
+    commit = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    status = subprocess.run(
+        ["git", "-C", str(repo), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+    )
+    if commit.returncode != 0 or status.returncode != 0:
+        detail = (commit.stderr or status.stderr or "git failed").strip()
+        raise SystemExit(f"cannot read source snapshot: {detail}")
+    return commit.stdout.strip(), bool(status.stdout.strip())
+
+
+def snapshot_source(
+    repo: pathlib.Path,
+    out: pathlib.Path,
+    *,
+    expected_commit: str | None,
+    release_gate: bool,
+) -> int:
+    commit, dirty = git_source(repo)
+    snapshot = {
+        "expected_commit": expected_commit or "",
+        "git_commit": commit,
+        "git_dirty": dirty,
+        "release_gate": release_gate,
+    }
+    failures = []
+    if release_gate:
+        failures.extend(
+            release_gate_errors(commit, dirty, expected_commit, recorded_release_gate=True)
+        )
+    elif _COMMIT.fullmatch(commit) is None:
+        failures.append("git commit is not a 40-character hex SHA")
+    if not failures:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    for issue in failures:
+        print(f"FAIL: {issue}", file=sys.stderr)
+    print(f"source snapshot: commit={commit} dirty={dirty} release_gate={release_gate}")
+    return 1 if failures else 0
+
+
+def source_changed_during_build(before: dict, after: dict) -> list[str]:
+    errors = []
+    if before.get("git_commit") != after.get("git_commit"):
+        errors.append("source commit changed during the build")
+    if before.get("release_gate") is True:
+        if before.get("git_dirty") is not False or after.get("git_dirty") is not False:
+            errors.append("source was dirty during the release build")
+        expected = before.get("expected_commit")
+        if (
+            before.get("git_commit") != expected
+            or after.get("git_commit") != expected
+            or not isinstance(expected, str)
+            or _COMMIT.fullmatch(expected) is None
+        ):
+            errors.append("source commit does not match the expected candidate")
+    return errors
+
+
+def load_snapshot(path: pathlib.Path) -> dict:
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(loaded, dict):
+        raise SystemExit(f"source snapshot is not an object: {path}")
+    return loaded
 
 
 def record_identity(
@@ -124,8 +224,12 @@ def record_identity(
     git_commit: str,
     git_dirty: bool,
     fail_if_exists: bool = False,
+    release_gate: bool = False,
+    expected_commit: str | None = None,
 ) -> int:
     failures = provenance_errors(git_commit, git_dirty, stage)
+    if release_gate:
+        failures.extend(release_gate_errors(git_commit, git_dirty, expected_commit))
     files, artifact_sha256, tree_errors = tree_identity(root)
     failures.extend(tree_errors)
     if not files:
@@ -133,9 +237,13 @@ def record_identity(
     if fail_if_exists and manifest_path.exists():
         failures.append(f"signed identity already exists and will not be replaced: {manifest_path}")
     manifest = {
+        "kind": "integrity-record",
+        "note": INTEGRITY_NOTE,
         "stage": stage,
         "git_commit": git_commit,
         "git_dirty": git_dirty,
+        "expected_commit": expected_commit or "",
+        "release_gate": release_gate,
         "artifact_sha256": artifact_sha256,
         "files": files,
     }
@@ -151,7 +259,14 @@ def record_identity(
     return 1 if failures else 0
 
 
-def verify_identity(root: pathlib.Path, expect: pathlib.Path, *, stage: str) -> int:
+def verify_identity(
+    root: pathlib.Path,
+    expect: pathlib.Path,
+    *,
+    stage: str,
+    release_gate: bool = False,
+    expect_commit: str | None = None,
+) -> int:
     failures = []
     if not expect.is_file():
         failures.append(f"required identity manifest is absent: {expect}")
@@ -178,6 +293,17 @@ def verify_identity(root: pathlib.Path, expect: pathlib.Path, *, stage: str) -> 
             recorded.get("stage", ""),
         )
     )
+    if release_gate:
+        failures.extend(
+            release_gate_errors(
+                str(recorded.get("git_commit", "")),
+                recorded.get("git_dirty"),
+                expect_commit,
+                recorded_release_gate=recorded.get("release_gate"),
+            )
+        )
+        if recorded.get("expected_commit") != expect_commit:
+            failures.append("recorded expected commit does not match the release candidate")
     files, artifact_sha256, tree_errors = tree_identity(root)
     failures.extend(tree_errors)
     recorded_files = recorded.get("files")
@@ -316,10 +442,22 @@ def main(argv: list[str] | None = None) -> int:
     record_command.add_argument("--git-commit", required=True)
     record_command.add_argument("--git-dirty", required=True, choices=("true", "false"))
     record_command.add_argument("--fail-if-exists", action="store_true")
+    record_command.add_argument("--release-gate", action="store_true")
+    record_command.add_argument("--expected-commit")
     verify_command = commands.add_parser("verify-identity", help="fail unless bytes match a recorded identity")
     verify_command.add_argument("app", type=pathlib.Path)
     verify_command.add_argument("--expect", required=True, type=pathlib.Path)
     verify_command.add_argument("--stage", required=True)
+    verify_command.add_argument("--release-gate", action="store_true")
+    verify_command.add_argument("--expect-commit")
+    snap = commands.add_parser("snapshot-source", help="record HEAD and whether the tree is dirty")
+    snap.add_argument("--repo", required=True, type=pathlib.Path)
+    snap.add_argument("--out", required=True, type=pathlib.Path)
+    snap.add_argument("--expected-commit")
+    snap.add_argument("--release-gate", action="store_true")
+    check = commands.add_parser("check-source-stable", help="fail if the source changed during the build")
+    check.add_argument("--before", required=True, type=pathlib.Path)
+    check.add_argument("--after", required=True, type=pathlib.Path)
     args = parser.parse_args(argv)
     if args.command == "scan":
         return scan(args.app, report_path=args.report, source_id=args.source_id)
@@ -331,8 +469,32 @@ def main(argv: list[str] | None = None) -> int:
             git_commit=args.git_commit,
             git_dirty=args.git_dirty == "true",
             fail_if_exists=args.fail_if_exists,
+            release_gate=args.release_gate,
+            expected_commit=args.expected_commit,
         )
-    return verify_identity(args.app, args.expect, stage=args.stage)
+    if args.command == "snapshot-source":
+        return snapshot_source(
+            args.repo,
+            args.out,
+            expected_commit=args.expected_commit,
+            release_gate=args.release_gate,
+        )
+    if args.command == "check-source-stable":
+        errors = source_changed_during_build(load_snapshot(args.before), load_snapshot(args.after))
+        for issue in errors:
+            print(f"FAIL: {issue}", file=sys.stderr)
+        print(f"source stable: violations={len(errors)}")
+        return 1 if errors else 0
+    if args.release_gate and not args.expect_commit:
+        print("FAIL: release identity requires the expected candidate SHA", file=sys.stderr)
+        return 1
+    return verify_identity(
+        args.app,
+        args.expect,
+        stage=args.stage,
+        release_gate=args.release_gate,
+        expect_commit=args.expect_commit,
+    )
 
 
 if __name__ == "__main__":

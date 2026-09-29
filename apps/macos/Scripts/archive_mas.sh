@@ -4,6 +4,14 @@
 # the project is structurally archivable — clearly labeled, with helper sandbox+inherit.
 # Does not upload or Submit for Review.
 #
+# Release qualification sets RS_RELEASE_GATE=1 and RS_EXPECTED_GIT_COMMIT to the
+# reviewed 40-character SHA before this script, then passes the same SHA to
+# export_mas.sh. The runtime-identity.json file is an integrity record of the
+# signed bytes plus caller-supplied git metadata. It is not an independent
+# cryptographic source attestation. A development archive may be dirty.
+# Export rejects a dirty tree, a different commit, and a commit that moved
+# during the build.
+#
 # The exported Store package is not a local launch build. taskgated rejects its
 # Mac App Store profile outside App Store installation. Launch QA uses
 # ./Scripts/build_local_qa.sh (Apple Development signing, separate output path).
@@ -126,6 +134,20 @@ elif echo "$IDENTITIES" | grep -Eq 'Apple Development'; then
   SIGNING_MODE="$MODE"
 fi
 
+SOURCE_BEFORE="$(dirname "$ARCHIVE_PATH")/source-before.json"
+SOURCE_AFTER="$(dirname "$ARCHIVE_PATH")/source-after.json"
+mkdir -p "$(dirname "$ARCHIVE_PATH")"
+SNAP_ARGS=(snapshot-source --repo "$REPO" --out "$SOURCE_BEFORE")
+if [[ "${RS_RELEASE_GATE:-}" == "1" ]]; then
+  if [[ ! "${RS_EXPECTED_GIT_COMMIT:-}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "ERROR: RS_RELEASE_GATE requires RS_EXPECTED_GIT_COMMIT to be the reviewed 40-character SHA" >&2
+    exit 1
+  fi
+  SNAP_ARGS+=(--release-gate --expected-commit "$RS_EXPECTED_GIT_COMMIT")
+fi
+echo "==> source snapshot before archive (integrity record, not a source attestation)"
+python3 "$ROOT/Scripts/verify_mas_runtime.py" "${SNAP_ARGS[@]}"
+
 echo "==> xcodebuild archive ($SIGNING_MODE)"
 set +e
 xcodebuild \
@@ -171,20 +193,25 @@ test -f "$APP_IN_ARCHIVE/Contents/Resources/Assets.car" || {
 
 echo "==> fail-closed archive signing / entitlement / sandbox assertions"
 python3 "$ROOT/Scripts/verify_mas_runtime.py" scan "$APP_IN_ARCHIVE"
-COMMIT="$(git -C "$REPO" rev-parse HEAD)"
-if [[ ! "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "ERROR: signed-archive identity requires a full git commit, got: $COMMIT" >&2
-  exit 1
+python3 "$ROOT/Scripts/verify_mas_runtime.py" snapshot-source \
+  --repo "$REPO" \
+  --out "$SOURCE_AFTER"
+python3 "$ROOT/Scripts/verify_mas_runtime.py" check-source-stable \
+  --before "$SOURCE_BEFORE" \
+  --after "$SOURCE_AFTER"
+COMMIT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["git_commit"])' "$SOURCE_AFTER")"
+DIRTY="$(python3 -c 'import json,sys; print("true" if json.load(open(sys.argv[1]))["git_dirty"] else "false")' "$SOURCE_AFTER")"
+RECORD_ARGS=(
+  record-identity
+  --stage signed-archive
+  --git-commit "$COMMIT"
+  --git-dirty "$DIRTY"
+  --fail-if-exists
+)
+if [[ "${RS_RELEASE_GATE:-}" == "1" ]]; then
+  RECORD_ARGS+=(--release-gate --expected-commit "$RS_EXPECTED_GIT_COMMIT")
 fi
-DIRTY=false
-if [[ -n "$(git -C "$REPO" status --porcelain)" ]]; then
-  DIRTY=true
-fi
-python3 "$ROOT/Scripts/verify_mas_runtime.py" record-identity \
-  --stage signed-archive \
-  --git-commit "$COMMIT" \
-  --git-dirty "$DIRTY" \
-  --fail-if-exists \
+python3 "$ROOT/Scripts/verify_mas_runtime.py" "${RECORD_ARGS[@]}" \
   "$APP_IN_ARCHIVE" \
   "$ARCHIVE_PATH/runtime-identity.json"
 ./Scripts/assert_archive_signing.sh "$APP_IN_ARCHIVE" "${ASSERT_ARGS[@]}"

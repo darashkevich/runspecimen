@@ -78,7 +78,7 @@ class RuntimeIdentityCLITests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 1)
         self.assertFalse(self.post_sign.exists())
-        self.assertIn("not a 40-character source attestation", result.stderr)
+        self.assertIn("not a 40-character hex SHA", result.stderr)
 
     def test_frozen_helper_identity_does_not_satisfy_the_signed_archive(self) -> None:
         frozen = self.root.parent / (self.root.name + ".frozen.json")
@@ -126,6 +126,174 @@ class RuntimeIdentityCLITests(unittest.TestCase):
         self.assertEqual(again.returncode, 1)
         self.assertIn("will not be replaced", again.stderr)
         self.assertEqual(self.post_sign.read_bytes(), original)
+
+    def test_dirty_bytes_are_an_integrity_record_until_the_release_gate(self) -> None:
+        zeros = "0" * 40
+        recorded = run_gate(
+            "record-identity",
+            "--stage",
+            "signed-archive",
+            "--git-commit",
+            zeros,
+            "--git-dirty",
+            "true",
+            str(self.root),
+            str(self.post_sign),
+        )
+        self.assertEqual(recorded.returncode, 0, recorded.stderr)
+        body = json.loads(self.post_sign.read_text())
+        self.assertEqual(body["kind"], "integrity-record")
+        self.assertIn("Not an independent cryptographic source attestation", body["note"])
+        self.assertIs(body["release_gate"], False)
+        plain = run_gate(
+            "verify-identity",
+            "--expect",
+            str(self.post_sign),
+            "--stage",
+            "signed-archive",
+            str(self.root),
+        )
+        self.assertEqual(plain.returncode, 0, plain.stderr)
+        gated = run_gate(
+            "verify-identity",
+            "--expect",
+            str(self.post_sign),
+            "--stage",
+            "signed-archive",
+            "--release-gate",
+            "--expect-commit",
+            zeros,
+            str(self.root),
+        )
+        self.assertEqual(gated.returncode, 1)
+        self.assertIn("dirty source", gated.stderr)
+        self.assertIn("not recorded under the release source gate", gated.stderr)
+
+    def test_release_gate_rejects_the_wrong_expected_commit(self) -> None:
+        other = "ab" * 20
+        recorded = run_gate(
+            "record-identity",
+            "--stage",
+            "signed-archive",
+            "--git-commit",
+            COMMIT,
+            "--git-dirty",
+            "false",
+            "--release-gate",
+            "--expected-commit",
+            COMMIT,
+            str(self.root),
+            str(self.post_sign),
+        )
+        self.assertEqual(recorded.returncode, 0, recorded.stderr)
+        wrong = run_gate(
+            "verify-identity",
+            "--expect",
+            str(self.post_sign),
+            "--stage",
+            "signed-archive",
+            "--release-gate",
+            "--expect-commit",
+            other,
+            str(self.root),
+        )
+        self.assertEqual(wrong.returncode, 1)
+        self.assertIn("does not match the expected candidate", wrong.stderr)
+
+    def test_a_source_change_during_the_build_fails_the_release_gate(self) -> None:
+        repo = self.root / "src"
+        repo.mkdir()
+        (repo / "tracked.txt").write_text("one\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "init"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "add", "tracked.txt"], check=True, capture_output=True)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "-c",
+                "user.email=qa@example.com",
+                "-c",
+                "user.name=QA",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-m",
+                "one",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        sha = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+        before = self.root / "before.json"
+        after = self.root / "after.json"
+        opened = run_gate(
+            "snapshot-source",
+            "--repo",
+            str(repo),
+            "--out",
+            str(before),
+            "--release-gate",
+            "--expected-commit",
+            sha,
+        )
+        self.assertEqual(opened.returncode, 0, opened.stderr)
+        wrong = self.root / "wrong.json"
+        refused = run_gate(
+            "snapshot-source",
+            "--repo",
+            str(repo),
+            "--out",
+            str(wrong),
+            "--release-gate",
+            "--expected-commit",
+            "0" * 40,
+        )
+        self.assertEqual(refused.returncode, 1)
+        self.assertFalse(wrong.exists())
+        self.assertIn("does not match the expected candidate", refused.stderr)
+        (repo / "tracked.txt").write_text("two\n", encoding="utf-8")
+        dirty = run_gate(
+            "snapshot-source",
+            "--repo",
+            str(repo),
+            "--out",
+            str(after),
+            "--release-gate",
+            "--expected-commit",
+            sha,
+        )
+        self.assertEqual(dirty.returncode, 1)
+        self.assertIn("dirty source", dirty.stderr)
+        plain = run_gate("snapshot-source", "--repo", str(repo), "--out", str(after))
+        self.assertEqual(plain.returncode, 0, plain.stderr)
+        drifted = run_gate("check-source-stable", "--before", str(before), "--after", str(after))
+        self.assertEqual(drifted.returncode, 1)
+        self.assertIn("dirty during the release build", drifted.stderr)
+        subprocess.run(["git", "-C", str(repo), "add", "tracked.txt"], check=True, capture_output=True)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "-c",
+                "user.email=qa@example.com",
+                "-c",
+                "user.name=QA",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-m",
+                "two",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        moved_snap = run_gate("snapshot-source", "--repo", str(repo), "--out", str(after))
+        self.assertEqual(moved_snap.returncode, 0, moved_snap.stderr)
+        moved = run_gate("check-source-stable", "--before", str(before), "--after", str(after))
+        self.assertEqual(moved.returncode, 1)
+        self.assertIn("changed during the build", moved.stderr)
 
     def test_a_symlink_that_leaves_the_root_is_not_recorded(self) -> None:
         outside = self.root.parent / (self.root.name + ".outside")

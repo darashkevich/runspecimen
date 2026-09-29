@@ -44,3 +44,15 @@ Which guarantee should the next design be required to meet?
 3. No process on the Mac can run an equivalent command.
 
 This review does not choose one, and it does not authorize a helper, a relay, Endpoint Security, or a new entitlement. Choosing (3) would be an explicit request for global command blocking. Choosing (2) would be an explicit request to relocate protected RunSpecimen state. Until then the candidate stays on (1), with (2) and (3) unfinished.
+
+## What each choice would take
+
+This is a plan for the decision. It does not start the work.
+
+| If Yahor chooses | Implementation that would follow | What stays out |
+| --- | --- | --- |
+| (1) only | Keep the current app and CLI gates. Document that a same-user process can write `.runspecimen` and can exec the command. No path change. | No helper, relay, Endpoint Security client, or new entitlement. |
+| (2) | Move the lease, the consumed-approval marker, and the enrollment snapshot out of the user-writable workspace into the app container, or another directory the same user cannot rewrite. The CLI and the app would have to read that location. The workspace command and inputs stay where the user put them. | Still no helper and no exec blocking. `/bin/sh` can run the command. |
+| (3) | A separate product that can deny exec. That requires an entitlement this Store app cannot hold. It is not a change to the lease file. | It is not authorized, and it is not a substitute for (1) or (2). |
+
+The candidate continues on (1) until one of those rows is chosen.

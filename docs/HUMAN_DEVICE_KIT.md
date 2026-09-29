@@ -4,6 +4,13 @@ An agent must not run these steps. Do not pass `--human-invoked`. Do not tap Tou
 
 The kit directory, when prepared, is `artifacts/human-device-kit/` next to the approved 0.1.4 (9) archive. It holds an unsigned iPhone build and the Mac diagnostic binary. Neither is installed. Neither is a Store package. Secure Enclave enroll, sign, revoke, and rotate are implemented and are not human-tested until you complete the prompts yourself.
 
+These binaries were built from `5c3957a3a8ddf9fceacc3096b2208ee7757e6b72`. A later commit that does not change the diagnostic or iOS app sources does not by itself replace them. Check the hashes before you run anything that can prompt.
+
+| File | SHA-256 |
+| --- | --- |
+| `mac/RunSpecimenTouchIDDiagnostic` | `ee5f7733ed79a878d0983398f640ecea4cd11a7e53e6d3459636e808ae31374a` |
+| `ios/RunSpecimenObserve.app/RunSpecimenObserve` | `4f38ee0adab75fa8db1d2b46b19168ed6810696e7b50cde8be437edadc374155` |
+
 ## Mac diagnostic
 
 The binary in the kit is `RunSpecimenTouchIDDiagnostic`. From a checkout of this commit you can rebuild a Release binary, which does not include the test seams, with:
