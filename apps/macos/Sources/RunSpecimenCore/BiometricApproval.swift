@@ -207,7 +207,9 @@ public enum BiometricApprovalStore {
             if let enrollmentGeneration, stored.enrollmentGeneration != enrollmentGeneration {
                 throw BiometricApprovalError.revoked
             }
+            #if RUNSPECIMEN_TEST_HOOKS
             beforeConsumptionDecision?()
+            #endif
             let observedNow = clock()
             if request.expiryUnix <= observedNow {
                 try Data("expired\n".utf8).write(to: consumed, options: .atomic)
@@ -223,8 +225,10 @@ public enum BiometricApprovalStore {
     /// Internal so another module cannot replace the production clock.
     static var clock: () -> Int = { Int(Date().timeIntervalSince1970) }
 
+    #if RUNSPECIMEN_TEST_HOOKS
     /// Test seam. Runs inside the approval lock, immediately before the expiry decision.
     static var beforeConsumptionDecision: (() -> Void)?
+    #endif
 
     public static func isConsumed(nonce: String, directory: URL) -> Bool {
         FileManager.default.fileExists(atPath: consumedURL(directory, nonce).path)
@@ -597,9 +601,11 @@ public enum SoftwareApprovalKeyEnrollment {
 }
 
 extension BiometricApprovalStore {
+    #if RUNSPECIMEN_TEST_HOOKS
     /// Test seam. Runs before the enrollment lock so a revoke can finish first.
     /// Production leaves this nil.
     static var beforeExclusiveAccess: (() -> Void)?
+    #endif
 
     /// Pins the key from the enrollment record. The signature's accompanying public key is not consulted.
     public static func submitEnrolled(
@@ -633,7 +639,9 @@ extension BiometricApprovalStore {
         enrollmentDirectory: URL,
         approvalDirectory: URL
     ) throws {
+        #if RUNSPECIMEN_TEST_HOOKS
         beforeExclusiveAccess?()
+        #endif
         try BiometricEnrollmentDirectory.withExclusiveAccess(enrollmentDirectory) {
             let record = try BiometricEnrollmentDirectory.load(keyID: request.keyID, directory: enrollmentDirectory)
             guard record.state == BiometricEnrollmentRecord.active else {
@@ -1082,7 +1090,9 @@ public enum PolicyBoundApprovalStore {
                 canonical: canonical,
                 required: request.policy != .local
             )
+            #if RUNSPECIMEN_TEST_HOOKS
             BiometricApprovalStore.beforeConsumptionDecision?()
+            #endif
             if request.expiryUnix <= BiometricApprovalStore.clock() {
                 try Data("expired\n".utf8).write(to: consumed, options: .atomic)
                 throw BiometricApprovalError.expired
@@ -1098,7 +1108,9 @@ public enum PolicyBoundApprovalStore {
         enrollmentDirectory: URL,
         approvalDirectory: URL
     ) throws {
+        #if RUNSPECIMEN_TEST_HOOKS
         BiometricApprovalStore.beforeExclusiveAccess?()
+        #endif
         try BiometricEnrollmentDirectory.withExclusiveAccess(enrollmentDirectory) {
             let local = try liveRecord(
                 keyID: request.localKeyID,
@@ -1135,7 +1147,9 @@ public enum PolicyBoundApprovalStore {
         enrollmentDirectory: URL,
         approvalDirectory: URL
     ) throws {
+        #if RUNSPECIMEN_TEST_HOOKS
         BiometricApprovalStore.beforeExclusiveAccess?()
+        #endif
         try BiometricEnrollmentDirectory.withExclusiveAccess(enrollmentDirectory) {
             let local = try liveRecord(
                 keyID: request.localKeyID,

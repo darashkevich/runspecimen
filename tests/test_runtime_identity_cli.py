@@ -106,6 +106,27 @@ class RuntimeIdentityCLITests(unittest.TestCase):
         self.assertIn("does not match required stage", verified.stderr)
         frozen.unlink(missing_ok=True)
 
+    def test_a_second_record_does_not_replace_an_existing_identity(self) -> None:
+        first = self.record(self.post_sign)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        original = self.post_sign.read_bytes()
+        (self.root / "payload.bin").write_bytes(b"second-sign")
+        again = run_gate(
+            "record-identity",
+            "--stage",
+            "signed-archive",
+            "--git-commit",
+            COMMIT,
+            "--git-dirty",
+            "true",
+            "--fail-if-exists",
+            str(self.root),
+            str(self.post_sign),
+        )
+        self.assertEqual(again.returncode, 1)
+        self.assertIn("will not be replaced", again.stderr)
+        self.assertEqual(self.post_sign.read_bytes(), original)
+
     def test_a_symlink_that_leaves_the_root_is_not_recorded(self) -> None:
         outside = self.root.parent / (self.root.name + ".outside")
         outside.write_bytes(b"outside")

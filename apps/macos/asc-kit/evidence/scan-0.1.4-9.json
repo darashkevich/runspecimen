@@ -1,0 +1,344 @@
+{
+  "source_id": "approved 0.1.4 (9) archive app; symbol scan only, not an identity attestation",
+  "root": "/Users/yahor/Documents/Codex/2026-09-04/runspecimen-plugin-runspecimen-personal-put-this/artifacts/mas-0.1.4-build9/RunSpecimen.xcarchive/Products/Applications/RunSpecimen.app",
+  "mach_o_files": 48,
+  "files": [
+    {
+      "path": "Contents/MacOS/RunSpecimen",
+      "sha256": "2b5d701e97500ba7587bd7f00ec1f269cfe23045211533201c4f8254c8383eee",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/Python",
+      "sha256": "37bf415a8533395dd5aa907f977a7185d80d76d6de3bb6cd4f076fa4e2ee9cc4",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/libcrypto.3.dylib",
+      "sha256": "443ebdbae9ed10a1c99ef9f1282c75ac22f947ac222f238a5ed70d27af4c8fc8",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/libmpdec.4.dylib",
+      "sha256": "612611d7fabf70889a5a6ddd7cc941aacfcaeb0e6a1accc798943d30e7ebf8de",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/libssl.3.dylib",
+      "sha256": "4197d574c885682107fdef559f2a876342afce58d169d36c1fc4c587541557ef",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_bisect.cpython-312-darwin.so",
+      "sha256": "962fd6d11faa279ade194e75ce2e63cd228d25ef9ea5abf42e8c309e597899ae",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_blake2.cpython-312-darwin.so",
+      "sha256": "4dcab933a47a0afddf736a691faf8065fb3d1a6320cffd31b9ce5e5c60285e6d",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_bz2.cpython-312-darwin.so",
+      "sha256": "b10c03891b67e99e1aad2691f5b7fe2e118e0821be8aed7a23aaa2b8e14ed2da",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_cn.cpython-312-darwin.so",
+      "sha256": "d896c0ec4b5afb92c9c3af744dada42f44663a3f1e0503d8beb14c8c02048bf6",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_hk.cpython-312-darwin.so",
+      "sha256": "a8950f0effee4536abc8a6f3e0b8e780d1e54e62e09bbda33d7f14aacead9dc4",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_iso2022.cpython-312-darwin.so",
+      "sha256": "c2b61774fa4a002d69b84dd7e4733658bce28700aa09a0b9dc4aaabefc076764",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_jp.cpython-312-darwin.so",
+      "sha256": "a3514a7ea219dc478cf3940a2a1b300b0cfe5c2b44d5d210630ae936dc393514",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_kr.cpython-312-darwin.so",
+      "sha256": "f967b8b8f38244c18c73db411fb449b9975cf648f0c9d69df4d756dec80e321f",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_tw.cpython-312-darwin.so",
+      "sha256": "142351b109f506e598c08ab83b25d5267bc4f5389a76008ad932159e06a9e967",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_contextvars.cpython-312-darwin.so",
+      "sha256": "e849f67ee8ab5f30a83ed8bb8cc7c46e8936e8d9243278d0237a93e03f97407a",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_csv.cpython-312-darwin.so",
+      "sha256": "078e957025f64f0c6fb620c0acc461a58e4a386778d643ba37a66acd3d89743c",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_datetime.cpython-312-darwin.so",
+      "sha256": "2f0beebdf6d76c8cec92e76cd66b73ecc00052bf0e62864730689962c1b42919",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_decimal.cpython-312-darwin.so",
+      "sha256": "3639020482ac8a675a1a5c4932b41d8c8445577f0afc9feadb7db998d51c4c17",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_elementtree.cpython-312-darwin.so",
+      "sha256": "869d3cd0d4ca6064440eec35718b5746967f2b10f4b7ea7963fa2bfdcc055d20",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_hashlib.cpython-312-darwin.so",
+      "sha256": "c9cd5cdc7e652cd222c23a35c4ef9f7ae657a49294fc07ada9661623efe234aa",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_heapq.cpython-312-darwin.so",
+      "sha256": "e2f93cab1ae4a639a66a65bf4662ada63c66cf654d61d358be9a1a32f595fa21",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_json.cpython-312-darwin.so",
+      "sha256": "06c480b1c907b30ddb0ba935fb0c9117a4928c333b6f8875eda2b443c68db2fd",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_md5.cpython-312-darwin.so",
+      "sha256": "03b765fc05bd67222913378ac5db3767f56871db7ee5382d69f95cf99670459e",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_multibytecodec.cpython-312-darwin.so",
+      "sha256": "42b91d189afacfc73aa30631cc9ebd8ccbc04a6c593523f72acabb96d52264a8",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_opcode.cpython-312-darwin.so",
+      "sha256": "53f4031db50ec76de6b0b23a2ac9fcc466fdc95f2ade7393844a6de6877e858e",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_pickle.cpython-312-darwin.so",
+      "sha256": "111093c1737b9008b7685c04686a8f723c6761e68f620d8bee425740bd201c9a",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_posixsubprocess.cpython-312-darwin.so",
+      "sha256": "a011eac0f4b454d7bad0f5db6d95d0287ad51828bd29cbb70f8ffd81545538be",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_random.cpython-312-darwin.so",
+      "sha256": "18a95dcdb00938a419e4e2eab31e27f3a2727912594cac87c00908e6045db62a",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_scproxy.cpython-312-darwin.so",
+      "sha256": "0cf07b7ba4b4043e08bb8d78b07d3ff1fa277c52d835421c5d29c96993934b8a",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_sha1.cpython-312-darwin.so",
+      "sha256": "eebc7d421c0f43d8e84cefb92add02c8f63d59c782c131ff28df89b1c92a195a",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_sha2.cpython-312-darwin.so",
+      "sha256": "cd3ba7854d1220aecd9c6b0238db498b53434e030710620b474c8dde318a30a3",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_sha3.cpython-312-darwin.so",
+      "sha256": "3857cd7f1ef08280ce62190bcf8433856bd7a4af5a03377da0ad47371a9540af",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_socket.cpython-312-darwin.so",
+      "sha256": "078fcef575736a86ee6c3bf91904bf5043ebc254b1c44bcb65758632bcea2e8c",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_ssl.cpython-312-darwin.so",
+      "sha256": "1e3d2e3eefc1ce98a624005d50994cf0dda66b799f00fa55f60c20460dc3fa8a",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_statistics.cpython-312-darwin.so",
+      "sha256": "2295930733b6126e874ab734c681db4993d293001d5297c2ea325a7107d28617",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_struct.cpython-312-darwin.so",
+      "sha256": "47f07a736b78d8763ea4ae55eb40447ca2e8f5d0f83a9b25b28479d4b60ccfd6",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/array.cpython-312-darwin.so",
+      "sha256": "03bb9b0c483605015c75a9bf7463ae678207790bffc7fc581802af963395e02a",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/binascii.cpython-312-darwin.so",
+      "sha256": "12113f9b8a8b8ecb3c47e3ba550d87252a312ebd46cee60ce48fb4c5a18acbac",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/fcntl.cpython-312-darwin.so",
+      "sha256": "031aa2f773ef1abdb65268457c4fa4994df59ff3214131fca830e68da787dd35",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/grp.cpython-312-darwin.so",
+      "sha256": "05094809e13d7b18192ca14d7e46cf90f73d2f4e24cc6ceb784bbf7fe7c8e555",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/math.cpython-312-darwin.so",
+      "sha256": "9d4bd93b7a8282fbc95dee6e99819c83708898503a8178803221a470d2ecc53c",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/pyexpat.cpython-312-darwin.so",
+      "sha256": "41f88d96a9e52cd150d7ae195e5548d6fa131671e7875c48e3e2aff7302d2848",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/resource.cpython-312-darwin.so",
+      "sha256": "4a0ea68e0cd256ef392a4ee7fb3b625cb737d66f178b4d49117e29295e651f31",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/select.cpython-312-darwin.so",
+      "sha256": "914f4cf7585c5c4fa0c9ac6bb00bd866cc23714c1626cfcbde4909a9e4b24c49",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/termios.cpython-312-darwin.so",
+      "sha256": "1b1247aaa5ba5411072c5a585549368a6cdf77fe03c8ff3248dd599beb7dbace",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/unicodedata.cpython-312-darwin.so",
+      "sha256": "38be07074ccaac418e42f33ffdf425d1c3066f65fe8a2cb5308d05cf9e111ca6",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/zlib.cpython-312-darwin.so",
+      "sha256": "9316eb4c5a8f5fe99e09dc15cf5de27e3a5a9f87246ea7dbd654352f1a7e0cf0",
+      "slices": [
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/RunSpecimenEngine/runspecimen",
+      "sha256": "b56ed80e99d78bcdcc005c7390883b70233f8f185cd28e498173aa47688a4a15",
+      "slices": [
+        "arm64"
+      ]
+    }
+  ],
+  "violations": []
+}

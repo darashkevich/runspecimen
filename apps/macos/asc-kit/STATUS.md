@@ -16,6 +16,8 @@ App Store Connect, app `6813492506`:
 
 Ready for Sale is public availability in Connect, not merely an approval waiting on a release button. The iTunes lookup API returned no Mac listing for this bundle in the US or GB at query time, so this file does not claim an apps.apple.com URL. Do not withdraw, replace, or edit version 0.1.4. No newer build is attached.
 
+A symbol scan of the archived approved app, not a new package, is [evidence/scan-0.1.4-9.json](evidence/scan-0.1.4-9.json): 48 Mach-O files, each `arm64`, 0 violations. That scan does not replace the recorded package hash above, and it is not an identity attestation of the installer.
+
 The historical note below recorded this same version as `WAITING_FOR_REVIEW` on 2026-09-24. That was the state then.
 
 ## Historical: 0.1.4 (9) WAITING_FOR_REVIEW (submitted 2026-09-24)

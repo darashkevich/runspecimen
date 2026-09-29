@@ -38,6 +38,11 @@ targets:
         # Do not add RS_OBSERVE_DEV_SIGNER. That flag belongs only on RunSpecimenObserveDev.
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+      configs:
+        Debug:
+          # The test host is this app, so the seam has to be compiled into the
+          # Debug app the tests launch. Release does not define the flag.
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG RUNSPECIMEN_TEST_HOOKS
   RunSpecimenObserveDev:
     type: application
     platform: iOS
@@ -73,6 +78,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen.observe.schema-tests
         CODE_SIGN_STYLE: Automatic
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) RUNSPECIMEN_TEST_HOOKS"
 schemes:
   RunSpecimenObserve:
     build:

@@ -16,15 +16,15 @@ This file is the current full-scope candidate. It is not a Store submission plan
 | Published wheel / sdist / plugin zip | `d720bf5163a2b250699c30e804f89708e71c1c0d22682fbb43a4644b59c45948` / `6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3` / `0073e04e21bd225da328de06ef840ead6956a8cced4510a0025fb1e2ddc7fc16` |
 | Homebrew | still pinned to published rc14 |
 
-The exact commit of this candidate is the commit that contains this file. Unpublished rc15 archives of this tree, built by `release_check.py` on Python 3.12.14 (417 tests, 35 skipped):
+The exact commit of this candidate is the commit that contains this file. Unpublished rc15 archives of this tree, built by `release_check.py` on Python 3.12.14 (418 tests, 35 skipped):
 
 | File | SHA-256 |
 | --- | --- |
 | `runspecimen-0.2.0rc15-py3-none-any.whl` | `24082fbf9006c627953f6d9c5b8f0c9dca9fb006efcae3b54472b7dfa641d871` |
-| `runspecimen-0.2.0rc15.tar.gz` | `5af33bd635951819b8a71b7f546856fd114eb062dbc3d78eeb1dc5d6b24e434c` |
+| `runspecimen-0.2.0rc15.tar.gz` | `9087e8fae39ed25a8aa51e21d70bc1a2a3be1318e4c583fcc885b46e5ed8e276` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d` |
 
-Copies are in `artifacts/rc15-2026-09-29-runtime-identity/` next to the approved archive. The wheel and plugin zip match the previous unpublished build. The sdist changed because `tests/test_runtime_identity_cli.py` is packaged. These are not the published rc14 bytes.
+Copies are in `artifacts/rc15-2026-09-29-test-seams/` next to the approved archive. The wheel and plugin zip match the previous unpublished build. The sdist changed because `tests/test_runtime_identity_cli.py` is packaged. These are not the published rc14 bytes.
 
 ## Status
 

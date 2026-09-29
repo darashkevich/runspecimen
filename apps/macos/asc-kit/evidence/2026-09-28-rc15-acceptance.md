@@ -159,3 +159,19 @@ Python 3.12.14 `release_check.py`: 417 tests, 35 skipped. Wheel SHA-256 `24082fb
 The local export `RunSpecimen.pkg` mtime is still 2026-09-24 12:55:22 and its SHA-256 is still `758f8d4651ccc4240410d9618a906fdc9cbbb9974c5c53976b9abb646138cf7f`. The submission record still says `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d`. This pass did not modify that package. `/Applications/RunSpecimen.app` mtime stayed 2026-09-26 13:56:03.
 
 This is not a Store archive, not a device biometric proof, and not an execution boundary. The executor choice in `docs/EXECUTOR_PROTECTION.md` is still open. No helper, relay, or Endpoint Security client was added.
+
+## Test seams, capture injection, and one-time identity, 2026-09-29
+
+`beforeConsumptionDecision`, `beforeExclusiveAccess`, and `beforeFinalSignatureDecision` are compiled only when `RUNSPECIMEN_TEST_HOOKS` is set. `swift test` sets that flag for its Debug build of `RunSpecimenCore` in `Package.swift`. The Xcode Store target does not set it. `xcodebuild -project apps/macos/RunSpecimen.xcodeproj -scheme RunSpecimen -configuration Release build` produced `/tmp/rs-store-nm/DerivedData/Build/Products/Release/RunSpecimen.app`. `nm` on `Contents/MacOS/RunSpecimen`, on `libRunSpecimenCore.a`, and on the Release `BiometricApproval.o` found none of the three names. The same Debug object file from `swift test` does contain `beforeConsumptionDecision` and `beforeExclusiveAccess`, so the names are visible when the flag is on. The iOS Release app and the Release diagnostic binary also omit the names. An iOS Debug build defines the flag because the unit-test host is the app target. `RunSpecimenObserveDev` does not define it.
+
+`finalizeSignature` names the pre-seam load `readableBeforeWait` and uses that record's key id. The decision still uses the reload after the seam. The in-process enrollment lock is one lock for every directory; the shipping app uses one directory per launch.
+
+`CLIService` takes a `ProcessCapturing` value. `CLIServiceCaptureFailureTests` passes a synthetic capture into `runLifecycle` and `version` for timeout, cancellation, a pipe read error, and a cleanup failure. A printed `runspecimen 0.2.0rc15` line does not make those calls succeed. Swift package tests: 107, 1 skipped, 0 failures (102 core, 5 app). iOS ObserveSchemaTests: 12 passed. They do not call Secure Enclave.
+
+`record-identity --fail-if-exists` refuses to replace an existing manifest. `archive_mas.sh` passes that flag. A second record leaves the first file bytes unchanged.
+
+The approved archive app scanned at 48 Mach-O files, each `arm64`, 0 violations. The report is `apps/macos/asc-kit/evidence/scan-0.1.4-9.json`. It does not replace the submission package hash. The local export `RunSpecimen.pkg` mtime is still 2026-09-24 12:55:22 and its SHA-256 is still `758f8d4651ccc4240410d9618a906fdc9cbbb9974c5c53976b9abb646138cf7f`. The submission record still says `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d`.
+
+Python 3.12.14 `release_check.py`: 418 tests, 35 skipped. Wheel SHA-256 `24082fbf9006c627953f6d9c5b8f0c9dca9fb006efcae3b54472b7dfa641d871` (unchanged). Plugin zip SHA-256 `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d` (unchanged). Sdist SHA-256 `9087e8fae39ed25a8aa51e21d70bc1a2a3be1318e4c583fcc885b46e5ed8e276`. Copies are in `artifacts/rc15-2026-09-29-test-seams/`. Published rc14 was not replaced. `/Applications/RunSpecimen.app` mtime stayed 2026-09-26 13:56:03.
+
+The unsigned iPhone app and the Release diagnostic in `artifacts/human-device-kit/` were rebuilt from this tree. The iPhone app is not signed and was not installed. Diagnostic `preview` exited 0. `enroll` without `--human-invoked` exited 2. Exact human commands are in `docs/HUMAN_DEVICE_KIT.md`. No helper, relay, or Endpoint Security client was added.

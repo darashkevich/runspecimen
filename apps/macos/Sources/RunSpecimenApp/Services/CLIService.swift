@@ -4,11 +4,47 @@ import Foundation
 import RunSpecimenCore
 #endif
 
+/// Replacement for `BoundedProcessCapture.run` so tests can return a synthetic capture.
+protocol ProcessCapturing: Sendable {
+    func capture(
+        executable: URL,
+        arguments: [String],
+        environment: [String: String],
+        currentDirectory: URL?,
+        isCancelled: @escaping @Sendable () -> Bool
+    ) throws -> BoundedProcessCapture.Output
+}
+
+struct LiveProcessCapture: ProcessCapturing {
+    func capture(
+        executable: URL,
+        arguments: [String],
+        environment: [String: String],
+        currentDirectory: URL?,
+        isCancelled: @escaping @Sendable () -> Bool
+    ) throws -> BoundedProcessCapture.Output {
+        try BoundedProcessCapture.run(
+            executable: executable,
+            arguments: arguments,
+            environment: environment,
+            currentDirectory: currentDirectory,
+            byteLimit: 8 * 1024 * 1024,
+            timeout: 15 * 60,
+            isCancelled: isCancelled
+        )
+    }
+}
+
 /// Invokes the user-selected (or bundled / PATH-discovered) `runspecimen` binary.
 /// Does not weaken engine gates: mutating commands go through the real CLI.
 actor CLIService {
+    private let processes: any ProcessCapturing
     private(set) var cliURL: URL?
     private(set) var resolutionSource: CLIResolutionSource?
+
+    init(processes: any ProcessCapturing = LiveProcessCapture()) {
+        self.processes = processes
+    }
     /// Tracked dashboard child so we can terminate it on app quit (App Store 2.4.5(iii)).
     private var dashboardProcess: Process?
 
@@ -355,6 +391,7 @@ actor CLIService {
     private func run(arguments: [String], expectJSON: Bool) async throws -> ProcessResult {
         let url = try requireCLI()
         let flag = ProcessCancellationFlag()
+        let processes = self.processes
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let box = ContinuationBox(continuation)
@@ -365,13 +402,11 @@ actor CLIService {
                         if url.path.contains("/Contents/Helpers/") || url.path.contains("/RunSpecimenEngine/") {
                             directory = url.deletingLastPathComponent()
                         }
-                        let output = try BoundedProcessCapture.run(
+                        let output = try processes.capture(
                             executable: invocation.executable,
                             arguments: invocation.arguments,
                             environment: Self.augmentedEnvironment(),
                             currentDirectory: directory,
-                            byteLimit: 8 * 1024 * 1024,
-                            timeout: 15 * 60,
                             isCancelled: { flag.isCancelled }
                         )
                         _ = expectJSON

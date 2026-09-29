@@ -6,18 +6,36 @@ The kit directory, when prepared, is `artifacts/human-device-kit/` next to the a
 
 ## Mac diagnostic
 
-The binary in the kit is `RunSpecimenTouchIDDiagnostic`. From a checkout of this commit you can rebuild it with:
+The binary in the kit is `RunSpecimenTouchIDDiagnostic`. From a checkout of this commit you can rebuild a Release binary, which does not include the test seams, with:
 
 ```sh
-swift build --package-path apps/macos --product RunSpecimenTouchIDDiagnostic
+swift build --package-path apps/macos --product RunSpecimenTouchIDDiagnostic -c release
 ```
 
-1. Run `RunSpecimenTouchIDDiagnostic preview` with no `--human-invoked`. It should exit 0 and must not prompt.
-2. Run `enroll`, `sign`, and `revoke` yourself. Pass `--human-invoked`, `--directory` under `/private/tmp/rs-touchid-diag`, and a key id that starts with `diag-`. There is no `rotate` command in this diagnostic.
-3. Read the printed request and confirm it matches the bytes you intend to sign before you authenticate.
-4. Cancel one prompt and confirm no signature is printed.
+The binary is then `apps/macos/.build/release/RunSpecimenTouchIDDiagnostic`. There is no `rotate` command.
 
-`enroll` without `--human-invoked` exits 2 and does not call Secure Enclave. That check is not a hardware test.
+These two checks do not prompt. An agent may run them:
+
+```sh
+RunSpecimenTouchIDDiagnostic preview
+RunSpecimenTouchIDDiagnostic enroll --directory /private/tmp/rs-touchid-diag --key-id diag-human
+```
+
+`preview` exits 0 and prints that it made no Secure Enclave call. `enroll` without `--human-invoked` exits 2.
+
+You run the rest yourself. Each command passes `--human-invoked`, `--directory /private/tmp/rs-touchid-diag` (or a directory inside it), and `--key-id diag-...` of at most 64 characters. Read the printed request before you authenticate.
+
+```sh
+DIR=/private/tmp/rs-touchid-diag
+KEY=diag-human
+RunSpecimenTouchIDDiagnostic --human-invoked --directory "$DIR" --key-id "$KEY" enroll
+RunSpecimenTouchIDDiagnostic --human-invoked --directory "$DIR" --key-id "$KEY" sign
+RunSpecimenTouchIDDiagnostic --human-invoked --directory "$DIR" --key-id "$KEY" reload
+RunSpecimenTouchIDDiagnostic --human-invoked --directory "$DIR" --key-id "$KEY" cancel
+RunSpecimenTouchIDDiagnostic --human-invoked --directory "$DIR" --key-id "$KEY" revoke
+```
+
+`sign` and `reload` print the request and then the signature. `cancel` asks you to cancel the prompt; a signature from that command is a failed cancel. `revoke` prints `revoked`. A later `sign` must not produce a signature.
 
 ## iPhone provisioning
 
@@ -31,10 +49,15 @@ This Mac had no local provisioning profiles when the unsigned build was made. Th
 
 ## On the iPhone, after you have installed that signed build
 
-1. Tap Enroll. The Face ID prompt is the Secure Enclave access control (`biometryCurrentSet` and `privateKeyUsage`). Cancel once and confirm no pairing file is offered as a new active key.
-2. Enroll, then Rotate, then Show request. Read the lines. Tap Sign and answer Face ID only after they match the package you mean.
-3. Edit the package after Show request. Sign stays disabled until you show the request again.
-4. Revoke. A later sign must not produce a signature.
-5. Carry the pairing JSON to the Mac and pin it in Workflows. The status must say the Secure Enclave label was not accepted.
+Use the shipping scheme, not `RunSpecimenObserveDev`. The buttons are on the companion hardware screen. There is no command-line enroll on the phone.
+
+1. Tap **Enroll this iPhone**. The Face ID prompt is the Secure Enclave access control (`biometryCurrentSet` and `privateKeyUsage`). Cancel once and confirm no pairing file is offered as a new active key.
+2. Tap **Enroll this iPhone** again and answer Face ID. Then tap **Rotate to the replacement key** and answer Face ID for the new key.
+3. Paste the carried package, tap **Show request**, and read the lines. Tap **Sign with Face ID** only after they match the package you mean.
+4. Edit the package after Show request. **Sign with Face ID** stays disabled until you tap **Show request** again.
+5. Tap **Revoke this iPhone key**. A later **Sign with Face ID** must not produce a signature.
+6. Carry the pairing JSON to the Mac and pin it in Workflows. The status must say the Secure Enclave label was not accepted.
+
+A Release build of the phone app does not contain `beforeFinalSignatureDecision`. A Debug run from Xcode does, because that is the build the unit tests host. Use Release for the human check.
 
 A signature is evidence the hardware key signed those bytes after a biometric check. It is not evidence you understood a command, and it does not start a run. A run still requires you to type `APPROVE` yourself, and only after you have chosen which executor guarantee is required.

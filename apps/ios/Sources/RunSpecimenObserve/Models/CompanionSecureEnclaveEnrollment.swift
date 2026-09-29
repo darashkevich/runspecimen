@@ -58,8 +58,10 @@ public enum CompanionSecureEnclaveEnrollment {
     public static let active = "active"
     public static let revoked = "revoked"
     static var clock: () -> Int = { Int(Date().timeIntervalSince1970) }
-    /// Runs after the post-wait reload and before the expiry decision, while the enrollment lock is held.
+    #if RUNSPECIMEN_TEST_HOOKS
+    /// Runs after the fail-fast load and before the decision reload, while the enrollment lock is held.
     static var beforeFinalSignatureDecision: (() -> Void)?
+    #endif
 
     public static func automationRefused() throws -> Never {
         throw CompanionHardwareRefusal.automationRefused
@@ -281,9 +283,17 @@ public enum CompanionSecureEnclaveEnrollment {
         directory: URL
     ) throws -> Data {
         try withLock(directory) {
-            _ = try load(keyID: keyID, directory: directory)
+            // This load is the fail-fast check. It must run before the test seam.
+            // Removing it would let an unreadable file reach the seam. The decision
+            // uses `after`, which is loaded again after the seam.
+            let readableBeforeWait = try load(keyID: keyID, directory: directory)
+            #if RUNSPECIMEN_TEST_HOOKS
             beforeFinalSignatureDecision?()
+            #endif
             let after = try load(keyID: keyID, directory: directory)
+            guard readableBeforeWait.keyID == after.keyID else {
+                throw CompanionHardwareRefusal.malformed("enrollment")
+            }
             return try signatureIfStillValid(
                 produced: produced,
                 before: before,
@@ -312,6 +322,9 @@ public enum CompanionSecureEnclaveEnrollment {
         )
     }
 
+    /// Serializes enrollment in this process. One lock covers every directory,
+    /// and the shipping app uses one directory per launch. Two directories in
+    /// the same process wait on each other.
     private static let processLock = NSLock()
 
     static func withLock<T>(_ directory: URL, _ body: () throws -> T) throws -> T {

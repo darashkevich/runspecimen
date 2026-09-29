@@ -511,6 +511,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "com.darashkevich.runspecimen.observe.schema-tests";
 				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) RUNSPECIMEN_TEST_HOOKS";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RunSpecimenObserve.app/RunSpecimenObserve";
 			};
@@ -529,6 +530,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "com.darashkevich.runspecimen.observe.schema-tests";
 				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) RUNSPECIMEN_TEST_HOOKS";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RunSpecimenObserve.app/RunSpecimenObserve";
 			};
@@ -577,6 +579,7 @@
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.darashkevich.runspecimen.observe;
 				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG RUNSPECIMEN_TEST_HOOKS";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;

@@ -38,6 +38,9 @@ targets:
         SKIP_INSTALL: YES
         DEFINES_MODULE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen.core
+        # Do not set RUNSPECIMEN_TEST_HOOKS on this target. Store Debug and
+        # Release builds must not contain the test seams. `swift test` defines
+        # the flag for its own Debug build in Package.swift.
   RunSpecimen:
     type: application
     platform: macOS

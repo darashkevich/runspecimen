@@ -14,7 +14,12 @@ let package = Package(
     targets: [
         .target(
             name: "RunSpecimenCore",
-            path: "Sources/RunSpecimenCore"
+            path: "Sources/RunSpecimenCore",
+            swiftSettings: [
+                // Debug is what `swift test` compiles. The Xcode Store target
+                // does not use this setting, so Release and Debug archives omit it.
+                .define("RUNSPECIMEN_TEST_HOOKS", .when(configuration: .debug))
+            ]
         ),
         .executableTarget(
             name: "RunSpecimenApp",

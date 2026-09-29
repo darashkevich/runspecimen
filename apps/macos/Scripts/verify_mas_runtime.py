@@ -123,12 +123,15 @@ def record_identity(
     stage: str,
     git_commit: str,
     git_dirty: bool,
+    fail_if_exists: bool = False,
 ) -> int:
     failures = provenance_errors(git_commit, git_dirty, stage)
     files, artifact_sha256, tree_errors = tree_identity(root)
     failures.extend(tree_errors)
     if not files:
         failures.append("identity has no files")
+    if fail_if_exists and manifest_path.exists():
+        failures.append(f"signed identity already exists and will not be replaced: {manifest_path}")
     manifest = {
         "stage": stage,
         "git_commit": git_commit,
@@ -305,19 +308,21 @@ def main(argv: list[str] | None = None) -> int:
     scan_command = commands.add_parser("scan", help="symbol and load-command scan; does not attest bytes")
     scan_command.add_argument("app", type=pathlib.Path)
     scan_command.add_argument("--report", type=pathlib.Path)
+    scan_command.add_argument("--source-id", default="")
     record_command = commands.add_parser("record-identity", help="write the post-stage byte identity")
     record_command.add_argument("app", type=pathlib.Path)
     record_command.add_argument("manifest", type=pathlib.Path)
     record_command.add_argument("--stage", required=True)
     record_command.add_argument("--git-commit", required=True)
     record_command.add_argument("--git-dirty", required=True, choices=("true", "false"))
+    record_command.add_argument("--fail-if-exists", action="store_true")
     verify_command = commands.add_parser("verify-identity", help="fail unless bytes match a recorded identity")
     verify_command.add_argument("app", type=pathlib.Path)
     verify_command.add_argument("--expect", required=True, type=pathlib.Path)
     verify_command.add_argument("--stage", required=True)
     args = parser.parse_args(argv)
     if args.command == "scan":
-        return scan(args.app, report_path=args.report)
+        return scan(args.app, report_path=args.report, source_id=args.source_id)
     if args.command == "record-identity":
         return record_identity(
             args.app,
@@ -325,6 +330,7 @@ def main(argv: list[str] | None = None) -> int:
             stage=args.stage,
             git_commit=args.git_commit,
             git_dirty=args.git_dirty == "true",
+            fail_if_exists=args.fail_if_exists,
         )
     return verify_identity(args.app, args.expect, stage=args.stage)
 

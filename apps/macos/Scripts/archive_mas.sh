@@ -184,6 +184,7 @@ python3 "$ROOT/Scripts/verify_mas_runtime.py" record-identity \
   --stage signed-archive \
   --git-commit "$COMMIT" \
   --git-dirty "$DIRTY" \
+  --fail-if-exists \
   "$APP_IN_ARCHIVE" \
   "$ARCHIVE_PATH/runtime-identity.json"
 ./Scripts/assert_archive_signing.sh "$APP_IN_ARCHIVE" "${ASSERT_ARGS[@]}"
