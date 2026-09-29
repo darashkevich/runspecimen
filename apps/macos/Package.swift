@@ -30,6 +30,11 @@ let package = Package(
             name: "RunSpecimenCoreTests",
             dependencies: ["RunSpecimenCore"],
             path: "Tests/RunSpecimenCoreTests"
+        ),
+        .testTarget(
+            name: "RunSpecimenAppTests",
+            dependencies: ["RunSpecimenApp", "RunSpecimenCore"],
+            path: "Tests/RunSpecimenAppTests"
         )
     ]
 )

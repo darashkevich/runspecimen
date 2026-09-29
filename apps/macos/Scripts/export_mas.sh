@@ -54,7 +54,11 @@ unset RS_TEST_CODESIGN_DV_APP_FILE RS_TEST_CODESIGN_DV_HELPER_FILE RS_ALLOW_TEST
 echo "==> assert_store_export_ready (fail closed; RS_ARCHIVE_PATH=$ARCHIVE_PATH RS_ARCHIVE_APP=$RS_ARCHIVE_APP)"
 READY_OUT="$(RS_ARCHIVE_PATH="$ARCHIVE_PATH" ./Scripts/assert_store_export_ready.sh)"
 echo "$READY_OUT"
-python3 "$ROOT/Scripts/verify_mas_runtime.py" "$DERIVED_APP"
+python3 "$ROOT/Scripts/verify_mas_runtime.py" scan "$DERIVED_APP"
+python3 "$ROOT/Scripts/verify_mas_runtime.py" verify-identity \
+  --expect "$ARCHIVE_PATH/runtime-identity.json" \
+  --stage signed-archive \
+  "$DERIVED_APP"
 APP_ENTITLEMENTS="$(codesign -d --entitlements - "$DERIVED_APP" 2>/dev/null)"
 if printf '%s' "$APP_ENTITLEMENTS" | grep -q 'com.apple.security.network.server'; then
   echo "ERROR: Store candidate must not carry the removed network.server entitlement" >&2

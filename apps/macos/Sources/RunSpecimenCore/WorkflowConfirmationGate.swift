@@ -74,6 +74,23 @@ public struct WorkflowConfirmationGate {
         }
     }
 
+    /// Context change before `beginExecution`. Clears a pending request and a
+    /// claim that has not started. An execution that has already started keeps
+    /// the arguments it captured.
+    public mutating func dropUnstartedWorkForContextChange() {
+        pending = nil
+        if !isExecuting {
+            claimed = nil
+        }
+    }
+
+    /// Removes a claim that has not started, so a context change cannot run it later.
+    public mutating func takeUnstartedClaim(_ request: WorkflowRequest) -> Bool {
+        guard !isExecuting, let claimed, claimed == request else { return false }
+        self.claimed = nil
+        return true
+    }
+
     /// Starts the claimed execution once. A second call, or a different request, does nothing.
     public mutating func beginExecution(of request: WorkflowRequest) -> Bool {
         guard !isExecuting, let claimed, claimed == request else { return false }

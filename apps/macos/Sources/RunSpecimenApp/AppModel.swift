@@ -184,7 +184,7 @@ final class AppModel: ObservableObject {
             workspaceURL = dest
             contractURL = dest.appendingPathComponent(ReviewerDemoWorkspace.contractName)
             expansionReadout = ""
-            cancelWorkflow()
+            dropUnstartedWorkflowForContextChange()
             do {
                 try bookmarks.saveContract(contractURL!, relativeTo: dest)
             } catch {
@@ -206,18 +206,31 @@ final class AppModel: ObservableObject {
         do {
             try bookmarks.saveWorkspace(url)
             bookmarks.clearContract()
-            workspaceURL = url
-            contractURL = nil
-            sessionNote = nil
-            contract = nil
-            status = nil
-            statusError = nil
-            expansionReadout = ""
-            cancelWorkflow()
+            noteWorkspaceSelection(url)
             await runDoctor()
         } catch {
             self.error = AppError(message: error.localizedDescription)
         }
+    }
+
+    /// The workspace half of `chooseWorkspace`, without the open panel.
+    func noteWorkspaceSelection(_ url: URL) {
+        workspaceURL = url
+        contractURL = nil
+        sessionNote = nil
+        contract = nil
+        status = nil
+        statusError = nil
+        expansionReadout = ""
+        dropUnstartedWorkflowForContextChange()
+    }
+
+    /// The contract half of `chooseContract`, without the open panel.
+    func noteContractSelection(_ url: URL) {
+        contractURL = url
+        sessionNote = nil
+        statusError = nil
+        dropUnstartedWorkflowForContextChange()
     }
 
     func chooseCLI() async {
@@ -300,10 +313,7 @@ final class AppModel: ObservableObject {
             self.error = AppError(message: error.localizedDescription)
             return
         }
-        contractURL = url
-        sessionNote = nil
-        statusError = nil
-        cancelWorkflow()
+        noteContractSelection(url)
         await loadContractSummary()
         await refreshStatus()
     }
@@ -381,15 +391,45 @@ final class AppModel: ObservableObject {
         pendingWorkflow = workflowGate.pending
     }
 
+    /// Dialog close clears an unclaimed request and leaves a claim that was
+    /// already taken. A workspace or contract change uses
+    /// `dropUnstartedWorkflowForContextChange` instead, which also drops a
+    /// claim that has not started.
+    func dropUnstartedWorkflowForContextChange() {
+        workflowGate.dropUnstartedWorkForContextChange()
+        pendingWorkflow = workflowGate.pending
+    }
+
     /// Call this synchronously from the confirm button, before any `Task`.
+    /// The claim is refused when the live workspace or contract is no longer
+    /// the one stored on the request.
     func claimConfirmedWorkflow(matching id: UUID) -> WorkflowRequest? {
         guard !isBusy else { return nil }
+        let workspace = workspaceURL?.path ?? ""
+        let contract = contractURL?.path ?? ""
+        if let pending = workflowGate.pending, pending.id == id,
+           pending.workspacePath != workspace || pending.contractPath != contract {
+            workflowGate.dropPendingIfContextDiffers(workspace: workspace, contract: contract)
+            pendingWorkflow = workflowGate.pending
+            return nil
+        }
         let claimed = workflowGate.confirm(matching: id)
         pendingWorkflow = workflowGate.pending
         return claimed
     }
 
+    /// Between claim and this call the workspace or contract may change.
+    /// A mismatch drops the unstarted claim and does not run the command.
+    /// Once `beginExecution` has started, the captured arguments are what run.
     func performClaimedWorkflow(_ request: WorkflowRequest) async {
+        let workspace = workspaceURL?.path ?? ""
+        let contract = contractURL?.path ?? ""
+        if request.workspacePath != workspace || request.contractPath != contract {
+            _ = workflowGate.takeUnstartedClaim(request)
+            expansionReadout = "The workspace or contract changed before this workflow ran. Nothing was written."
+            pendingWorkflow = workflowGate.pending
+            return
+        }
         guard workflowGate.beginExecution(of: request) else { return }
         if isBusy {
             workflowGate.abandonExecution()

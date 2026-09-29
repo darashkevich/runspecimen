@@ -294,6 +294,80 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(stored.generation, 2)
     }
 
+    func testPublicRevokeAfterFinalizeSeesTheRecordTheDecisionAlreadyAccepted() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-order-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(record, directory: directory) {}
+        CompanionSecureEnclaveEnrollment.clock = { 1_600_000_000 }
+        let holding = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        CompanionSecureEnclaveEnrollment.beforeFinalSignatureDecision = {
+            holding.signal()
+            release.wait()
+        }
+        defer {
+            CompanionSecureEnclaveEnrollment.beforeFinalSignatureDecision = nil
+            CompanionSecureEnclaveEnrollment.clock = { Int(Date().timeIntervalSince1970) }
+        }
+        let finishedDecision = expectation(description: "decision")
+        var decisionError: Error?
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                _ = try CompanionSecureEnclaveEnrollment.finalizeSignature(
+                    produced: Data(repeating: 9, count: 64),
+                    before: record.snapshot,
+                    keyID: record.keyID,
+                    expiryUnix: 1_700_000_000,
+                    directory: directory
+                )
+            } catch {
+                decisionError = error
+            }
+            finishedDecision.fulfill()
+        }
+        XCTAssertEqual(holding.wait(timeout: .now() + 2), .success)
+        let revokeStarted = DispatchSemaphore(value: 0)
+        let revokeReturned = DispatchSemaphore(value: 0)
+        let finishedRevoke = expectation(description: "revoke")
+        DispatchQueue.global(qos: .userInitiated).async {
+            revokeStarted.signal()
+            try? CompanionSecureEnclaveEnrollment.revoke(keyID: record.keyID, directory: directory)
+            revokeReturned.signal()
+            finishedRevoke.fulfill()
+        }
+        XCTAssertEqual(revokeStarted.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(revokeReturned.wait(timeout: .now() + 0.2), .timedOut)
+        let whileHeld = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
+        XCTAssertEqual(whileHeld.state, CompanionSecureEnclaveEnrollment.active)
+        XCTAssertEqual(whileHeld.generation, 1)
+        release.signal()
+        wait(for: [finishedDecision, finishedRevoke], timeout: 3)
+        XCTAssertNil(decisionError)
+        let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
+        XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.revoked)
+        XCTAssertEqual(stored.generation, 2)
+    }
+
+    func testFinalizeAfterPublicRevokeDiscardsTheSignature() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-after-revoke-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(record, directory: directory) {}
+        try CompanionSecureEnclaveEnrollment.revoke(keyID: record.keyID, directory: directory)
+        CompanionSecureEnclaveEnrollment.clock = { 1_600_000_000 }
+        defer { CompanionSecureEnclaveEnrollment.clock = { Int(Date().timeIntervalSince1970) } }
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.finalizeSignature(
+            produced: Data(repeating: 9, count: 64),
+            before: record.snapshot,
+            keyID: record.keyID,
+            expiryUnix: 1_700_000_000,
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("enrollment"))
+        }
+    }
+
     func testExpiryIsDecidedWithThePostReloadSnapshot() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-expiry-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }

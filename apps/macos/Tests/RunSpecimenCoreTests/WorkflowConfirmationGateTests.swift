@@ -101,6 +101,23 @@ final class WorkflowConfirmationGateTests: XCTestCase {
         XCTAssertEqual(gate.completedExecutions, 1)
     }
 
+    func testContextChangeDropsAnUnstartedClaimBeforeExecution() {
+        var gate = WorkflowConfirmationGate()
+        let request = WorkflowRequest(
+            title: "Retain incident pack",
+            detail: "Copies into /private/tmp/rs-dest-a. Cancel copies nothing.",
+            arguments: ["retain", "--out", "/private/tmp/rs-dest-a"],
+            workspacePath: "/ws",
+            contractPath: "/ws/contract.json"
+        )
+        gate.present(request)
+        let claimed = gate.confirm(matching: request.id)
+        gate.dropUnstartedWorkForContextChange()
+        XCTAssertNil(gate.pending)
+        XCTAssertFalse(gate.beginExecution(of: claimed!))
+        XCTAssertEqual(gate.completedExecutions, 0)
+    }
+
     func testCancelAndCloseLeaveTheDestinationUnrun() {
         var gate = WorkflowConfirmationGate()
         let request = WorkflowRequest(

@@ -170,7 +170,22 @@ test -f "$APP_IN_ARCHIVE/Contents/Resources/Assets.car" || {
 }
 
 echo "==> fail-closed archive signing / entitlement / sandbox assertions"
-python3 "$ROOT/Scripts/verify_mas_runtime.py" "$APP_IN_ARCHIVE"
+python3 "$ROOT/Scripts/verify_mas_runtime.py" scan "$APP_IN_ARCHIVE"
+COMMIT="$(git -C "$REPO" rev-parse HEAD)"
+if [[ ! "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "ERROR: signed-archive identity requires a full git commit, got: $COMMIT" >&2
+  exit 1
+fi
+DIRTY=false
+if [[ -n "$(git -C "$REPO" status --porcelain)" ]]; then
+  DIRTY=true
+fi
+python3 "$ROOT/Scripts/verify_mas_runtime.py" record-identity \
+  --stage signed-archive \
+  --git-commit "$COMMIT" \
+  --git-dirty "$DIRTY" \
+  "$APP_IN_ARCHIVE" \
+  "$ARCHIVE_PATH/runtime-identity.json"
 ./Scripts/assert_archive_signing.sh "$APP_IN_ARCHIVE" "${ASSERT_ARGS[@]}"
 if codesign -d --entitlements - "$APP_IN_ARCHIVE" 2>/dev/null | grep -q 'com.apple.security.network.server'; then
   echo "ERROR: rejected network.server entitlement remains in signed Store app" >&2

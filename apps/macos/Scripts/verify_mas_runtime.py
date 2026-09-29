@@ -12,15 +12,18 @@ symbols, it is not a ``liblzma`` load command, and the approved 0.1.4 (9)
 binary contains the same string. Do not treat that string as a rejection and
 do not strip it out of CPython.
 
-A clean symbol scan is acceptance only when the caller also passes the
-SHA-256 of every Mach-O, so a mutable build directory cannot stand in for a
-recorded artifact.
+`scan` reports symbols only. `record-identity` writes the full file map,
+artifact hash, git commit, and dirty flag after signing. `verify-identity`
+fails when that manifest is missing, the stage differs, or any later byte
+differs. A caller-supplied source label is not that attestation.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -68,6 +71,121 @@ def identity_errors(actual: dict[str, str], expected: dict[str, str]) -> list[st
     if actual != expected:
         return ["Mach-O identity does not match the recorded exact-source artifact"]
     return []
+
+
+_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+SIGNED_ARCHIVE_STAGE = "signed-archive"
+FROZEN_HELPER_STAGE = "frozen-helper"
+
+
+def tree_identity(root: pathlib.Path) -> tuple[dict[str, str], str, list[str]]:
+    """Hash every file. A symlink is recorded as its target, and one that
+    leaves the root is an error. The artifact hash covers that whole map.
+    """
+    files: dict[str, str] = {}
+    errors: list[str] = []
+    root_resolved = root.resolve()
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            resolved = path.resolve()
+            if not resolved.is_relative_to(root_resolved):
+                errors.append(f"symlink escapes root: {relative}")
+                continue
+            files[relative] = "symlink:" + os_readlink(path)
+            continue
+        if not path.is_file():
+            continue
+        files[relative] = _sha256(path)
+    payload = "".join(f"{name}\0{files[name]}\n" for name in sorted(files))
+    return files, hashlib.sha256(payload.encode("utf-8")).hexdigest(), errors
+
+
+def os_readlink(path: pathlib.Path) -> str:
+    return os.readlink(path)
+
+
+def provenance_errors(git_commit: str, git_dirty: object, stage: str) -> list[str]:
+    errors = []
+    if not isinstance(git_commit, str) or _COMMIT.fullmatch(git_commit) is None:
+        errors.append("git commit is not a 40-character source attestation")
+    if not isinstance(git_dirty, bool):
+        errors.append("git dirty flag is missing from the identity")
+    if stage not in {SIGNED_ARCHIVE_STAGE, FROZEN_HELPER_STAGE}:
+        errors.append(f"unknown identity stage: {stage}")
+    return errors
+
+
+def record_identity(
+    root: pathlib.Path,
+    manifest_path: pathlib.Path,
+    *,
+    stage: str,
+    git_commit: str,
+    git_dirty: bool,
+) -> int:
+    failures = provenance_errors(git_commit, git_dirty, stage)
+    files, artifact_sha256, tree_errors = tree_identity(root)
+    failures.extend(tree_errors)
+    if not files:
+        failures.append("identity has no files")
+    manifest = {
+        "stage": stage,
+        "git_commit": git_commit,
+        "git_dirty": git_dirty,
+        "artifact_sha256": artifact_sha256,
+        "files": files,
+    }
+    if not failures:
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    for issue in failures:
+        print(f"FAIL: {issue}", file=sys.stderr)
+    print(
+        f"MAS runtime identity: stage={stage} files={len(files)} "
+        f"artifact={artifact_sha256} violations={len(failures)}"
+    )
+    return 1 if failures else 0
+
+
+def verify_identity(root: pathlib.Path, expect: pathlib.Path, *, stage: str) -> int:
+    failures = []
+    if not expect.is_file():
+        failures.append(f"required identity manifest is absent: {expect}")
+        for issue in failures:
+            print(f"FAIL: {issue}", file=sys.stderr)
+        print("MAS runtime verify: violations=1")
+        return 1
+    try:
+        loaded = json.loads(expect.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        failures.append(f"identity manifest is not JSON: {exc}")
+        loaded = {}
+    recorded = loaded if isinstance(loaded, dict) else {}
+    if not isinstance(loaded, dict):
+        failures.append("identity manifest is not an object")
+    if recorded.get("stage") != stage:
+        failures.append(
+            f"identity stage {recorded.get('stage')!r} does not match required stage {stage!r}"
+        )
+    failures.extend(
+        provenance_errors(
+            recorded.get("git_commit", ""),
+            recorded.get("git_dirty"),
+            recorded.get("stage", ""),
+        )
+    )
+    files, artifact_sha256, tree_errors = tree_identity(root)
+    failures.extend(tree_errors)
+    recorded_files = recorded.get("files")
+    if not isinstance(recorded_files, dict):
+        failures.append("identity manifest has no file map")
+    elif recorded_files != files or recorded.get("artifact_sha256") != artifact_sha256:
+        failures.append("artifact bytes do not match the recorded post-sign identity")
+    for issue in failures:
+        print(f"FAIL: {issue}", file=sys.stderr)
+    print(f"MAS runtime verify: files={len(files)} violations={len(failures)}")
+    return 1 if failures else 0
 
 
 def _sha256(path: pathlib.Path) -> str:
@@ -179,13 +297,37 @@ def scan(
     return 1 if failures else 0
 
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        raise SystemExit("usage: verify_mas_runtime.py APP [report.json] [source-id]")
-    raise SystemExit(
-        scan(
-            pathlib.Path(sys.argv[1]),
-            report_path=pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None,
-            source_id=sys.argv[3] if len(sys.argv) > 3 else "",
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Scan Mach-O symbols or bind an artifact identity.")
+    commands = parser.add_subparsers(dest="command", required=True)
+    scan_command = commands.add_parser("scan", help="symbol and load-command scan; does not attest bytes")
+    scan_command.add_argument("app", type=pathlib.Path)
+    scan_command.add_argument("--report", type=pathlib.Path)
+    record_command = commands.add_parser("record-identity", help="write the post-stage byte identity")
+    record_command.add_argument("app", type=pathlib.Path)
+    record_command.add_argument("manifest", type=pathlib.Path)
+    record_command.add_argument("--stage", required=True)
+    record_command.add_argument("--git-commit", required=True)
+    record_command.add_argument("--git-dirty", required=True, choices=("true", "false"))
+    verify_command = commands.add_parser("verify-identity", help="fail unless bytes match a recorded identity")
+    verify_command.add_argument("app", type=pathlib.Path)
+    verify_command.add_argument("--expect", required=True, type=pathlib.Path)
+    verify_command.add_argument("--stage", required=True)
+    args = parser.parse_args(argv)
+    if args.command == "scan":
+        return scan(args.app, report_path=args.report)
+    if args.command == "record-identity":
+        return record_identity(
+            args.app,
+            args.manifest,
+            stage=args.stage,
+            git_commit=args.git_commit,
+            git_dirty=args.git_dirty == "true",
         )
-    )
+    return verify_identity(args.app, args.expect, stage=args.stage)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
