@@ -1,7 +1,16 @@
 """Fail closed on the binary references Apple rejected in 0.1.3 (8).
 
-Inspect Mach-O dependencies AND undefined symbols, not filenames alone. This is
-a regression gate, not a guarantee that Apple's complete API audit will pass.
+Apple's 2.5.1 note was specific: Python 3.9 ``_hashlib`` and ``_ssl`` linked
+Apple's private ``TrustEvaluationAgent.framework``, and the ``_lzma`` extension
+referenced the disallowed ``lzma_code`` / ``lzma_end`` / stream / properties /
+raw / decoder / encoder symbols. The scanner checks Mach-O dependencies and
+both defined and undefined symbols.
+
+The CPython module-table string ``_lzma`` between ``_lsprof`` and
+``_markupbase`` is the standard library's name. It is not one of those
+symbols, it is not a ``liblzma`` load command, and the approved 0.1.4 (9)
+binary contains the same string. Do not treat that string as a rejection and
+do not strip it out of CPython.
 """
 from __future__ import annotations
 
@@ -45,7 +54,7 @@ def scan(root: pathlib.Path) -> int:
             continue
         checked.add(resolved)
         deps = subprocess.check_output(["/usr/bin/otool", "-L", str(path)], text=True)
-        symbols = subprocess.check_output(["/usr/bin/nm", "-u", str(path)], text=True, stderr=subprocess.STDOUT)
+        symbols = subprocess.check_output(["/usr/bin/nm", str(path)], text=True, stderr=subprocess.STDOUT)
         for issue in violations(deps, symbols):
             failures.append(f"{path.relative_to(root)}: {issue}")
     if not checked:

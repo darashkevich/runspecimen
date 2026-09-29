@@ -75,7 +75,7 @@ App path unchanged. Authority Apple Development: jahorka@gmail.com (PK6W7JVY6D).
 
 The process was quit by its QA binary pid. The shared container was restored from the backup taken before launch. `/Applications/RunSpecimen.app` mtime stayed 2026-09-26 13:56:03.
 
-Scan of this QA bundle: `TrustEvaluationAgent` absent, `com.apple.security.network.server` absent, `_lzma` still present in the bundled CPython `Python` binary. That last string is the original private-API rejection’s library name inside the frozen interpreter. This pass did not submit the app and did not treat the scan as a Store clearance.
+Scan of this QA bundle: `TrustEvaluationAgent` absent, `com.apple.security.network.server` absent. The bundled CPython `Python` binary contains the module-table name `_lzma` between `_lsprof` and `_markupbase`. That name is also in the approved 0.1.4 (9) binary. It is not the rejected `lzma_*` symbol or a `liblzma` load command. This pass did not submit the app and did not treat the scan as a Store clearance.
 
 ## Post-authentication and carried pin, 2026-09-29
 
@@ -100,4 +100,26 @@ GUI on that binary, without typing an approval phrase:
 
 The QA process was quit by its own pid. The shared container was restored from the backup taken before launch. `/Applications/RunSpecimen.app` mtime stayed 2026-09-26 13:56:03.
 
-This is not a Store archive, not a device biometric proof, and not an execution boundary. `_lzma` was not removed. The executor question in `docs/EXECUTOR_PROTECTION.md` is still open.
+This is not a Store archive, not a device biometric proof, and not an execution boundary. The module-table name `_lzma` stays, matching the approved binary. The executor note in `docs/EXECUTOR_PROTECTION.md` does not authorize a helper.
+
+## Positive receipts and symbol classification, 2026-09-29
+
+The scanner in `apps/macos/Scripts/verify_mas_runtime.py` reads every nested Mach-O with `otool -L` and full `nm`, not `nm -u` alone. A violation is a private-framework or `TrustEvaluationAgent` load command, a non-system absolute dependency, a `liblzma` dependency, or a symbol line containing `_lzma_` or `TrustEvaluationAgent`. The CPython module name `_lzma.` and `_PyInit__lzma` are not violations. `tests/test_rejected_runtime_symbols.py` and `apps/macos/Scripts/test_mas_runtime.py` cover that split. The rebuilt QA app, the approved 0.1.4 (9) archive app, and `/Applications/RunSpecimen.app` each scanned at 48 Mach-O files and 0 violations. The extension modules `lzma` and `_lzma` stay excluded by `freeze_helper.sh`. The interpreter table is not stripped.
+
+iOS ObserveSchemaTests on the iPhone 17 simulator: 7 passed, including `testRevocationUnderTheEnrollmentLockBumpsOnce`. Those tests do not call Secure Enclave.
+
+Synthetic fixture, labeled as such and not a human-approved run, at `/private/tmp/rs-qa-synthetic-receipts/workspace`. Campaign `synthetic-receipt`, runs `synthetic-001` and `synthetic-002`. Output `outputs/synthetic-result.txt` is the bytes `synthetic-receipt-bytes` plus a newline. SHA-256 `508633c27446ba22c30abcf7241d6ce8faf502f7d7cb47e541a0ded32a7ad07f`. Certificate ids `synthetic-not-a-run-synthetic-001` and `synthetic-not-a-run-synthetic-002`. No approval phrase was typed.
+
+On the rebuilt development app `0.1.5 (13)`, Apple Development: jahorka@gmail.com (PK6W7JVY6D), sandbox true, `network.server` absent:
+
+- Digest receipt showed `kind` `receipt_digest`, campaign `synthetic-receipt`, run `synthetic-001`, exit code 0, and that SHA-256 under `output_digests` for `outputs/synthetic-result.txt`.
+- Compare output bytes showed the same SHA-256 as both `live` and `recorded`, with status `match`.
+- After Other campaign `synthetic-receipt` and Other run `synthetic-002` were committed, Diff receipts showed `kind` `receipt_diff`, `identical` false, exit code 0 against 7, and the recorded hash against 64 zeroes.
+- Choose retain folder selected `/private/tmp/rs-qa-synthetic-receipts/retain`. Retain incident pack then showed the confirmation title `Retain incident pack`, the detail naming `synthetic-receipt/synthetic-001` and that outside path, and the buttons `Retain incident pack` and `Cancel workflow`. Cancel workflow was clicked. The destination stayed empty.
+- A second pass, after a one-line synthetic `events.jsonl` was added beside the certificate, clicked the confirmation button `Retain incident pack` (the panel button, not the scroll-view button that only stages the request). The destination then contained `certificate.json` and `events.jsonl`. Those copies were deleted after the check. This is still not a human-approved run.
+
+The QA process was quit by its own pid. The shared container was restored from the backup taken before launch. `/Applications/RunSpecimen.app` mtime stayed 2026-09-26 13:56:03. This is not a Store archive and not a device biometric proof.
+
+Mac diagnostic `preview` exited 0 and printed that it made no Secure Enclave call. `enroll` without `--human-invoked` exited 2. An unsigned Release build for a generic iPhone is at `/tmp/rs-device-builds/ios-unsigned/Build/Products/Release-iphoneos/RunSpecimenObserve.app`. `codesign` reports it is not signed. It was not installed. A signed device build failed because no provisioning profile for `com.darashkevich.runspecimen.observe` is on this Mac, and automatic profile creation was not enabled. The shipping binary does not contain `ios-dev-phone`. Secure Enclave enroll, sign, revoke, and rotate are implemented and have not been run on a device by a person.
+
+Local `release_check.py` on Python 3.12.14: 411 tests, 35 skipped (PyNaCl, bubblewrap, and Linux `ldd`; the new symbol tests ran). Unpublished rc15 wheel SHA-256 `24082fbf9006c627953f6d9c5b8f0c9dca9fb006efcae3b54472b7dfa641d871` (unchanged). Plugin zip SHA-256 `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d` (unchanged). Sdist SHA-256 `cdf8cbe74125a301b620f2b8ef27170245be185443302b2dc39d114a401b1648` (changed because `tests/` and `docs/` are in the sdist). Copies are in `artifacts/rc15-2026-09-29-symbol-receipts/` next to the approved 0.1.4 (9) archive. Published rc14 hashes are unchanged. `apps/` is not in the sdist, so this evidence file does not change those hashes.

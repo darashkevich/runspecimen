@@ -132,6 +132,42 @@ final class ObserveSchemaTests: XCTestCase {
         }
     }
 
+    func testRevocationUnderTheEnrollmentLockBumpsOnce() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-race-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(record, directory: directory) {}
+        let entered = DispatchSemaphore(value: 0)
+        let finishFirst = DispatchSemaphore(value: 0)
+        let first = expectation(description: "first revocation")
+        DispatchQueue.global(qos: .userInitiated).async {
+            try? CompanionSecureEnclaveEnrollment.withLock(directory) {
+                entered.signal()
+                finishFirst.wait()
+                let live = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
+                _ = try CompanionSecureEnclaveEnrollment.persistRevocation(live, directory: directory) { _ in }
+            }
+            first.fulfill()
+        }
+        XCTAssertEqual(entered.wait(timeout: .now() + 2), .success)
+        let second = expectation(description: "second revocation")
+        DispatchQueue.global(qos: .userInitiated).async {
+            try? CompanionSecureEnclaveEnrollment.withLock(directory) {
+                let live = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
+                XCTAssertEqual(live.state, CompanionSecureEnclaveEnrollment.revoked)
+                XCTAssertEqual(live.generation, 2)
+                _ = try CompanionSecureEnclaveEnrollment.persistRevocation(live, directory: directory) { _ in }
+            }
+            second.fulfill()
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+        finishFirst.signal()
+        wait(for: [first, second], timeout: 3)
+        let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
+        XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.revoked)
+        XCTAssertEqual(stored.generation, 2)
+    }
+
     private func sampleRecord(state: String, generation: Int) -> CompanionPairingRecord {
         CompanionPairingRecord(
             keyID: "phone-vector",

@@ -1,53 +1,41 @@
 # Executor protection decision
 
-Status: **not decided and not built.** No privileged helper, setuid binary, XPC service, or new entitlement is in this candidate. `consumeForExecution` is not called by a run. `evaluateExecution` only calls a consume function a test supplies, and its `started` field stays false.
+Status: **not decided and not built.** No privileged helper, setuid binary, XPC service, Endpoint Security client, or new entitlement is in this candidate. `consumeForExecution` is not called by a run. `evaluateExecution` only calls a consume function a test supplies, and its `started` field stays false.
 
-The earlier note recommended keeping enforcement in the sandboxed Mac App Store app and accepting same-user binary replacement and container restore. That option does **not** meet the stronger requirement: a same-user agent must not be able to start the bounded command by replacing the CLI or rolling approval state back.
+Owning a consumed-approval marker or a workspace lease does not stop another process from running the same command. A root-owned file can stop a second `runspecimen` from restoring that file. It cannot stop `/bin/sh`, the user's editor, or any other binary that can already read the workspace from executing the argv in the contract.
 
-## Option A — sandboxed Store app
+## What a sole path would have to control
 
-The check and the approval files stay in the Mac App Store app and its container.
+For the helper to be the only process that can run the command, the operating system has to deny the exec to everyone else. A private file is not that control when the command is a user-owned program and user-owned inputs.
 
-What it can do: sandbox the app, omit `com.apple.security.network.server`, keep the browser dashboard out of the Store binary, and require a person to carry a package instead of opening a socket.
-
-What it cannot do: stop a same-user agent. That agent can run another `runspecimen`, replace a user-owned binary, or restore the container. Guideline 2.4.5(v) forbids a Mac App Store app from escalating to root or using setuid. Guideline 2.4.5(ii) and (iv) require one self-contained bundle and forbid installing code or resources in shared locations. Guideline 2.5.2 keeps the app inside its container. An XPC service inside `Contents/XPCServices` is replaced when the bundle is replaced.
-
-This option is the only one that can ship as the current Mac App Store app. It is not the stronger requirement.
-
-## Option B — protected executor, outside the Store app
-
-A separate Developer ID product, not the Mac App Store app, whose helper is the only process that may spawn the bounded command. The helper owns the consumed-approval marker and the workspace lease as root, mode `0700` or `0600`, so a same-user process cannot rewrite or restore them.
-
-The helper has to be the spawner. A helper that only returns “allowed” to a user-writable CLI does not meet the requirement, because that CLI can ignore the answer. An alternate CLI meets the requirement only when it cannot read the lease, cannot write the consumed marker, and cannot spawn the bounded command itself. Those resources have to be exclusively the helper’s.
-
-Distribution: this cannot be the Mac App Store app. Apple’s archived EvenBetterAuthorizationSample says `SMJobBless` helpers are for outside the Mac App Store, and that Mac App Store apps may not use elevated privileges. A third-party daemon is not itself sandboxed. The Store app can stay the sandboxed 0.1.x product. The protected executor would be a different download, a different update channel, and a privileged install a person has to approve.
-
-What a privileged helper does **not** solve by itself:
-
-- It does not receive the user-keychain Secure Enclave private key. Face ID and Touch ID stay in the user session. The helper can receive signature bytes and a pinned public key. It cannot sign as the person.
-- It does not stop an administrator or root. Root can replace the helper, delete its state, or spawn the command directly. Same-user automation and administrator or root compromise are different threats. Option B is aimed at the first. It does not claim the second.
-- A signature still does not prove the person understood the command. Hardware authentication protects the signing operation. It is not a reading of intent.
-
-IPC, if this option is authorized later: the user session sends the canonical request and the signatures over an XPC connection the helper accepts only from a binary whose code signature and launch constraint match the Developer ID product (WWDC 2023 session 10266). The helper reloads enrollment, checks generation, role, backend, and provenance, consumes the nonce, and takes the lease in one critical section before it spawns. A crash before the marker is durable must leave the nonce unconsumed. A crash after the marker is durable must leave the nonce consumed. An update replaces the helper only through the signed installer. A downgrade of the helper or of the enrollment generation fails closed.
-
-None of that IPC or helper exists in this tree.
-
-## Resources the executor would have to own
-
-| Resource | Option A | Option B |
+| Resource | Access control that would make the helper the only caller | What root ownership of a marker actually does |
 | --- | --- | --- |
-| Process that spawns the bounded command | The Store app or any other binary the user can launch | Only the helper |
-| Consumed-approval marker and workspace lease | App container, restorable by the same user | Root-owned files the user cannot restore |
-| Enrollment and policy records used at spawn | Container, same limitation | Helper-owned copies. A carried file’s “Secure Enclave” label is not enrollment |
-| Secure Enclave private key | User keychain | Still the user keychain. The helper does not get it |
-| Companion transport | A file a person carries | The same. No relay and no listening socket |
+| The command binary and its inputs | The user must be unable to `exec` them. macOS does not offer a third-party app a sandbox it can apply to other processes. | Unchanged. The user can still run them. |
+| Consumed-approval marker and RunSpecimen lease | Root-owned, mode `0700`, created by the helper | Stops the user from restoring those two files. Does not stop the command. |
+| Enrollment snapshot the helper trusts | Same root-owned directory. A carried file's backend label is not enrollment | Stops the user from editing the snapshot. Does not stop the command. |
+| The process that calls `posix_spawn` | Only the helper's code | Any other process can spawn the same argv. |
+| Secure Enclave private key | User keychain, `biometryCurrentSet`. A helper does not receive it | Unchanged. |
 
-## Recommendation
+The OS control that can deny an exec is Endpoint Security `ES_EVENT_TYPE_AUTH_EXEC`. It requires the restricted entitlement `com.apple.developer.endpoint-security.client`. Apple treats that entitlement as restricted: WWDC 2020 session 10159 says the app must request a provisioning profile, and the client is a system extension, not a Mac App Store helper. DTS has said the entitlement is granted separately and is not an App Store capability (developer.apple.com/forums/thread/759149, July 2024). This team has not been granted it. Using it to block the user's own shell would be a different product. It is not part of this recommendation, and it is not implemented.
 
-Do not treat option A as satisfying the stronger requirement. Keep the Mac App Store app on option A so it can remain sandboxed and free of a root helper. Meet the stronger requirement only with option B, as a separate Developer ID product, and only after the helper is specified as the sole spawner of the bounded command.
+A privileged helper installed with `SMJobBless` is outside the Mac App Store. Apple's archived EvenBetterAuthorizationSample says Mac App Store apps may not use elevated privileges. Guideline 2.4.5(v) forbids a Mac App Store app from escalating to root or using setuid. Guideline 2.4.5(ii) and (iv) require one self-contained bundle. Guideline 2.5.2 keeps the app inside its container. An XPC service inside `Contents/XPCServices` is replaced when the app is replaced (WWDC 2023 session 10266). QA1773 requires every Mach-O in a sandboxed bundle to be sandboxed. None of those make the helper the only process that can run a user-owned command.
 
-The candidate does not enable a production run path for either option. `evaluateExecution` is the integration seam, tested with a double. It does not take the workspace lease and it does not spawn.
+## Admin and root
 
-## Authorization question
+Root can replace a helper, delete its files, and exec anything. An administrator who can install a helper can also run the command directly. Same-user automation and administrator or root compromise are different threats. No design in this document stops root.
 
-Authorize a separate Developer ID product, not a change to the Mac App Store app, whose privileged helper is the only process allowed to spawn a bounded run and the only owner of the consumed-approval marker and workspace lease, knowing that this helper still does not hold the Secure Enclave key and does not stop an administrator or root?
+A signature still does not prove the person understood the command. Hardware authentication protects the signing operation.
+
+## Recommended design
+
+Keep the Mac App Store app sandboxed. Do not add a privileged helper. Do not apply for Endpoint Security for this receipt product.
+
+The helper that only owns a marker and a lease does not meet the sole-path requirement, so building it would add a Developer ID install, a privileged prompt, and a second update channel without making the helper the only process that can run the command. The Endpoint Security alternative could deny other execs only after a separate Apple grant, cannot ship in this Store app, and would block the user from running their own command. That cost is not accepted here.
+
+What the Store app does: sandbox, no `com.apple.security.network.server`, no browser dashboard, user-mediated companion file, approval state in the container. A same-user agent can run another binary or run the command directly. That limit stays open. It is not marked done.
+
+`evaluateExecution` remains a test seam. It does not spawn and it does not take the lease.
+
+## Authorization
+
+No helper, relay, Endpoint Security client, or new entitlement is authorized. This note does not ask for one to be built. A later decision to pursue a sole execution path has to name Endpoint Security, the restricted entitlement, and the fact that it would block the user's own command. That decision is not this candidate.

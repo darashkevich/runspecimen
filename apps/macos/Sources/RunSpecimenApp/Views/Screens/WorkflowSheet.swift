@@ -39,6 +39,10 @@ struct WorkflowSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().overlay(RSTheme.line)
+            if let request = model.pendingWorkflow {
+                confirmationPanel(request)
+                Divider().overlay(RSTheme.line)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if model.workspaceURL == nil {
@@ -68,26 +72,33 @@ struct WorkflowSheet: View {
         }
         .frame(minWidth: 640, minHeight: 520)
         .background(RSTheme.bg)
-        .confirmationDialog(
-            model.pendingWorkflow?.title ?? "Confirm",
-            isPresented: Binding(
-                get: { model.pendingWorkflow != nil },
-                set: { presented in
-                    if !presented { model.cancelWorkflow() }
-                }
-            ),
-            presenting: model.pendingWorkflow
-        ) { request in
-            Button(request.title) {
-                guard let claimed = model.claimConfirmedWorkflow(), claimed.id == request.id else { return }
-                Task { await model.performClaimedWorkflow(claimed) }
-            }
-            Button("Cancel", role: .cancel) {
-                model.cancelWorkflow()
-            }
-        } message: { request in
+    }
+
+    private func confirmationPanel(_ request: WorkflowRequest) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(request.title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(RSTheme.ink)
+                .accessibilityLabel("Workflow confirmation title")
+                .accessibilityValue(request.title)
             Text(request.detail)
+                .font(.system(size: 12))
+                .foregroundStyle(RSTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel("Workflow confirmation detail")
+                .accessibilityValue(request.detail)
+            HStack {
+                WorkflowConfirmButton(title: request.title) {
+                    guard let claimed = model.claimConfirmedWorkflow(), claimed.id == request.id else { return }
+                    Task { await model.performClaimedWorkflow(claimed) }
+                }
+                WorkflowConfirmButton(title: "Cancel workflow") {
+                    model.cancelWorkflow()
+                }
+            }
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var header: some View {
@@ -237,6 +248,8 @@ struct WorkflowSheet: View {
                     .foregroundStyle(RSTheme.muted)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("Workflow result")
+                    .accessibilityValue(model.expansionReadout)
             }
         }
     }
@@ -405,10 +418,12 @@ struct WorkflowSheet: View {
                 .font(.system(size: 12))
                 .foregroundStyle(RSTheme.muted)
             HStack {
-                Button("Digest") { Task { await showDigest(live: false) } }
-                    .disabled(!canRead || model.contract == nil)
-                Button("Compare output bytes") { Task { await showDigest(live: true) } }
-                    .disabled(!canRead || model.contract == nil)
+                WorkflowConfirmButton(title: "Digest receipt", enabled: canRead && model.contract != nil) {
+                    Task { await showDigest(live: false) }
+                }
+                WorkflowConfirmButton(title: "Compare output bytes", enabled: canRead && model.contract != nil) {
+                    Task { await showDigest(live: true) }
+                }
             }
             TextField("Other campaign", text: $againstCampaign)
                 .textFieldStyle(.roundedBorder)
@@ -416,12 +431,19 @@ struct WorkflowSheet: View {
             TextField("Other run", text: $againstRun)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityLabel("Other run")
-            Button("Diff receipts") { Task { await showDiff() } }
-                .disabled(!canRead || model.contract == nil || againstCampaign.trimmingCharacters(in: .whitespaces).isEmpty || againstRun.trimmingCharacters(in: .whitespaces).isEmpty)
+            WorkflowConfirmButton(
+                title: "Diff receipts",
+                enabled: canRead && model.contract != nil && !againstCampaign.trimmingCharacters(in: .whitespaces).isEmpty && !againstRun.trimmingCharacters(in: .whitespaces).isEmpty
+            ) {
+                Task { await showDiff() }
+            }
             HStack {
-                Button("Choose retain folder") { retainDest = PanelPicker.pickDirectory(message: "Choose a folder outside this workspace") }
-                Button("Retain…") { stageRetain() }
-                    .disabled(!canRead || model.contract == nil || retainDest == nil)
+                WorkflowConfirmButton(title: "Choose retain folder", enabled: canRead) {
+                    retainDest = PanelPicker.pickDirectory(message: "Choose a folder outside this workspace")
+                }
+                WorkflowConfirmButton(title: "Retain incident pack", enabled: canRead && model.contract != nil && retainDest != nil) {
+                    stageRetain()
+                }
             }
             if let retainDest {
                 Text(retainDest.path)
@@ -622,5 +644,38 @@ struct WorkflowSheet: View {
                 .foregroundStyle(RSTheme.muted)
                 .lineLimit(1)
         }
+    }
+}
+
+/// AppKit button so Accessibility sees the confirmation title inside the sheet.
+private struct WorkflowConfirmButton: NSViewRepresentable {
+    var title: String
+    var enabled: Bool = true
+    var action: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(title: title, target: context.coordinator, action: #selector(Coordinator.press))
+        button.bezelStyle = .rounded
+        button.isEnabled = enabled
+        button.setAccessibilityLabel(title)
+        button.setAccessibilityIdentifier(title)
+        return button
+    }
+
+    func updateNSView(_ button: NSButton, context: Context) {
+        context.coordinator.action = action
+        button.title = title
+        button.isEnabled = enabled
+        button.setAccessibilityLabel(title)
+    }
+
+    final class Coordinator: NSObject {
+        var action: () -> Void
+        init(action: @escaping () -> Void) { self.action = action }
+        @objc func press() { action() }
     }
 }

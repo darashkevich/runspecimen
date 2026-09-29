@@ -271,7 +271,7 @@ public enum CompanionSecureEnclaveEnrollment {
         )
     }
 
-    private static func withLock<T>(_ directory: URL, _ body: () throws -> T) throws -> T {
+    static func withLock<T>(_ directory: URL, _ body: () throws -> T) throws -> T {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let fd = open(directory.appendingPathComponent("enrollment.lock").path, O_CREAT | O_RDWR, 0o600)
         guard fd >= 0 else { throw CompanionHardwareRefusal.malformed("lock") }
