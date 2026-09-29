@@ -5,12 +5,13 @@
 # Does not upload or Submit for Review.
 #
 # Release qualification sets RS_RELEASE_GATE=1 and RS_EXPECTED_GIT_COMMIT to the
-# reviewed 40-character SHA before this script, then passes the same SHA to
-# export_mas.sh. The runtime-identity.json file is an integrity record of the
-# signed bytes plus caller-supplied git metadata. It is not an independent
-# cryptographic source attestation. A development archive may be dirty.
-# Export rejects a dirty tree, a different commit, and a commit that moved
-# during the build.
+# reviewed 40-character SHA. release_source_prelude.sh checks that checkout
+# before helper freeze or project generation, then continues in a detached
+# worktree of that commit. A dirty tree, a different commit, or a source
+# change during freeze or generation fails. The runtime-identity.json file is
+# an integrity record of the signed bytes plus caller-supplied git metadata.
+# It is not an independent cryptographic source attestation. A development
+# archive may be dirty. Export rejects it.
 #
 # The exported Store package is not a local launch build. taskgated rejects its
 # Mac App Store profile outside App Store installation. Launch QA uses
@@ -44,8 +45,14 @@ echo "==> Xcode"
 xcodebuild -version
 xcode-select -p
 
-echo "==> Ensure frozen Mach-O helper (rc engine from this tree)"
-RS_FREEZE_HELPER=1 RS_MAS_BUILD=1 ./Scripts/freeze_helper.sh --enable --require --verify
+# Release builds re-exec this script inside the isolated candidate and stop
+# the caller. Development builds freeze and generate in place.
+if [[ "${RS_RELEASE_GATE:-}" == "1" && "${RS_RELEASE_ISOLATED:-}" != "1" ]]; then
+  ./Scripts/release_source_prelude.sh
+  exit $?
+fi
+./Scripts/release_source_prelude.sh
+
 HELPER_VER="$(Helpers/payload/runspecimen --version 2>&1)" || {
   echo "ERROR: Helpers/payload/runspecimen --version failed" >&2
   exit 1
@@ -62,8 +69,6 @@ echo "$HELPER_VER" | grep -F "$REPO_VER" >/dev/null || {
   exit 1
 }
 
-echo "==> Ensure Xcode project"
-./Scripts/generate_xcodeproj.sh
 test -d "$ROOT/RunSpecimen.xcodeproj"
 chmod +x "$ROOT/Scripts/"*.sh
 
