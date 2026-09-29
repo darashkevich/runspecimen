@@ -27,6 +27,6 @@ The exact git commit is the commit that introduces this manifest on `cursor/inte
 | Fast path | yes | yes |
 | Local biometric prototype | yes, not an execution gate | exclude the prototype sources and test hooks, then verify the binary |
 | Companion transport | user-mediated RSBA2 package. The Mac pin ignores a carried file's Secure Enclave label. Phone buttons call Secure Enclave directly. No socket or relay | not built |
-| Privileged helper, relay, `network.server`, Endpoint Security | not added. A marker does not stop another process from running the command. See `docs/EXECUTOR_PROTECTION.md` | not added |
+| Privileged helper, relay, `network.server`, Endpoint Security | not added. The open choice is which of the three guarantees in `docs/EXECUTOR_PROTECTION.md` is required. None of the stronger ones is authorized | not added |
 
 `ProductionPolicy.accepts` is a test classifier. It does not enforce a biometric execution policy.

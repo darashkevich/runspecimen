@@ -168,6 +168,159 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(stored.generation, 2)
     }
 
+    func testEnrollCreatesAKeyOnlyWhenThePairingFileIsMissing() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-enroll-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var created = 0
+        let record = try CompanionSecureEnclaveEnrollment.enrollReplacingMissingFile(
+            keyID: "phone-vector",
+            directory: directory,
+            createKey: {
+                created += 1
+                return Data(repeating: 4, count: 65)
+            },
+            cleanup: {}
+        )
+        XCTAssertEqual(created, 1)
+        XCTAssertEqual(record.generation, 1)
+        XCTAssertEqual(record.state, CompanionSecureEnclaveEnrollment.active)
+        let url = directory.appendingPathComponent("phone-vector.pairing.json")
+        let original = try Data(contentsOf: url)
+
+        created = 0
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.enrollReplacingMissingFile(
+            keyID: "phone-vector",
+            directory: directory,
+            createKey: {
+                created += 1
+                return Data(repeating: 9, count: 65)
+            },
+            cleanup: {}
+        )) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .alreadyEnrolled)
+        }
+        XCTAssertEqual(created, 0)
+        XCTAssertEqual(try Data(contentsOf: url), original)
+
+        try Data("not-json".utf8).write(to: url)
+        let malformed = try Data(contentsOf: url)
+        created = 0
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.enrollReplacingMissingFile(
+            keyID: "phone-vector",
+            directory: directory,
+            createKey: {
+                created += 1
+                return Data(repeating: 9, count: 65)
+            },
+            cleanup: {}
+        )) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("enrollment"))
+        }
+        XCTAssertEqual(created, 0)
+        XCTAssertEqual(try Data(contentsOf: url), malformed)
+
+        XCTAssertEqual(chmod(url.path, 0), 0)
+        defer { _ = chmod(url.path, 0o644) }
+        created = 0
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.enrollReplacingMissingFile(
+            keyID: "phone-vector",
+            directory: directory,
+            createKey: {
+                created += 1
+                return Data(repeating: 9, count: 65)
+            },
+            cleanup: {}
+        )) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("enrollment"))
+        }
+        XCTAssertEqual(created, 0)
+        _ = chmod(url.path, 0o644)
+        XCTAssertEqual(try Data(contentsOf: url), malformed)
+
+        let revoked = sampleRecord(state: CompanionSecureEnclaveEnrollment.revoked, generation: 4)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(revoked, directory: directory) {}
+        let revokedBytes = try Data(contentsOf: url)
+        created = 0
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.enrollReplacingMissingFile(
+            keyID: "phone-vector",
+            directory: directory,
+            createKey: {
+                created += 1
+                return Data(repeating: 9, count: 65)
+            },
+            cleanup: {}
+        )) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("enrollment"))
+        }
+        XCTAssertEqual(created, 0)
+        XCTAssertEqual(try Data(contentsOf: url), revokedBytes)
+
+        try FileManager.default.removeItem(at: url)
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.enrollReplacingMissingFile(
+            keyID: "phone-vector",
+            directory: directory,
+            createKey: { throw CompanionHardwareRefusal.malformed("keychain") },
+            cleanup: {}
+        )) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("keychain"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testRevocationBetweenReloadAndDecisionDiscardsTheSignature() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-boundary-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(record, directory: directory) {}
+        CompanionSecureEnclaveEnrollment.clock = { 1_600_000_000 }
+        CompanionSecureEnclaveEnrollment.beforeFinalSignatureDecision = {
+            _ = try? CompanionSecureEnclaveEnrollment.persistRevocation(record, directory: directory) { _ in }
+        }
+        defer {
+            CompanionSecureEnclaveEnrollment.beforeFinalSignatureDecision = nil
+            CompanionSecureEnclaveEnrollment.clock = { Int(Date().timeIntervalSince1970) }
+        }
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.finalizeSignature(
+            produced: Data(repeating: 9, count: 64),
+            before: record.snapshot,
+            keyID: record.keyID,
+            expiryUnix: 1_700_000_000,
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("enrollment"))
+        }
+        let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
+        XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.revoked)
+        XCTAssertEqual(stored.generation, 2)
+    }
+
+    func testExpiryIsDecidedWithThePostReloadSnapshot() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-expiry-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(record, directory: directory) {}
+        CompanionSecureEnclaveEnrollment.clock = { 1_600_000_000 }
+        CompanionSecureEnclaveEnrollment.beforeFinalSignatureDecision = {
+            CompanionSecureEnclaveEnrollment.clock = { 1_700_000_000 }
+        }
+        defer {
+            CompanionSecureEnclaveEnrollment.beforeFinalSignatureDecision = nil
+            CompanionSecureEnclaveEnrollment.clock = { Int(Date().timeIntervalSince1970) }
+        }
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.finalizeSignature(
+            produced: Data(repeating: 9, count: 64),
+            before: record.snapshot,
+            keyID: record.keyID,
+            expiryUnix: 1_700_000_000,
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("expiry_unix"))
+        }
+        let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
+        XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.active)
+        XCTAssertEqual(stored.generation, 1)
+    }
+
     private func sampleRecord(state: String, generation: Int) -> CompanionPairingRecord {
         CompanionPairingRecord(
             keyID: "phone-vector",

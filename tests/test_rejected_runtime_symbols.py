@@ -36,3 +36,19 @@ class RejectedRuntimeSymbolTests(unittest.TestCase):
             )
         )
         self.assertTrue(gate.violations("binary:\n /usr/lib/liblzma.5.dylib (x)\n", ""))
+
+    def test_each_slice_and_a_changed_artifact_hash_fail_closed(self):
+        gate = load_gate()
+        errors = gate.inspect_slices(
+            ["arm64", "x86_64"],
+            lambda arch: ("binary:\n /usr/lib/libSystem.B.dylib (x)\n", None),
+            lambda arch: ("T _lzma_code\n", None) if arch == "x86_64" else ("_lzma._markupbase\n", None),
+        )
+        self.assertEqual(len(errors), 1)
+        self.assertIn("x86_64", errors[0])
+        self.assertIn("_lzma_code", errors[0])
+        self.assertTrue(gate.identity_errors({"Python": "recorded"}, {"Python": "replaced"}))
+        self.assertEqual(
+            gate.inspect_slices([], lambda arch: ("", None), lambda arch: ("", None)),
+            ["no architecture slice inspected"],
+        )

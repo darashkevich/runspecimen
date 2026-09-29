@@ -6,12 +6,23 @@ public struct WorkflowRequest: Equatable, Sendable, Identifiable {
     public var title: String
     public var detail: String
     public var arguments: [String]
+    public var workspacePath: String
+    public var contractPath: String
 
-    public init(id: UUID = UUID(), title: String, detail: String, arguments: [String]) {
+    public init(
+        id: UUID = UUID(),
+        title: String,
+        detail: String,
+        arguments: [String],
+        workspacePath: String = "",
+        contractPath: String = ""
+    ) {
         self.id = id
         self.title = title
         self.detail = detail
         self.arguments = arguments
+        self.workspacePath = workspacePath
+        self.contractPath = contractPath
     }
 }
 
@@ -37,7 +48,14 @@ public struct WorkflowConfirmationGate {
     /// Returns the pending request once. The caller must pass that value into
     /// the later execution; do not read `pending` again after an await.
     public mutating func confirm() -> WorkflowRequest? {
-        guard !isExecuting, claimed == nil, let pending else { return nil }
+        guard let pending else { return nil }
+        return confirm(matching: pending.id)
+    }
+
+    /// Claims the pending request only when it is still the one the panel showed.
+    /// A stale identifier leaves the current request pending.
+    public mutating func confirm(matching id: UUID) -> WorkflowRequest? {
+        guard !isExecuting, claimed == nil, let pending, pending.id == id else { return nil }
         claimed = pending
         self.pending = nil
         return pending
@@ -45,6 +63,15 @@ public struct WorkflowConfirmationGate {
 
     public mutating func cancel() {
         pending = nil
+    }
+
+    /// Drops an unclaimed request when the workspace or contract it was staged
+    /// against is no longer the one on screen. A claimed execution is not dropped.
+    public mutating func dropPendingIfContextDiffers(workspace: String, contract: String) {
+        guard let pending else { return }
+        if pending.workspacePath != workspace || pending.contractPath != contract {
+            self.pending = nil
+        }
     }
 
     /// Starts the claimed execution once. A second call, or a different request, does nothing.

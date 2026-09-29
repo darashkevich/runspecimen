@@ -89,7 +89,7 @@ struct WorkflowSheet: View {
                 .accessibilityValue(request.detail)
             HStack {
                 WorkflowConfirmButton(title: request.title) {
-                    guard let claimed = model.claimConfirmedWorkflow(), claimed.id == request.id else { return }
+                    guard let claimed = model.claimConfirmedWorkflow(matching: request.id) else { return }
                     Task { await model.performClaimedWorkflow(claimed) }
                 }
                 WorkflowConfirmButton(title: "Cancel workflow") {
@@ -112,7 +112,10 @@ struct WorkflowSheet: View {
                     .foregroundStyle(RSTheme.muted)
             }
             Spacer()
-            Button("Close") { dismiss() }
+            Button("Close") {
+                model.cancelWorkflow()
+                dismiss()
+            }
                 .keyboardShortcut(.cancelAction)
         }
         .padding(16)

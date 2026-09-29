@@ -58,32 +58,52 @@ public enum CompanionSecureEnclaveEnrollment {
     public static let active = "active"
     public static let revoked = "revoked"
     static var clock: () -> Int = { Int(Date().timeIntervalSince1970) }
+    /// Runs after the post-wait reload and before the expiry decision, while the enrollment lock is held.
+    static var beforeFinalSignatureDecision: (() -> Void)?
 
     public static func automationRefused() throws -> Never {
         throw CompanionHardwareRefusal.automationRefused
     }
 
     public static func enroll(keyID: String, directory: URL) throws -> CompanionPairingRecord {
+        try enrollReplacingMissingFile(keyID: keyID, directory: directory) {
+            try createEnclaveKey(keyID: keyID)
+        } cleanup: {
+            try? deleteBlob(keyID: keyID)
+        }
+    }
+
+    /// Creates a key only when the pairing file is absent. A malformed,
+    /// unreadable, active, or revoked record is returned as an error and the
+    /// file is left as it was. This is not a recovery flow.
+    static func enrollReplacingMissingFile(
+        keyID: String,
+        directory: URL,
+        createKey: () throws -> Data,
+        cleanup: () -> Void
+    ) throws -> CompanionPairingRecord {
         try validateKeyID(keyID)
         return try withLock(directory) {
-            if let existing = try? load(keyID: keyID, directory: directory), existing.state == active {
-                throw CompanionHardwareRefusal.alreadyEnrolled
+            do {
+                let existing = try load(keyID: keyID, directory: directory)
+                if existing.state == active {
+                    throw CompanionHardwareRefusal.alreadyEnrolled
+                }
+                throw CompanionHardwareRefusal.malformed("enrollment")
+            } catch CompanionHardwareRefusal.missing {
+                let publicKey = try createKey()
+                let record = CompanionPairingRecord(
+                    keyID: keyID,
+                    publicKey: publicKey,
+                    role: EnrollmentIdentity.roleCompanion,
+                    backend: EnrollmentIdentity.backendSecureEnclave,
+                    provenance: EnrollmentIdentity.provenanceProduction,
+                    state: active,
+                    generation: 1
+                )
+                try storeEnrollment(record, directory: directory, cleanup: cleanup)
+                return record
             }
-            let existing = try? load(keyID: keyID, directory: directory)
-            let publicKey = try createEnclaveKey(keyID: keyID)
-            let record = CompanionPairingRecord(
-                keyID: keyID,
-                publicKey: publicKey,
-                role: EnrollmentIdentity.roleCompanion,
-                backend: EnrollmentIdentity.backendSecureEnclave,
-                provenance: EnrollmentIdentity.provenanceProduction,
-                state: active,
-                generation: existing?.generation ?? 1
-            )
-            try storeEnrollment(record, directory: directory) {
-                try? deleteBlob(keyID: keyID)
-            }
-            return record
         }
     }
 
@@ -241,16 +261,37 @@ public enum CompanionSecureEnclaveEnrollment {
             return record
         }
         let produced = try signWithEnclave(keyID: before.keyID, publicKey: before.publicKey, bytes: bytes)
-        let after = try withLock(directory) {
-            try load(keyID: fields.companionKeyID, directory: directory)
-        }
-        return try signatureIfStillValid(
+        return try finalizeSignature(
             produced: produced,
             before: before.snapshot,
-            after: after.snapshot,
+            keyID: fields.companionKeyID,
             expiryUnix: fields.expiryUnix,
-            now: clock()
+            directory: directory
         )
+    }
+
+    /// Linearization point for a signature that has not been returned yet.
+    /// The reload, the test seam, the snapshot, and the clock are one critical
+    /// section. A signature already returned to the caller is not revoked here.
+    static func finalizeSignature(
+        produced: Data,
+        before: CompanionEnrollmentSnapshot,
+        keyID: String,
+        expiryUnix: Int,
+        directory: URL
+    ) throws -> Data {
+        try withLock(directory) {
+            _ = try load(keyID: keyID, directory: directory)
+            beforeFinalSignatureDecision?()
+            let after = try load(keyID: keyID, directory: directory)
+            return try signatureIfStillValid(
+                produced: produced,
+                before: before,
+                after: after.snapshot,
+                expiryUnix: expiryUnix,
+                now: clock()
+            )
+        }
     }
 
     private static func canonical(_ fields: RSBA2Package.Fields) throws -> Data {

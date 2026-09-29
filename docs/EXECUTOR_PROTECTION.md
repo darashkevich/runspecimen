@@ -2,23 +2,28 @@
 
 Status: **not decided and not built.** No privileged helper, setuid binary, XPC service, Endpoint Security client, or new entitlement is in this candidate. `consumeForExecution` is not called by a run. `evaluateExecution` only calls a consume function a test supplies, and its `started` field stays false.
 
-Owning a consumed-approval marker or a workspace lease does not stop another process from running the same command. A root-owned file can stop a second `runspecimen` from restoring that file. It cannot stop `/bin/sh`, the user's editor, or any other binary that can already read the workspace from executing the argv in the contract.
+Three guarantees are different requirements. This note does not collapse them into one product, and it does not treat Endpoint Security as the only way to isolate a RunSpecimen resource.
 
-## What a sole path would have to control
+## The three guarantees
 
-For the helper to be the only process that can run the command, the operating system has to deny the exec to everyone else. A private file is not that control when the command is a user-owned program and user-owned inputs.
+1. **RunSpecimen's own transition.** The app and CLI refuse to approve, preflight, run, or postflight unless their own gate allows it. Today that gate is the terminal `APPROVE` phrase for a run, and an in-app confirmation for workflow writes. It binds the process that is RunSpecimen. It does not bind any other program.
 
-| Resource | Access control that would make the helper the only caller | What root ownership of a marker actually does |
-| --- | --- | --- |
-| The command binary and its inputs | The user must be unable to `exec` them. macOS does not offer a third-party app a sandbox it can apply to other processes. | Unchanged. The user can still run them. |
-| Consumed-approval marker and RunSpecimen lease | Root-owned, mode `0700`, created by the helper | Stops the user from restoring those two files. Does not stop the command. |
-| Enrollment snapshot the helper trusts | Same root-owned directory. A carried file's backend label is not enrollment | Stops the user from editing the snapshot. Does not stop the command. |
-| The process that calls `posix_spawn` | Only the helper's code | Any other process can spawn the same argv. |
-| Secure Enclave private key | User keychain, `biometryCurrentSet`. A helper does not receive it | Unchanged. |
+2. **RunSpecimen's protected resources.** The execution lease is `fcntl` on `.runspecimen/execution.lock` inside the workspace (`src/runspecimen/lease.py`, `LEASE_FILENAME` in `src/runspecimen/paths.py`). Run state, the approval file, and certificates live in that same user-writable `.runspecimen` tree. The Mac app container is a separate sandbox. A same-user process that can write the workspace can replace those files. Moving the lease, the consumed-approval marker, and the enrollment snapshot into a location that other same-user processes cannot write — the app container, or a directory another OS access control limits to one holder — is resource isolation. It does not require Endpoint Security, and it does not stop the user from running the command with `/bin/sh`.
 
-The OS control that can deny an exec is Endpoint Security `ES_EVENT_TYPE_AUTH_EXEC`. It requires the restricted entitlement `com.apple.developer.endpoint-security.client`. Apple treats that entitlement as restricted: WWDC 2020 session 10159 says the app must request a provisioning profile, and the client is a system extension, not a Mac App Store helper. DTS has said the entitlement is granted separately and is not an App Store capability (developer.apple.com/forums/thread/759149, July 2024). This team has not been granted it. Using it to block the user's own shell would be a different product. It is not part of this recommendation, and it is not implemented.
+3. **Every equivalent command on the Mac.** Stopping every process from executing the same argv is global command blocking. That is a different product from (1) and from (2).
 
-A privileged helper installed with `SMJobBless` is outside the Mac App Store. Apple's archived EvenBetterAuthorizationSample says Mac App Store apps may not use elevated privileges. Guideline 2.4.5(v) forbids a Mac App Store app from escalating to root or using setuid. Guideline 2.4.5(ii) and (iv) require one self-contained bundle. Guideline 2.5.2 keeps the app inside its container. An XPC service inside `Contents/XPCServices` is replaced when the app is replaced (WWDC 2023 session 10266). QA1773 requires every Mach-O in a sandboxed bundle to be sandboxed. None of those make the helper the only process that can run a user-owned command.
+Owning a marker or a lease is (2) only for the files the owner can exclusively write. It is not (3). A root-owned marker stops a second `runspecimen` from restoring that file when the user cannot write it. The user can still exec a user-owned command.
+
+## Options, with what each one actually covers
+
+| Option | Guarantee it can support | What it does not do | Cost | Authorized |
+| --- | --- | --- | --- | --- |
+| Sandboxed Mac App Store app, as it is now | (1) for the app's own buttons and the CLI it launches. The container is the app's sandbox (Guideline 2.5.2). No `com.apple.security.network.server`. | A same-user process can write `.runspecimen` and can exec the command. | None beyond the current app. | This is the candidate. |
+| Keep RunSpecimen state out of the user-writable workspace | (2) for the lease, marker, and enrollment snapshot, if those files move to the container or another directory the same user cannot rewrite. The workspace command and inputs stay where the user put them. | Does not stop `/bin/sh` from running the command. Root can still change the files. The CLI and the app would have to agree on the new location. | A design change to path layout. No new entitlement. Not implemented. | Not chosen. |
+| Privileged helper (`SMJobBless`) holding those files | Still only (2), and only for files the helper exclusively owns. Apple's archived EvenBetterAuthorizationSample says Mac App Store apps may not use elevated privileges. Guideline 2.4.5(v) forbids root and setuid. Guideline 2.4.5(ii) and (iv) require one self-contained bundle. | Does not stop another process from exec of a user-owned command. Adds a Developer ID install and a second update channel. | Outside this Store app. | Not authorized. |
+| Endpoint Security `ES_EVENT_TYPE_AUTH_EXEC` | (3), by denying execs. It requires the restricted entitlement `com.apple.developer.endpoint-security.client`. WWDC 2020 session 10159: the client is a system extension with a provisioning profile Apple grants separately. DTS forum 759149 (July 2024): that entitlement is not an App Store capability. | It is one way to block execs. It is not a way to protect the lease file, and it is not required for (1) or (2). Using it to block the user's own shell is global command blocking. | Restricted entitlement this team does not have. Cannot ship inside this Store app. | Not authorized. |
+
+QA1773 requires every Mach-O in a sandboxed bundle to be sandboxed. WWDC 2023 session 10266: an XPC service inside `Contents/XPCServices` is replaced when the app is replaced. Neither fact selects among the three guarantees.
 
 ## Admin and root
 
@@ -26,16 +31,16 @@ Root can replace a helper, delete its files, and exec anything. An administrator
 
 A signature still does not prove the person understood the command. Hardware authentication protects the signing operation.
 
-## Recommended design
+## What this candidate does
 
-Keep the Mac App Store app sandboxed. Do not add a privileged helper. Do not apply for Endpoint Security for this receipt product.
+The sandboxed Store app covers guarantee (1) for its own process. Guarantee (2) is unfinished because the lease and run state remain in the user-writable workspace. Guarantee (3) is not this product. `evaluateExecution` does not spawn and it does not take the lease.
 
-The helper that only owns a marker and a lease does not meet the sole-path requirement, so building it would add a Developer ID install, a privileged prompt, and a second update channel without making the helper the only process that can run the command. The Endpoint Security alternative could deny other execs only after a separate Apple grant, cannot ship in this Store app, and would block the user from running their own command. That cost is not accepted here.
+## The decision
 
-What the Store app does: sandbox, no `com.apple.security.network.server`, no browser dashboard, user-mediated companion file, approval state in the container. A same-user agent can run another binary or run the command directly. That limit stays open. It is not marked done.
+Which guarantee should the next design be required to meet?
 
-`evaluateExecution` remains a test seam. It does not spawn and it does not take the lease.
+1. RunSpecimen will not perform its own run or workflow transition unless its own gate allows it.
+2. Another same-user process cannot rewrite RunSpecimen's lease, consumed-approval marker, or enrollment snapshot. It may still run the user's command some other way.
+3. No process on the Mac can run an equivalent command.
 
-## Authorization
-
-No helper, relay, Endpoint Security client, or new entitlement is authorized. This note does not ask for one to be built. A later decision to pursue a sole execution path has to name Endpoint Security, the restricted entitlement, and the fact that it would block the user's own command. That decision is not this candidate.
+This review does not choose one, and it does not authorize a helper, a relay, Endpoint Security, or a new entitlement. Choosing (3) would be an explicit request for global command blocking. Choosing (2) would be an explicit request to relocate protected RunSpecimen state. Until then the candidate stays on (1), with (2) and (3) unfinished.

@@ -30,6 +30,36 @@ class RejectedRuntimeTests(unittest.TestCase):
         self.assertTrue(gate.violations("binary:", "0000000100001f00 T _lzma_code"))
         self.assertTrue(gate.violations("binary:", "                 U _lzma_stream_encoder"))
 
+    def test_every_architecture_slice_is_inspected(self):
+        seen = []
+
+        def deps(arch):
+            seen.append(("deps", arch))
+            return "binary:\n /usr/lib/libSystem.B.dylib (x)\n", None
+
+        def symbols(arch):
+            seen.append(("nm", arch))
+            if arch == "x86_64":
+                return "0000000100001f00 T _lzma_code\n", None
+            return "o._json._locale._lsprof._lzma._markupbase\n", None
+
+        errors = gate.inspect_slices(["arm64", "x86_64"], deps, symbols)
+        self.assertEqual(seen, [("deps", "arm64"), ("nm", "arm64"), ("deps", "x86_64"), ("nm", "x86_64")])
+        self.assertEqual(errors, ["x86_64: rejected API reference: 0000000100001f00 T _lzma_code"])
+
+    def test_slice_tool_failure_is_a_violation(self):
+        errors = gate.inspect_slices(
+            ["arm64"],
+            lambda arch: ("", f"otool failed for {arch}: bad"),
+            lambda arch: ("", None),
+        )
+        self.assertEqual(errors, ["otool failed for arm64: bad"])
+        self.assertEqual(gate.inspect_slices([], lambda arch: ("", None), lambda arch: ("", None)), ["no architecture slice inspected"])
+
+    def test_identity_mismatch_fails_a_clean_symbol_scan(self):
+        self.assertEqual([], gate.identity_errors({"Python": "abc"}, {"Python": "abc"}))
+        self.assertTrue(gate.identity_errors({"Python": "abc"}, {"Python": "def"}))
+
 
 if __name__ == "__main__":
     unittest.main()

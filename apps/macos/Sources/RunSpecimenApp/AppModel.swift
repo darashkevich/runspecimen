@@ -303,6 +303,7 @@ final class AppModel: ObservableObject {
         contractURL = url
         sessionNote = nil
         statusError = nil
+        cancelWorkflow()
         await loadContractSummary()
         await refreshStatus()
     }
@@ -367,7 +368,10 @@ final class AppModel: ObservableObject {
     private var workflowGate = WorkflowConfirmationGate()
 
     func stageWorkflow(_ request: WorkflowRequest) {
-        workflowGate.present(request)
+        var bound = request
+        bound.workspacePath = workspaceURL?.path ?? ""
+        bound.contractPath = contractURL?.path ?? ""
+        workflowGate.present(bound)
         pendingWorkflow = workflowGate.pending
     }
 
@@ -378,9 +382,9 @@ final class AppModel: ObservableObject {
     }
 
     /// Call this synchronously from the confirm button, before any `Task`.
-    func claimConfirmedWorkflow() -> WorkflowRequest? {
+    func claimConfirmedWorkflow(matching id: UUID) -> WorkflowRequest? {
         guard !isBusy else { return nil }
-        let claimed = workflowGate.confirm()
+        let claimed = workflowGate.confirm(matching: id)
         pendingWorkflow = workflowGate.pending
         return claimed
     }
