@@ -60,7 +60,8 @@ class ReleaseSourcePreludeTests(unittest.TestCase):
         self.seen_repo = self.root / "seen-repo"
 
     def tearDown(self) -> None:
-        subprocess.run(["git", "-C", str(self.repo), "worktree", "prune"], check=False)
+        if self.repo.exists():
+            subprocess.run(["git", "-C", str(self.repo), "worktree", "prune"], check=False)
         subprocess.run(["rm", "-rf", str(self.root)], check=False)
 
     def _run(self, *, gate: bool, expected: str | None, freeze: str, generate: str = "true") -> subprocess.CompletedProcess[str]:
@@ -150,6 +151,20 @@ class ReleaseSourcePreludeTests(unittest.TestCase):
         self.assertTrue(self.generate_marker.exists())
         self.assertEqual(_git(self.repo, "rev-parse", "HEAD"), sha)
         self.assertEqual(_git(self.repo, "status", "--porcelain"), "")
+
+    def test_release_gate_refuses_build_app_before_compilation(self) -> None:
+        script = ROOT / "apps" / "macos" / "Scripts" / "build_app.sh"
+        env = os.environ.copy()
+        env["RS_RELEASE_GATE"] = "1"
+        completed = subprocess.run(
+            ["bash", str(script), "--mas"],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("before any compilation", completed.stderr)
+        self.assertNotIn("freezing self-contained helper", completed.stdout)
 
     def test_development_freeze_still_runs_on_a_dirty_tree(self) -> None:
         _init_repo(self.repo)

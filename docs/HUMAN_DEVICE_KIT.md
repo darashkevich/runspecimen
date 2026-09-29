@@ -2,7 +2,7 @@
 
 An agent must not run these steps. Do not pass `--human-invoked`. Do not tap Touch ID or Face ID. Do not grant a permission dialog. Do not type `APPROVE`. Do not pass `-allowProvisioningUpdates`, register a device, or read `~/.appstoreconnect/private_keys`.
 
-The kit directory, when prepared, is `artifacts/human-device-kit/` next to the approved 0.1.4 (9) archive. It holds an unsigned iPhone build and the Mac diagnostic binary. Neither is installed. Neither is a Store package. Secure Enclave enroll, sign, revoke, and rotate are implemented and are not human-tested until you complete the prompts yourself.
+The kit directory, when prepared, is `artifacts/human-device-kit/` next to the approved 0.1.4 (9) archive. It holds an unsigned iPhone build and the Mac diagnostic binary. Neither is installed. Neither is a Store package. Secure Enclave enroll, sign, revoke, and rotate are implemented and are not human-tested until you complete the prompts yourself. Diagnostic signing is not a bounded run. The chosen run policy is local Touch ID, an explicitly selected paired iPhone, or both devices. `runspecimen run` does not use that policy yet. A typed phrase must not replace it once it does. Phone approval is not physical presence at the Mac.
 
 These binaries were built from `5c3957a3a8ddf9fceacc3096b2208ee7757e6b72`. A later commit that does not change the diagnostic or iOS app sources does not by itself replace them. Check the hashes before you run anything that can prompt.
 

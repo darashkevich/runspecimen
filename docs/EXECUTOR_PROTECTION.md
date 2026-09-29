@@ -50,13 +50,42 @@ An imported `secure-enclave` label is not attestation. A Secure Enclave private 
 
 Attacker this goal is about: another process running as the same user, including an unsandboxed shell. Not a requirement to stop root. Not a requirement to stop `/bin/sh` from running a user-owned command. That last item is guarantee (3) and is excluded.
 
-## What a sound (2) still needs
+## Architecture
 
-The holder of the lease, the consumed-approval marker, and the enrollment snapshot must be a principal this user cannot rewrite or restore. The app container is not that principal. `uchg` is not that principal. A file inside the workspace is not that principal.
+This is the design for guarantee (2). It is not installed. The Mac App Store app remains the client. It does not become the owner of trusted state.
 
-A privileged helper, or a separate Developer ID product with a different owner, could be that holder. Shipping it inside this Mac App Store bundle conflicts with Guideline 2.4.5. It would be a second install and a second update channel. It can still only cover files it exclusively owns. It does not become guarantee (3).
+| Store | Owner | What a same-user shell may do with it |
+| --- | --- | --- |
+| Workspace, contract, inputs, captured output | The interactive user | Read and write. These are the command's files, not the trust boundary. |
+| Enrollment records: key id, public key, role, generation, backend, provenance, revocation | Dedicated holder principal | Must not rewrite, restore, or roll a generation backward. |
+| Selected policy: local, companion, or dual, bound to one Mac identity | Same holder | Must not switch policy by editing a workspace file. |
+| Consumed nonces | Same holder | Must not delete or restore a nonce to run the request again. |
+| Execution lease for one bounded command | Same holder | Must not replace the lock inode and take a second lease. |
 
-That expansion is not implemented and not installed. It needs its own decision before any helper, entitlement, or broader access is added.
+The holder is a Developer ID launch daemon installed outside the Mac App Store bundle. It runs as a system user this interactive user does not own. Its directory is not the app container and not `~`. The Store app and the bundled helper are XPC clients. They are not the process that owns those four stores.
+
+The holder is the process that validates the signed request and launches the bounded command. Validation and consume happen in the holder before `posix_spawn`. The current `src/runspecimen/run.py` path still spawns under the workspace lease. That path stays in place until the holder exists, and it is not guarantee (2).
+
+Callers are authenticated with the XPC audit token and a designated requirement for Team ID `UN6KF8636A`, bundle id `com.darashkevich.runspecimen`, and the bundled helper's identifier. A replacement executable with a different signature is rejected. The user can still start `/bin/sh` themselves. That is guarantee (3), which is excluded.
+
+The holder prevents the workspace attacks as follows.
+
+- Rollback: generation is monotonic in the holder. Copying an older enrollment file into the workspace does not change it.
+- Replay: consume is a compare-and-swap of the nonce in the holder before launch. A second consume fails. If the holder crashes after consume and before launch, the nonce stays consumed and recovery is a new signed request. If it crashes after launch, the lease records that the run started and a retry does not launch again.
+- Concurrent consumers: one lease token inside the holder.
+- Unauthorized policy or enrollment changes: writes require the enrollment path inside the holder. A workspace JSON file is not the policy.
+
+The signed request that the holder accepts binds run id, input fingerprint, contract fingerprint, workspace id, Mac id, bounds, policy, nonce, expiry, and the local and companion key ids and generations. The holder reloads enrollment at consume. Expiry uses the holder's clock. Hardware provenance is the key this Mac or the paired iPhone created in its Secure Enclave during a human enrollment. A file that merely says `secure-enclave` is not that event.
+
+Supported client: macOS 14.0 and later, the app's deployment target. The holder has to be built and installed for the same floor. The feasibility probe ran on macOS 27.0 as uid 501. An app update replaces the client only. Holder state survives that update and the holder has its own update channel. Lost holder state is re-enrollment, not a file restore. Root can replace the holder, its directory, and the client. This design does not stop an administrator or root.
+
+Store compatibility: the helper is not in the Mac App Store bundle, so Guideline 2.4.5 is not asked to allow a setuid tool inside the app. The app stays sandboxed, with no `com.apple.security.network.server` and no relay. If the holder is missing, the app fails closed. It does not fall back to a typed phrase.
+
+## Smallest authorization still required
+
+Authorize one Developer ID launch daemon, outside this Mac App Store app, running as a dedicated system user, owning the enrollment store, policy, consumed nonces, and execution lease, and accepting XPC only from Team ID `UN6KF8636A`'s RunSpecimen client. Do not authorize Endpoint Security, a relay, a listening server, or an entitlement change in the Store app. Do not install the daemon under the current prompt.
+
+These alternatives do not meet guarantee (2), so they are not substitutes: the app container, a user-immutable flag, a keychain item the same user can delete, and calling `consumeForExecution` on files in the workspace. `tests/test_lease.py` records the inode replacement against the current lease. That test passing means the workspace lease is still bypassable. It is not a passing protection test.
 
 Until that holder exists, these are not proof of (2): moving files into the container, a passing `fcntl` test, a software consume, or a Boolean named as a human tap. `consumeForExecution` stays unwired. The run path still asks for a typed phrase in a terminal. That phrase is the current guarantee (1) gate. It is not the biometric policy below, and it must not become a silent fallback once a biometric policy is required.
 
