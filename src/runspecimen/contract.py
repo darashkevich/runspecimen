@@ -189,6 +189,7 @@ class Contract:
     path: Path
     contract_hash: str
     raw: dict[str, Any] = field(repr=False)
+    execution_approval: str | None = None
 
 
     @property
@@ -223,6 +224,21 @@ def _parse_isolation(raw: Any) -> IsolationSpec:
             "none does not confine the network"
         )
     return IsolationSpec(backend=backend, network=network)
+
+
+_EXECUTION_APPROVALS = frozenset({"local", "companion", "dual"})
+
+
+def _parse_execution_approval(raw: Any) -> str | None:
+    """Biometric execution policy. Absent keeps the typed-phrase gate."""
+    if raw is None:
+        return None
+    value = _require_str(raw, "execution_approval")
+    if value not in _EXECUTION_APPROVALS:
+        raise ContractError(
+            "execution_approval must be local, companion, or dual"
+        )
+    return value
 
 
 def _parse_policy(raw: Any) -> PolicyRef | None:
@@ -299,6 +315,7 @@ def parse_contract(
             "isolation",
             "policy",
             "task_manifest",
+            "execution_approval",
         },
         "contract",
     )
@@ -478,6 +495,7 @@ def parse_contract(
     isolation = _parse_isolation(data.get("isolation"))
     policy = _parse_policy(data.get("policy"))
     task_manifest = _parse_task_manifest_ref(data.get("task_manifest"))
+    execution_approval = _parse_execution_approval(data.get("execution_approval"))
 
     if contract_hash is None:
         contract_hash = hash_contract_file(path)
@@ -500,6 +518,7 @@ def parse_contract(
         path=path.resolve(),
         contract_hash=contract_hash,
         raw=data,
+        execution_approval=execution_approval,
     )
 
 

@@ -9,6 +9,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from runspecimen.approve import approval_is_valid, load_approval
 from runspecimen.atomic import atomic_write_bytes
@@ -106,6 +107,7 @@ def run_contract(
     contract_path: Path,
     workspace: Path,
     now: float | None = None,
+    holder: Any = None,
 ) -> dict:
     workspace = resolve_workspace(workspace)
     contract = load_contract(contract_path)
@@ -121,12 +123,13 @@ def run_contract(
                 workspace=workspace,
                 state_dir=state_dir,
                 now=now,
+                holder=holder,
             )
     except LeaseError as exc:
         raise RunError(str(exc)) from exc
 
 
-def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float | None) -> dict:
+def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float | None, holder: Any) -> dict:
     # Check phase first - terminal phases must be rejected immediately
     state = load_state(state_dir)
     phase = state.get("phase")
@@ -134,18 +137,31 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
         raise PreflightError(f"run already in phase={phase!r}; refuse re-entry")
 
     approval = load_approval(state_dir)
-    if approval is None:
+    holder_receipt: dict | None = None
+    if contract.execution_approval is not None:
+        if approval is not None:
+            raise PreflightError("a workspace approval cannot replace the execution holder")
+        if holder is None:
+            raise PreflightError(
+                f"execution policy {contract.execution_approval} requires the holder; "
+                "there is no typed-phrase fallback"
+            )
+        from runspecimen.holder_adapter import HolderRefusal, authorize_held_execution
+
+        try:
+            holder_receipt = authorize_held_execution(contract, workspace, holder)
+        except HolderRefusal as exc:
+            raise PreflightError(str(exc)) from exc
+        if holder_receipt.get("policy") != contract.execution_approval:
+            raise PreflightError("holder policy does not match the contract")
+        if holder_receipt.get("installed_protection") is not False:
+            raise PreflightError("unprivileged holder must not claim installed protection")
+    elif approval is None:
         raise PreflightError("no approval present; run approve first")
     source_hash, _ = hash_source(
         workspace, list(contract.source.roots), list(contract.source.excludes)
     )
-    ok, reason = approval_is_valid(approval, contract, source_hash, now=now)
-    if not ok:
-        raise PreflightError(reason)
     runtime = runtime_provenance(contract, workspace)
-    ok, reason = runtime_matches(approval, runtime)
-    if not ok:
-        raise PreflightError(reason)
     check_outputs_absent(workspace, contract)
     check_predecessor(workspace, contract)
 
@@ -154,20 +170,28 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
         raise RunError(f"cwd does not exist or is not a directory: {contract.cwd}")
 
     isolation, policy = execution_constraints(contract, workspace)
-    if not plans_match(approval.get("isolation"), isolation):
-        raise PreflightError(
-            "isolation backend does not match the approval "
-            f"(approved {approval.get('isolation')!r}, live {isolation!r})"
-        )
-    if approval.get("policy") != policy:
-        raise PreflightError("shared policy does not match the approval")
-
-    # Source/runtime hashing and predecessor verification can outlast a short
-    # approval. Check the clock again at the actual launch boundary.
     ts = time.time() if now is None else now
-    ok, reason = approval_is_valid(approval, contract, source_hash, now=ts)
-    if not ok:
-        raise PreflightError(reason)
+    if holder_receipt is None:
+        ok, reason = approval_is_valid(approval, contract, source_hash, now=now)
+        if not ok:
+            raise PreflightError(reason)
+        ok, reason = runtime_matches(approval, runtime)
+        if not ok:
+            raise PreflightError(reason)
+        if not plans_match(approval.get("isolation"), isolation):
+            raise PreflightError(
+                "isolation backend does not match the approval "
+                f"(approved {approval.get('isolation')!r}, live {isolation!r})"
+            )
+        if approval.get("policy") != policy:
+            raise PreflightError("shared policy does not match the approval")
+        # Source/runtime hashing and predecessor verification can outlast a short
+        # approval. Check the clock again at the actual launch boundary.
+        ok, reason = approval_is_valid(approval, contract, source_hash, now=ts)
+        if not ok:
+            raise PreflightError(reason)
+    elif holder_receipt.get("holder_id") == source_hash:
+        raise PreflightError("holder identity is not distinct from the payload")
 
     log = EventLog.for_state_dir(state_dir)
     log.append(
@@ -195,6 +219,15 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
     }
     if policy is not None:
         running_fields["policy"] = policy
+    if holder_receipt is not None:
+        running_fields["execution_holder"] = {
+            "holder_id": holder_receipt.get("holder_id"),
+            "payload_digest": holder_receipt.get("payload_digest"),
+            "policy": holder_receipt.get("policy"),
+            "snapshot_root": holder_receipt.get("snapshot_root"),
+            "residuals": list(holder_receipt.get("residuals") or []),
+            "installed_protection": False,
+        }
     update_state(state_dir, **running_fields)
 
     deadline = time.monotonic() + contract.caps.wall_timeout_sec
@@ -213,6 +246,28 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
         else:
             # Direct executable launch (binaries, not scripts)
             launch_argv = [str(runtime["resolved_executable"]), *contract.argv[1:]]
+
+        if holder_receipt is not None:
+            from runspecimen.holder_adapter import (
+                HolderRefusal,
+                rewrite_launch_from_snapshots,
+            )
+
+            path_map = holder_receipt.get("path_map")
+            if not isinstance(path_map, dict):
+                raise PreflightError("holder consume did not return a snapshot path map")
+            try:
+                launch_argv = rewrite_launch_from_snapshots(
+                    launch_argv,
+                    path_map={str(k): str(v) for k, v in path_map.items()},
+                    workspace=workspace,
+                    live_executable=str(runtime.get("resolved_executable") or ""),
+                )
+            except HolderRefusal as exc:
+                raise PreflightError(str(exc)) from exc
+            # Relative writes still use the live workspace cwd. Only named
+            # inputs were snapshotted. Dynamic linker residuals stay in the
+            # holder receipt.
 
         launch_argv = confinement_argv(
             isolation,

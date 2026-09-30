@@ -154,25 +154,25 @@ Guideline 2.4.5, fetched from <https://developer.apple.com/app-store/review/guid
 
 Clause (v) is a prohibition. A System Settings approval does not rewrite it, and embedding the helper with `SMAppService` does not rewrite it either. An embedded root daemon is not an established Mac App Store path for this app. A second installer for the same daemon is not Store-compatible either: that is (ii), (iv), and a second update channel under (vii). This pass did not register a daemon and did not add an entitlement.
 
-If the holder is missing, the app fails closed. It does not fall back to a typed phrase.
+A contract that selects `execution_approval` of `local`, `companion`, or `dual` fails closed when the holder is missing. It does not fall back to a typed phrase. A contract without that field stays on the typed phrase. That is guarantee (1), and it is what the Mac App Store app still is.
 
-## Decision, not a Store authorization
+## Decision
 
-Guarantee (2) as specified needs a root holder that can `setuid` the payload to the console user. Guideline 2.4.5(v) forbids that inside a Mac App Store app. User consent does not close that conflict. Writing this section does not authorize a daemon, an entitlement, or a channel switch.
+On 2026-09-30 Yahor authorized implementation of a separate Developer ID product with a protected execution holder. In the list below, that is item 2. The Mac App Store app stays guarantee (1) and must not claim the Developer ID guarantee. This authorization does not install the holder, register a daemon, change entitlements or provisioning, or release either product. `docs/APPLE_DTS_HOLDER_QUESTION.md` stays unsent.
 
-Yahor still wants guarantee (2). The Store build cannot implement it under the published rule. The later choice is one of these:
+Guarantee (2) as specified needs a holder the same user cannot rewrite, able to `setuid` the payload to the console user. Guideline 2.4.5(v) forbids that holder inside a Mac App Store app. User consent does not close that conflict.
 
-1. **Mac App Store only.** Guarantee (2) stays unimplemented. The shipping app enforces guarantee (1) only and does not claim (2).
-2. **A separate Developer ID product**, authorized on its own, for the root holder and the client that talks to it. The Mac App Store app stays guarantee (1) and must not claim the Developer ID product's guarantee. That is a second channel, not a silent replacement of the Store app.
-3. **Ask Apple before choosing.** The unsent question is `docs/APPLE_DTS_HOLDER_QUESTION.md`. Do not send it until Yahor says to.
+1. **Mac App Store only.** Not the authorized path. Guarantee (2) stays unimplemented there. The shipping Store app enforces guarantee (1) only and does not claim (2).
+2. **A separate Developer ID product.** This is the authorized implementation path. The holder and its client are a second product. The Mac App Store app is not replaced and must not claim this product's guarantee.
+3. **Ask Apple before choosing.** Not required for this implementation. The unsent question remains `docs/APPLE_DTS_HOLDER_QUESTION.md`.
 
 These are not ways to get guarantee (2) on the Store channel: the app container, a user-immutable flag, a keychain item the same user can delete, calling `consumeForExecution` on workspace files, and a daemon whose payload runs as the holder. `tests/test_lease.py` records the inode replacement against the current lease. That test passing means the workspace lease is still bypassable.
 
-Until that holder exists, `consumeForExecution` stays unwired. The run path still asks for a typed phrase in a terminal. That phrase is the current guarantee (1) gate. It is not the biometric policy below, and it must not become a silent fallback once a biometric policy is required.
+`src/runspecimen/execution_holder.py` is the holder core. `src/runspecimen/holder_adapter.py` is the unprivileged filesystem-socket test adapter. `run.py` calls that client only when `execution_approval` is set. The adapter sets `installed_protection` to false. A passing test does not prove installed protection. Swift `consumeForExecution` is still not this boundary. Installation of a Developer ID daemon, its launchd or `SMAppService` registration, and any entitlement or provisioning change remain a later human approval.
 
 ## Approval policy
 
-This is the chosen policy. It is not yet what `runspecimen run` enforces.
+This is the chosen policy for the Developer ID product. `runspecimen run` enforces it only as a fail-closed requirement: `local`, `companion`, or `dual` need a holder consume and never accept the typed phrase. The connected human verifier is not implemented. The test adapter's software stand-in is not Touch ID, Face ID, or a paired phone.
 
 | Run | Approval |
 | --- | --- |
