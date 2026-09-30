@@ -316,6 +316,7 @@ class HeldRunTests(RunSpecimenTestCase):
         with self.assertRaises(PreflightError) as missing:
             run_contract(contract_path=path, workspace=self.ws)
         self.assertIn("requires the holder", str(missing.exception))
+        self.assertIn("no typed-phrase fallback", str(missing.exception))
         self.assertFalse((self.ws / "outputs" / "out.json").exists())
 
     def test_adapter_consume_runs_from_snapshots_once(self) -> None:

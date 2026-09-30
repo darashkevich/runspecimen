@@ -148,8 +148,8 @@ def _resolve_installed_holder(policy: str) -> Any:
     sock = installed_socket_path()
     if not sock.exists() and not _is_socket(sock):
         raise PreflightError(
-            f"execution policy {policy} requires the installed holder; "
-            "there is no typed-phrase fallback"
+            f"execution policy {policy} requires the holder; "
+            "installed daemon socket is missing and there is no typed-phrase fallback"
         )
     caller_id = os.environ.get("RS_HOLDER_CALLER_ID", "").strip()
     caller_secret = os.environ.get("RS_HOLDER_CALLER_SECRET", "").strip()
@@ -181,8 +181,8 @@ def _resolve_installed_holder(policy: str) -> Any:
     client = discover_installed_holder_client(caller_id, caller_secret, _human_for)
     if client is None:
         raise PreflightError(
-            f"execution policy {policy} requires the installed holder; "
-            "there is no typed-phrase fallback"
+            f"execution policy {policy} requires the holder; "
+            "installed daemon is unreachable and there is no typed-phrase fallback"
         )
     return client
 
