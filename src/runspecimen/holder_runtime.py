@@ -69,9 +69,16 @@ def assert_path_chain(
             raise RuntimeTrustError(f"runtime path uid mismatch: {cursor}")
         mode = stat.S_IMODE(st.st_mode)
         if not allow_world_write and mode & stat.S_IWOTH:
-            raise RuntimeTrustError(f"runtime path is world-writable: {cursor}")
+            # Sticky world-writable parents such as /tmp are acceptable only for
+            # unprivileged harness paths. Root installs must not live under them.
+            sticky = bool(mode & stat.S_ISVTX) and stat.S_ISDIR(st.st_mode)
+            if not (sticky and require_uid != 0):
+                raise RuntimeTrustError(f"runtime path is world-writable: {cursor}")
         if not allow_group_write and mode & stat.S_IWGRP:
-            raise RuntimeTrustError(f"runtime path is group-writable: {cursor}")
+            # Group-writable sticky parents follow the same unprivileged exception.
+            sticky = bool(mode & stat.S_ISVTX) and stat.S_ISDIR(st.st_mode)
+            if not (sticky and require_uid != 0):
+                raise RuntimeTrustError(f"runtime path is group-writable: {cursor}")
     return cursor
 
 
