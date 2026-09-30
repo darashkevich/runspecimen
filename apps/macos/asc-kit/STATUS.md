@@ -41,6 +41,8 @@ plus macOS rejection fixes only — **does not include PR #34**.
 
 ASC URL: https://appstoreconnect.apple.com/apps/6813492506/distribution/macos/version/inflight
 
+In-flight note: that `/inflight` URL is historical (saved while **0.1.4 (9)** was waiting). The current Connect state in this file is `READY_FOR_SALE` for **0.1.4 (9)** — see the top section. This integrated branch is unpublished **0.1.5 (13)** / engine **0.2.0rc15** and is not that Store package. Do not withdraw, replace, or claim a new Store submission from this note.
+
 These identities are different artifacts. Do not treat them as the same package because an older local build reused the text **0.1.4 (9)**.
 
 | Artifact | Version | Source | Engine features | Package SHA-256 | Apple build |
