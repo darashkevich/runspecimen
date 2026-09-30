@@ -5,18 +5,29 @@ The in-memory simulator is a different module. This harness uses real
 pipes, real child processes, and fsynced durable files. A fault calls
 ``os._exit`` in the holder process so the kernel closes its pipes and the
 child is not reaped by that holder.
+
+Cleanup may signal a pid only after a stored high-resolution start token
+matches a fresh lookup. A pid file, a ``ps`` ``lstart`` string, a missing
+token, or a failed lookup is not authorization. ``lstart`` is second
+resolution and is not that token. Corrupt spent history is lost state, not
+an empty nonce set. A missing spent file is new state.
 """
 
 from __future__ import annotations
 
+import ctypes
+import errno
 import os
+import re
 import secrets
 import select
 import signal
+import stat
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Callable
 
 from runspecimen.holder_protocol import (
     ProtocolError,
@@ -52,10 +63,60 @@ EXIT_STOPPED = 0
 EXIT_ERROR = 2
 EXIT_LEASE = 3
 EXIT_SPENT = 4
+EXIT_LOST = 5
+
+# Microseconds since the epoch, or Linux start ticks. Not a wall-clock second.
+_TOKEN_RE = re.compile(r"^(?:us:[1-9][0-9]*\.[0-9]{6}|ticks:[0-9]+)$")
+
+Identify = Callable[[int], "ProcessView"]
+Kill = Callable[[int, int], None]
+
+
+class IdentityError(Exception):
+    """The lookup did not produce a comparable identity.
+
+    This is not proof that the process is dead and not authorization to signal.
+    """
+
+
+class ProcessView:
+    """One lookup. ``absent`` means the pid is not there. It is not a signal."""
+
+    __slots__ = ("state", "pid", "start_token")
+
+    def __init__(self, state: str, pid: int, start_token: str | None) -> None:
+        if state not in {"alive", "absent"}:
+            raise IdentityError("identity state is unknown")
+        if type(pid) is not int or pid <= 0:
+            raise IdentityError("pid is not a positive int")
+        self.state = state
+        self.pid = pid
+        self.start_token = start_token
+
+
+class SpentState:
+    """``new`` has no file. ``recorded`` was parsed. ``lost`` must not be replayed as empty."""
+
+    __slots__ = ("status", "nonces")
+
+    def __init__(self, status: str, nonces: set[str]) -> None:
+        if status not in {"new", "recorded", "lost"}:
+            raise ValueError(status)
+        self.status = status
+        self.nonces = set(nonces)
+
+
+class _Scan:
+    __slots__ = ("pairs", "bad", "unreadable")
+
+    def __init__(self, pairs: dict[int, str], bad: bool, unreadable: bool) -> None:
+        self.pairs = pairs
+        self.bad = bad
+        self.unreadable = unreadable
 
 
 def os_start(pid: int) -> str | None:
-    """Stable process start string. Not an exit status and not ``waitpid``."""
+    """``ps`` ``lstart``. Second resolution. Not an identity token and not a signal."""
 
     try:
         out = subprocess.check_output(
@@ -71,11 +132,212 @@ def os_start(pid: int) -> str | None:
 
 
 def liveness(recorded: str | None, current: str | None) -> str:
+    """Compare two ``lstart`` strings. A match is not authorization to signal."""
+
     if recorded and current and recorded != current:
         return "pid-reuse-not-adopted"
     if current:
         return "alive"
     return "dead"
+
+
+def linux_start_token(text: str, pid: int) -> str:
+    """Field 22 of ``/proc/<pid>/stat``, after the command in parentheses."""
+
+    if type(pid) is not int or pid <= 0:
+        raise IdentityError("pid is not a positive int")
+    open_at = text.find(" (")
+    end = text.rfind(")")
+    if open_at < 1 or end < open_at:
+        raise IdentityError("stat has no command field")
+    try:
+        stated = int(text[:open_at])
+    except ValueError as exc:
+        raise IdentityError("stat pid is not an int") from exc
+    if stated != pid:
+        raise IdentityError("stat pid mismatch")
+    fields = text[end + 1 :].split()
+    if len(fields) < 20 or not fields[19].isdigit():
+        raise IdentityError("stat starttime is missing")
+    return f"ticks:{fields[19]}"
+
+
+def _darwin_identity(pid: int) -> ProcessView:
+    class _ProcBsdInfo(ctypes.Structure):
+        _fields_ = [
+            ("pbi_flags", ctypes.c_uint32),
+            ("pbi_status", ctypes.c_uint32),
+            ("pbi_xstatus", ctypes.c_uint32),
+            ("pbi_pid", ctypes.c_uint32),
+            ("pbi_ppid", ctypes.c_uint32),
+            ("pbi_uid", ctypes.c_uint32),
+            ("pbi_gid", ctypes.c_uint32),
+            ("pbi_ruid", ctypes.c_uint32),
+            ("pbi_rgid", ctypes.c_uint32),
+            ("pbi_svuid", ctypes.c_uint32),
+            ("pbi_svgid", ctypes.c_uint32),
+            ("rfu_1", ctypes.c_uint32),
+            ("pbi_comm", ctypes.c_char * 16),
+            ("pbi_name", ctypes.c_char * 32),
+            ("pbi_nfiles", ctypes.c_uint32),
+            ("pbi_pgid", ctypes.c_uint32),
+            ("pbi_pjobc", ctypes.c_uint32),
+            ("e_tdev", ctypes.c_uint32),
+            ("e_tpgid", ctypes.c_uint32),
+            ("pbi_nice", ctypes.c_int32),
+            ("pbi_start_tvsec", ctypes.c_uint64),
+            ("pbi_start_tvusec", ctypes.c_uint64),
+        ]
+
+    info = _ProcBsdInfo()
+    libproc = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+    libproc.proc_pidinfo.argtypes = [
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_uint64,
+        ctypes.c_void_p,
+        ctypes.c_int,
+    ]
+    libproc.proc_pidinfo.restype = ctypes.c_int
+    ctypes.set_errno(0)
+    size = ctypes.sizeof(info)
+    ret = libproc.proc_pidinfo(pid, 3, 0, ctypes.byref(info), size)
+    err = ctypes.get_errno()
+    if ret <= 0:
+        if err == errno.ESRCH:
+            return ProcessView("absent", pid, None)
+        raise IdentityError("proc_pidinfo failed")
+    if ret < size or int(info.pbi_pid) != pid:
+        raise IdentityError("proc_bsdinfo is not this pid")
+    sec = int(info.pbi_start_tvsec)
+    usec = int(info.pbi_start_tvusec)
+    if sec <= 0 or usec < 0 or usec > 999999:
+        raise IdentityError("proc_bsdinfo start time is not usable")
+    return ProcessView("alive", pid, f"us:{sec}.{usec:06d}")
+
+
+def _linux_identity(pid: int) -> ProcessView:
+    path = Path(f"/proc/{pid}/stat")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ProcessView("absent", pid, None)
+    except OSError as exc:
+        raise IdentityError("cannot read process stat") from exc
+    return ProcessView("alive", pid, linux_start_token(text, pid))
+
+
+def process_identity(pid: int) -> ProcessView:
+    """High-resolution start identity for a pid this user can see.
+
+    A failure raises ``IdentityError``. It does not mean the pid is dead.
+    """
+
+    if type(pid) is not int or pid <= 0:
+        raise IdentityError("pid is not a positive int")
+    if sys.platform == "darwin":
+        return _darwin_identity(pid)
+    if sys.platform.startswith("linux"):
+        return _linux_identity(pid)
+    raise IdentityError("process identity is unavailable")
+
+
+def _complete_identity(record: object) -> tuple[int, str] | None:
+    if not isinstance(record, dict):
+        return None
+    pid = record.get("pid")
+    token = record.get("start_token")
+    if type(pid) is not int or pid <= 0:
+        return None
+    if not isinstance(token, str) or _TOKEN_RE.fullmatch(token) is None:
+        return None
+    return pid, token
+
+
+def _scan(root: Path) -> _Scan:
+    tokens: dict[int, set[str]] = {}
+    bad = False
+    unreadable = False
+    files: list[Path] = []
+    durable = _durable_path(root)
+    if durable.exists() or durable.is_symlink():
+        files.append(durable)
+    for name in ("identity", "procs"):
+        folder = root / name
+        if not folder.exists() and not folder.is_symlink():
+            continue
+        if not folder.is_dir() or folder.is_symlink():
+            unreadable = True
+            continue
+        files.extend(sorted(folder.glob("*.json")))
+    for path in files:
+        try:
+            data = read_durable_record(path)
+        except ProtocolError:
+            unreadable = True
+            continue
+        if data is None:
+            unreadable = True
+            continue
+        if "pid" not in data and "start_token" not in data:
+            continue
+        parsed = _complete_identity(data)
+        if parsed is None:
+            bad = True
+            continue
+        pid, token = parsed
+        tokens.setdefault(pid, set()).add(token)
+    pairs: dict[int, str] = {}
+    for pid, values in tokens.items():
+        if len(values) != 1:
+            bad = True
+            continue
+        pairs[pid] = next(iter(values))
+    return _Scan(pairs, bad, unreadable)
+
+
+def _require_live(identify: Identify, pid: int) -> ProcessView:
+    if type(pid) is not int or pid <= 0:
+        raise IdentityError("pid is not a positive int")
+    try:
+        view = identify(pid)
+    except IdentityError:
+        raise
+    except Exception as exc:
+        raise IdentityError("identity lookup failed") from exc
+    if (
+        not isinstance(view, ProcessView)
+        or view.state != "alive"
+        or view.pid != pid
+        or not isinstance(view.start_token, str)
+        or _TOKEN_RE.fullmatch(view.start_token) is None
+    ):
+        raise IdentityError("child identity is not alive")
+    return view
+
+
+def record_child_identity(root: Path, pid: int, identify: Identify = process_identity) -> dict[str, object]:
+    """Fsync the child's token, then read it back and look the pid up again.
+
+    A mismatch deletes the file. The deleted file is not authorization.
+    """
+
+    first = _require_live(identify, pid)
+    payload: dict[str, object] = {"pid": pid, "start_token": first.start_token}
+    path = root / "identity" / f"{pid}.json"
+    write_durable_record(path, payload)
+    try:
+        stored = read_durable_record(path)
+        second = _require_live(identify, pid)
+        if stored != payload or second.start_token != first.start_token:
+            raise IdentityError("identity changed while recording")
+    except Exception:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+    return payload
 
 
 def _spent_path(root: Path) -> Path:
@@ -86,24 +348,44 @@ def _durable_path(root: Path) -> Path:
     return root / "durable.json"
 
 
-def load_spent(root: Path) -> set[str]:
+def _spent_from_object(data: dict[str, object]) -> SpentState:
+    nonces = data.get("nonces")
+    if not isinstance(nonces, list) or any(type(item) is not str or item == "" for item in nonces):
+        return SpentState("lost", set())
+    return SpentState("recorded", set(nonces))
+
+
+def load_spent(root: Path) -> SpentState:
+    """Missing file is new. Any other unreadable or malformed file is lost.
+
+    Lost history does not return the nonces that happened to parse.
+    """
+
     path = _spent_path(root)
-    if not path.exists():
-        return set()
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return SpentState("new", set())
+    except OSError:
+        return SpentState("lost", set())
+    if not stat.S_ISREG(info.st_mode):
+        return SpentState("lost", set())
     try:
         data = read_durable_record(path)
     except ProtocolError:
-        return set()
-    nonces = data.get("nonces") if isinstance(data, dict) else None
-    if not isinstance(nonces, list):
-        return set()
-    return {item for item in nonces if isinstance(item, str)}
+        return SpentState("lost", set())
+    if not isinstance(data, dict):
+        return SpentState("lost", set())
+    return _spent_from_object(data)
 
 
 def _remember(root: Path, nonce: str) -> None:
-    spent = load_spent(root)
-    spent.add(nonce)
-    write_durable_record(_spent_path(root), {"nonces": sorted(spent)})
+    state = load_spent(root)
+    if state.status == "lost":
+        os._exit(EXIT_LOST)
+    nonces = set(state.nonces)
+    nonces.add(nonce)
+    write_durable_record(_spent_path(root), {"nonces": sorted(nonces)})
 
 
 def _write_phase(root: Path, fields: dict[str, object]) -> None:
@@ -111,34 +393,67 @@ def _write_phase(root: Path, fields: dict[str, object]) -> None:
     write_durable_record(_durable_path(root), record)
 
 
-def _markers(root: Path) -> list[dict[str, object]]:
-    folder = root / "procs"
-    if not folder.exists():
-        return []
-    found: list[dict[str, object]] = []
-    for path in sorted(folder.glob("*.json")):
+def _apply_children(
+    decision: dict[str, object],
+    record: object,
+    scan: _Scan,
+    identify: Identify,
+) -> dict[str, object]:
+    uncertain = isinstance(record, dict) and record.get("child") == "uncertain"
+    if scan.unreadable or scan.bad or (uncertain and not scan.pairs):
+        decision["lease"] = True
+        decision["action"] = "uncertain-child"
+        return decision
+    flags: list[str] = []
+    for pid, token in scan.pairs.items():
         try:
-            data = read_durable_record(path)
-        except ProtocolError:
+            view = identify(pid)
+        except IdentityError:
+            flags.append("error")
             continue
-        if isinstance(data, dict):
-            found.append(data)
-    return found
+        if not isinstance(view, ProcessView) or view.pid != pid:
+            flags.append("error")
+            continue
+        if view.state == "absent":
+            flags.append("dead")
+            continue
+        if view.state == "alive" and view.start_token == token:
+            flags.append("alive")
+            continue
+        if view.state == "alive":
+            flags.append("reused")
+            continue
+        flags.append("error")
+    if "reused" in flags or "error" in flags:
+        decision["lease"] = True
+        if "reused" in flags:
+            decision["action"] = "pid-reuse-not-adopted"
+            decision["phase"] = "unknown"
+        else:
+            decision["action"] = "uncertain-child"
+        return decision
+    if "alive" in flags:
+        decision["lease"] = True
+        decision["action"] = "supervise"
+        return decision
+    proven_dead = bool(scan.pairs) and flags and all(flag == "dead" for flag in flags)
+    if proven_dead and (decision.get("phase") in {"armed", "acked", "running"} or uncertain):
+        decision["lease"] = False
+        decision["action"] = "terminated-without-status"
+        return decision
+    if uncertain:
+        decision["lease"] = True
+        decision["action"] = "uncertain-child"
+    return decision
 
 
-def _pid_state(pid: object, recorded: object) -> str:
-    if type(pid) is not int or pid <= 0:
-        return "dead"
-    return liveness(recorded if isinstance(recorded, str) else None, os_start(pid))
-
-
-def recover(root: Path) -> dict[str, object]:
+def recover(root: Path, identify: Identify = process_identity) -> dict[str, object]:
     """Read fsynced files from a process that is not the holder.
 
-    ``wait`` is ``echild`` because this process must not treat ``waitpid``
-    as an exit status. ``success`` is false. A live pid or a mismatched
-    start string keeps the lease. A dead pid with no live descendant drops
-    the lease and is still not success.
+    ``wait`` is ``echild``. ``success`` is false. A live or unverified child
+    keeps the lease. Lost spent history keeps the lease and is not an empty
+    nonce set. A matching start token that is now absent is the only proof
+    that a recorded child is gone. That proof is not a signal.
     """
 
     try:
@@ -151,77 +466,54 @@ def recover(root: Path) -> dict[str, object]:
         base = assess_durable(record)
     else:
         base = assess_durable({"phase": []})
-    states: list[str] = []
-    if isinstance(record, dict):
-        states.append(_pid_state(record.get("pid"), record.get("os_start")))
-    for marker in _markers(root):
-        states.append(_pid_state(marker.get("pid"), marker.get("os_start")))
-    alive = "alive" in states
-    reuse = "pid-reuse-not-adopted" in states
+    history = load_spent(root)
     decision = dict(base)
     decision["success"] = False
     decision["wait"] = "echild"
     decision["spawn"] = False
-    if reuse:
+    decision["history"] = history.status
+    if history.status == "lost":
         decision["lease"] = True
-        decision["action"] = "pid-reuse-not-adopted"
-        decision["phase"] = "unknown"
+        decision["action"] = "spent-history-lost"
         return decision
-    if alive:
-        decision["lease"] = True
-        decision["action"] = "supervise"
-        return decision
-    if base["action"] == "partial-record":
-        decision["lease"] = True
-        return decision
-    if base["phase"] in {"armed", "acked", "running"}:
-        decision["lease"] = False
-        decision["action"] = "terminated-without-status"
-        return decision
-    return decision
+    return _apply_children(decision, record, _scan(root), identify)
 
 
-def _note_reap(root: Path, pid: int) -> None:
-    folder = root / "reap"
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / str(pid)).write_text(str(pid), encoding="utf-8")
+def reap(
+    root: Path,
+    *,
+    kill: Kill = os.kill,
+    identify: Identify = process_identity,
+) -> list[int]:
+    """Signal a pid only when its stored token still matches a fresh lookup.
 
+    The stored record is read again immediately before that lookup. Unknown,
+    missing, conflicting, and failed identities are not signaled. ``absent``
+    is not signaled.
+    """
 
-def reap(root: Path) -> None:
-    """Kill harness children whose start string still matches. Skip pid reuse."""
-
-    pids: set[int] = set()
-    folder = root / "reap"
-    if folder.exists():
-        for path in folder.glob("*"):
-            try:
-                pids.add(int(path.name))
-            except ValueError:
-                continue
-    recorded: dict[int, str] = {}
-    durable = _durable_path(root)
-    if durable.exists():
-        try:
-            data = read_durable_record(durable)
-        except ProtocolError:
-            data = None
-        if isinstance(data, dict) and type(data.get("pid")) is int and isinstance(data.get("os_start"), str):
-            recorded[data["pid"]] = data["os_start"]
-    for marker in _markers(root):
-        pid = marker.get("pid")
-        start = marker.get("os_start")
-        if type(pid) is int and isinstance(start, str):
-            recorded[pid] = start
-            pids.add(pid)
-    for pid in pids:
-        current = os_start(pid)
-        known = recorded.get(pid)
-        if known and current and known != current:
+    scan = _scan(root)
+    if scan.unreadable:
+        return []
+    signaled: list[int] = []
+    for pid, token in sorted(scan.pairs.items()):
+        fresh = _scan(root)
+        if fresh.unreadable or fresh.pairs.get(pid) != token:
             continue
         try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+            view = identify(pid)
+        except IdentityError:
+            continue
+        if (
+            not isinstance(view, ProcessView)
+            or view.state != "alive"
+            or view.pid != pid
+            or view.start_token != token
+        ):
+            continue
+        kill(pid, signal.SIGKILL)
+        signaled.append(pid)
+    return signaled
 
 
 def _read_line(fd: int, timeout: float = 5) -> str:
@@ -248,19 +540,22 @@ def _sleep_until_killed() -> None:
 
 
 def _write_marker(root: Path, nonce: str, start: int, image: str, pipe: str | None = None) -> None:
-    pid = os.getpid()
+    try:
+        recorded = record_child_identity(root, os.getpid())
+    except (IdentityError, ProtocolError):
+        os._exit(EXIT_ERROR)
     folder = root / "procs"
     folder.mkdir(parents=True, exist_ok=True)
     fields: dict[str, object] = {
-        "pid": pid,
+        "pid": recorded["pid"],
         "start": start,
-        "os_start": os_start(pid),
+        "start_token": recorded["start_token"],
         "image": image,
         "nonce": nonce,
     }
     if pipe is not None:
         fields["pipe"] = pipe
-    write_durable_record(folder / f"{pid}.json", fields)
+    write_durable_record(folder / f"{recorded['pid']}.json", fields)
 
 
 def _say(text: str) -> None:
@@ -308,7 +603,7 @@ def _wrapper(root: Path, nonce: str, start: int) -> None:
         os._exit(EXIT_ERROR)
 
 
-def _spawn(root: Path, nonce: str, start: int) -> tuple[int, int, int, int]:
+def _spawn(root: Path, nonce: str, start: int) -> tuple[int, int, int, int, str]:
     release_r, release_w = os.pipe()
     cmd_r, cmd_w = os.pipe()
     out_r, out_w = os.pipe()
@@ -332,17 +627,18 @@ def _spawn(root: Path, nonce: str, start: int) -> tuple[int, int, int, int]:
     os.close(release_r)
     os.close(cmd_r)
     os.close(out_w)
-    _note_reap(root, pid)
-    return pid, release_w, cmd_w, out_r
+    try:
+        recorded = record_child_identity(root, pid)
+    except (IdentityError, ProtocolError):
+        os._exit(EXIT_ERROR)
+    return pid, release_w, cmd_w, out_r, str(recorded["start_token"])
 
 
 def _clear_stale_tmp(root: Path) -> None:
-    for path in root.glob("*.tmp"):
-        path.unlink()
-    procs = root / "procs"
-    if procs.exists():
-        for path in procs.glob("*.tmp"):
-            path.unlink()
+    for folder in (root, root / "procs", root / "identity"):
+        if folder.exists():
+            for path in folder.glob("*.tmp"):
+                path.unlink()
 
 
 def holder_main(root: Path, nonce: str, fault: str) -> None:
@@ -350,10 +646,13 @@ def holder_main(root: Path, nonce: str, fault: str) -> None:
         os._exit(EXIT_ERROR)
     root.mkdir(parents=True, exist_ok=True)
     _clear_stale_tmp(root)
+    history = load_spent(root)
+    if history.status == "lost":
+        os._exit(EXIT_LOST)
     decision = recover(root)
     if decision["lease"]:
         os._exit(EXIT_LEASE)
-    if nonce in load_spent(root):
+    if nonce in history.nonces:
         os._exit(EXIT_SPENT)
 
     def stop(name: str) -> None:
@@ -368,16 +667,17 @@ def holder_main(root: Path, nonce: str, fault: str) -> None:
     _write_phase(root, {"phase": "intent", "nonce": nonce})
     stop("after_intent")
     stop("before_spawn")
+    _write_phase(root, {"phase": "intent", "nonce": nonce, "child": "uncertain"})
 
     start = secrets.randbelow(1_000_000_000) + 1
-    pid, release_w, cmd_w, out_r = _spawn(root, nonce, start)
+    pid, release_w, cmd_w, out_r, start_token = _spawn(root, nonce, start)
     stop("after_fork_before_armed")
     identity = {
         "phase": "armed",
         "nonce": nonce,
         "pid": pid,
         "start": start,
-        "os_start": os_start(pid),
+        "start_token": start_token,
     }
     _write_phase(root, identity)
     stop("after_armed_before_release")
