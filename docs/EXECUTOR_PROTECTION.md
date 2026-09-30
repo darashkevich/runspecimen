@@ -94,14 +94,18 @@ The signed request binds run id, input fingerprints, contract fingerprint, works
 
 Hashing a copy does not make the signed argv read that copy. `src/runspecimen/holder_protocol.py` `bind_execution` is the unprivileged statement of the mapping. `run.py` does not call it.
 
-- Every declared input, the executable, the script, and every declared dependency is opened with `O_NOFOLLOW` and copied to a new inode. A symlink at bind time fails closed. The copy is not a hard link.
-- The executed argv is the signed argv with those paths replaced by snapshot paths. `argv[0]` is the snapshot of the executable. A declared input that is not an argv token fails closed, because exec would not be forced onto the snapshot. A live path left in argv fails closed.
+- The production binding requires a lowercase sha256 fingerprint for every executable, script, input, and dependency. A missing fingerprint, a value that is not 64 hex characters, or bytes that do not match that fingerprint fails closed. `fingerprints.get` returning nothing is not a binding.
+- Every declared input, the executable, the script, and every declared dependency is opened with `O_NOFOLLOW`. A symlink at bind time fails closed. The copy is not a hard link.
+- The destination name is the digest, and that name is not the check. The binder opens the destination with `O_NOFOLLOW`, requires a regular file, and hashes the bytes read from that fd. A precreated file, symlink, or directory at `files/<digest>` with different bytes or a different type fails closed. The corrupt entry is left in place and is not used. A short `write` is retried until the bytes are stored. If the write fails, the partial file is unlinked. If that unlink fails, the error says cleanup failed.
+- `Snapshot.digest` is the hash of the bytes the fd reads. For an ordinary file that equals the signed fingerprint. For a script, the signed fingerprint is `source_digest` of the source bytes, and the fd reads the script after its shebang has been pointed at the snapshot interpreter. Those two digests differ. The script body after the shebang line is the signed body.
+- The executable, the shebang interpreter, and that rebound script are mode `0555`. Other snapshot files are mode `0444`. A reused data file is not stripped of execute permission if another role already needed it.
+- The executed argv is the signed argv with those paths replaced by snapshot paths. `argv[0]` is the snapshot of the executable and is executable. A declared input that is not an argv token fails closed, because exec would not be forced onto the snapshot. A live path left in argv fails closed.
 - The working directory is a directory the binder creates for the snapshot. `cwd_mode` other than `snapshot` fails closed. The live workspace is not the cwd.
 - Declared outputs are new regular files in a separate `outputs` directory, created with `O_NOFOLLOW | O_EXCL`. They are not the input inodes.
 - A script whose shebang is `env` fails closed. A shebang interpreter that was not in the signed dependency set fails closed. An undeclared sibling file is not in the snapshot. The dynamic linker and system libraries are a residual: they are not snapshotted, and this design does not claim they are.
 - After the snapshot fd is open, replacing or symlink-swapping the original path changes a later `stat` of that path and does not change the bytes behind the snapshot fd or the rewritten argv. `restat_agrees_with_snapshot` is a demonstration that a final stat can disagree. It is not the binding check.
 
-`tests/test_holder_protocol.py` covers replacement, symlink rejection, live cwd, an unbound interpreter, a distinct inode, and an undeclared sibling.
+`tests/test_holder_protocol.py` covers replacement, symlink rejection, a corrupt precreated destination, a matching reuse, missing and invalid fingerprints, short writes, cleanup failure, live cwd, an unbound interpreter, a distinct inode, an undeclared sibling, and a real unprivileged subprocess of the returned command.
 
 ### Launch handshake and crash recovery
 
@@ -116,10 +120,13 @@ The wrapper does not exec when it receives go. Go is only permission to ack. Exe
 | Running, start time matches, a descendant is alive | Payload may have exited. | Supervise. Do not `waitpid` unless this process is the parent. Keep the lease. |
 | Running, every recorded descendant is dead | Termination was observed without an exit status. | Lease may drop. The missing status is not success. Do not spawn the same nonce. |
 | Start time differs | PID was reused. | Do not kill the new process. Do not adopt it. Phase becomes unknown. Keep the lease. Do not spawn. |
+| Armed, acked, or running without pid and start | The in-memory record is partial. | Phase becomes unknown. Keep the lease. Do not spawn. `HolderSim` does not fsync this row. |
 
 A restarted holder is not the parent of a surviving child. `foreign_wait` maps `ECHILD` to `echild`. That result is not an exit code. The lease stays while any recorded descendant with the original start time is alive, and while the phase is unknown. A second nonce cannot spawn until the lease drops. The same nonce cannot spawn again after consume.
 
-Pipe EOF before ack or commit does not exec. `tests/test_holder_protocol.py` crashes the simulator after every step, and it checks EOF, PID reuse, a surviving descendant, a second nonce, and a real orphan `waitpid`.
+`HolderSim` does not persist. `HolderSim.persists` is false, and its crash tests are not an fsync proof. `write_durable_record` writes a temp file, fsyncs it, renames it, and fsyncs the directory. `read_durable_record` returns none when the file is missing, and fails closed on an empty file, truncated JSON, or a symlink. `assess_durable` is the decision for a process that is not the parent: `spawn` is false and `wait` is `echild`. A missing record is not a launch and is not an exit status. A partial record, including armed or running without both pid and start time, keeps the lease and does not spawn. A complete armed record is not a commit. The simulator applies the same partial-record hold when its in-memory dict is missing those fields. That simulator result and the file result are separate tests.
+
+Pipe EOF before ack or commit does not exec. `tests/test_holder_protocol.py` crashes the simulator after every step, and it checks EOF, PID reuse, a surviving descendant, a second nonce, partial records, fsynced files, and a real orphan `waitpid`. The orphan `waitpid` is the one real process in the crash tests. The step crashes are the simulator.
 
 The current `src/runspecimen/run.py` path still spawns under the workspace lease. That path stays until this holder exists. It is guarantee (1). `consumeForExecution` stays unwired. Wiring it to the workspace lease would describe guarantee (1) as guarantee (2).
 
