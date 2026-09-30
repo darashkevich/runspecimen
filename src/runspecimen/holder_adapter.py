@@ -83,6 +83,9 @@ class AdapterServer:
                     conn, _addr = sock.accept()
                 except TimeoutError:
                     continue
+                except socket.timeout:
+                    # Python 3.9 raises socket.timeout for accept deadlines.
+                    continue
                 except OSError:
                     if self._stop.is_set():
                         return
