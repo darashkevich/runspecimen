@@ -35,11 +35,29 @@ from runspecimen.holder_io import (
 from runspecimen.holder_runtime import RuntimeTrustError, refuse_user_python_injection
 
 BOOTSTRAP_ENV = "RS_HOLDER_BOOTSTRAP_SECRET"
+ACCEPT_TIMEOUT_SEC = 0.2
 
 
 def _ensure_root() -> None:
     if os.geteuid() != 0:
         raise SystemExit("holder daemon must run as root")
+
+
+def _accept_connection(sock: socket.socket) -> socket.socket | None:
+    """Accept one connection, or None when the accept deadline fires.
+
+    Python 3.9 raises ``socket.timeout`` (an ``OSError`` subclass, not
+    ``TimeoutError``) for timed-out ``accept``. Python 3.10+ may raise
+    ``TimeoutError``. Catch both so a deadline does not kill the accept loop.
+    Any other accept error propagates. This does not add a shutdown path.
+    """
+    try:
+        conn, _addr = sock.accept()
+    except TimeoutError:
+        return None
+    except socket.timeout:
+        return None
+    return conn
 
 
 def _peer_ids(conn: socket.socket) -> tuple[int, int]:
@@ -107,9 +125,15 @@ def serve(support: Path, *, bootstrap_secret: str) -> int:
     sock.bind(str(sock_path))
     os.chmod(sock_path, 0o666)
     sock.listen(DEFAULT_ACCEPT_BACKLOG)
+    # Short accept deadline. socket.timeout / TimeoutError must not end the loop.
+    # Protocol, privileges, and PYTHONPATH policy are unchanged.
+    # The while-true loop has no shutdown flag.
+    sock.settimeout(ACCEPT_TIMEOUT_SEC)
     admission = AdmissionGate(DEFAULT_MAX_IN_FLIGHT)
     while True:
-        conn, _addr = sock.accept()
+        conn = _accept_connection(sock)
+        if conn is None:
+            continue
         if not admission.try_enter():
             try:
                 write_frame(
