@@ -67,7 +67,7 @@ Use the shipping scheme, not `RunSpecimenObserveDev`. The buttons are on the com
 
 A Release build of the phone app does not contain `beforeFinalSignatureDecision`. A Debug run from Xcode does, because that is the build the unit tests host. Use Release for the human check.
 
-A signature is evidence the hardware key signed those bytes after a biometric check. It is not evidence you understood a command, and it does not start a run. `runspecimen run` still asks for a typed phrase. That phrase is guarantee (1). It is not local Touch ID, paired-iPhone approval, or dual approval, and it must not be used as a substitute for those once they are required.
+A signature is evidence the matching private key signed those bytes. It is not evidence you compared the fingerprints on the two screens, and it is not evidence the key was created in a Secure Enclave. Those are three separate claims. It is not evidence you understood a command, and it does not start a run. The 0.1.5 (13) GUI report for source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14 is a different build. It does not accept this kit. `runspecimen run` still asks for a typed phrase. That phrase is guarantee (1). It is not local Touch ID, paired-iPhone approval, or dual approval, and it must not be used as a substitute for those once they are required.
 
 ## Human acceptance session
 

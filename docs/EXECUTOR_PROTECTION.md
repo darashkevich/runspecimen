@@ -20,7 +20,7 @@ Owning a marker or a lease is (2) only for the files the owner can exclusively w
 | --- | --- | --- | --- | --- |
 | Sandboxed Mac App Store app, as it is now | (1) for the app's own buttons and the CLI it launches. The container is the app's sandbox (Guideline 2.5.2). No `com.apple.security.network.server`. | A same-user process can write `.runspecimen` and can exec the command. | None beyond the current app. | Current enforcement. Not guarantee (2). |
 | App container, or any directory the same user owns | Does not provide (2). The container is a sandbox between apps, not a barrier against the owning user. | Does not stop overwrite, restore, or replay by an unsandboxed same-user process. | A path change that the probe rejects as proof. | Not sufficient. Not implemented as the (2) design. |
-| Embedded `SMAppService` root daemon plus an app-group Mach service | Can support (2) if the payload runs as the console user and the holder state is root mode `0700`. The binary stays in the bundle. | Guideline 2.4.5(v) still forbids requesting root. A persistent daemon has to be reconciled with 2.4.5(iii). The current app has no app-group entitlement, and a measured sandboxed lookup failed while an unsandboxed client succeeded. | New entitlement and a root helper. Review acceptance is not shown. | Not authorized. The decision is in "Smallest authorization still required". |
+| Embedded `SMAppService` root daemon plus an app-group Mach service | Could hold state only if Apple allowed a root helper. Guideline 2.4.5(v) prohibits that for a Mac App Store app. User approval does not change the sentence. | Not an established Store path. A measured sandboxed lookup with today's entitlements failed. | Would be root inside the Store app. | Not authorized. Not the decision being requested. |
 | Endpoint Security `ES_EVENT_TYPE_AUTH_EXEC` | (3), by denying execs. It requires the restricted entitlement `com.apple.developer.endpoint-security.client`. WWDC 2020 session 10159: the client is a system extension with a provisioning profile Apple grants separately. DTS forum 759149 (July 2024): that entitlement is not an App Store capability. | It is one way to block execs. It is not a way to protect the lease file. Using it to block the user's own shell is global command blocking. | Restricted entitlement this team does not have. Cannot ship inside this Store app. | Excluded. Yahor chose not to pursue (3). |
 
 QA1773 requires every Mach-O in a sandboxed bundle to be sandboxed. WWDC 2023 session 10266: an XPC service inside `Contents/XPCServices` is replaced when the app is replaced. Neither fact selects among the three guarantees.
@@ -72,35 +72,54 @@ Callers are authenticated in two steps, and the first step is not human authoriz
 
 Mutations are holder operations. The canonical bytes cover the operation, Mac id, policy, key ids, generations, public keys, fingerprints, nonce, and expiry. The holder verifies a signature over those bytes, re-reads the live generation under its lock, and commits with compare-and-swap. A workspace JSON file is not the policy and is not the enrollment record.
 
-The Mac production key is one the holder created with the Secure Enclave token and `biometryCurrentSet`. The holder stores that public key. A carried file that says `secure-enclave` is not consulted. This is still not a third-party attestation that the key lives in hardware: the holder is trusting its own creation path. An imported public key cannot authorize a run.
+Three different facts must not be collapsed. A person comparing two fingerprint strings is a human act this software does not observe. A valid signature proves possession of the matching private key. Neither fact is hardware provenance. A file, a fingerprint string, or a signature that says `secure-enclave` is not attestation.
+
+Apple's Platform Security guide says `securityd` decides which keychain items a process may use from that process's keychain access groups and entitlements, and that a biometric ACL is evaluated in the Secure Enclave ([Keychain data protection](https://support.apple.com/guide/security/keychain-data-protection-secb0694df1a/web)). Apple's LocalAuthentication documentation says keychain services presents the biometric UI for the process that requests the item ([Accessing Keychain Items with Face ID or Touch ID](https://developer.apple.com/documentation/localauthentication/accessing-keychain-items-with-face-id-or-touch-id)). A root launch daemon is a different process from the signed GUI app, in the system domain rather than the console user's session. This repository has not shown that such a daemon can create a Secure Enclave key in the console user's data-protection keychain or present Touch ID or Face ID. That boundary is unproven. No enrollment path here calls `LAContext`.
+
+Initial enrollment therefore stays in the user-session app until that boundary is proven. The same user can replace that app, so a public key the app submits is possession of whatever key the app holds, not a proof the Secure Enclave created it. The holder must not store that key as production hardware provenance. An imported public key cannot authorize a run.
 
 Protected pairing, when a companion key is required:
 
 1. The holder shows the Mac public-key fingerprint and a pairing nonce.
 2. The iPhone creates its own key and shows that key's fingerprint.
-3. A person compares the two screens. The software does not record that comparison unless both signature steps below finish.
+3. A person compares the two screens. The software does not observe that comparison. The signatures below prove each key was used. They do not prove the person looked at both screens.
 4. The iPhone signs the pairing statement with Face ID: Mac id, both key ids, both fingerprints, nonce, expiry, and policy. The person carries that file. There is no relay and no listening server. Approval on the iPhone is not physical presence at the Mac.
 5. The holder checks the signature against the public key inside the statement, shows both fingerprints again, and requires a new local Touch ID signature over the same statement before it stores the companion key.
 
 Rotation of either key requires the current generation of that role. Switching away from dual, or from companion to local, requires both current factors, so a same-user client cannot downgrade the policy. Revocation increments the generation. Signatures from the old key fail that check. There is no user-writable reset. If the local key is gone, a new enrollment requires an administrator to remove holder state. That recovery is outside the same-user threat. A button that lets this user delete the holder directory would defeat guarantee (2).
 
-### Input binding and crash recovery
+### Input binding
 
 The signed request binds run id, input fingerprints, contract fingerprint, workspace identity (volume id, directory inode, and path), Mac id, bounds, policy, nonce, expiry, and the local and companion key ids and generations. The holder reloads enrollment at consume. Expiry uses the holder's clock.
 
-After the nonce is consumed and before the go byte, the holder copies the declared inputs and the contract to a root-owned `0444` snapshot and hashes those bytes. It also re-stats the workspace directory. Any mismatch kills the waiting wrapper, leaves the nonce consumed, and does not exec. A retry needs a new signature over the new bytes. Undeclared paths that the command opens later are not frozen. The holder enforces the timeout and the output cap.
+Hashing a copy does not make the signed argv read that copy. `src/runspecimen/holder_protocol.py` `bind_execution` is the unprivileged statement of the mapping. `run.py` does not call it.
 
-Nonce states, each fsynced before the next side effect:
+- Every declared input, the executable, the script, and every declared dependency is opened with `O_NOFOLLOW` and copied to a new inode. A symlink at bind time fails closed. The copy is not a hard link.
+- The executed argv is the signed argv with those paths replaced by snapshot paths. `argv[0]` is the snapshot of the executable. A declared input that is not an argv token fails closed, because exec would not be forced onto the snapshot. A live path left in argv fails closed.
+- The working directory is a directory the binder creates for the snapshot. `cwd_mode` other than `snapshot` fails closed. The live workspace is not the cwd.
+- Declared outputs are new regular files in a separate `outputs` directory, created with `O_NOFOLLOW | O_EXCL`. They are not the input inodes.
+- A script whose shebang is `env` fails closed. A shebang interpreter that was not in the signed dependency set fails closed. An undeclared sibling file is not in the snapshot. The dynamic linker and system libraries are a residual: they are not snapshotted, and this design does not claim they are.
+- After the snapshot fd is open, replacing or symlink-swapping the original path changes a later `stat` of that path and does not change the bytes behind the snapshot fd or the rewritten argv. `restat_agrees_with_snapshot` is a demonstration that a final stat can disagree. It is not the binding check.
 
-| State | Meaning | Recovery |
+`tests/test_holder_protocol.py` covers replacement, symlink rejection, live cwd, an unbound interpreter, a distinct inode, and an undeclared sibling.
+
+### Launch handshake and crash recovery
+
+The wrapper does not exec when it receives go. Go is only permission to ack. Exec happens only after the holder has fsynced an Acked record and then sent a commit byte. A crash that leaves Armed on disk therefore still has a wrapper that has not exec'd, and recovery kills that wrapper instead of committing. A crash after commit and before a durable Running record can leave Acked on disk while the process image is already the payload. Recovery adopts that pid when the start time matches. It does not send commit again and it does not spawn.
+
+| Durable phase | What survived the crash | Recovery |
 | --- | --- | --- |
-| Consumed | Nonce reserved, no live pid | Do not spawn. The request is spent. |
-| Armed | Wrapper pid and process start time recorded, go not sent | If that pid is still the waiting wrapper, kill it and do not exec. Do not spawn another. |
-| Running | Go byte sent | If the pid is alive and the start time matches, adopt it and wait. Do not spawn another. |
-| Reaped | Exit status stored | Do not spawn. |
-| Unknown | Running record, but the pid is gone or the start time differs | Do not adopt a recycled pid. Do not spawn. The exit status may be lost. |
+| Consumed or intent | No pid | Nonce spent. Do not spawn. |
+| Armed | Go may have been sent. Image is still the wrapper, because commit was not sent. | Kill the wrapper if the start time matches. Do not commit. Do not spawn. |
+| Acked, image still wrapper | Commit was not sent. | Kill the wrapper. Do not commit on recovery. Do not spawn. |
+| Acked, image already payload | Commit was sent and exec happened before Running was fsynced. | Adopt the pid. Do not commit again. Do not spawn. |
+| Running, start time matches, a descendant is alive | Payload may have exited. | Supervise. Do not `waitpid` unless this process is the parent. Keep the lease. |
+| Running, every recorded descendant is dead | Termination was observed without an exit status. | Lease may drop. The missing status is not success. Do not spawn the same nonce. |
+| Start time differs | PID was reused. | Do not kill the new process. Do not adopt it. Phase becomes unknown. Keep the lease. Do not spawn. |
 
-A crash after consume and before a durable pid does not launch. A crash after the go byte with a durable pid does not launch a second child. An already-running child is waited on. Replay of the nonce fails in every state above. That is the difference between a spent approval and a duplicate live execution.
+A restarted holder is not the parent of a surviving child. `foreign_wait` maps `ECHILD` to `echild`. That result is not an exit code. The lease stays while any recorded descendant with the original start time is alive, and while the phase is unknown. A second nonce cannot spawn until the lease drops. The same nonce cannot spawn again after consume.
+
+Pipe EOF before ack or commit does not exec. `tests/test_holder_protocol.py` crashes the simulator after every step, and it checks EOF, PID reuse, a surviving descendant, a second nonce, and a real orphan `waitpid`.
 
 The current `src/runspecimen/run.py` path still spawns under the workspace lease. That path stays until this holder exists. It is guarantee (1). `consumeForExecution` stays unwired. Wiring it to the workspace lease would describe guarantee (1) as guarantee (2).
 
@@ -116,25 +135,29 @@ On 2026-09-29 a throwaway app was signed with that Store entitlement file and th
 
 ### Store distribution
 
-Guideline 2.4.5, as published at <https://developer.apple.com/app-store/review/guidelines/>:
+Guideline 2.4.5, fetched from <https://developer.apple.com/app-store/review/guidelines/> on 2026-09-30, says a Mac App Store app:
 
-- (ii) a Mac App Store app is one self-contained bundle and cannot install code or resources in shared locations.
-- (iii) it may not auto-launch at startup or login without consent, or leave a process running after the user quits, without consent.
-- (iv) it may not download or install additional code to add functionality.
-- (v) it may not request escalation to root or use setuid.
-- (vii) updates come from the Mac App Store.
+- (ii) is one self-contained bundle and cannot install code or resources in shared locations.
+- (iii) may not auto-launch at startup or login without consent, or leave a process running after the user quits, without consent.
+- (iv) may not download or install additional code to add functionality.
+- (v) may not request escalation to root privileges or use setuid attributes.
+- (vii) must take updates from the Mac App Store.
 
-Putting a daemon outside the bundle does not satisfy those clauses. An external installer is the shared-location and extra-code case in (ii) and (iv), and a second update channel conflicts with (vii). `SMAppService.daemon` keeps the job inside the bundle, which avoids a second installer, and third-party writeups describe that job as root with a System Settings approval. This pass did not register one, so that root behavior was not re-measured. Even if the binary stays in the bundle, the design still asks for root, which is (v), and for a process that outlives the app, which is (iii) unless Apple treats the System Settings toggle as the consent that clause allows. Neither reading has been accepted for RunSpecimen. Review acceptance is not established.
+Clause (v) is a prohibition. A System Settings approval does not rewrite it, and embedding the helper with `SMAppService` does not rewrite it either. An embedded root daemon is not an established Mac App Store path for this app. A second installer for the same daemon is not Store-compatible either: that is (ii), (iv), and a second update channel under (vii). This pass did not register a daemon and did not add an entitlement.
 
 If the holder is missing, the app fails closed. It does not fall back to a typed phrase.
 
-## Smallest authorization still required
+## Decision, not a Store authorization
 
-Authorize or refuse this expansion, and nothing wider: one embedded `SMAppService` launch daemon in the Mac App Store app, Team ID `UN6KF8636A`, running as root, owning holder state mode `0700`, spawning the signed wrapper as the console user, and publishing its Mach service only in one new app-group entitlement shared with `com.darashkevich.runspecimen`. No `com.apple.security.network.server`. No `com.apple.security.temporary-exception.mach-lookup.global-name`. No Endpoint Security. No separate installer. No Developer ID product beside the Store app.
+Guarantee (2) as specified needs a root holder that can `setuid` the payload to the console user. Guideline 2.4.5(v) forbids that inside a Mac App Store app. User consent does not close that conflict. Writing this section does not authorize a daemon, an entitlement, or a channel switch.
 
-If this is refused, guarantee (2) stays unimplemented on the Store channel. The app continues to enforce guarantee (1) only. A separate Developer ID product would be a different distribution channel and is not requested here.
+Yahor still wants guarantee (2). The Store build cannot implement it under the published rule. The later choice is one of these:
 
-These alternatives do not meet guarantee (2): the app container, a user-immutable flag, a keychain item the same user can delete, calling `consumeForExecution` on workspace files, and a daemon whose payload runs as the holder. `tests/test_lease.py` records the inode replacement against the current lease. That test passing means the workspace lease is still bypassable.
+1. **Mac App Store only.** Guarantee (2) stays unimplemented. The shipping app enforces guarantee (1) only and does not claim (2).
+2. **A separate Developer ID product**, authorized on its own, for the root holder and the client that talks to it. The Mac App Store app stays guarantee (1) and must not claim the Developer ID product's guarantee. That is a second channel, not a silent replacement of the Store app.
+3. **Ask Apple before choosing.** The unsent question is `docs/APPLE_DTS_HOLDER_QUESTION.md`. Do not send it until Yahor says to.
+
+These are not ways to get guarantee (2) on the Store channel: the app container, a user-immutable flag, a keychain item the same user can delete, calling `consumeForExecution` on workspace files, and a daemon whose payload runs as the holder. `tests/test_lease.py` records the inode replacement against the current lease. That test passing means the workspace lease is still bypassable.
 
 Until that holder exists, `consumeForExecution` stays unwired. The run path still asks for a typed phrase in a terminal. That phrase is the current guarantee (1) gate. It is not the biometric policy below, and it must not become a silent fallback once a biometric policy is required.
 
@@ -156,4 +179,4 @@ The approval must bind the exact run, inputs, contract, workspace, policy, bound
 
 One identified Mac build and one identified iPhone build, with hashes. The person runs success, cancel, restart, rotation, revoke, old-key rejection, local, companion, and dual policies, one harmless disposable bounded run, and a rejected replay. Both devices need real acceptance if both ship. An agent does not trigger biometrics, enter the approval phrase, handle credentials, or write the human evidence.
 
-Mac App Store distribution of the final candidate remains required for validation. Passing that check will not, by itself, mean guarantee (2) is true.
+A Mac App Store check of the final candidate is still required for the Store app. Passing it does not make guarantee (2) true, and guideline 2.4.5(v) means a root holder is not part of that Store app unless Apple says otherwise. The question in `docs/APPLE_DTS_HOLDER_QUESTION.md` has not been sent.
