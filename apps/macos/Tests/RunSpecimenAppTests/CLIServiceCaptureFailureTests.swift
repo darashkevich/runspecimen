@@ -21,6 +21,56 @@ final class CLIServiceCaptureFailureTests: XCTestCase {
         }
     }
 
+    /// CLIService JSON callers go through `EngineReportDecoder.jsonPayload`.
+    /// Assert the four capture axes reject with the decoder's exact messages
+    /// even when stdout is a complete JSON object.
+    func testValidateRejectsEachCaptureFailureViaJSONPayload() async {
+        let axes: [(String, BoundedProcessCapture.Output, String)] = [
+            ("timedOut", jsonOutput(timedOut: true), "The engine timed out before it finished."),
+            ("cancelled", jsonOutput(cancelled: true), "The engine was cancelled before it finished."),
+            (
+                "streamReadError",
+                jsonOutput(streamReadError: EIO),
+                "The engine output could not be read (errno \(EIO))."
+            ),
+            (
+                "cleanupFailed",
+                jsonOutput(cleanupFailed: true),
+                "The engine stopped, but an owned descendant was still running."
+            ),
+        ]
+        var failures: [String] = []
+        for (name, captured, expected) in axes {
+            do {
+                _ = try EngineReportDecoder.jsonPayload(from: captured)
+                failures.append("\(name) jsonPayload accepted")
+            } catch let error as EngineReportError {
+                if error.message != expected {
+                    failures.append("\(name) jsonPayload said \(error.message)")
+                }
+            } catch {
+                failures.append("\(name) jsonPayload threw \(error)")
+            }
+
+            let service = CLIService(processes: FixedCapture(captured))
+            await service.setCLI(URL(fileURLWithPath: "/bin/echo"), source: .manual)
+            do {
+                _ = try await service.validate(
+                    workspace: URL(fileURLWithPath: "/tmp/rs-cli-service"),
+                    contract: URL(fileURLWithPath: "/tmp/rs-cli-service/contract.json")
+                )
+                failures.append("\(name) validate accepted")
+            } catch let error as AppError {
+                if error.message != expected {
+                    failures.append("\(name) validate said \(error.message)")
+                }
+            } catch {
+                failures.append("\(name) validate threw \(error)")
+            }
+        }
+        XCTAssertEqual(failures, [])
+    }
+
     private func assertEachAxis(_ body: (CLIService) async throws -> Void) async {
         let axes: [(String, BoundedProcessCapture.Output, String)] = [
             ("timedOut", output(timedOut: true), "timed out"),
@@ -56,6 +106,26 @@ final class CLIServiceCaptureFailureTests: XCTestCase {
             exitCode: 0,
             stdout: Data("runspecimen 0.2.0rc15\n".utf8),
             stderr: Data("kept-stderr\n".utf8),
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            timedOut: timedOut,
+            cancelled: cancelled
+        )
+        captured.cleanupFailed = cleanupFailed
+        captured.streamReadError = streamReadError
+        return captured
+    }
+
+    private func jsonOutput(
+        timedOut: Bool = false,
+        cancelled: Bool = false,
+        cleanupFailed: Bool = false,
+        streamReadError: Int32? = nil
+    ) -> BoundedProcessCapture.Output {
+        var captured = BoundedProcessCapture.Output(
+            exitCode: 0,
+            stdout: Data("{\"ok\":true}".utf8),
+            stderr: Data(),
             stdoutTruncated: false,
             stderrTruncated: false,
             timedOut: timedOut,
