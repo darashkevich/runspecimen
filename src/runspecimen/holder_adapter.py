@@ -65,6 +65,7 @@ class AdapterServer:
             allow_test_double=allow_test_double,
             installed_protection=False,
             bootstrap_secret=bootstrap_secret,
+            snapshot_base=self.root / "run-snapshots",
         )
 
     def start(self) -> None:
@@ -138,10 +139,18 @@ class AdapterServer:
             message = json.loads(raw)
             if not isinstance(message, dict):
                 raise HolderRefusal("holder message is not an object")
+            peer_uid, peer_gid = os.getuid(), os.getgid()
+            try:
+                if hasattr(conn, "getpeereid"):
+                    peer_uid, peer_gid = conn.getpeereid()  # type: ignore[attr-defined]
+            except OSError:
+                pass
             response = handle_message(
                 self.holder,
                 message,
                 bootstrap_secret=self.bootstrap_secret,
+                peer_uid=int(peer_uid),
+                peer_gid=int(peer_gid),
             )
         except (HolderRefusal, FrameError, json.JSONDecodeError, OSError, ValueError) as exc:
             response = {"ok": False, "error": str(exc), "installed_protection": False}

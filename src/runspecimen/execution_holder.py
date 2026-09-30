@@ -19,8 +19,10 @@ import hashlib
 import hmac
 import os
 import secrets
+import sys
 import pwd
 import select
+import sys
 import subprocess
 import time
 from pathlib import Path
@@ -77,6 +79,7 @@ class ExecutionHolder:
         allow_test_double: bool = False,
         installed_protection: bool = False,
         bootstrap_secret: str | None = None,
+        snapshot_base: Path | None = None,
     ) -> None:
         if allow_test_double and installed_protection:
             raise ValueError("a software test double cannot claim installed protection")
@@ -84,7 +87,24 @@ class ExecutionHolder:
         self.allow_test_double = allow_test_double
         self.installed_protection = bool(installed_protection)
         self.bootstrap_secret = bootstrap_secret
+        # Per-run payload snapshots live outside the 0700 state tree so a
+        # correctly deprivileged payload can read them without seeing
+        # enrollment, policy, spent nonces, or leases.
+        if snapshot_base is None:
+            self.snapshot_base = self.root.parent / "run-snapshots"
+        else:
+            self.snapshot_base = Path(snapshot_base)
         self.root.mkdir(parents=True, exist_ok=True)
+        self.snapshot_base.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(self.root, 0o700)
+        except OSError:
+            pass
+        try:
+            # Root-owned immutable-for-payload tree: readable, not writable.
+            os.chmod(self.snapshot_base, 0o755)
+        except OSError:
+            pass
         if not (self.root / "meta.json").exists():
             if _has_history(self.root):
                 raise HolderRefusal("holder history is missing its generation record")
@@ -104,6 +124,10 @@ class ExecutionHolder:
         self._load()
 
     def enroll(self, caller_id: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
+        with self._transaction():
+            return self._enroll_locked(caller_id, human, now=now)
+
+    def _enroll_locked(self, caller_id: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         self._load()
         self._human(
             human,
@@ -139,6 +163,10 @@ class ExecutionHolder:
         }
 
     def pair_device(self, device_id: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
+        with self._transaction():
+            return self._pair_device_locked(device_id, human, now=now)
+
+    def _pair_device_locked(self, device_id: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         self._load()
         self._require_enrollment()
         role = human.get("role") if isinstance(human, dict) else None
@@ -156,36 +184,58 @@ class ExecutionHolder:
             raise HolderRefusal("pairing fingerprint is missing")
         if human.get("attestation") == "secure-enclave" and human.get("hardware") is not True:
             raise HolderRefusal("imported secure-enclave label is unverified on this holder")
-        # Device HMAC secret is returned once. An imported secure-enclave label is
-        # still not attestation of hardware enrollment on this host.
-        device_secret = secrets.token_hex(32)
+        # Real pairing stores an Ed25519 public key. The private key is returned
+        # once. An imported secure-enclave label is still not attestation.
+        from runspecimen.holder_asymmetric import generate_device_keypair
+
         attestation = "unverified"
+        private_hex = None
+        public_hex = None
         if human.get("method") == "software-test-double":
             attestation = "software-test-double"
+            # Test double may omit asymmetric material; local/companion/dual cannot.
+            public_hex = human.get("public_key") if isinstance(human.get("public_key"), str) else None
         elif human.get("attestation"):
             attestation = "unverified"
+            public_hex = human.get("public_key") if isinstance(human.get("public_key"), str) else None
+            if not public_hex:
+                raise HolderRefusal("pairing public key is missing")
         else:
-            attestation = "device-hmac"
+            attestation = "device-ed25519-not-hardware"
+            supplied = human.get("public_key")
+            if isinstance(supplied, str) and supplied:
+                public_hex = supplied
+            else:
+                private_hex, public_hex = generate_device_keypair()
         devices[device_id] = {
             "role": role,
             "fingerprint": fingerprint,
             "revoked": False,
             "attestation": attestation,
-            "device_secret": device_secret,
+            "public_key": public_hex,
             "generation": self.generation,
         }
         self._write("devices.json", devices)
-        return {
+        result = {
             "ok": True,
             "device_id": device_id,
             "role": role,
             "attestation": attestation,
-            "device_secret": device_secret,
+            "public_key": public_hex,
             "installed_protection": self.installed_protection,
             "hardware": False,
         }
+        if private_hex is not None:
+            result["private_key"] = private_hex
+        return result
 
     def replace_device_key(
+        self, device_id: str, human: dict[str, Any], *, now: float | None = None
+    ) -> dict[str, Any]:
+        with self._transaction():
+            return self._replace_device_key_locked(device_id, human, now=now)
+
+    def _replace_device_key_locked(
         self, device_id: str, human: dict[str, Any], *, now: float | None = None
     ) -> dict[str, Any]:
         self._load()
@@ -212,6 +262,10 @@ class ExecutionHolder:
         }
 
     def rotate_caller(self, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
+        with self._transaction():
+            return self._rotate_caller_locked(human, now=now)
+
+    def _rotate_caller_locked(self, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         self._load()
         enrollment = self._require_enrollment()
         caller_id = str(enrollment["caller_id"])
@@ -241,6 +295,10 @@ class ExecutionHolder:
         }
 
     def revoke_device(self, device_id: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
+        with self._transaction():
+            return self._revoke_device_locked(device_id, human, now=now)
+
+    def _revoke_device_locked(self, device_id: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         self._load()
         self._require_enrollment()
         auth_policy = self._authorization_policy_for_mutation(None)
@@ -261,6 +319,10 @@ class ExecutionHolder:
         }
 
     def set_policy(self, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
+        with self._transaction():
+            return self._set_policy_locked(human, now=now)
+
+    def _set_policy_locked(self, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         self._load()
         self._require_enrollment()
         if not isinstance(human, dict):
@@ -365,7 +427,7 @@ class ExecutionHolder:
             "launch_argv": list(envelope["launch_argv"]),
             "bounds": envelope["bounds"],
             "mutation_digest": mutation_digest,
-            "attestation_class": "device-hmac-not-hardware",
+            "attestation_class": "device-ed25519-not-hardware",
         }
         path_map, payload_digest, snapshot_root = self._bind(
             nonce,
@@ -420,6 +482,10 @@ class ExecutionHolder:
 
     def cancel_uncertain(self, token: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         """Cancel only before the holder has spawned. Authorization alone is not enough once a pid is recorded."""
+        with self._transaction():
+            return self._cancel_uncertain_locked(token, human, now=now)
+
+    def _cancel_uncertain_locked(self, token: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         self._load()
         self._human(human, purpose="cancel", policy=human.get("policy"), subject=token, now=now)
         lease = self._read("lease.json") if (self.root / "lease.json").exists() else None
@@ -434,6 +500,10 @@ class ExecutionHolder:
 
     def note_child_absent(self, token: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         """Refuse client assertions that a child is gone. Lease release requires verified termination."""
+        with self._transaction():
+            return self._note_child_absent_locked(token, human, now=now)
+
+    def _note_child_absent_locked(self, token: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         self._load()
         self._human(human, purpose="note-absent", policy=human.get("policy"), subject=token, now=now)
         lease = self._read("lease.json") if (self.root / "lease.json").exists() else None
@@ -742,7 +812,7 @@ class ExecutionHolder:
                 os.close(fd)
             if hashlib.sha256(data).hexdigest() != expected:
                 raise HolderRefusal("live executable does not match the bound digest")
-        snapshot_root = self.root / "snapshots" / nonce
+        snapshot_root = self._prepare_payload_snapshot(nonce)
         try:
             bound = bind_execution(request, snapshot_root)
         except ProtocolError as exc:
@@ -762,6 +832,8 @@ class ExecutionHolder:
         token: str,
         human: dict[str, Any],
         now: float | None = None,
+        peer_uid: int | None = None,
+        peer_gid: int | None = None,
     ) -> dict[str, Any]:
         """Spawn from the signed binding only. Lease clears after descendants are gone.
 
@@ -795,7 +867,7 @@ class ExecutionHolder:
                 "launch_argv": list(binding.get("launch_argv") or []),
                 "bounds": binding.get("bounds"),
                 "mutation_digest": binding.get("mutation_digest"),
-                "attestation_class": "device-hmac-not-hardware",
+                "attestation_class": "device-ed25519-not-hardware",
             }
             self._human(
                 human,
@@ -814,7 +886,7 @@ class ExecutionHolder:
                 err_max = int(bounds["stderr_max_bytes"])
             except (KeyError, TypeError, ValueError) as exc:
                 raise HolderRefusal("execute bounds are malformed") from exc
-            snapshot_root = self.root / "snapshots" / token
+            snapshot_root = self.snapshot_base / token
             if not snapshot_root.is_dir():
                 raise HolderRefusal("execute snapshot root is missing")
             workspace = Path(str(binding["workspace"]))
@@ -856,7 +928,21 @@ class ExecutionHolder:
                     continue
                 if str(resolved) in path_map and str(resolved) == token_path:
                     raise HolderRefusal("execute refused a live workspace path after consume")
-            run_uid, run_gid = self._payload_identity()
+            run_uid, run_gid = self._payload_identity(peer_uid=peer_uid, peer_gid=peer_gid)
+            # Snapshot tree must be readable by the deprivileged payload without
+            # exposing the 0700 state directory.
+            try:
+                for dirpath, dirnames, filenames in os.walk(snapshot_root):
+                    os.chmod(dirpath, 0o755)
+                    for name in filenames:
+                        fpath = Path(dirpath) / name
+                        mode = 0o555 if os.access(fpath, os.X_OK) else 0o444
+                        try:
+                            os.chmod(fpath, mode)
+                        except OSError:
+                            pass
+            except OSError as exc:
+                raise HolderRefusal(f"payload snapshot could not be sealed read-only: {exc}") from exc
             self._write(
                 "lease.json",
                 {
@@ -869,21 +955,13 @@ class ExecutionHolder:
                     "run_gid": run_gid,
                 },
             )
-            preexec = self._preexec_drop(run_uid, run_gid)
             try:
-                proc = subprocess.Popen(  # noqa: S603
-                    launch,
-                    cwd=str(cwd),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    bufsize=0,
-                    shell=False,
-                    start_new_session=True,
-                    preexec_fn=preexec,
-                )
-            except OSError as exc:
+                proc = self._spawn_dropped(launch, cwd=cwd, uid=run_uid, gid=run_gid)
+            except (OSError, HolderRefusal) as exc:
                 self._write("lease.json", {"held": False, "token": token, "child": "spawn-failed"})
                 raise HolderRefusal(f"holder spawn failed: {exc}") from exc
+            tracked = self._descendants_of(int(proc.pid))
+            tracked.add(int(proc.pid))
             self._write(
                 "lease.json",
                 {
@@ -895,6 +973,7 @@ class ExecutionHolder:
                     "launch_started": True,
                     "run_uid": run_uid,
                     "run_gid": run_gid,
+                    "tracked_pids": sorted(tracked),
                 },
             )
             stdout = bytearray()
@@ -1007,13 +1086,25 @@ class ExecutionHolder:
             exit_code = proc.returncode
             if exit_code is None:
                 raise HolderRefusal("holder execute did not observe process termination")
-            if not self._process_group_absent(int(proc.pid)):
+            # killpg alone does not prove setsid / reparented descendants are gone.
+            tracked = set(self._descendants_of(int(proc.pid)))
+            tracked.add(int(proc.pid))
+            if not self._process_group_absent(int(proc.pid)) or not self._pids_absent(tracked):
                 try:
                     os.killpg(proc.pid, 9)
                 except ProcessLookupError:
                     pass
-                if not self._process_group_absent(int(proc.pid)):
-                    raise HolderRefusal("holder descendants are still alive; lease not released")
+                for pid in list(tracked):
+                    try:
+                        os.kill(pid, 9)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+                tracked = set(self._descendants_of(int(proc.pid)))
+                tracked.add(int(proc.pid))
+                if not self._process_group_absent(int(proc.pid)) or not self._pids_absent(tracked):
+                    raise HolderRefusal(
+                        "holder descendants are still alive (setsid-aware tree); lease not released"
+                    )
             self._write(
                 "lease.json",
                 {
@@ -1040,7 +1131,7 @@ class ExecutionHolder:
                 "stderr_truncated": bool(stderr_trunc),
                 "installed_protection": self.installed_protection,
                 "hardware": False,
-                "attestation_class": "device-hmac-not-hardware",
+                "attestation_class": "device-ed25519-not-hardware",
                 "supervisor": "holder",
                 "run_uid": run_uid,
                 "run_gid": run_gid,
@@ -1123,6 +1214,13 @@ class ExecutionHolder:
         subject: object,
         authorized: dict[str, Any] | None,
     ) -> None:
+        from runspecimen.holder_asymmetric import (
+            AsymmetricError,
+            constant_time_label_ok,
+            digest_challenge,
+            verify_device_signature,
+        )
+
         signatures = human.get("signatures")
         if not isinstance(signatures, dict) or not signatures:
             raise HolderRefusal("cryptographic device signatures are missing")
@@ -1137,19 +1235,20 @@ class ExecutionHolder:
             "expires_at": human.get("expires_at"),
             "holder_id": self.holder_id,
             "generation": self.generation,
-            "domain": "holder-device-hmac-v1",
-            "attestation_class": "device-hmac-not-hardware",
+            "domain": "holder-device-ed25519-v1",
+            "attestation_class": "device-ed25519-not-hardware",
             "authorized": authorized or {},
         }
+        message = digest_challenge(challenge)
         for device_id, signature in signatures.items():
             record = devices.get(device_id)
             if not isinstance(record, dict) or record.get("revoked") is True:
                 raise HolderRefusal("a signing device is missing or revoked")
-            secret = record.get("device_secret")
-            if not isinstance(secret, str):
-                raise HolderRefusal("device signing material is missing")
-            if not isinstance(signature, str) or not hmac.compare_digest(
-                signature, message_mac(secret, challenge)
+            public_key = record.get("public_key")
+            if not isinstance(public_key, str) or not public_key:
+                raise HolderRefusal("device public key is missing")
+            if not isinstance(signature, str) or not verify_device_signature(
+                public_key, signature, message
             ):
                 raise HolderRefusal("device signature verification failed")
             role = record.get("role")
@@ -1157,40 +1256,145 @@ class ExecutionHolder:
                 covered_roles.add(str(role))
         if covered_roles != required_roles:
             raise HolderRefusal("required device signatures are incomplete")
-        if human.get("hardware") is True:
-            raise HolderRefusal("device HMAC signatures are not hardware attestation")
-        if human.get("attestation_class") not in {None, "device-hmac-not-hardware"}:
-            raise HolderRefusal("device HMAC must stay labeled not-hardware")
-
-    def _payload_identity(self) -> tuple[int, int]:
-        """Map payload execution to the console user when the holder is root."""
-        if os.geteuid() != 0:
-            return os.getuid(), os.getgid()
-        env_uid = os.environ.get("RS_HOLDER_RUN_AS_UID", "").strip()
-        env_gid = os.environ.get("RS_HOLDER_RUN_AS_GID", "").strip()
-        if env_uid.isdigit() and env_gid.isdigit():
-            return int(env_uid), int(env_gid)
-        # Prefer the owner of the holder state directory as the originating user.
         try:
-            st = os.stat(self.root)
-            if st.st_uid != 0:
-                return int(st.st_uid), int(st.st_gid)
+            constant_time_label_ok(human.get("attestation_class"), hardware=human.get("hardware"))
+        except AsymmetricError as exc:
+            raise HolderRefusal(str(exc)) from exc
+
+    def _prepare_payload_snapshot(self, token: str) -> Path:
+        """Create an immutable-for-payload snapshot dir outside 0700 state."""
+        root = self.snapshot_base / token
+        if root.exists():
+            raise HolderRefusal("payload snapshot token already exists")
+        root.mkdir(parents=True, exist_ok=False)
+        try:
+            os.chmod(root, 0o755)
         except OSError:
             pass
-        raise HolderRefusal("holder cannot map a least-privilege payload user")
+        return root
 
-    def _preexec_drop(self, uid: int, gid: int):
-        def _drop() -> None:
-            os.setgid(gid)
+    def _payload_identity(self, *, peer_uid: int | None = None, peer_gid: int | None = None) -> tuple[int, int]:
+        """Map payload execution to an authenticated non-root peer identity.
+
+        Environment UID overrides are not an authenticated peer mapping and are
+        refused. UID 0 is never accepted as the payload identity.
+        """
+        if peer_uid is not None:
+            if peer_uid == 0:
+                raise HolderRefusal("payload identity refuses root peer uid")
+            gid = int(peer_gid) if peer_gid is not None and peer_gid >= 0 else peer_uid
+            if gid == 0 and os.geteuid() == 0:
+                raise HolderRefusal("payload identity refuses root peer gid")
+            return int(peer_uid), int(gid)
+        if os.geteuid() != 0:
+            uid, gid = os.getuid(), os.getgid()
+            if uid == 0:
+                raise HolderRefusal("payload identity refuses uid 0")
+            return uid, gid
+        # Root daemon: require an authenticated peer from the connection.
+        raise HolderRefusal("holder requires authenticated non-root peer identity for payload")
+
+    def _spawn_dropped(
+        self,
+        launch: list[str],
+        *,
+        cwd: Path,
+        uid: int,
+        gid: int,
+    ) -> subprocess.Popen:
+        """Spawn via a dedicated drop-exec helper. Never use preexec_fn in threads."""
+        if uid == 0:
+            raise HolderRefusal("payload identity refuses uid 0")
+        helper = Path(__file__).resolve().with_name("holder_drop_exec.py")
+        if not helper.is_file():
+            raise HolderRefusal("holder drop-exec helper is missing")
+        # When not root, run the payload directly as the current non-root user.
+        if os.geteuid() != 0:
+            if os.getuid() != uid:
+                raise HolderRefusal("unprivileged holder cannot impersonate another uid")
+            return subprocess.Popen(  # noqa: S603
+                launch,
+                cwd=str(cwd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=0,
+                shell=False,
+                start_new_session=True,
+            )
+        argv = [
+            sys.executable,
+            "-I",
+            str(helper),
+            "--uid",
+            str(uid),
+            "--gid",
+            str(gid),
+            "--cwd",
+            str(cwd),
+            "--",
+            *launch,
+        ]
+        return subprocess.Popen(  # noqa: S603
+            argv,
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=0,
+            shell=False,
+            start_new_session=True,
+        )
+
+    def _process_table(self) -> dict[int, int]:
+        """Return pid -> ppid for the host process table (best-effort)."""
+        table: dict[int, int] = {}
+        try:
+            import subprocess as _sp
+
+            out = _sp.check_output(["ps", "-axo", "pid=,ppid="], text=True)
+        except (OSError, _sp.SubprocessError):
+            return table
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) != 2:
+                continue
             try:
-                os.setgroups([])
-            except OSError:
-                pass
-            os.setuid(uid)
+                table[int(parts[0])] = int(parts[1])
+            except ValueError:
+                continue
+        return table
 
-        return _drop
+    def _descendants_of(self, root_pid: int, table: dict[int, int] | None = None) -> set[int]:
+        """Collect the ppid-tree under root_pid. setsid alone does not escape this."""
+        table = self._process_table() if table is None else table
+        children: dict[int, list[int]] = {}
+        for pid, ppid in table.items():
+            children.setdefault(ppid, []).append(pid)
+        seen: set[int] = set()
+        stack = [root_pid]
+        while stack:
+            current = stack.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            stack.extend(children.get(current, []))
+        return seen
+
+    def _pids_absent(self, pids: set[int]) -> bool:
+        for pid in pids:
+            if pid <= 0:
+                continue
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                continue
+            except PermissionError:
+                return False
+            else:
+                return False
+        return True
 
     def _process_group_absent(self, pgid: int) -> bool:
+        """Process-group absence alone does not prove setsid descendants are gone."""
         try:
             os.killpg(pgid, 0)
         except ProcessLookupError:
@@ -1238,7 +1442,7 @@ class ExecutionHolder:
             "meta.json": {"protocol", "generation", "holder_id", "installed_protection", "key_generation"},
             "enrollment.json": {"caller_id", "policy", "method", "hardware", "generation", "key_generation"},
             "policy.json": {"name", "generation", "method", "hardware", "devices"},
-            "lease.json": {"held", "token", "child", "pid", "pgid", "exit_code", "launch_started", "descendants_absent", "run_uid", "run_gid"},
+            "lease.json": {"held", "token", "child", "pid", "pgid", "exit_code", "launch_started", "descendants_absent", "run_uid", "run_gid", "tracked_pids"},
             "spent.json": {"nonces"},
             "callers.json": None,
             "devices.json": None,
@@ -1337,10 +1541,16 @@ def dispatch(holder: ExecutionHolder, body: dict[str, Any], *, caller_id: str) -
     if op == "execute":
         if "interpreter" in body or "interpreter_args" in body:
             raise HolderRefusal("execute refuses caller-supplied interpreter overrides")
+        peer_uid = body.get("_peer_uid")
+        peer_gid = body.get("_peer_gid")
+        if "run_uid" in body or "run_gid" in body:
+            raise HolderRefusal("execute refuses caller-supplied payload identity")
         return holder.execute(
             token=str(body.get("token")),
             human=human_dict,
             now=clock,
+            peer_uid=int(peer_uid) if isinstance(peer_uid, int) else None,
+            peer_gid=int(peer_gid) if isinstance(peer_gid, int) else None,
         )
     if op == "cancel":
         return holder.cancel_uncertain(str(body.get("token")), human_dict, now=clock)
@@ -1354,6 +1564,8 @@ def handle_message(
     message: dict[str, Any],
     *,
     bootstrap_secret: str,
+    peer_uid: int | None = None,
+    peer_gid: int | None = None,
 ) -> dict[str, Any]:
     caller_id = message.get("caller_id") if isinstance(message, dict) else None
     if not isinstance(caller_id, str):
@@ -1362,6 +1574,12 @@ def handle_message(
     body = open_sealed(secret, message)
     if body.get("protocol") not in (None, PROTOCOL):
         raise HolderRefusal("holder protocol downgrade or unknown version")
+    # Authenticated peer identity is stamped by the transport, never the client.
+    if peer_uid is not None:
+        body = dict(body)
+        body["_peer_uid"] = int(peer_uid)
+        if peer_gid is not None:
+            body["_peer_gid"] = int(peer_gid)
     result = dispatch(holder, body, caller_id=caller_id)
     return seal(secret, caller_id="holder", body=result)
 

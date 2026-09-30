@@ -9,6 +9,7 @@ import Security
 
 let support = URL(fileURLWithPath: "/Library/Application Support/com.darashkevich.runspecimen.holder")
 let state = support.appendingPathComponent("state", isDirectory: true)
+let snapshots = support.appendingPathComponent("run-snapshots", isDirectory: true)
 let secretFile = support.appendingPathComponent("bootstrap.secret")
 let logFile = support.appendingPathComponent("daemon.log")
 
@@ -46,8 +47,6 @@ func absoluteExecutableURL() -> URL {
 }
 
 func isSymlink(_ path: String) -> Bool {
-    var isDir: ObjCBool = false
-    guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { return false }
     guard let attrs = try? FileManager.default.attributesOfItem(atPath: path) else { return false }
     if let type = attrs[.type] as? FileAttributeType {
         return type == .typeSymbolicLink
@@ -75,7 +74,6 @@ func assertTrustedPath(_ path: String) {
 if geteuid() != 0 {
     die("RunSpecimenHolderDaemon must run as root")
 }
-
 if getenv("RS_HOLDER_PYTHON") != nil {
     die("RS_HOLDER_PYTHON is refused for protected holder runtime")
 }
@@ -88,6 +86,8 @@ try? fm.createDirectory(at: support, withIntermediateDirectories: true)
 try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: support.path)
 try? fm.createDirectory(at: state, withIntermediateDirectories: true)
 try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: state.path)
+try? fm.createDirectory(at: snapshots, withIntermediateDirectories: true)
+try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: snapshots.path)
 
 if !fm.fileExists(atPath: secretFile.path) {
     var bytes = [UInt8](repeating: 0, count: 32)
@@ -120,18 +120,21 @@ let contents = execURL.deletingLastPathComponent().deletingLastPathComponent()
 let resources = contents.appendingPathComponent("Resources")
 let embedded = resources.appendingPathComponent("Runtime/bin/python3")
 let moduleRoot = resources.appendingPathComponent("Python")
+let entry = moduleRoot.appendingPathComponent("runspecimen/holder_entry.py")
 
 var python: String?
 if fm.isExecutableFile(atPath: embedded.path) {
     assertTrustedPath(embedded.path)
     assertTrustedPath(moduleRoot.path)
+    assertTrustedPath(entry.path)
     python = embedded.path
 } else if fm.isExecutableFile(atPath: "/usr/bin/python3") {
     assertTrustedPath("/usr/bin/python3")
-    // Module root must be root-owned after the authorized repair install.
-    // Until then, source refuses user-writable trees when already root-owned check fails.
     if fm.fileExists(atPath: moduleRoot.path) {
         assertTrustedPath(moduleRoot.path)
+    }
+    if fm.fileExists(atPath: entry.path) {
+        assertTrustedPath(entry.path)
     }
     python = "/usr/bin/python3"
 } else {
@@ -141,22 +144,26 @@ if fm.isExecutableFile(atPath: embedded.path) {
 guard let python else {
     die("no protected interpreter available")
 }
+if !fm.isReadableFile(atPath: entry.path) {
+    die("holder_entry.py missing from protected module root")
+}
 
-log("exec=\(execURL.path) python=\(python) moduleRoot=\(moduleRoot.path)")
+log("exec=\(execURL.path) python=\(python) entry=\(entry.path)")
 
 unsetenv("PYTHONPATH")
 unsetenv("PYTHONHOME")
 unsetenv("PYTHONUSERBASE")
 unsetenv("RS_HOLDER_PYTHON")
+unsetenv("RS_HOLDER_MODULE_ROOT")
 setenv("RS_HOLDER_BOOTSTRAP_SECRET", secret, 1)
 setenv("PYTHONDONTWRITEBYTECODE", "1", 1)
-// Pass module root via a dedicated env that the Python entry clears after path insert.
-setenv("RS_HOLDER_MODULE_ROOT", moduleRoot.path, 1)
 
+// Execute the isolated entrypoint by path. Do not use python -m: that cannot
+// discover Resources/Python before import without a prior path mutation.
 let args = [
     python,
     "-I",
-    "-m", "runspecimen.holder_daemon",
+    entry.path,
     "--support-dir", support.path,
 ]
 let argv = args.map { strdup($0) } + [nil]

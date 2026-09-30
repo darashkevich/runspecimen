@@ -8,6 +8,7 @@ a paired phone.
 from __future__ import annotations
 
 import hashlib
+import os
 import tempfile
 import time
 import unittest
@@ -474,18 +475,18 @@ if __name__ == "__main__":
 
 def _sign_human(
     holder: ExecutionHolder,
-    device_secrets: dict[str, str],
+    device_private_keys: dict[str, str],
     purpose: str,
     subject: str,
     policy: str,
     authorized: dict | None = None,
 ) -> dict:
-    """Build a cryptographically signed local/companion/dual authorization.
+    """Build an Ed25519-signed local/companion/dual authorization.
 
-    Device-HMAC is labeled not-hardware. This is not biometric execution and
-    these tests do not prove installed protection.
+    Labeled not-hardware. This is not biometric execution and these tests do
+    not prove installed protection.
     """
-    from runspecimen.execution_holder import message_mac
+    from runspecimen.holder_asymmetric import digest_challenge, sign_device_challenge
 
     devices = {"local": ["mac"], "companion": ["phone"], "dual": ["mac", "phone"]}[policy]
     expires_at = int(time.time()) + 3600
@@ -498,12 +499,14 @@ def _sign_human(
         "expires_at": expires_at,
         "holder_id": holder.holder_id,
         "generation": holder.generation,
-        "domain": "holder-device-hmac-v1",
-        "attestation_class": "device-hmac-not-hardware",
+        "domain": "holder-device-ed25519-v1",
+        "attestation_class": "device-ed25519-not-hardware",
         "authorized": auth,
     }
+    message = digest_challenge(challenge)
     signatures = {
-        device_id: message_mac(secret, challenge) for device_id, secret in device_secrets.items()
+        device_id: sign_device_challenge(priv, message)
+        for device_id, priv in device_private_keys.items()
     }
     return {
         "method": policy,
@@ -513,7 +516,7 @@ def _sign_human(
         "devices": devices,
         "expires_at": expires_at,
         "hardware": False,
-        "attestation_class": "device-hmac-not-hardware",
+        "attestation_class": "device-ed25519-not-hardware",
         "signatures": signatures,
     }
 
@@ -651,7 +654,7 @@ class HolderCryptoAndExecuteTests(unittest.TestCase):
             ),
         }
         paired = self.holder.pair_device("mac-1", pair_human)
-        secrets_map = {"mac-1": paired["device_secret"]}
+        secrets_map = {"mac-1": paired["private_key"]}
 
         policy_human = _sign_human(self.holder, secrets_map, "set-policy", "local", "local")
         self.holder.set_policy(policy_human)
@@ -727,7 +730,7 @@ class HolderCryptoAndExecuteTests(unittest.TestCase):
             "launch_argv": launch_argv,
             "bounds": binding["bounds"],
             "mutation_digest": mutation_digest,
-            "attestation_class": "device-hmac-not-hardware",
+            "attestation_class": "device-ed25519-not-hardware",
         }
         consume_human = _sign_human(
             self.holder, secrets_map, "consume", "n-exec", "local", authorized=authorized
@@ -747,7 +750,7 @@ class HolderCryptoAndExecuteTests(unittest.TestCase):
             "launch_argv": launch_argv,
             "bounds": binding["bounds"],
             "mutation_digest": consumed["binding"]["mutation_digest"],
-            "attestation_class": "device-hmac-not-hardware",
+            "attestation_class": "device-ed25519-not-hardware",
         }
         execute_human = _sign_human(
             self.holder, secrets_map, "execute", "n-exec", "local", authorized=exec_authorized
@@ -898,7 +901,7 @@ class HolderQA69RegressionTests(unittest.TestCase):
         result = self.holder.execute(token="uid", human=_human("execute", "uid"))
         self.assertEqual(result["run_uid"], os.getuid())
         self.assertEqual(result["run_gid"], os.getgid())
-        self.assertTrue(result.get("attestation_class") == "device-hmac-not-hardware" or result.get("hardware") is False)
+        self.assertTrue(result.get("attestation_class") == "device-ed25519-not-hardware" or result.get("hardware") is False)
 
     def test_mutate_launch_argv_after_consume_fails(self) -> None:
         path = self.ws / "job.py"
@@ -984,3 +987,250 @@ class HolderAbsoluteDeadlineTests(unittest.TestCase):
         self.assertIsInstance(errors[0], FrameError)
         self.assertIn("deadline", str(errors[0]))
 
+
+
+class HolderQA5dd1EntrypointTests(unittest.TestCase):
+    """Isolated entrypoint. These tests do not prove installed protection."""
+
+    def test_holder_entry_bootstraps_without_rs_holder_module_root(self) -> None:
+        import subprocess
+        import sys
+
+        src_root = Path(__file__).resolve().parents[1] / "src"
+        entry = src_root / "runspecimen" / "holder_entry.py"
+        # Fresh interpreter, no PYTHONPATH, no RS_HOLDER_MODULE_ROOT: entry must
+        # still locate the package by inserting its module root before import.
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": self._td_home if hasattr(self, "_td_home") else "/tmp",
+            "PYTHONDONTWRITEBYTECODE": "1",
+        }
+        # Build a clean module tree copy without relying on site-packages.
+        td = tempfile.TemporaryDirectory(prefix="rsh-entry-")
+        self.addCleanup(td.cleanup)
+        module_root = Path(td.name) / "Python"
+        import shutil
+
+        src_pkg = src_root / "runspecimen"
+        shutil.copytree(
+            src_pkg,
+            module_root / "runspecimen",
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+        clean_entry = module_root / "runspecimen" / "holder_entry.py"
+        # Probe: import path only — invoke entry with --help equivalent by asking daemon parser.
+        # Missing bootstrap secret should exit 2 after successful import bootstrap.
+        proc = subprocess.run(
+            [sys.executable, "-I", str(clean_entry), "--support-dir", td.name],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        # Must not be ModuleNotFoundError for runspecimen.
+        self.assertNotIn("ModuleNotFoundError", proc.stderr + proc.stdout)
+        self.assertIn("RS_HOLDER_BOOTSTRAP_SECRET", proc.stderr + proc.stdout)
+
+    def test_entrypoint_refuses_pythonpath(self) -> None:
+        import subprocess
+        import sys
+
+        src_root = Path(__file__).resolve().parents[1] / "src"
+        entry = src_root / "runspecimen" / "holder_entry.py"
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": "/tmp",
+            "PYTHONPATH": "/tmp/evil",
+            "PYTHONDONTWRITEBYTECODE": "1",
+        }
+        proc = subprocess.run(
+            [sys.executable, "-I", str(entry), "--support-dir", "/tmp"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("PYTHONPATH", proc.stderr + proc.stdout)
+
+
+class HolderQA5dd1PrivilegeAndSnapshotTests(unittest.TestCase):
+    """Privilege drop and readable snapshots. Do not prove installed protection."""
+
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory(prefix="rsh-5dd1-")
+        self.root = Path(self._td.name) / "state"
+        self.snaps = Path(self._td.name) / "run-snapshots"
+        self.ws = Path(self._td.name) / "ws"
+        self.ws.mkdir()
+        self.holder = ExecutionHolder(
+            self.root,
+            allow_test_double=True,
+            snapshot_base=self.snaps,
+        )
+        self.holder.enroll("app", _human("enroll", "app"))
+        self.holder.set_policy(_human("set-policy", "local"))
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
+    def test_payload_identity_refuses_uid_zero(self) -> None:
+        with self.assertRaises(HolderRefusal):
+            self.holder._payload_identity(peer_uid=0, peer_gid=0)
+
+    def test_env_uid_is_not_authenticated_peer_mapping(self) -> None:
+        import os as _os
+
+        _os.environ["RS_HOLDER_RUN_AS_UID"] = "0"
+        _os.environ["RS_HOLDER_RUN_AS_GID"] = "0"
+        try:
+            # Non-root harness uses getuid; env must not force uid 0.
+            if _os.geteuid() != 0:
+                uid, gid = self.holder._payload_identity()
+                self.assertNotEqual(uid, 0)
+            else:  # pragma: no cover
+                with self.assertRaises(HolderRefusal):
+                    self.holder._payload_identity()
+        finally:
+            _os.environ.pop("RS_HOLDER_RUN_AS_UID", None)
+            _os.environ.pop("RS_HOLDER_RUN_AS_GID", None)
+
+    def test_snapshots_live_outside_state_and_are_payload_readable(self) -> None:
+        path = self.ws / "job.py"
+        path.write_text("print('snap')\n", encoding="utf-8")
+        digest = sha256_file(path)
+        binding = _binding(self.ws, path, digest)
+        binding["launch_argv"] = ["python3", str(path.resolve())]
+        binding["argv"] = [str(path.resolve())]
+        consumed = self.holder.consume(
+            nonce="snap1",
+            policy="local",
+            human=_human("consume", "snap1"),
+            workspace=self.ws,
+            files=[(str(path.resolve()), digest)],
+            binding=binding,
+        )
+        snap = Path(consumed["snapshot_root"])
+        self.assertTrue(str(snap).startswith(str(self.snaps)))
+        self.assertFalse(str(snap).startswith(str(self.root)))
+        # State stays private; snapshot root is traversable.
+        self.assertTrue(os.access(snap, os.R_OK | os.X_OK))
+        self.assertTrue(snap.is_dir())
+
+    def test_setsid_descendant_keeps_lease_until_tree_gone(self) -> None:
+        # Spawn a short-lived payloads that setsid a child; holder must track the tree.
+        path = self.ws / "setsid_job.py"
+        path.write_text(
+            "import os, time, sys\n"
+            "if os.fork() == 0:\n"
+            "    os.setsid()\n"
+            "    time.sleep(0.05)\n"
+            "    os._exit(0)\n"
+            "time.sleep(0.1)\n",
+            encoding="utf-8",
+        )
+        digest = sha256_file(path)
+        binding = _binding(self.ws, path, digest)
+        binding["launch_argv"] = ["python3", str(path.resolve())]
+        binding["argv"] = [str(path.resolve())]
+        binding["bounds"] = {
+            "wall_timeout_sec": 5,
+            "stdout_max_bytes": 1024,
+            "stderr_max_bytes": 1024,
+            "cpu_time_sec": None,
+            "memory_bytes": None,
+            "fsize_bytes": None,
+            "open_files": None,
+            "processes": None,
+        }
+        self.holder.consume(
+            nonce="sid1",
+            policy="local",
+            human=_human("consume", "sid1"),
+            workspace=self.ws,
+            files=[(str(path.resolve()), digest)],
+            binding=binding,
+        )
+        result = self.holder.execute(token="sid1", human=_human("execute", "sid1"))
+        self.assertTrue(result.get("descendants_absent") or result.get("ok") is True)
+        self.assertFalse(self.holder._lease_held())
+
+
+class HolderQA5dd1AsymmetricTests(unittest.TestCase):
+    """Ed25519 pairing. Do not prove installed protection. Not biometric execution."""
+
+    def test_hmac_is_rejected_for_local_policy(self) -> None:
+        from runspecimen.execution_holder import message_mac
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-asym-")
+        self.addCleanup(td.cleanup)
+        holder = ExecutionHolder(
+            Path(td.name) / "state",
+            allow_test_double=False,
+            bootstrap_secret="aa" * 32,
+            snapshot_base=Path(td.name) / "run-snapshots",
+        )
+        # enroll+pair via bootstrap
+        expires = int(time.time()) + 60
+        enroll = {
+            "method": "bootstrap",
+            "purpose": "enroll",
+            "subject": "app",
+            "policy": "local",
+            "devices": ["mac"],
+            "expires_at": expires,
+            "hardware": False,
+            "bootstrap_mac": message_mac(
+                "aa" * 32,
+                {
+                    "purpose": "enroll",
+                    "subject": "app",
+                    "policy": "local",
+                    "devices": ["mac"],
+                    "expires_at": expires,
+                    "domain": "holder-bootstrap-v1",
+                },
+            ),
+        }
+        holder.enroll("app", enroll)
+        pair_exp = int(time.time()) + 60
+        pair = {
+            "method": "bootstrap",
+            "purpose": "pair",
+            "subject": "mac-1",
+            "policy": "local",
+            "role": "mac",
+            "fingerprint": "fp",
+            "devices": ["mac"],
+            "expires_at": pair_exp,
+            "hardware": False,
+            "bootstrap_mac": message_mac(
+                "aa" * 32,
+                {
+                    "purpose": "pair",
+                    "subject": "mac-1",
+                    "policy": "local",
+                    "devices": ["mac"],
+                    "expires_at": pair_exp,
+                    "domain": "holder-bootstrap-v1",
+                },
+            ),
+        }
+        paired = holder.pair_device("mac-1", pair)
+        self.assertIn("private_key", paired)
+        self.assertEqual(paired["attestation"], "device-ed25519-not-hardware")
+        # HMAC over the challenge must not verify as an Ed25519 signature.
+        bad = {
+            "method": "local",
+            "purpose": "set-policy",
+            "subject": "local",
+            "policy": "local",
+            "devices": ["mac"],
+            "expires_at": int(time.time()) + 60,
+            "hardware": False,
+            "attestation_class": "device-ed25519-not-hardware",
+            "signatures": {"mac-1": message_mac(paired["private_key"], {"x": 1})},
+        }
+        with self.assertRaises(HolderRefusal):
+            holder.set_policy(bad)

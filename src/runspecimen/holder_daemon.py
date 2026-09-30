@@ -5,6 +5,9 @@ or exercise any installed root daemon. ``allow_test_double`` is off.
 ``installed_protection`` is on. A software test double is refused. An imported
 secure-enclave label is not attestation. Administrator or root can still defeat
 this holder. Unprivileged tests do not prove installed protection.
+
+The live process must be started via ``holder_entry.py`` (path execution), not
+``python -m``, so module discovery does not depend on post-import env mutation.
 """
 
 from __future__ import annotations
@@ -19,12 +22,6 @@ from pathlib import Path
 
 from runspecimen.execution_holder import ExecutionHolder, HolderRefusal, handle_message
 from runspecimen.holder_adapter import INSTALLED_SOCKET_NAME, INSTALLED_SUPPORT_DIR
-from runspecimen.holder_runtime import (
-    RuntimeTrustError,
-    assert_module_root,
-    refuse_user_python_injection,
-)
-
 from runspecimen.holder_io import (
     DEFAULT_ACCEPT_BACKLOG,
     DEFAULT_MAX_IN_FLIGHT,
@@ -35,6 +32,7 @@ from runspecimen.holder_io import (
     read_frame,
     write_frame,
 )
+from runspecimen.holder_runtime import RuntimeTrustError, refuse_user_python_injection
 
 BOOTSTRAP_ENV = "RS_HOLDER_BOOTSTRAP_SECRET"
 
@@ -44,38 +42,69 @@ def _ensure_root() -> None:
         raise SystemExit("holder daemon must run as root")
 
 
-def _prepare_dirs(support: Path) -> tuple[Path, Path]:
+def _peer_ids(conn: socket.socket) -> tuple[int, int]:
+    """Authenticated peer credentials from the connected AF_UNIX socket."""
+    try:
+        if hasattr(conn, "getpeereid"):
+            uid, gid = conn.getpeereid()  # type: ignore[attr-defined]
+            return int(uid), int(gid)
+    except OSError:
+        pass
+    # macOS / some BSDs
+    try:
+        import struct
+
+        LOCAL_PEERCRED = getattr(socket, "LOCAL_PEERCRED", 0x200000108)
+        data = conn.getsockopt(0, LOCAL_PEERCRED, 24)  # SOL_LOCAL ≈ 0 on Darwin for this
+        # fallback via ctypes getpeereid
+    except OSError:
+        data = b""
+    try:
+        import ctypes
+        import ctypes.util
+
+        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        uid = ctypes.c_uint()
+        gid = ctypes.c_uint()
+        rc = libc.getpeereid(conn.fileno(), ctypes.byref(uid), ctypes.byref(gid))
+        if rc == 0:
+            return int(uid.value), int(gid.value)
+    except (OSError, AttributeError, ValueError):
+        pass
+    raise HolderRefusal("authenticated peer identity is unavailable")
+
+
+def _prepare_dirs(support: Path) -> tuple[Path, Path, Path]:
     support.mkdir(parents=True, exist_ok=True)
     os.chmod(support, 0o755)
     state = support / "state"
     state.mkdir(parents=True, exist_ok=True)
     os.chmod(state, 0o700)
+    snapshots = support / "run-snapshots"
+    snapshots.mkdir(parents=True, exist_ok=True)
+    os.chmod(snapshots, 0o755)
     sock_path = support / INSTALLED_SOCKET_NAME
-    return state, sock_path
+    return state, snapshots, sock_path
 
 
 def serve(support: Path, *, bootstrap_secret: str) -> int:
     _ensure_root()
     try:
         refuse_user_python_injection()
-        module_root = os.environ.get("RS_HOLDER_MODULE_ROOT")
-        if module_root:
-            assert_module_root(Path(module_root))
     except RuntimeTrustError as exc:
         raise SystemExit(str(exc)) from exc
-    state, sock_path = _prepare_dirs(support)
+    state, snapshots, sock_path = _prepare_dirs(support)
     holder = ExecutionHolder(
         state,
         allow_test_double=False,
         installed_protection=True,
         bootstrap_secret=bootstrap_secret,
+        snapshot_base=snapshots,
     )
     if sock_path.exists():
         sock_path.unlink()
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(str(sock_path))
-    # Authenticated protocol; world may connect, same-user cannot rewrite state.
-    # Framing/admission bounds still apply. This source change is not an install.
     os.chmod(sock_path, 0o666)
     sock.listen(DEFAULT_ACCEPT_BACKLOG)
     admission = AdmissionGate(DEFAULT_MAX_IN_FLIGHT)
@@ -98,10 +127,12 @@ def serve(support: Path, *, bootstrap_secret: str) -> int:
                 pass
             conn.close()
             continue
+
         def worker(connection: socket.socket) -> None:
             try:
                 with connection:
                     try:
+                        peer_uid, peer_gid = _peer_ids(connection)
                         raw = read_frame(
                             connection,
                             max_bytes=MAX_FRAME_BYTES,
@@ -114,6 +145,8 @@ def serve(support: Path, *, bootstrap_secret: str) -> int:
                             holder,
                             message,
                             bootstrap_secret=bootstrap_secret,
+                            peer_uid=peer_uid,
+                            peer_gid=peer_gid,
                         )
                     except (HolderRefusal, FrameError, json.JSONDecodeError, OSError, ValueError) as exc:
                         response = {
