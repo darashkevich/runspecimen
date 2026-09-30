@@ -1,9 +1,10 @@
 import Darwin
 import Foundation
+import Security
 
-/// Root LaunchDaemon entry. Owns holder state under
-/// /Library/Application Support/com.darashkevich.runspecimen.holder and
-/// execs the Python holder protocol with software-test-double OFF.
+/// Root LaunchDaemon entry. Source-level protected runtime selection.
+/// This pass does not modify the live /Applications install. Yahor must
+/// separately authorize replacing that install with a root-owned runtime.
 /// Administrator or root can still defeat this holder.
 
 let support = URL(fileURLWithPath: "/Library/Application Support/com.darashkevich.runspecimen.holder")
@@ -44,8 +45,42 @@ func absoluteExecutableURL() -> URL {
     return URL(fileURLWithPath: CommandLine.arguments[0]).absoluteURL.resolvingSymlinksInPath()
 }
 
+func isSymlink(_ path: String) -> Bool {
+    var isDir: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { return false }
+    guard let attrs = try? FileManager.default.attributesOfItem(atPath: path) else { return false }
+    if let type = attrs[.type] as? FileAttributeType {
+        return type == .typeSymbolicLink
+    }
+    return false
+}
+
+func assertTrustedPath(_ path: String) {
+    if isSymlink(path) {
+        die("refusing symlink in runtime path: \(path)")
+    }
+    guard let attrs = try? FileManager.default.attributesOfItem(atPath: path) else {
+        die("cannot stat runtime path: \(path)")
+    }
+    let owner = (attrs[.ownerAccountID] as? NSNumber)?.intValue ?? -1
+    if owner != 0 {
+        die("runtime path is not root-owned: \(path)")
+    }
+    let posix = (attrs[.posixPermissions] as? NSNumber)?.uint16Value ?? 0
+    if (posix & 0o002) != 0 || (posix & 0o020) != 0 {
+        die("runtime path is group/world-writable: \(path)")
+    }
+}
+
 if geteuid() != 0 {
     die("RunSpecimenHolderDaemon must run as root")
+}
+
+if getenv("RS_HOLDER_PYTHON") != nil {
+    die("RS_HOLDER_PYTHON is refused for protected holder runtime")
+}
+if getenv("PYTHONPATH") != nil {
+    die("PYTHONPATH is refused for protected holder runtime")
 }
 
 let fm = FileManager.default
@@ -81,35 +116,46 @@ if secret.count < 32 {
 }
 
 let execURL = absoluteExecutableURL()
-// .../RunSpecimen Holder.app/Contents/MacOS/RunSpecimenHolderDaemon
 let contents = execURL.deletingLastPathComponent().deletingLastPathComponent()
 let resources = contents.appendingPathComponent("Resources")
-let pythonRoot = resources.appendingPathComponent("Python")
+let embedded = resources.appendingPathComponent("Runtime/bin/python3")
+let moduleRoot = resources.appendingPathComponent("Python")
 
-let pythonCandidates = [
-    ProcessInfo.processInfo.environment["RS_HOLDER_PYTHON"],
-    "/usr/bin/python3",
-    "/opt/homebrew/bin/python3.12",
-].compactMap { $0 }
 var python: String?
-for candidate in pythonCandidates {
-    if FileManager.default.isExecutableFile(atPath: candidate) {
-        python = candidate
-        break
+if fm.isExecutableFile(atPath: embedded.path) {
+    assertTrustedPath(embedded.path)
+    assertTrustedPath(moduleRoot.path)
+    python = embedded.path
+} else if fm.isExecutableFile(atPath: "/usr/bin/python3") {
+    assertTrustedPath("/usr/bin/python3")
+    // Module root must be root-owned after the authorized repair install.
+    // Until then, source refuses user-writable trees when already root-owned check fails.
+    if fm.fileExists(atPath: moduleRoot.path) {
+        assertTrustedPath(moduleRoot.path)
     }
+    python = "/usr/bin/python3"
+} else {
+    die("no protected interpreter available")
 }
+
 guard let python else {
-    die("no usable python interpreter found for holder daemon")
+    die("no protected interpreter available")
 }
 
-log("exec=\(execURL.path) python=\(python) pythonRoot=\(pythonRoot.path)")
+log("exec=\(execURL.path) python=\(python) moduleRoot=\(moduleRoot.path)")
 
+unsetenv("PYTHONPATH")
+unsetenv("PYTHONHOME")
+unsetenv("PYTHONUSERBASE")
+unsetenv("RS_HOLDER_PYTHON")
 setenv("RS_HOLDER_BOOTSTRAP_SECRET", secret, 1)
-setenv("PYTHONPATH", pythonRoot.path, 1)
 setenv("PYTHONDONTWRITEBYTECODE", "1", 1)
+// Pass module root via a dedicated env that the Python entry clears after path insert.
+setenv("RS_HOLDER_MODULE_ROOT", moduleRoot.path, 1)
 
 let args = [
     python,
+    "-I",
     "-m", "runspecimen.holder_daemon",
     "--support-dir", support.path,
 ]

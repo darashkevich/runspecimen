@@ -49,18 +49,22 @@ def _human(purpose: str, subject: str, policy: str = "local", method: str = "sof
         "expires_at": int(time.time()) + 3600,
         "hardware": False,
         "devices": devices,
+        "attestation_class": "software-test-double-not-hardware",
     }
     doc.update(extra)
     return doc
 
 
 def _binding(workspace: Path, path: Path, digest: str, policy: str = "local") -> dict:
+    exe = str(path.resolve())
     return {
         "contract_hash": "c" * 64,
         "workspace": str(workspace.resolve()),
         "argv": [str(path), "payload.txt"],
-        "executable": str(path.resolve()),
+        "executable": exe,
         "policy": policy,
+        "cwd": str(workspace.resolve()),
+        "launch_argv": [exe, "payload.txt"],
         "bounds": {"wall_timeout_sec": 10, "stdout_max_bytes": 65536, "stderr_max_bytes": 65536},
         "key_generation": 1,
     }
@@ -474,16 +478,18 @@ def _sign_human(
     purpose: str,
     subject: str,
     policy: str,
+    authorized: dict | None = None,
 ) -> dict:
     """Build a cryptographically signed local/companion/dual authorization.
 
-    This is device-HMAC verification, not biometric execution and not installed
-    protection.
+    Device-HMAC is labeled not-hardware. This is not biometric execution and
+    these tests do not prove installed protection.
     """
     from runspecimen.execution_holder import message_mac
 
     devices = {"local": ["mac"], "companion": ["phone"], "dual": ["mac", "phone"]}[policy]
     expires_at = int(time.time()) + 3600
+    auth = authorized or {}
     challenge = {
         "purpose": purpose,
         "subject": subject,
@@ -492,6 +498,9 @@ def _sign_human(
         "expires_at": expires_at,
         "holder_id": holder.holder_id,
         "generation": holder.generation,
+        "domain": "holder-device-hmac-v1",
+        "attestation_class": "device-hmac-not-hardware",
+        "authorized": auth,
     }
     signatures = {
         device_id: message_mac(secret, challenge) for device_id, secret in device_secrets.items()
@@ -504,6 +513,7 @@ def _sign_human(
         "devices": devices,
         "expires_at": expires_at,
         "hardware": False,
+        "attestation_class": "device-hmac-not-hardware",
         "signatures": signatures,
     }
 
@@ -611,6 +621,7 @@ class HolderCryptoAndExecuteTests(unittest.TestCase):
                 "policy": "local",
                 "devices": ["mac"],
                 "expires_at": expires_at,
+                "domain": "holder-bootstrap-v1",
             },
         )
         enrolled = self.holder.enroll("app", enroll_human)
@@ -635,6 +646,7 @@ class HolderCryptoAndExecuteTests(unittest.TestCase):
                     "policy": "local",
                     "devices": ["mac"],
                     "expires_at": pair_expires,
+                    "domain": "holder-bootstrap-v1",
                 },
             ),
         }
@@ -647,6 +659,7 @@ class HolderCryptoAndExecuteTests(unittest.TestCase):
         script = self.ws / "job.py"
         script.write_text("print('from-snapshot')\n", encoding="utf-8")
         digest = sha256_file(script)
+        launch_argv = ["python3", str(script.resolve())]
         binding = {
             "contract_hash": "e" * 64,
             "workspace": str(self.ws.resolve()),
@@ -654,11 +667,71 @@ class HolderCryptoAndExecuteTests(unittest.TestCase):
             "executable": str(script.resolve()),
             "policy": "local",
             "cwd": str(self.ws.resolve()),
+            "launch_argv": launch_argv,
             "bounds": {"wall_timeout_sec": 5, "stdout_max_bytes": 4096, "stderr_max_bytes": 4096},
             "key_generation": 1,
             "reads": [str(script.resolve())],
         }
-        consume_human = _sign_human(self.holder, secrets_map, "consume", "n-exec", "local")
+        # First consume attempt signs provisional mutation; holder re-checks with payload digest.
+        import hashlib
+        from runspecimen.hashutil import canonical_json_bytes
+        from runspecimen.execution_holder import message_mac
+        provisional = {
+            "contract_hash": binding["contract_hash"],
+            "workspace": binding["workspace"],
+            "argv": binding["argv"],
+            "executable": binding["executable"],
+            "policy": binding["policy"],
+            "bounds": binding["bounds"],
+            "key_generation": 1,
+            "launch_argv": launch_argv,
+            "cwd": binding["cwd"],
+            "reads": binding["reads"],
+            "mutation_digest": None,
+        }
+        mutation_digest = hashlib.sha256(
+            canonical_json_bytes({"files": [[str(script.resolve()), digest]], "binding": {**provisional, "mutation_digest": None}})
+        ).hexdigest()
+        # Holder computes mutation_digest internally; sign with that exact algorithm by dry-running envelope fields
+        envelope_for_mac = {
+            "contract_hash": binding["contract_hash"],
+            "workspace": binding["workspace"],
+            "argv": list(binding["argv"]),
+            "executable": binding["executable"],
+            "policy": binding["policy"],
+            "bounds": binding["bounds"],
+            "key_generation": 1,
+            "launch_argv": launch_argv,
+            "cwd": binding["cwd"],
+            "reads": binding["reads"],
+            "mutation_digest": None,
+        }
+        mutation_digest = hashlib.sha256(
+            canonical_json_bytes({"files": [[str(script.resolve()), digest]], "binding": envelope_for_mac})
+        ).hexdigest()
+        # Bind to get payload digest via a software-double holder clone? Simpler path: use test double for pairing already done —
+        # For device-HMAC consume we need payload_digest before signing. Temporarily bind using allow_test_double helper.
+        # Compute by calling consume with software path is wrong. Instead: use holder._bind under the hood after set_policy.
+        path_map, payload_digest, snapshot_root = self.holder._bind(
+            "n-exec",
+            self.ws,
+            [(str(script.resolve()), digest)],
+            executable=str(script.resolve()),
+            argv=[str(script.resolve())],
+        )
+        # Clean the snapshot from dry-bind so consume can recreate
+        import shutil
+        shutil.rmtree(Path(snapshot_root), ignore_errors=True)
+        authorized = {
+            "payload_digest": payload_digest,
+            "launch_argv": launch_argv,
+            "bounds": binding["bounds"],
+            "mutation_digest": mutation_digest,
+            "attestation_class": "device-hmac-not-hardware",
+        }
+        consume_human = _sign_human(
+            self.holder, secrets_map, "consume", "n-exec", "local", authorized=authorized
+        )
         consumed = self.holder.consume(
             nonce="n-exec",
             policy="local",
@@ -668,15 +741,18 @@ class HolderCryptoAndExecuteTests(unittest.TestCase):
             binding=binding,
         )
         self.assertIn(str(script.resolve()), consumed["path_map"])
-        # Mutate live tree after consume; execute must still see snapshot bytes.
         script.write_text("raise SystemExit('live-tree')\n", encoding="utf-8")
-        execute_human = _sign_human(self.holder, secrets_map, "execute", "n-exec", "local")
-        result = self.holder.execute(
-            token="n-exec",
-            human=execute_human,
-            interpreter="python3",
-            interpreter_args=[],
+        exec_authorized = {
+            "payload_digest": consumed["payload_digest"],
+            "launch_argv": launch_argv,
+            "bounds": binding["bounds"],
+            "mutation_digest": consumed["binding"]["mutation_digest"],
+            "attestation_class": "device-hmac-not-hardware",
+        }
+        execute_human = _sign_human(
+            self.holder, secrets_map, "execute", "n-exec", "local", authorized=exec_authorized
         )
+        result = self.holder.execute(token="n-exec", human=execute_human)
         self.assertEqual(result["exit_code"], 0)
         self.assertIn(b"from-snapshot", __import__("base64").b64decode(result["stdout_b64"]))
         self.assertFalse(result["installed_protection"])
@@ -703,3 +779,208 @@ class HolderSchemaRegressionTests(unittest.TestCase):
         with self.assertRaises(HolderRefusal) as ctx:
             holder._read("lease.json")
         self.assertIn("unknown fields", str(ctx.exception))
+
+
+class HolderQA69RegressionTests(unittest.TestCase):
+    """Regressions for QA-2026-09-30-69ab2b9. Do not prove installed protection."""
+
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory(prefix="rsh-qa69-")
+        self.root = Path(self._td.name) / "state"
+        self.ws = Path(self._td.name) / "ws"
+        self.ws.mkdir()
+        self.holder = ExecutionHolder(self.root, allow_test_double=True)
+        self.holder.enroll("app", _human("enroll", "app"))
+        self.holder.set_policy(_human("set-policy", "local"))
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
+    def test_execute_refuses_caller_interpreter_override(self) -> None:
+        from runspecimen.execution_holder import handle_message, seal
+
+        path, digest = _payload(self.ws, "print(1)\n")
+        binding = _binding(self.ws, path, digest)
+        binding["launch_argv"] = ["python3", str(path.resolve())]
+        self.holder.consume(
+            nonce="ov",
+            policy="local",
+            human=_human("consume", "ov"),
+            workspace=self.ws,
+            files=[(str(path.resolve()), digest)],
+            binding=binding,
+        )
+        secret = self.holder.caller_secret("app")
+        message = seal(
+            secret,
+            caller_id="app",
+            body={
+                "op": "execute",
+                "token": "ov",
+                "human": _human("execute", "ov"),
+                "interpreter": "/tmp/evil-python",
+            },
+        )
+        with self.assertRaises(HolderRefusal) as ctx:
+            handle_message(self.holder, message, bootstrap_secret="zz" * 32)
+        self.assertIn("interpreter", str(ctx.exception))
+
+    def test_bootstrap_cannot_authorize_consume(self) -> None:
+        from runspecimen.execution_holder import message_mac
+
+        closed = ExecutionHolder(
+            Path(self._td.name) / "boot",
+            allow_test_double=False,
+            bootstrap_secret="ee" * 32,
+        )
+        expires = int(time.time()) + 60
+        enroll = {
+            "method": "bootstrap",
+            "purpose": "enroll",
+            "subject": "app",
+            "policy": "local",
+            "devices": ["mac"],
+            "expires_at": expires,
+            "hardware": False,
+            "bootstrap_mac": message_mac(
+                "ee" * 32,
+                {
+                    "purpose": "enroll",
+                    "subject": "app",
+                    "policy": "local",
+                    "devices": ["mac"],
+                    "expires_at": expires,
+                    "domain": "holder-bootstrap-v1",
+                },
+            ),
+        }
+        closed.enroll("app", enroll)
+        path, digest = _payload(self.ws)
+        binding = _binding(self.ws, path, digest)
+        boot_consume = {
+            "method": "bootstrap",
+            "purpose": "consume",
+            "subject": "n1",
+            "policy": "local",
+            "devices": ["mac"],
+            "expires_at": int(time.time()) + 60,
+            "hardware": False,
+            "bootstrap_mac": "00" * 32,
+        }
+        with self.assertRaises(HolderRefusal) as ctx:
+            closed.consume(
+                nonce="n1",
+                policy="local",
+                human=boot_consume,
+                workspace=self.ws,
+                files=[("payload.txt", digest)],
+                binding=binding,
+            )
+        self.assertIn("enroll and pair", str(ctx.exception))
+
+    def test_non_root_execute_records_least_privilege_identity(self) -> None:
+        import os
+
+        path = self.ws / "job.py"
+        path.write_text("print('uid-ok')\n", encoding="utf-8")
+        digest = sha256_file(path)
+        binding = _binding(self.ws, path, digest)
+        binding["launch_argv"] = ["python3", str(path.resolve())]
+        binding["argv"] = [str(path.resolve())]
+        self.holder.consume(
+            nonce="uid",
+            policy="local",
+            human=_human("consume", "uid"),
+            workspace=self.ws,
+            files=[(str(path.resolve()), digest)],
+            binding=binding,
+        )
+        result = self.holder.execute(token="uid", human=_human("execute", "uid"))
+        self.assertEqual(result["run_uid"], os.getuid())
+        self.assertEqual(result["run_gid"], os.getgid())
+        self.assertTrue(result.get("attestation_class") == "device-hmac-not-hardware" or result.get("hardware") is False)
+
+    def test_mutate_launch_argv_after_consume_fails(self) -> None:
+        path = self.ws / "job.py"
+        path.write_text("print(1)\n", encoding="utf-8")
+        digest = sha256_file(path)
+        binding = _binding(self.ws, path, digest)
+        binding["launch_argv"] = ["python3", str(path.resolve())]
+        binding["argv"] = [str(path.resolve())]
+        self.holder.consume(
+            nonce="mut",
+            policy="local",
+            human=_human("consume", "mut"),
+            workspace=self.ws,
+            files=[(str(path.resolve()), digest)],
+            binding=binding,
+        )
+        # Tamper spent binding launch_argv after consume.
+        spent_path = self.root / "spent.json"
+        import json
+        spent = json.loads(spent_path.read_text())
+        for item in spent["nonces"]:
+            if item["nonce"] == "mut":
+                item["binding"]["launch_argv"] = ["/tmp/evil", str(path.resolve())]
+        spent_path.write_text(json.dumps(spent))
+        # Also tamper lease path map executable rewrite surface via launch in spent only.
+        with self.assertRaises(HolderRefusal):
+            self.holder.execute(token="mut", human=_human("execute", "mut"))
+
+
+class HolderRuntimeTrustTests(unittest.TestCase):
+    """Protected runtime source checks. Do not prove installed protection."""
+
+    def test_refuses_pythonpath_and_homebrew(self) -> None:
+        from runspecimen.holder_runtime import (
+            RuntimeTrustError,
+            choose_protected_interpreter,
+            refuse_user_python_injection,
+        )
+
+        with self.assertRaises(RuntimeTrustError):
+            refuse_user_python_injection({"PYTHONPATH": "/tmp/evil"})
+        with self.assertRaises(RuntimeTrustError):
+            refuse_user_python_injection({"RS_HOLDER_PYTHON": "/tmp/evil-python"})
+        with self.assertRaises(RuntimeTrustError):
+            choose_protected_interpreter(
+                embedded=None,
+                system_candidates=[Path("/opt/homebrew/bin/python3.12")],
+                require_root_owned=False,
+            )
+
+
+class HolderAbsoluteDeadlineTests(unittest.TestCase):
+    """Framing absolute deadlines. Do not prove installed protection."""
+
+    def test_slow_drip_exceeds_absolute_deadline(self) -> None:
+        import socket
+        import threading
+
+        from runspecimen.holder_io import FrameError, read_frame
+
+        server, client = socket.socketpair()
+        errors: list[BaseException] = []
+
+        def reader() -> None:
+            try:
+                read_frame(server, deadline_sec=0.15, max_bytes=1024)
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        t = threading.Thread(target=reader)
+        t.start()
+        time.sleep(0.05)
+        client.sendall(b"abc")
+        time.sleep(0.2)
+        try:
+            client.sendall(b"def\n")
+        except OSError:
+            pass
+        t.join(timeout=2)
+        client.close()
+        server.close()
+        self.assertTrue(errors)
+        self.assertIsInstance(errors[0], FrameError)
+        self.assertIn("deadline", str(errors[0]))
+

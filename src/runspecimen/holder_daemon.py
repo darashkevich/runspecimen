@@ -19,6 +19,12 @@ from pathlib import Path
 
 from runspecimen.execution_holder import ExecutionHolder, HolderRefusal, handle_message
 from runspecimen.holder_adapter import INSTALLED_SOCKET_NAME, INSTALLED_SUPPORT_DIR
+from runspecimen.holder_runtime import (
+    RuntimeTrustError,
+    assert_module_root,
+    refuse_user_python_injection,
+)
+
 from runspecimen.holder_io import (
     DEFAULT_ACCEPT_BACKLOG,
     DEFAULT_MAX_IN_FLIGHT,
@@ -50,6 +56,13 @@ def _prepare_dirs(support: Path) -> tuple[Path, Path]:
 
 def serve(support: Path, *, bootstrap_secret: str) -> int:
     _ensure_root()
+    try:
+        refuse_user_python_injection()
+        module_root = os.environ.get("RS_HOLDER_MODULE_ROOT")
+        if module_root:
+            assert_module_root(Path(module_root))
+    except RuntimeTrustError as exc:
+        raise SystemExit(str(exc)) from exc
     state, sock_path = _prepare_dirs(support)
     holder = ExecutionHolder(
         state,

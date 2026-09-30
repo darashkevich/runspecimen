@@ -260,6 +260,15 @@ def authorize_held_execution(contract: Any, workspace: Path, client: HolderClien
         files.append([abs_path, sha256_file(candidate)])
     nonce = str(contract.contract_hash)
     cwd = str((workspace / str(getattr(contract, "cwd", ".") or ".")).resolve())
+    if runtime.get("interpreter"):
+        launch_argv = [
+            str(runtime["interpreter"]),
+            *[str(x) for x in (runtime.get("interpreter_args") or [])],
+            executable,
+            *[str(x) for x in list(contract.argv)[1:]],
+        ]
+    else:
+        launch_argv = [executable, *[str(x) for x in list(contract.argv)[1:]]]
     binding = {
         "contract_hash": contract.contract_hash,
         "workspace": str(workspace.resolve()),
@@ -267,6 +276,7 @@ def authorize_held_execution(contract: Any, workspace: Path, client: HolderClien
         "executable": executable,
         "policy": policy,
         "cwd": cwd,
+        "launch_argv": launch_argv,
         "bounds": {
             "wall_timeout_sec": contract.caps.wall_timeout_sec,
             "stdout_max_bytes": contract.caps.stdout_max_bytes,
@@ -293,15 +303,12 @@ def execute_held_execution(contract: Any, workspace: Path, client: HolderClient,
     policy = getattr(contract, "execution_approval", None)
     if policy not in {"local", "companion", "dual"}:
         raise HolderRefusal("held execution requires a local, companion, or dual policy")
-    runtime = runtime_provenance(contract, workspace)
     nonce = str(receipt.get("nonce") or contract.contract_hash)
     executed = client.call(
         {
             "op": "execute",
             "token": nonce,
             "human": client.human_for("execute", nonce),
-            "interpreter": str(runtime["interpreter"]) if runtime.get("interpreter") else None,
-            "interpreter_args": list(runtime.get("interpreter_args") or []),
         }
     )
     merged = dict(receipt)
