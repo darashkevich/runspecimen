@@ -21,10 +21,10 @@ The exact commit of this candidate is the commit that contains this file. Unpubl
 | File | SHA-256 |
 | --- | --- |
 | `runspecimen-0.2.0rc15-py3-none-any.whl` | `e51b378dcf9f1f5fd6636f6732f24f1d32f7edc83ddaa34a36b8dde90c56fce7` |
-| `runspecimen-0.2.0rc15.tar.gz` | `ab9a73d2c55f0feab76e422583f96feafbf92be3989817b68ef0c7a2295e33b0` |
+| `runspecimen-0.2.0rc15.tar.gz` | `95a07bac1f18ed6fb117bcaddfe406d61d58d9f60ea1e37c5a60327e095c9bd8` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d` |
 
-Copies are in `artifacts/rc15-2026-09-30-zombie-stat/` next to the approved archive. The wheel is unchanged because the harness is under `tests/` and is not in the wheel. The sdist changed because `tests/launch_fault_harness.py` and `tests/test_launch_faults.py` are packaged. The plugin zip matches the previous unpublished build. These are not the published rc14 bytes. The sdist does not contain this manifest. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist. `artifacts/rc15-2026-09-30-fault-harness/` stays as the record of `68b4f33`. `artifacts/rc15-2026-09-30-identity-guard/` stays as the record of `5d217d2`, whose Ubuntu jobs failed before the zombie stat was classified.
+Copies are in `artifacts/rc15-2026-09-30-esrch-absent/` next to the approved archive. The wheel is unchanged because the harness is under `tests/` and is not in the wheel. The sdist changed because `tests/launch_fault_harness.py` and `tests/test_launch_faults.py` are packaged. The plugin zip matches the previous unpublished build. These are not the published rc14 bytes. The sdist does not contain this manifest. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist. `artifacts/rc15-2026-09-30-fault-harness/` stays as the record of `68b4f33`. `artifacts/rc15-2026-09-30-identity-guard/` stays as the record of `5d217d2`, whose Ubuntu jobs failed before the zombie stat was classified. `artifacts/rc15-2026-09-30-zombie-stat/` stays as the record of `7112ba9`, whose Ubuntu jobs still failed because `ESRCH` was treated as an unknown lookup.
 
 ## Status
 

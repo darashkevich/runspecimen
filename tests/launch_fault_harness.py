@@ -231,15 +231,32 @@ def _darwin_identity(pid: int) -> ProcessView:
     return ProcessView("alive", pid, f"us:{sec}.{usec:06d}")
 
 
+def linux_absence_from_os_error(exc: BaseException) -> bool:
+    """``ESRCH`` means the pid is gone. It is not an unknown lookup failure."""
+
+    if isinstance(exc, (FileNotFoundError, ProcessLookupError)):
+        return True
+    return isinstance(exc, OSError) and exc.errno in {errno.ESRCH, errno.ENOENT}
+
+
 def _linux_identity(pid: int) -> ProcessView:
     path = Path(f"/proc/{pid}/stat")
     try:
         text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return ProcessView("absent", pid, None)
     except OSError as exc:
+        if linux_absence_from_os_error(exc):
+            return ProcessView("absent", pid, None)
         raise IdentityError("cannot read process stat") from exc
-    return linux_identity_from_stat(text, pid)
+    if not text.strip():
+        if not path.exists():
+            return ProcessView("absent", pid, None)
+        raise IdentityError("process stat is empty")
+    try:
+        return linux_identity_from_stat(text, pid)
+    except IdentityError:
+        if not path.exists():
+            return ProcessView("absent", pid, None)
+        raise
 
 
 def process_identity(pid: int) -> ProcessView:

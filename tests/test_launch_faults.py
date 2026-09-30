@@ -7,6 +7,7 @@ lease; allowing another nonce while that child is alive is not a passing case.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import pathlib
@@ -26,6 +27,7 @@ from launch_fault_harness import (
     IdentityError,
     ProcessView,
     liveness,
+    linux_absence_from_os_error,
     linux_identity_from_stat,
     linux_start_token,
     load_spent,
@@ -328,6 +330,11 @@ class LaunchFaultTests(unittest.TestCase):
             linux_start_token(text, 4322)
         with self.assertRaises(IdentityError):
             linux_start_token("nope", 1)
+        self.assertTrue(linux_absence_from_os_error(FileNotFoundError(errno.ENOENT, "missing")))
+        self.assertTrue(
+            linux_absence_from_os_error(ProcessLookupError(errno.ESRCH, "No such process"))
+        )
+        self.assertFalse(linux_absence_from_os_error(PermissionError(errno.EACCES, "denied")))
 
     def test_this_process_identity_is_not_an_lstart_string(self) -> None:
         view = process_identity(os.getpid())
@@ -403,7 +410,7 @@ class LaunchFaultTests(unittest.TestCase):
         signaled = reap(root)
         self.assertTrue(signaled)
         decision = recover(root)
-        self.assertFalse(decision["lease"])
+        self.assertFalse(decision["lease"], decision)
         self.assertFalse(decision["success"])
         self.assertEqual(decision["action"], "terminated-without-status")
         self.assertEqual(decision["wait"], "echild")
@@ -421,7 +428,7 @@ class LaunchFaultTests(unittest.TestCase):
         self.assertEqual(blocked.returncode, EXIT_LEASE)
         reap(root)
         decision = recover(root)
-        self.assertFalse(decision["lease"])
+        self.assertFalse(decision["lease"], decision)
         self.assertFalse(decision["success"])
         self.assertFalse(decision["spawn"])
         self.assertEqual(decision["action"], "terminated-without-status")
@@ -441,7 +448,7 @@ class LaunchFaultTests(unittest.TestCase):
         reap(root)
         decision = recover(root)
         self.assertFalse(decision["success"])
-        self.assertFalse(decision["lease"])
+        self.assertFalse(decision["lease"], decision)
         self.assertEqual(decision["wait"], "echild")
         allowed = run_fault(root, "after_intent", "n2")
         self.assertEqual(allowed.returncode, EXIT_STOPPED, allowed.stderr)
