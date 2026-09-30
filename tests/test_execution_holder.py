@@ -306,6 +306,25 @@ class HolderIpcTests(unittest.TestCase):
 
 class HeldRunTests(RunSpecimenTestCase):
     def test_policy_without_holder_does_not_spawn_or_accept_a_phrase(self) -> None:
+        # Point discovery at a missing path so this unit test cannot hit the live
+        # /Library holder socket on a developer machine.
+        missing_sock = Path(self.ws) / "absent-holder.sock"
+        previous = {
+            key: os.environ.get(key)
+            for key in ("RS_HOLDER_SOCKET", "RS_HOLDER_CALLER_ID", "RS_HOLDER_CALLER_SECRET")
+        }
+
+        def _restore() -> None:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.addCleanup(_restore)
+        os.environ["RS_HOLDER_SOCKET"] = str(missing_sock)
+        os.environ.pop("RS_HOLDER_CALLER_ID", None)
+        os.environ.pop("RS_HOLDER_CALLER_SECRET", None)
         doc = base_contract(execution_approval="local")
         path = write_contract(self.ws, "c.json", doc)
         reader = PhraseReader("APPROVE\n")

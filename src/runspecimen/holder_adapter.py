@@ -402,6 +402,9 @@ INSTALLED_SOCKET_NAME = "holder.sock"
 
 
 def installed_socket_path() -> Path:
+    override = os.environ.get("RS_HOLDER_SOCKET", "").strip()
+    if override:
+        return Path(override)
     return INSTALLED_SUPPORT_DIR / INSTALLED_SOCKET_NAME
 
 
