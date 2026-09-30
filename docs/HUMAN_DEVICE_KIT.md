@@ -2,9 +2,11 @@
 
 An agent must not run these steps. Do not pass `--human-invoked`. Do not tap Touch ID or Face ID. Do not grant a permission dialog. Do not type `APPROVE`. Do not pass `-allowProvisioningUpdates`, register a device, or read `~/.appstoreconnect/private_keys`.
 
-The kit directory, when prepared, is `artifacts/human-device-kit/` next to the approved 0.1.4 (9) archive. It holds an unsigned iPhone build and the Mac diagnostic binary. Neither is installed. Neither is a Store package. Secure Enclave enroll, sign, revoke, and rotate are implemented and are not human-tested until you complete the prompts yourself. Diagnostic signing is not a bounded run. The chosen run policy is local Touch ID, an explicitly selected paired iPhone, or both devices. `runspecimen run` does not use that policy yet. A typed phrase must not replace it once it does. Phone approval is not physical presence at the Mac.
+The kit directory, when prepared, is `artifacts/human-device-kit/` next to the approved 0.1.4 (9) archive. It holds an unsigned iPhone build and the Mac diagnostic binary. Neither is installed. Neither is a Store package. Secure Enclave enroll, sign, revoke, and rotate are implemented and are not human-tested until you complete the prompts yourself. Diagnostic signing is not a bounded run. The chosen run policy is local Touch ID, an explicitly selected paired iPhone, or both devices. Phone approval is not physical presence at the Mac.
 
-These binaries were built from `5c3957a3a8ddf9fceacc3096b2208ee7757e6b72`. A later commit that does not change the diagnostic or iOS app sources does not by itself replace them. Check the hashes before you run anything that can prompt.
+Tip for these instructions: the commit that contains this file on `cursor/integrated-release-candidate`. Holder fail-closed code at parent `1873f420888397f7f4e5d496d3f8daae80bc15c3` is unchanged by this docs pass. Contracts with `execution_approval` of `local`, `companion`, or `dual` fail closed without the holder and refuse a typed phrase. That path is the unprivileged adapter and core only. It is not installed protection, not Touch ID, and not a paired phone. A software test double stays labeled as not hardware. An imported Secure Enclave label is not attestation. Administrator or root can still defeat a user-level holder.
+
+These binaries were built from `5c3957a3a8ddf9fceacc3096b2208ee7757e6b72`. Swift, iOS, and macOS product sources are unchanged from that commit through the tip that contains this file, so the kit was not rebuilt. Check the hashes before you run anything that can prompt.
 
 | File | SHA-256 |
 | --- | --- |
@@ -73,7 +75,7 @@ A signature is evidence the matching private key signed those bytes. It is not e
 
 Do this yourself. An agent must not tap Touch ID or Face ID, type the approval phrase, or write that you did.
 
-The binaries above are still the `5c3957a` diagnostic and the unsigned iPhone build. They can exercise hardware signing. They cannot exercise a bounded run under guarantee (2), because that holder is not installed and `consumeForExecution` is not on the run path. Diagnostic signing is not execution acceptance.
+The binaries above are still the `5c3957a` diagnostic and the unsigned iPhone build. They can exercise hardware signing. They cannot exercise a bounded run under installed guarantee (2): the holder is not installed, launchd/`SMAppService` was not registered, and these kit binaries are not the development GUI. Diagnostic signing is not execution acceptance.
 
 What you can check now, on these binaries:
 

@@ -360,3 +360,24 @@ Three logic holes in the unprivileged holder core were closed. This is still not
 3. An existing malformed or unreadable `lease.json` fails closed. It is not treated as free. A missing lease file before the first consume remains unused.
 
 `tests/test_execution_holder.py` is 13 tests, including those three regressions. They do not prove installed protection. Python 3.12.14 `release_check.py`: 487 tests, 35 skipped. Wheel SHA-256 `42ae8c70a57480460209f36758f60ce35ff6ab5ed1cc40bb84ca88ae196f6b08`. Sdist SHA-256 `835d8cd35833f8f84561511989c885071645a7116af4819b3b3a5a4281b27054`. Plugin zip SHA-256 `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d`. Copies are in `artifacts/rc15-2026-09-30-holder-failclosed/`. Prior `artifacts/rc15-2026-09-30-dev-id-holder/` was not overwritten. `/Applications/RunSpecimen.app` mtime stayed 2026-09-26 13:56:03.
+
+## Development GUI receipts finished on 91081f5, 2026-09-30
+
+Tip probed for this pass: `1873f420888397f7f4e5d496d3f8daae80bc15c3`. No new unprivileged holder fail-closed hole was found that could be fixed without privileged install. Src and tests were not changed in this docs pass. No new `release_check` archives.
+
+The same development app was reused: `/private/tmp/rs-local-qa-91081f5/DerivedData/Build/Products/Release/RunSpecimen.app`, main executable SHA-256 `cfb41bcc731c0beac57c96dbc712b9a7f0d9409cb8328df6aba9504ffb04c605`. This GUI binary does not contain the holder. Fixture `/private/tmp/rs-qa-91081f5-receipts/workspace`, campaign `synthetic-receipt`, runs `synthetic-001` and `synthetic-002`. Container backup restored after only the QA pid was quit. `/Applications/RunSpecimen.app` mtime stayed 2026-09-26 13:56:03. No run was started. No `APPROVE` was typed. No rebuild with `-allowProvisioningUpdates`.
+
+Case results:
+
+- Compare output bytes: `kind` `receipt_digest`, `live_outputs[0].status` `match`, live and recorded SHA-256 both `508633c27446ba22c30abcf7241d6ce8faf502f7d7cb47e541a0ded32a7ad07f`.
+- Diff receipts: Other campaign `synthetic-receipt`, Other run `synthetic-002`. `kind` `receipt_diff`, `identical` false, exit_code 0 vs 7, output digest recorded hash vs 64 zeroes.
+- Retain cancel: Choose retain folder set `/private/tmp/rs-qa-91081f5-retain-out`. Confirmation title `Retain incident pack`, detail named `synthetic-receipt/synthetic-001` and that outside path, buttons `Retain incident pack` and `Cancel workflow`. Cancel workflow left the destination empty.
+- Retain copy: confirmation `Retain incident pack` then wrote `certificate.json` (SHA-256 `778818b93ea8a20f108bf35bfb9b36823f410095f90569a5921afcbcaa838956`, matches source) and `events.jsonl` into that empty outside folder.
+- Stale / sheet close without approving: staged Retain, Escape dismissed the Workflows sheet (`onDismiss` cancels). Reopened Workflows had no `Cancel workflow` pending.
+- Accessibility: Receipt buttons publish AX names `Digest receipt`, `Compare output bytes`, `Diff receipts`, `Choose retain folder`, `Retain incident pack`. Confirmation publishes `Retain incident pack` and `Cancel workflow`. Other campaign / Other run text fields did not publish AX names in this build; values were set by scroll-index focus. Settings opened as window `RunSpecimen Settings`.
+- Large-output: skipped; would need a run.
+- Open panel: Choose retain folder opened `Open` on the RunSpecimen process; Go to Folder then Choose Folder succeeded. No wedge remained.
+
+## Human-device kit pinned to tip 1873f42, 2026-09-30
+
+Swift, iOS, and macOS product sources remain unchanged from `5c3957a3a8ddf9fceacc3096b2208ee7757e6b72` through `1873f42`. Kit binaries were not rebuilt. Re-read hashes: Mac diagnostic `ee5f7733ed79a878d0983398f640ecea4cd11a7e53e6d3459636e808ae31374a`, unsigned iPhone executable `4f38ee0adab75fa8db1d2b46b19168ed6810696e7b50cde8be437edadc374155`. `preview` exited 0. `enroll` without `--human-invoked` exited 2. Exact human steps stay in `docs/HUMAN_DEVICE_KIT.md` at this tip. Do not have an agent pass `--human-invoked`, tap biometrics, provision, or install.
