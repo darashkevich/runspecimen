@@ -67,6 +67,16 @@ capabilities claim plugin-style `can_approve` / `can_execute`.
 
 App icon and mark are copied from the marketing brand pack (`sites/runspecimen/public/brand`).
 
+## Release symbol gate (local / CI)
+
+```bash
+bash apps/ios/Scripts/verify_ios_release_symbols.sh
+```
+
+Builds simulator Release `RunSpecimenObserve` and asserts `nm -Uj` has empty
+matches for test-hook names. Evidence under `asc-kit/evidence/` is local QA, not
+a production sign-off. CI job: `ios-release-symbols`.
+
 ## Non-goals
 
 No App Store submit in this change set. No remote run/preflight/postflight. No

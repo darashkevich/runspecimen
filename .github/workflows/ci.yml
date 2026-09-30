@@ -54,3 +54,19 @@ jobs:
           export RS_FREEZE_PYTHON="$(command -v python)"
           echo "RS_FREEZE_PYTHON=$RS_FREEZE_PYTHON"
           bash apps/macos/Scripts/smoke_macos.sh
+
+  # Shipping Observe Release must not contain RUNSPECIMEN_TEST_HOOKS symbols.
+  # Simulator Release is enough; not a device archive or App Store sign-off.
+  ios-release-symbols:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify iOS Observe Release omits test-hook symbols
+        run: |
+          if ! command -v xcodebuild >/dev/null 2>&1; then
+            echo "xcodebuild missing — skip (unexpected on macos-latest)"
+            exit 1
+          fi
+          xcodebuild -version
+          bash apps/ios/Scripts/verify_ios_release_symbols.sh
