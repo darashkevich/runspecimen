@@ -16,15 +16,15 @@ This file is the current full-scope candidate. It is not a Store submission plan
 | Published wheel / sdist / plugin zip | `d720bf5163a2b250699c30e804f89708e71c1c0d22682fbb43a4644b59c45948` / `6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3` / `0073e04e21bd225da328de06ef840ead6956a8cced4510a0025fb1e2ddc7fc16` |
 | Homebrew | still pinned to published rc14 |
 
-The exact commit of this candidate is the commit that contains this file. Unpublished rc15 archives of this tree, built by `release_check.py` on Python 3.12.14 (484 tests, 35 skipped):
+The exact commit of this candidate is the commit that contains this file. Unpublished rc15 archives of this tree, built by `release_check.py` on Python 3.12.14 (487 tests, 35 skipped):
 
 | File | SHA-256 |
 | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | `2c0229d85d58840ae086549d695027d9780ba6f63cc7dfb3069ecefa281b3473` |
-| `runspecimen-0.2.0rc15.tar.gz` | `77ec31510d89fb8ade91322b1f35ee7b894e4d2d77644174b00b42210ac7fe5f` |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | `42ae8c70a57480460209f36758f60ce35ff6ab5ed1cc40bb84ca88ae196f6b08` |
+| `runspecimen-0.2.0rc15.tar.gz` | `835d8cd35833f8f84561511989c885071645a7116af4819b3b3a5a4281b27054` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d` |
 
-Copies are in `artifacts/rc15-2026-09-30-dev-id-holder/`. The wheel and sdist changed because `execution_holder.py`, `holder_adapter.py`, and the contract/`run`/`approve` integration are in the packages. The plugin zip is unchanged. These are not the published rc14 bytes. The sdist does not contain this manifest. Earlier unpublished dirs under `artifacts/rc15-2026-09-30-*` remain historical records and were not overwritten. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist.
+Copies are in `artifacts/rc15-2026-09-30-holder-failclosed/`. The wheel and sdist changed with the holder fail-closed fixes. The plugin zip is unchanged. These are not the published rc14 bytes. The sdist does not contain this manifest. `artifacts/rc15-2026-09-30-dev-id-holder/` and earlier unpublished dirs remain historical records and were not overwritten. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist.
 
 ## Status
 

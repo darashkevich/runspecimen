@@ -119,7 +119,10 @@ class ExecutionHolder:
         role = human.get("role") if isinstance(human, dict) else None
         if role not in {"mac", "phone"}:
             raise HolderRefusal("pairing requires a mac or phone role")
-        self._human(human, purpose="pair", policy=human.get("policy"), subject=device_id, now=now)
+        auth_policy = self._active_policy_name() or (
+            human.get("policy") if isinstance(human, dict) else None
+        )
+        self._human(human, purpose="pair", policy=auth_policy, subject=device_id, now=now)
         devices = self._devices()
         if device_id in devices and devices[device_id].get("revoked") is not True:
             raise HolderRefusal("device is already paired")
@@ -150,7 +153,8 @@ class ExecutionHolder:
     ) -> dict[str, Any]:
         self._load()
         self._require_enrollment()
-        self._human(human, purpose="replace-key", policy=human.get("policy"), subject=device_id, now=now)
+        auth_policy = self._authorization_policy_for_mutation(None)
+        self._human(human, purpose="replace-key", policy=auth_policy, subject=device_id, now=now)
         devices = self._devices()
         device = devices.get(device_id)
         if not isinstance(device, dict) or device.get("revoked") is True:
@@ -202,7 +206,8 @@ class ExecutionHolder:
     def revoke_device(self, device_id: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         self._load()
         self._require_enrollment()
-        self._human(human, purpose="revoke", policy=human.get("policy"), subject=device_id, now=now)
+        auth_policy = self._authorization_policy_for_mutation(None)
+        self._human(human, purpose="revoke", policy=auth_policy, subject=device_id, now=now)
         devices = self._devices()
         device = devices.get(device_id)
         if not isinstance(device, dict):
@@ -221,8 +226,22 @@ class ExecutionHolder:
     def set_policy(self, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         self._load()
         self._require_enrollment()
-        policy = human.get("policy") if isinstance(human, dict) else None
-        self._human(human, purpose="set-policy", policy=policy, subject=str(policy), now=now)
+        if not isinstance(human, dict):
+            raise HolderRefusal("human authorization is missing")
+        destination = human.get("subject")
+        if destination not in POLICIES:
+            destination = human.get("policy")
+        if destination not in POLICIES:
+            raise HolderRefusal("policy is not local, companion, or dual")
+        auth_policy = self._authorization_policy_for_mutation(str(destination))
+        self._human(
+            human,
+            purpose="set-policy",
+            policy=auth_policy,
+            subject=str(destination),
+            now=now,
+        )
+        policy = str(destination)
         generation = self.generation + 1
         self._write(
             "policy.json",
@@ -231,7 +250,7 @@ class ExecutionHolder:
                 "generation": generation,
                 "method": human["method"],
                 "hardware": False,
-                "devices": sorted(_DEVICES[str(policy)]),
+                "devices": sorted(_DEVICES[policy]),
             },
         )
         meta = self._read("meta.json")
@@ -373,6 +392,38 @@ class ExecutionHolder:
                 raise HolderRefusal("holder generation does not match the policy record")
         self._meta = meta
 
+    def _active_policy_name(self) -> str | None:
+        path = self.root / "policy.json"
+        if not path.exists():
+            return None
+        policy = self._read("policy.json")
+        name = policy.get("name")
+        if name not in POLICIES:
+            raise HolderRefusal("stored policy is not local, companion, or dual")
+        return str(name)
+
+    def _authorization_policy_for_mutation(self, destination: str | None) -> str:
+        """Policy under which a mutation must be authorized.
+
+        Dropping a required factor needs authorization under the current policy.
+        Adding or keeping factors may authorize under the destination. Revoke and
+        replace without a destination authorize under the current policy.
+        """
+        current = self._active_policy_name()
+        if current is None:
+            if destination in POLICIES:
+                return str(destination)
+            raise HolderRefusal("human authorization policy is not local, companion, or dual")
+        if destination is None:
+            return current
+        if destination not in POLICIES:
+            raise HolderRefusal("policy is not local, companion, or dual")
+        current_devices = _DEVICES[current]
+        destination_devices = _DEVICES[str(destination)]
+        if not current_devices.issubset(destination_devices):
+            return current
+        return str(destination)
+
     def _require_enrollment(self) -> dict[str, Any]:
         if not (self.root / "enrollment.json").exists():
             raise HolderRefusal("policy requires an enrolled caller")
@@ -383,11 +434,24 @@ class ExecutionHolder:
             raise HolderRefusal("replay history is missing from an initialized holder")
 
     def _lease_held(self) -> bool:
+        """True when a well-formed lease is held. Missing file is unused.
+
+        An existing but unreadable or malformed lease fails closed. It is not
+        treated as free.
+        """
         path = self.root / "lease.json"
         if not path.exists():
             return False
-        lease = self._read("lease.json")
-        return isinstance(lease, dict) and lease.get("held") is True
+        try:
+            lease = read_json(path)
+        except (OSError, ValueError, TypeError) as exc:
+            raise HolderRefusal("lease record is unreadable") from exc
+        if not isinstance(lease, dict):
+            raise HolderRefusal("lease record is malformed")
+        held = lease.get("held")
+        if not isinstance(held, bool):
+            raise HolderRefusal("lease held flag is malformed")
+        return held
 
     def _spent(self) -> list[dict[str, Any]]:
         raw = self._read("spent.json")
@@ -615,8 +679,9 @@ class ExecutionHolder:
         expires = human.get("expires_at")
         if isinstance(expires, bool) or not isinstance(expires, int) or expires < 0:
             raise HolderRefusal("human authorization expiry is invalid")
-        clock = time.time() if now is None else now
-        if expires <= clock:
+        # Expiry uses only the holder process clock. A client `now` or other
+        # message timestamp must not resurrect an expired authorization.
+        if expires <= time.time():
             raise HolderRefusal("human authorization has expired")
         if method == "software-test-double":
             if not self.allow_test_double or human.get("hardware") is not False:
@@ -677,8 +742,8 @@ def _has_history(root: Path) -> bool:
 
 def dispatch(holder: ExecutionHolder, body: dict[str, Any], *, caller_id: str) -> dict[str, Any]:
     op = body.get("op")
-    now = body.get("now")
-    clock = float(now) if isinstance(now, (int, float)) and not isinstance(now, bool) else None
+    # Ignore any client-supplied clock. Expiry uses time.time() in the holder.
+    clock = None
     if op == "enroll":
         if caller_id != "bootstrap":
             raise HolderRefusal("only the bootstrap caller can enroll")

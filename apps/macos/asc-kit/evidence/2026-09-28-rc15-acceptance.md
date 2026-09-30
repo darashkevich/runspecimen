@@ -350,3 +350,13 @@ A contract with `execution_approval` of `local`, `companion`, or `dual` fails cl
 GUI compare, diff, and retain were not finished in this pass. The development app of source `91081f5` was quit and the shared container restored. `/Applications/RunSpecimen.app` mtime stayed 2026-09-26 13:56:03. No Store package was built for this tip. No entitlements changed.
 
 Python 3.12.14 `release_check.py`: 484 tests, 35 skipped. Wheel SHA-256 `2c0229d85d58840ae086549d695027d9780ba6f63cc7dfb3069ecefa281b3473`. Sdist SHA-256 `77ec31510d89fb8ade91322b1f35ee7b894e4d2d77644174b00b42210ac7fe5f`. Plugin zip SHA-256 `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d`. Copies are in `artifacts/rc15-2026-09-30-dev-id-holder/`. The interim `/tmp/rs-rc15-dev-id-holder` hashes are not this final tree.
+
+## Holder fail-closed regressions, 2026-09-30
+
+Three logic holes in the unprivileged holder core were closed. This is still not installed protection. Biometric verification and privileged installation were not done.
+
+1. A local-only authorization cannot downgrade a stored dual policy. Policy mutations that drop a required factor must be authorized under the current policy. Companion cannot be replaced by local-only authorization either.
+2. Expiry uses only `time.time()` inside the holder. A client `now` or other message timestamp cannot make an expired authorization valid.
+3. An existing malformed or unreadable `lease.json` fails closed. It is not treated as free. A missing lease file before the first consume remains unused.
+
+`tests/test_execution_holder.py` is 13 tests, including those three regressions. They do not prove installed protection. Python 3.12.14 `release_check.py`: 487 tests, 35 skipped. Wheel SHA-256 `42ae8c70a57480460209f36758f60ce35ff6ab5ed1cc40bb84ca88ae196f6b08`. Sdist SHA-256 `835d8cd35833f8f84561511989c885071645a7116af4819b3b3a5a4281b27054`. Plugin zip SHA-256 `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d`. Copies are in `artifacts/rc15-2026-09-30-holder-failclosed/`. Prior `artifacts/rc15-2026-09-30-dev-id-holder/` was not overwritten. `/Applications/RunSpecimen.app` mtime stayed 2026-09-26 13:56:03.

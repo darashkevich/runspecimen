@@ -137,7 +137,7 @@ class HolderCoreTests(unittest.TestCase):
         self.assertIn("already consumed", str(replay.exception))
 
         previous = (self.root / "policy.json").read_text(encoding="utf-8")
-        self.holder.set_policy(_human("set-policy", "companion", policy="companion"))
+        self.holder.set_policy(_human("set-policy", "companion", policy="local"))
         (self.root / "policy.json").write_text(previous, encoding="utf-8")
         with self.assertRaises(HolderRefusal) as rolled:
             ExecutionHolder(self.root, allow_test_double=True)
@@ -366,6 +366,89 @@ class HeldRunTests(RunSpecimenTestCase):
                     },
                 }
             )
+
+
+
+class HolderFailClosedRegressionTests(unittest.TestCase):
+    """These tests do not prove installed protection."""
+
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory(prefix="rsh-")
+        self.root = Path(self._td.name) / "state"
+        self.ws = Path(self._td.name) / "ws"
+        self.ws.mkdir()
+        self.holder = ExecutionHolder(self.root, allow_test_double=True)
+        self.holder.enroll("app", _human("enroll", "app", policy="dual"))
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
+    def test_local_only_authorization_cannot_downgrade_dual(self) -> None:
+        before = self.holder.set_policy(_human("set-policy", "dual", policy="dual"))
+        self.assertEqual(before["policy"], "dual")
+        generation = before["generation"]
+        with self.assertRaises(HolderRefusal) as ctx:
+            self.holder.set_policy(_human("set-policy", "local", policy="local"))
+        self.assertIn("authorization", str(ctx.exception).lower())
+        policy = (self.root / "policy.json").read_text(encoding="utf-8")
+        self.assertIn('"name": "dual"', policy)
+        self.assertIn(f'"generation": {generation}', policy)
+        restarted = ExecutionHolder(self.root, allow_test_double=True)
+        self.assertEqual(restarted.generation, generation)
+
+    def test_caller_clock_cannot_bypass_expiry(self) -> None:
+        self.holder.set_policy(_human("set-policy", "local", policy="local"))
+        expired = _human("set-policy", "companion", policy="local")
+        expired["expires_at"] = int(time.time()) - 30
+        with self.assertRaises(HolderRefusal) as ctx:
+            self.holder.set_policy(expired, now=float(expired["expires_at"] - 100))
+        self.assertIn("expired", str(ctx.exception))
+        # A still-valid expiry keeps working against the holder clock.
+        self.holder.set_policy(_human("set-policy", "companion", policy="local"))
+
+    def test_malformed_lease_fails_closed(self) -> None:
+        self.holder.set_policy(_human("set-policy", "local", policy="local"))
+        path, digest = _payload(self.ws)
+        first = self.holder.consume(
+            nonce="lease-n1",
+            policy="local",
+            human=_human("consume", "lease-n1"),
+            workspace=self.ws,
+            files=[("payload.txt", digest)],
+            binding=_binding(self.ws, path, digest),
+        )
+        self.assertTrue(first["ok"])
+        spent_before = (self.root / "spent.json").read_text(encoding="utf-8")
+        for bad in ('{}', '{"held": "yes"}', 'not-json'):
+            (self.root / "lease.json").write_text(bad, encoding="utf-8")
+            with self.assertRaises(HolderRefusal) as ctx:
+                self.holder.consume(
+                    nonce=f"after-{bad[:3]}",
+                    policy="local",
+                    human=_human("consume", f"after-{bad[:3]}"),
+                    workspace=self.ws,
+                    files=[("payload.txt", digest)],
+                    binding=_binding(self.ws, path, digest),
+                )
+            self.assertIn("lease", str(ctx.exception).lower())
+            spent_after = (self.root / "spent.json").read_text(encoding="utf-8")
+            self.assertEqual(spent_before, spent_after)
+            self.assertNotIn(f"after-{bad[:3]}", spent_after)
+        # Well-formed held lease still blocks the next nonce.
+        (self.root / "lease.json").write_text(
+            '{"held": true, "token": "lease-n1", "child": "uncertain"}\n',
+            encoding="utf-8",
+        )
+        with self.assertRaises(HolderRefusal) as held:
+            self.holder.consume(
+                nonce="still-blocked",
+                policy="local",
+                human=_human("consume", "still-blocked"),
+                workspace=self.ws,
+                files=[("payload.txt", digest)],
+                binding=_binding(self.ws, path, digest),
+            )
+        self.assertIn("lease", str(held.exception).lower())
 
 
 class PhrasePathUnchangedTests(RunSpecimenTestCase):
