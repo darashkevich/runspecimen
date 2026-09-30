@@ -114,6 +114,9 @@ def run_contract(
     check_contract_paths(contract, workspace)
     validate_caps(contract.caps)
 
+    if holder is None and contract.execution_approval is not None:
+        holder = _resolve_installed_holder(str(contract.execution_approval))
+
     state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
     ensure_dir(state_dir)
     try:
@@ -127,6 +130,68 @@ def run_contract(
             )
     except LeaseError as exc:
         raise RunError(str(exc)) from exc
+
+
+def _resolve_installed_holder(policy: str) -> Any:
+    """Attach to the SMAppService holder when present.
+
+    Never falls back to a typed phrase. Does not prompt for Touch ID, Face ID,
+    or a paired phone; the holder's human verifier stays unconnected here and
+    consume fails closed until Yahor completes a real biometric authorization
+    path outside this CLI helper.
+    """
+    from runspecimen.holder_adapter import (
+        discover_installed_holder_client,
+        installed_socket_path,
+    )
+
+    sock = installed_socket_path()
+    if not sock.exists() and not _is_socket(sock):
+        raise PreflightError(
+            f"execution policy {policy} requires the installed holder; "
+            "there is no typed-phrase fallback"
+        )
+    caller_id = os.environ.get("RS_HOLDER_CALLER_ID", "").strip()
+    caller_secret = os.environ.get("RS_HOLDER_CALLER_SECRET", "").strip()
+    if not caller_id or not caller_secret:
+        raise PreflightError(
+            f"execution policy {policy} requires the holder at the installed socket but "
+            "RS_HOLDER_CALLER_ID/RS_HOLDER_CALLER_SECRET are unset; "
+            "enroll a caller first. There is no typed-phrase fallback"
+        )
+    devices = {
+        "local": ["mac"],
+        "companion": ["phone"],
+        "dual": ["mac", "phone"],
+    }[policy]
+
+    def _human_for(purpose: str, subject: str) -> dict:
+        # Named local/companion/dual methods require a connected verifier.
+        # This path does not open LocalAuthentication or a phone prompt.
+        return {
+            "method": policy,
+            "purpose": purpose,
+            "subject": subject,
+            "policy": policy,
+            "devices": list(devices),
+            "expires_at": int(time.time()) + 120,
+            "hardware": True,
+        }
+
+    client = discover_installed_holder_client(caller_id, caller_secret, _human_for)
+    if client is None:
+        raise PreflightError(
+            f"execution policy {policy} requires the installed holder; "
+            "there is no typed-phrase fallback"
+        )
+    return client
+
+
+def _is_socket(path: Path) -> bool:
+    try:
+        return path.is_socket()
+    except OSError:
+        return False
 
 
 def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float | None, holder: Any) -> dict:

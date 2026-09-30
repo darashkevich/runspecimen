@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Root LaunchDaemon entry. Owns holder state under
@@ -8,10 +9,39 @@ import Foundation
 let support = URL(fileURLWithPath: "/Library/Application Support/com.darashkevich.runspecimen.holder")
 let state = support.appendingPathComponent("state", isDirectory: true)
 let secretFile = support.appendingPathComponent("bootstrap.secret")
+let logFile = support.appendingPathComponent("daemon.log")
+
+func log(_ message: String) {
+    let line = "\(ISO8601DateFormatter().string(from: Date())) \(message)\n"
+    if let data = line.data(using: .utf8) {
+        if FileManager.default.fileExists(atPath: logFile.path) {
+            if let handle = try? FileHandle(forWritingTo: logFile) {
+                defer { try? handle.close() }
+                _ = try? handle.seekToEnd()
+                try? handle.write(contentsOf: data)
+            }
+        } else {
+            try? data.write(to: logFile)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: logFile.path)
+        }
+    }
+}
 
 func die(_ message: String) -> Never {
+    log("FATAL \(message)")
     FileHandle.standardError.write(Data("\(message)\n".utf8))
     exit(1)
+}
+
+func absoluteExecutableURL() -> URL {
+    var bufSize = UInt32(PATH_MAX)
+    var buf = [CChar](repeating: 0, count: Int(bufSize))
+    let rc = _NSGetExecutablePath(&buf, &bufSize)
+    if rc == 0 {
+        return URL(fileURLWithFileSystemRepresentation: buf, isDirectory: false, relativeTo: nil)
+            .resolvingSymlinksInPath()
+    }
+    return URL(fileURLWithPath: CommandLine.arguments[0]).absoluteURL.resolvingSymlinksInPath()
 }
 
 if geteuid() != 0 {
@@ -50,13 +80,29 @@ if secret.count < 32 {
     die("bootstrap secret missing or too short")
 }
 
-let execURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+let execURL = absoluteExecutableURL()
 // .../RunSpecimen Holder.app/Contents/MacOS/RunSpecimenHolderDaemon
 let contents = execURL.deletingLastPathComponent().deletingLastPathComponent()
 let resources = contents.appendingPathComponent("Resources")
 let pythonRoot = resources.appendingPathComponent("Python")
-let python = ProcessInfo.processInfo.environment["RS_HOLDER_PYTHON"]
-    ?? "/opt/homebrew/bin/python3.12"
+
+let pythonCandidates = [
+    ProcessInfo.processInfo.environment["RS_HOLDER_PYTHON"],
+    "/usr/bin/python3",
+    "/opt/homebrew/bin/python3.12",
+].compactMap { $0 }
+var python: String?
+for candidate in pythonCandidates {
+    if FileManager.default.isExecutableFile(atPath: candidate) {
+        python = candidate
+        break
+    }
+}
+guard let python else {
+    die("no usable python interpreter found for holder daemon")
+}
+
+log("exec=\(execURL.path) python=\(python) pythonRoot=\(pythonRoot.path)")
 
 setenv("RS_HOLDER_BOOTSTRAP_SECRET", secret, 1)
 setenv("PYTHONPATH", pythonRoot.path, 1)
@@ -67,7 +113,6 @@ let args = [
     "-m", "runspecimen.holder_daemon",
     "--support-dir", support.path,
 ]
-let executable = args[0]
 let argv = args.map { strdup($0) } + [nil]
-execv(executable, argv)
-die("execv failed for \(executable)")
+execv(python, argv)
+die("execv failed for \(python): errno=\(errno)")
