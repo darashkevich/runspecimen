@@ -141,20 +141,25 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
     if contract.execution_approval is not None:
         if approval is not None:
             raise PreflightError("a workspace approval cannot replace the execution holder")
+        from runspecimen.holder_adapter import HolderRefusal, authorize_held_execution
+
         if holder is None:
             raise PreflightError(
                 f"execution policy {contract.execution_approval} requires the holder; "
                 "there is no typed-phrase fallback"
             )
-        from runspecimen.holder_adapter import HolderRefusal, authorize_held_execution
-
         try:
             holder_receipt = authorize_held_execution(contract, workspace, holder)
         except HolderRefusal as exc:
             raise PreflightError(str(exc)) from exc
         if holder_receipt.get("policy") != contract.execution_approval:
             raise PreflightError("holder policy does not match the contract")
-        if holder_receipt.get("installed_protection") is not False:
+        installed = bool(holder_receipt.get("installed_protection"))
+        expect_installed = bool(getattr(holder, "expect_installed", False))
+        if expect_installed:
+            if not installed:
+                raise PreflightError("installed holder did not claim installed protection")
+        elif installed:
             raise PreflightError("unprivileged holder must not claim installed protection")
     elif approval is None:
         raise PreflightError("no approval present; run approve first")

@@ -381,3 +381,14 @@ Case results:
 ## Human-device kit pinned to tip 1873f42, 2026-09-30
 
 Swift, iOS, and macOS product sources remain unchanged from `5c3957a3a8ddf9fceacc3096b2208ee7757e6b72` through `1873f42`. Kit binaries were not rebuilt. Re-read hashes: Mac diagnostic `ee5f7733ed79a878d0983398f640ecea4cd11a7e53e6d3459636e808ae31374a`, unsigned iPhone executable `4f38ee0adab75fa8db1d2b46b19168ed6810696e7b50cde8be437edadc374155`. `preview` exited 0. `enroll` without `--human-invoked` exited 2. Exact human steps stay in `docs/HUMAN_DEVICE_KIT.md` at this tip. Do not have an agent pass `--human-invoked`, tap biometrics, provision, or install.
+
+
+## Developer ID Holder SMAppService.daemon install, 2026-09-30
+
+Imported Apple `.cer` subject `Developer ID Application: YAHOR DARASHKEVICH (UN6KF8636A)`, issuer Developer ID Certification Authority G2, SHA-1 `8B16C5035DA0125A2BD3066258B7E8A0F79BFFC4`. It paired with the login-keychain private key from `/tmp/rs-developer-id.csr`. `security find-identity -p codesigning -v` lists that identity as valid.
+
+Separate product installed at `/Applications/RunSpecimen Holder.app`, bundle id `com.darashkevich.runspecimen.holder`, signed `Developer ID Application: YAHOR DARASHKEVICH (UN6KF8636A)`, Team `UN6KF8636A`, hardened runtime. Entitlements plist is empty (`<dict/>`): no keys added for `SMAppService.daemon`, no `network.server`, no `get-task-allow`. Mechanism is embedded `SMAppService.daemon` plist `com.darashkevich.runspecimen.holder.daemon`. Software test double is off in the installed daemon path. `/Applications/RunSpecimen.app` mtime stayed `2026-09-26 13:56:03`. Store sandbox remains true; `network.server` remains absent.
+
+`sfltool dumpbtm` shows RunSpecimen Holder Background Item **pending authorization**. The agent did not click System Settings and did not enter an admin password. Root state under `/Library/Application Support/com.darashkevich.runspecimen.holder` is not created until the daemon is approved and launches. Administrator or root can still defeat the holder. Not human-only execution. Not Store parity. Not notarized. Not merged.
+
+Python 3.12.14 `release_check.py`: 487 tests, 35 skipped. Wheel SHA-256 `6d2652be38281cf0b9e90bec7c293e48a7913c6966ad57d5626284b187e0b4b7`. Sdist SHA-256 `8c734243c71f449f2219d4ae21a32f34da656baa9a87d1dc7170f84bc6d77c60`. Plugin zip SHA-256 `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d`. Copies are in `artifacts/rc15-2026-09-30-holder-smappservice/`. Prior `artifacts/rc15-2026-09-30-holder-failclosed/` was not overwritten.

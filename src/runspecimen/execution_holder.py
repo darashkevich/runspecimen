@@ -8,7 +8,8 @@ An unprivileged test adapter may construct it with ``allow_test_double``.
 That adapter runs as the same user, so a passing test is not installed
 protection. A typed phrase is never an authorization method. An imported
 label such as ``secure-enclave`` is unverified unless this device performed
-the enrollment. Administrator or root can still defeat a user-level holder.
+the enrollment. Administrator or root can still defeat the holder, including an
+installed root daemon. That is documented, not denied.
 """
 
 from __future__ import annotations
@@ -38,8 +39,9 @@ _RESIDUALS = (
     "The dynamic linker and system libraries are not part of the snapshot.",
     "A system interpreter outside the workspace stays live; only its digest is bound.",
     "Relative writes still use the live workspace cwd; only named workspace inputs are snapshotted.",
-    "Administrator or root can still rewrite a user-level holder.",
+    "Administrator or root can still defeat this holder.",
     "Unprivileged tests do not prove installed protection.",
+    "A software test double is not hardware and is refused when installed_protection is set.",
 )
 
 
@@ -56,9 +58,18 @@ class ExecutionHolder:
     fails closed because no hardware verifier is connected.
     """
 
-    def __init__(self, root: Path, *, allow_test_double: bool = False) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        allow_test_double: bool = False,
+        installed_protection: bool = False,
+    ) -> None:
+        if allow_test_double and installed_protection:
+            raise ValueError("a software test double cannot claim installed protection")
         self.root = Path(root)
         self.allow_test_double = allow_test_double
+        self.installed_protection = bool(installed_protection)
         self.root.mkdir(parents=True, exist_ok=True)
         if not (self.root / "meta.json").exists():
             if _has_history(self.root):
@@ -69,7 +80,7 @@ class ExecutionHolder:
                     "protocol": PROTOCOL,
                     "generation": 1,
                     "holder_id": secrets.token_hex(32),
-                    "installed_protection": False,
+                    "installed_protection": self.installed_protection,
                     "key_generation": 1,
                 },
             )
@@ -108,7 +119,7 @@ class ExecutionHolder:
             "ok": True,
             "caller_secret": secret,
             "holder_id": self.holder_id,
-            "installed_protection": False,
+            "installed_protection": self.installed_protection,
             "hardware": False,
             "key_generation": 1,
         }
@@ -144,7 +155,7 @@ class ExecutionHolder:
             "device_id": device_id,
             "role": role,
             "attestation": devices[device_id]["attestation"],
-            "installed_protection": False,
+            "installed_protection": self.installed_protection,
             "hardware": False,
         }
 
@@ -170,7 +181,7 @@ class ExecutionHolder:
             "ok": True,
             "device_id": device_id,
             "fingerprint": fingerprint,
-            "installed_protection": False,
+            "installed_protection": self.installed_protection,
             "hardware": False,
         }
 
@@ -199,7 +210,7 @@ class ExecutionHolder:
             "ok": True,
             "caller_secret": secret,
             "key_generation": key_generation,
-            "installed_protection": False,
+            "installed_protection": self.installed_protection,
             "hardware": False,
         }
 
@@ -219,7 +230,7 @@ class ExecutionHolder:
             "ok": True,
             "device_id": device_id,
             "revoked": True,
-            "installed_protection": False,
+            "installed_protection": self.installed_protection,
             "hardware": False,
         }
 
@@ -262,7 +273,7 @@ class ExecutionHolder:
             "policy": policy,
             "generation": generation,
             "holder_id": self.holder_id,
-            "installed_protection": False,
+            "installed_protection": self.installed_protection,
         }
 
     def consume(
@@ -328,7 +339,7 @@ class ExecutionHolder:
             "path_map": path_map,
             "binding": envelope,
             "residuals": list(_RESIDUALS),
-            "installed_protection": False,
+            "installed_protection": self.installed_protection,
             "hardware": False,
         }
 
@@ -342,7 +353,7 @@ class ExecutionHolder:
         if lease.get("child") != "uncertain":
             raise HolderRefusal("only an uncertain child can be cancelled this way")
         self._write("lease.json", {"held": False, "token": token, "child": "cancelled"})
-        return {"ok": True, "cancelled": True, "installed_protection": False}
+        return {"ok": True, "cancelled": True, "installed_protection": self.installed_protection}
 
     def note_child_absent(self, token: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         """Drop the lease only for the recorded token. This does not signal a pid."""
@@ -352,7 +363,7 @@ class ExecutionHolder:
         if not isinstance(lease, dict) or lease.get("token") != token:
             raise HolderRefusal("absent observation does not match the recorded child")
         self._write("lease.json", {"held": False, "token": token, "child": "absent"})
-        return {"ok": True, "installed_protection": False}
+        return {"ok": True, "installed_protection": self.installed_protection}
 
     def caller_secret(self, caller_id: str) -> str:
         callers = self._read("callers.json")
@@ -383,8 +394,8 @@ class ExecutionHolder:
         meta = self._read("meta.json")
         if not isinstance(meta, dict) or meta.get("protocol") != PROTOCOL:
             raise HolderRefusal("holder protocol is missing or downgraded")
-        if meta.get("installed_protection") is not False:
-            raise HolderRefusal("this core cannot claim installed protection")
+        if bool(meta.get("installed_protection")) != self.installed_protection:
+            raise HolderRefusal("holder installed-protection flag does not match this process")
         policy_path = self.root / "policy.json"
         if policy_path.exists():
             policy = self._read("policy.json")

@@ -99,12 +99,14 @@ class HolderClient:
         human_for: HumanFor,
         *,
         key_generation: int = 1,
+        expect_installed: bool = False,
     ) -> None:
         self.socket_path = Path(socket_path)
         self.caller_id = caller_id
         self.caller_secret = caller_secret
         self.human_for = human_for
         self.key_generation = key_generation
+        self.expect_installed = bool(expect_installed)
 
     def call(self, body: dict[str, Any]) -> dict[str, Any]:
         message = seal(self.caller_secret, caller_id=self.caller_id, body=body)
@@ -121,7 +123,11 @@ class HolderClient:
         if response.get("ok") is False:
             raise HolderRefusal(str(response.get("error") or "holder refused"))
         body_out = open_sealed(self.caller_secret, response)
-        if body_out.get("installed_protection") is not False:
+        installed = bool(body_out.get("installed_protection"))
+        if self.expect_installed:
+            if not installed:
+                raise HolderRefusal("installed holder did not claim installed protection")
+        elif installed:
             raise HolderRefusal("test adapter claimed installed protection")
         if "caller_secret" in body_out and isinstance(body_out.get("caller_secret"), str):
             self.caller_secret = body_out["caller_secret"]
@@ -260,3 +266,39 @@ def _read_line(conn: socket.socket) -> str:
 
 def _write_line(conn: socket.socket, text: str) -> None:
     conn.sendall(text.encode("utf-8") + b"\n")
+
+
+INSTALLED_SUPPORT_DIR = Path(
+    "/Library/Application Support/com.darashkevich.runspecimen.holder"
+)
+INSTALLED_SOCKET_NAME = "holder.sock"
+
+
+def installed_socket_path() -> Path:
+    return INSTALLED_SUPPORT_DIR / INSTALLED_SOCKET_NAME
+
+
+def discover_installed_holder_client(
+    caller_id: str,
+    caller_secret: str,
+    human_for: HumanFor,
+    *,
+    key_generation: int = 1,
+) -> HolderClient | None:
+    """Return a client for the root SMAppService daemon socket if it exists.
+
+    Presence of the socket is not proof of protection. The daemon must answer
+    with ``installed_protection`` true, and the state directory must be
+    root-owned. Administrator or root can still defeat the holder.
+    """
+    path = installed_socket_path()
+    if not path.is_socket() and not path.exists():
+        return None
+    return HolderClient(
+        path,
+        caller_id,
+        caller_secret,
+        human_for,
+        key_generation=key_generation,
+        expect_installed=True,
+    )
