@@ -250,36 +250,40 @@ class BindingTests(unittest.TestCase):
         self.assertIn("cleanup failed", str(caught.exception))
 
     def test_returned_command_runs_and_shebang_names_the_snapshot_interpreter(self) -> None:
-        shell = pathlib.Path("/bin/sh")
-        script = self._file(
-            "run.sh",
-            f"#!{shell}\nIFS= read -r line < \"$1\"\nprintf '%s' \"$line\"\n".encode(),
+        # The interpreter is a regular file. /bin/sh is a symlink on some hosts,
+        # and the binder refuses that. The kernel may still use it as this
+        # interpreter's own shebang; that shell is not a snapshot.
+        interpreter = self._file(
+            "interp.sh",
+            b"#!/bin/sh\nIFS= read -r line < \"$2\"\nprintf '%s' \"$line\"\n",
         )
+        script = self._file("run.sh", f"#!{interpreter}\nprintf 'unused'\\n\n".encode())
         source = self._file("input.txt", b"approved\n")
         self.bound = bind_execution(
             LaunchRequest(
                 nonce="n1",
-                argv=(str(script), str(source)),
-                executable=str(script),
+                argv=(str(interpreter), str(script), str(source)),
+                executable=str(interpreter),
                 script=str(script),
                 inputs=(str(source),),
-                dependencies=(str(shell),),
-                fingerprints=self._fingerprints(script, source, shell),
+                dependencies=(str(interpreter),),
+                fingerprints=self._fingerprints(interpreter, script, source),
             ),
             self.root / "snap",
         )
         argv0 = pathlib.Path(self.bound.argv[0])
         self.assertTrue(argv0.stat().st_mode & stat.S_IXUSR)
-        interpreter = self.bound.snapshot_for(str(shell))
-        self.assertTrue(pathlib.Path(interpreter.path).stat().st_mode & stat.S_IXUSR)
+        interp = self.bound.snapshot_for(str(interpreter))
+        self.assertEqual(argv0, pathlib.Path(interp.path))
+        self.assertTrue(argv0.stat().st_mode & stat.S_IXUSR)
         script_snap = self.bound.snapshot_for(str(script))
         os.lseek(script_snap.fd, 0, os.SEEK_SET)
         fd_bytes = os.read(script_snap.fd, 1_000_000)
         self.assertEqual(hashlib.sha256(fd_bytes).hexdigest(), script_snap.digest)
         self.assertEqual(script_snap.source_digest, hashlib.sha256(script.read_bytes()).hexdigest())
         self.assertNotEqual(script_snap.digest, script_snap.source_digest)
-        self.assertEqual(fd_bytes.splitlines()[0], f"#!{interpreter.path}".encode())
-        self.assertIn(b"printf '%s' \"$line\"", fd_bytes)
+        self.assertEqual(fd_bytes.splitlines()[0], f"#!{interp.path}".encode())
+        self.assertTrue(pathlib.Path(script_snap.path).stat().st_mode & stat.S_IXUSR)
         completed = subprocess.run(
             self.bound.argv,
             cwd=self.bound.cwd,

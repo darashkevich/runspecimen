@@ -21,7 +21,7 @@ The exact commit of this candidate is the commit that contains this file. Unpubl
 | File | SHA-256 |
 | --- | --- |
 | `runspecimen-0.2.0rc15-py3-none-any.whl` | `1ba89b3c4352ad072d3099c6c17d0c04a2824966fa9cdcc9f7bcf58956ed7813` |
-| `runspecimen-0.2.0rc15.tar.gz` | `6f474c521a0c081df4240dbea9af277526b10fe7c31bc8c8ab0ee3ced881711a` |
+| `runspecimen-0.2.0rc15.tar.gz` | `419f1a31160776b592cf2c7bac0b4089c48a44844a775ed351a96148a3aee0f5` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d` |
 
 Copies are in `artifacts/rc15-2026-09-30-snapshot-verify/` next to the approved archive. The wheel and sdist changed because `holder_protocol.py` and `tests/test_holder_protocol.py` are packaged. The plugin zip matches the previous unpublished build. These are not the published rc14 bytes. The sdist does not contain this manifest. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist. The previous unpublished copies in `artifacts/rc15-2026-09-30-protocol/` stay as the record of `59e7762`.
