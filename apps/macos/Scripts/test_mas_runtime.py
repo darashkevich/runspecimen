@@ -60,6 +60,22 @@ class RejectedRuntimeTests(unittest.TestCase):
         self.assertEqual([], gate.identity_errors({"Python": "abc"}, {"Python": "abc"}))
         self.assertTrue(gate.identity_errors({"Python": "abc"}, {"Python": "def"}))
 
+    def test_resolve_expected_commit_prefers_canonical_and_warns_once(self):
+        import io
+        from contextlib import redirect_stderr
+
+        with redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(gate.resolve_expected_commit("a" * 40, None), "a" * 40)
+        self.assertEqual(err.getvalue(), "")
+        with redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(gate.resolve_expected_commit(None, "b" * 40), "b" * 40)
+        self.assertEqual(err.getvalue().count(gate.DEPRECATED_EXPECT_COMMIT), 1)
+        with redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(gate.resolve_expected_commit("c" * 40, "c" * 40), "c" * 40)
+        self.assertEqual(err.getvalue().count(gate.DEPRECATED_EXPECT_COMMIT), 1)
+        with self.assertRaises(SystemExit), redirect_stderr(io.StringIO()):
+            gate.resolve_expected_commit("d" * 40, "e" * 40)
+
 
 if __name__ == "__main__":
     unittest.main()

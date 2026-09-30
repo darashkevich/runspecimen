@@ -265,7 +265,7 @@ def verify_identity(
     *,
     stage: str,
     release_gate: bool = False,
-    expect_commit: str | None = None,
+    expected_commit: str | None = None,
 ) -> int:
     failures = []
     if not expect.is_file():
@@ -298,11 +298,11 @@ def verify_identity(
             release_gate_errors(
                 str(recorded.get("git_commit", "")),
                 recorded.get("git_dirty"),
-                expect_commit,
+                expected_commit,
                 recorded_release_gate=recorded.get("release_gate"),
             )
         )
-        if recorded.get("expected_commit") != expect_commit:
+        if recorded.get("expected_commit") != expected_commit:
             failures.append("recorded expected commit does not match the release candidate")
     files, artifact_sha256, tree_errors = tree_identity(root)
     failures.extend(tree_errors)
@@ -315,6 +315,26 @@ def verify_identity(
         print(f"FAIL: {issue}", file=sys.stderr)
     print(f"MAS runtime verify: files={len(files)} violations={len(failures)}")
     return 1 if failures else 0
+
+
+DEPRECATED_EXPECT_COMMIT = "WARNING: --expect-commit is deprecated; use --expected-commit"
+
+
+def resolve_expected_commit(
+    expected_commit: str | None,
+    expect_commit_alias: str | None,
+) -> str | None:
+    """Prefer --expected-commit; accept deprecated --expect-commit with one warning."""
+    if expect_commit_alias is None:
+        return expected_commit
+    print(DEPRECATED_EXPECT_COMMIT, file=sys.stderr)
+    if expected_commit is None:
+        return expect_commit_alias
+    if expected_commit != expect_commit_alias:
+        raise SystemExit(
+            "FAIL: --expected-commit and deprecated --expect-commit disagree"
+        )
+    return expected_commit
 
 
 def _sha256(path: pathlib.Path) -> str:
@@ -449,7 +469,8 @@ def main(argv: list[str] | None = None) -> int:
     verify_command.add_argument("--expect", required=True, type=pathlib.Path)
     verify_command.add_argument("--stage", required=True)
     verify_command.add_argument("--release-gate", action="store_true")
-    verify_command.add_argument("--expect-commit")
+    verify_command.add_argument("--expected-commit")
+    verify_command.add_argument("--expect-commit", dest="expect_commit_alias", help=argparse.SUPPRESS)
     snap = commands.add_parser("snapshot-source", help="record HEAD and whether the tree is dirty")
     snap.add_argument("--repo", required=True, type=pathlib.Path)
     snap.add_argument("--out", required=True, type=pathlib.Path)
@@ -485,7 +506,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"FAIL: {issue}", file=sys.stderr)
         print(f"source stable: violations={len(errors)}")
         return 1 if errors else 0
-    if args.release_gate and not args.expect_commit:
+    expected_commit = resolve_expected_commit(args.expected_commit, args.expect_commit_alias)
+    if args.release_gate and not expected_commit:
         print("FAIL: release identity requires the expected candidate SHA", file=sys.stderr)
         return 1
     return verify_identity(
@@ -493,7 +515,7 @@ def main(argv: list[str] | None = None) -> int:
         args.expect,
         stage=args.stage,
         release_gate=args.release_gate,
-        expect_commit=args.expect_commit,
+        expected_commit=expected_commit,
     )
 
 
