@@ -516,6 +516,7 @@ def reap(
     *,
     kill: Kill = os.kill,
     identify: Identify = process_identity,
+    settle_seconds: float = 2.0,
 ) -> list[int]:
     """Signal a pid only when its stored token still matches a fresh lookup.
 
@@ -544,6 +545,22 @@ def reap(
         ):
             continue
         kill(pid, signal.SIGKILL)
+        # kill queues SIGKILL. The pid can still show the same token until it exits.
+        deadline = time.monotonic() + settle_seconds
+        while time.monotonic() < deadline:
+            try:
+                view = identify(pid)
+            except IdentityError:
+                time.sleep(0.02)
+                continue
+            if (
+                not isinstance(view, ProcessView)
+                or view.state != "alive"
+                or view.pid != pid
+                or view.start_token != token
+            ):
+                break
+            time.sleep(0.02)
         signaled.append(pid)
     return signaled
 

@@ -197,6 +197,7 @@ class LaunchFaultTests(unittest.TestCase):
             root,
             kill=lambda pid, sig: killed.append((pid, sig)),
             identify=lambda pid: ProcessView("alive", pid, TOKEN),
+            settle_seconds=0,
         )
         self.assertEqual(signaled, [FAKE_PID])
         self.assertEqual(killed, [(FAKE_PID, signal.SIGKILL)])
