@@ -413,12 +413,30 @@ def read_durable_record(path: Path) -> dict[str, object] | None:
     return parsed
 
 
+def _positive_int(value: object) -> bool:
+    """A pid or start token. ``bool`` is an ``int`` subclass and is not in this domain."""
+
+    return type(value) is int and value > 0
+
+
+def _partial_record() -> dict[str, object]:
+    return {
+        "action": "partial-record",
+        "spawn": False,
+        "lease": True,
+        "wait": "echild",
+        "phase": "unknown",
+    }
+
+
 def assess_durable(record: Mapping[str, object] | None) -> dict[str, object]:
     """Decide what a restarted process may do. It is not the parent.
 
     ``spawn`` is always false. ``wait`` is ``echild`` because this process
     cannot ``waitpid`` an orphan. A partial record keeps the lease. A missing
-    record is not a supervised launch and is not an exit status.
+    record is not a supervised launch and is not an exit status. A phase that
+    is not a string is partial. A pid or start time must be an int greater
+    than zero, and a bool does not qualify.
     """
 
     if record is None:
@@ -429,26 +447,27 @@ def assess_durable(record: Mapping[str, object] | None) -> dict[str, object]:
             "wait": "echild",
             "phase": "absent",
         }
+    if not isinstance(record, Mapping):
+        return _partial_record()
     phase = record.get("phase")
+    if not isinstance(phase, str):
+        return _partial_record()
     nonce = record.get("nonce")
-    pid = record.get("pid")
-    start = record.get("start")
     launch_phases = {"armed", "acked", "running"}
     if phase in launch_phases:
-        complete = isinstance(nonce, str) and bool(nonce) and isinstance(pid, int) and isinstance(start, int)
+        complete = (
+            isinstance(nonce, str)
+            and bool(nonce)
+            and _positive_int(record.get("pid"))
+            and _positive_int(record.get("start"))
+        )
         if not complete:
-            return {
-                "action": "partial-record",
-                "spawn": False,
-                "lease": True,
-                "wait": "echild",
-                "phase": "unknown",
-            }
+            return _partial_record()
         action = {
             "armed": "not-parent-do-not-commit",
             "acked": "not-parent-do-not-spawn",
             "running": "not-parent-supervise",
-        }[str(phase)]
+        }[phase]
         return {"action": action, "spawn": False, "lease": True, "wait": "echild", "phase": phase}
     if phase in {"consumed", "intent"} and isinstance(nonce, str) and nonce:
         return {
@@ -458,13 +477,7 @@ def assess_durable(record: Mapping[str, object] | None) -> dict[str, object]:
             "wait": "echild",
             "phase": phase,
         }
-    return {
-        "action": "partial-record",
-        "spawn": False,
-        "lease": True,
-        "wait": "echild",
-        "phase": "unknown",
-    }
+    return _partial_record()
 
 
 def restat_agrees_with_snapshot(original: Path, snap: Snapshot) -> bool:
@@ -693,6 +706,8 @@ class HolderSim:
 
     def _durable_complete(self) -> bool:
         phase = self.durable.get("phase")
+        if not isinstance(phase, str):
+            return False
         nonce = self.durable.get("nonce")
         if phase in {"consumed", "intent"}:
             return isinstance(nonce, str) and bool(nonce)
@@ -700,8 +715,8 @@ class HolderSim:
             return (
                 isinstance(nonce, str)
                 and bool(nonce)
-                and isinstance(self.durable.get("pid"), int)
-                and isinstance(self.durable.get("start"), int)
+                and _positive_int(self.durable.get("pid"))
+                and _positive_int(self.durable.get("start"))
             )
         return phase in {"unknown", "reaped", "spent", "empty"}
 

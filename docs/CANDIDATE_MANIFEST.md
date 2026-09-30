@@ -16,15 +16,15 @@ This file is the current full-scope candidate. It is not a Store submission plan
 | Published wheel / sdist / plugin zip | `d720bf5163a2b250699c30e804f89708e71c1c0d22682fbb43a4644b59c45948` / `6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3` / `0073e04e21bd225da328de06ef840ead6956a8cced4510a0025fb1e2ddc7fc16` |
 | Homebrew | still pinned to published rc14 |
 
-The exact commit of this candidate is the commit that contains this file. Unpublished rc15 archives of this tree, built by `release_check.py` on Python 3.12.14 (453 tests, 35 skipped):
+The exact commit of this candidate is the commit that contains this file. Unpublished rc15 archives of this tree, built by `release_check.py` on Python 3.12.14 (455 tests, 35 skipped):
 
 | File | SHA-256 |
 | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | `1ba89b3c4352ad072d3099c6c17d0c04a2824966fa9cdcc9f7bcf58956ed7813` |
-| `runspecimen-0.2.0rc15.tar.gz` | `419f1a31160776b592cf2c7bac0b4089c48a44844a775ed351a96148a3aee0f5` |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | `e51b378dcf9f1f5fd6636f6732f24f1d32f7edc83ddaa34a36b8dde90c56fce7` |
+| `runspecimen-0.2.0rc15.tar.gz` | `0bd8de2988b1b48948253faad21adaea1c902d95420404c6fef6acbd0100f75d` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d` |
 
-Copies are in `artifacts/rc15-2026-09-30-snapshot-verify/` next to the approved archive. The wheel and sdist changed because `holder_protocol.py` and `tests/test_holder_protocol.py` are packaged. The plugin zip matches the previous unpublished build. These are not the published rc14 bytes. The sdist does not contain this manifest. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist. The previous unpublished copies in `artifacts/rc15-2026-09-30-protocol/` stay as the record of `59e7762`.
+Copies are in `artifacts/rc15-2026-09-30-durable-domain/` next to the approved archive. The wheel and sdist changed because `holder_protocol.py` and `tests/test_holder_protocol.py` are packaged. The plugin zip matches the previous unpublished build. These are not the published rc14 bytes. The sdist does not contain this manifest. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist. `artifacts/rc15-2026-09-30-snapshot-verify/` stays as the record of `0f5dee9`.
 
 ## Status
 

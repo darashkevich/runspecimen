@@ -416,6 +416,33 @@ class HandshakeTests(unittest.TestCase):
                 with self.assertRaises(LeaseHeld):
                     sim.begin_other("n2")
 
+    def test_malformed_phase_and_identity_do_not_spawn(self) -> None:
+        records = (
+            {"phase": []},
+            {"phase": {}},
+            {"phase": "running", "nonce": "n", "pid": True, "start": False},
+            {"phase": "running", "nonce": "n", "pid": True, "start": 1},
+            {"phase": "running", "nonce": "n", "pid": -1, "start": 1},
+            {"phase": "running", "nonce": "n", "pid": 0, "start": 1},
+            {"phase": "running", "nonce": "n", "pid": 1, "start": False},
+            {"phase": "running", "nonce": "n", "pid": 1, "start": -1},
+            {"phase": "running", "nonce": "n", "pid": 1, "start": 0},
+        )
+        for record in records:
+            with self.subTest(record=record):
+                sim = HolderSim()
+                sim.crash()
+                sim.durable = dict(record)
+                result = sim.recover()
+                self.assertEqual(result["wait"], "echild")
+                self.assertEqual(result["action"], "partial-record")
+                self.assertNotEqual(result["action"], "not-parent-supervise")
+                self.assertEqual(result["spawned"], 0)
+                self.assertTrue(result["lease"])
+                self.assertEqual(sim.durable["phase"], "unknown")
+                with self.assertRaises(LeaseHeld):
+                    sim.begin_other("n2")
+
 
 class DurableFileTests(unittest.TestCase):
     """Real files. A pass here is not a HolderSim crash result."""
@@ -465,6 +492,38 @@ class DurableFileTests(unittest.TestCase):
         link.symlink_to(path)
         with self.assertRaises(ProtocolError):
             read_durable_record(link)
+
+    def test_disk_records_reject_list_phase_bool_and_negative_identity(self) -> None:
+        payloads = (
+            b'{"phase":[]}',
+            b'{"phase":{}}',
+            b'{"nonce":"n","phase":"running","pid":true,"start":false}',
+            b'{"nonce":"n","phase":"running","pid":true,"start":1}',
+            b'{"nonce":"n","phase":"running","pid":-1,"start":1}',
+            b'{"nonce":"n","phase":"running","pid":0,"start":1}',
+            b'{"nonce":"n","phase":"running","pid":1,"start":false}',
+            b'{"nonce":"n","phase":"running","pid":1,"start":-1}',
+            b'{"nonce":"n","phase":"running","pid":1,"start":0}',
+        )
+        direct = assess_durable({"phase": []})
+        self.assertEqual(direct["action"], "partial-record")
+        self.assertTrue(direct["lease"])
+        self.assertFalse(direct["spawn"])
+        self.assertEqual(direct["wait"], "echild")
+        bools = assess_durable({"phase": "running", "nonce": "n", "pid": True, "start": False})
+        self.assertEqual(bools["action"], "partial-record")
+        self.assertTrue(bools["lease"])
+        self.assertFalse(bools["spawn"])
+        for index, payload in enumerate(payloads):
+            with self.subTest(payload=payload):
+                path = self.root / f"bad-{index}.json"
+                path.write_bytes(payload)
+                decision = assess_durable(read_durable_record(path))
+                self.assertEqual(decision["action"], "partial-record")
+                self.assertEqual(decision["phase"], "unknown")
+                self.assertTrue(decision["lease"])
+                self.assertFalse(decision["spawn"])
+                self.assertEqual(decision["wait"], "echild")
 
     def test_durable_cleanup_failure_is_reported(self) -> None:
         def fail_write(fd: int, data: bytes | memoryview) -> int:
