@@ -43,7 +43,7 @@ Used existing development app only: `/private/tmp/rs-local-qa-91081f5/DerivedDat
 
 | Channel | Identity | Status |
 | --- | --- | --- |
-| Integrated candidate git tip | *(filled after commit)* | Unpublished; PR #39 branch `cursor/integrated-release-candidate` |
+| Integrated candidate git tip | 034d9376bd8b5d99f10bb5eef9be3202b9a2b73e | Unpublished; PR #39 branch `cursor/integrated-release-candidate` |
 | Engine label | `0.2.0rc15` | Candidate only; must not overwrite published rc14 |
 | Wheel / sdist / plugin | See `artifacts/rc15-2026-09-30-qa-followup/SHA256SUMS` after release_check | New dir; prior artifact dirs not overwritten |
 | Mac App Store app | `/Applications/RunSpecimen.app` mtime `2026-09-26 13:56:03` | Untouched this pass |
