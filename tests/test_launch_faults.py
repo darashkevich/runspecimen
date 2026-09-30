@@ -26,6 +26,7 @@ from launch_fault_harness import (
     IdentityError,
     ProcessView,
     liveness,
+    linux_identity_from_stat,
     linux_start_token,
     load_spent,
     os_start,
@@ -318,6 +319,11 @@ class LaunchFaultTests(unittest.TestCase):
     def test_linux_stat_token_uses_the_starttime_field(self) -> None:
         text = "4321 (weird) name) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 424242 99\n"
         self.assertEqual(linux_start_token(text, 4321), "ticks:424242")
+        self.assertEqual(linux_identity_from_stat(text, 4321).state, "alive")
+        zombie = text.replace(" S ", " Z ", 1)
+        self.assertEqual(linux_identity_from_stat(zombie, 4321).state, "absent")
+        dead = text.replace(" S ", " X ", 1)
+        self.assertEqual(linux_identity_from_stat(dead, 4321).state, "absent")
         with self.assertRaises(IdentityError):
             linux_start_token(text, 4322)
         with self.assertRaises(IdentityError):

@@ -141,9 +141,7 @@ def liveness(recorded: str | None, current: str | None) -> str:
     return "dead"
 
 
-def linux_start_token(text: str, pid: int) -> str:
-    """Field 22 of ``/proc/<pid>/stat``, after the command in parentheses."""
-
+def _linux_stat_fields(text: str, pid: int) -> list[str]:
     if type(pid) is not int or pid <= 0:
         raise IdentityError("pid is not a positive int")
     open_at = text.find(" (")
@@ -159,7 +157,22 @@ def linux_start_token(text: str, pid: int) -> str:
     fields = text[end + 1 :].split()
     if len(fields) < 20 or not fields[19].isdigit():
         raise IdentityError("stat starttime is missing")
-    return f"ticks:{fields[19]}"
+    return fields
+
+
+def linux_start_token(text: str, pid: int) -> str:
+    """Field 22 of ``/proc/<pid>/stat``, after the command in parentheses."""
+
+    return f"ticks:{_linux_stat_fields(text, pid)[19]}"
+
+
+def linux_identity_from_stat(text: str, pid: int) -> ProcessView:
+    """A zombie or dead stat entry is terminated. It is not a live child and not a signal."""
+
+    fields = _linux_stat_fields(text, pid)
+    if fields[0] in {"Z", "X"}:
+        return ProcessView("absent", pid, None)
+    return ProcessView("alive", pid, f"ticks:{fields[19]}")
 
 
 def _darwin_identity(pid: int) -> ProcessView:
@@ -209,6 +222,8 @@ def _darwin_identity(pid: int) -> ProcessView:
         raise IdentityError("proc_pidinfo failed")
     if ret < size or int(info.pbi_pid) != pid:
         raise IdentityError("proc_bsdinfo is not this pid")
+    if int(info.pbi_status) == 5:
+        return ProcessView("absent", pid, None)
     sec = int(info.pbi_start_tvsec)
     usec = int(info.pbi_start_tvusec)
     if sec <= 0 or usec < 0 or usec > 999999:
@@ -224,7 +239,7 @@ def _linux_identity(pid: int) -> ProcessView:
         return ProcessView("absent", pid, None)
     except OSError as exc:
         raise IdentityError("cannot read process stat") from exc
-    return ProcessView("alive", pid, linux_start_token(text, pid))
+    return linux_identity_from_stat(text, pid)
 
 
 def process_identity(pid: int) -> ProcessView:
