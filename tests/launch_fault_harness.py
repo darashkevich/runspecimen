@@ -9,8 +9,10 @@ child is not reaped by that holder.
 Cleanup may signal a pid only after a stored high-resolution start token
 matches a fresh lookup. A pid file, a ``ps`` ``lstart`` string, a missing
 token, or a failed lookup is not authorization. ``lstart`` is second
-resolution and is not that token. Corrupt spent history is lost state, not
-an empty nonce set. A missing spent file is new state.
+resolution and is not that token. The lookup and the signal are separate
+steps and are not an atomic OS process handle. Corrupt spent history is
+lost state, not an empty nonce set. A missing spent file is new state only
+when the root has no durable record and no identity or proc directory.
 """
 
 from __future__ import annotations
@@ -372,6 +374,36 @@ def record_child_identity(root: Path, pid: int, identify: Identify = process_ide
     return payload
 
 
+def _has_launch_evidence(root: Path) -> bool:
+    """True when this root already has launch state other than replay history.
+
+    An empty directory has no evidence. Deleting the whole directory is not
+    detectable here and is not treated as a solved recovery path.
+    """
+
+    if not root.exists() and not root.is_symlink():
+        return False
+    for name in ("durable.json",):
+        path = root / name
+        try:
+            os.lstat(path)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return True
+        return True
+    for folder_name in ("identity", "procs"):
+        folder = root / folder_name
+        try:
+            os.lstat(folder)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return True
+        return True
+    return False
+
+
 def _spent_path(root: Path) -> Path:
     return root / "spent.json"
 
@@ -388,15 +420,19 @@ def _spent_from_object(data: dict[str, object]) -> SpentState:
 
 
 def load_spent(root: Path) -> SpentState:
-    """Missing file is new. Any other unreadable or malformed file is lost.
+    """A missing file is new only for a root that has never stored a launch.
 
-    Lost history does not return the nonces that happened to parse.
+    If a durable record or an identity or proc directory exists, a missing
+    spent file is lost history. Lost history does not return the nonces that
+    happened to parse, and it is not an empty nonce set.
     """
 
     path = _spent_path(root)
     try:
         info = os.lstat(path)
     except FileNotFoundError:
+        if _has_launch_evidence(root):
+            return SpentState("lost", set())
         return SpentState("new", set())
     except OSError:
         return SpentState("lost", set())
@@ -520,7 +556,8 @@ def reap(
 ) -> list[int]:
     """Signal a pid only when its stored token still matches a fresh lookup.
 
-    The stored record is read again immediately before that lookup. Unknown,
+    The stored record is read again immediately before that lookup. That
+    check and the signal are not an atomic OS process handle. Unknown,
     missing, conflicting, and failed identities are not signaled. ``absent``
     is not signaled.
     """

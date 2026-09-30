@@ -92,6 +92,9 @@ class LaunchFaultTests(unittest.TestCase):
             return False
         return True
 
+    def _recorded_history(self, root: pathlib.Path) -> None:
+        write_durable_record(root / "spent.json", {"nonces": []})
+
     def _identity(self, root: pathlib.Path, name: str, text: str) -> None:
         folder = root / "identity"
         folder.mkdir(exist_ok=True)
@@ -117,6 +120,8 @@ class LaunchFaultTests(unittest.TestCase):
                 target = root / folder
                 target.mkdir()
                 (target / filename).write_text(text, encoding="utf-8")
+                if folder == "identity":
+                    self._recorded_history(root)
                 looked: list[int] = []
 
                 def identify(pid: int) -> ProcessView:
@@ -146,6 +151,7 @@ class LaunchFaultTests(unittest.TestCase):
             json.dumps({"pid": FAKE_PID, "start_token": OTHER, "image": "wrapper"}),
             encoding="utf-8",
         )
+        self._recorded_history(root)
         killed: list[int] = []
         reap(
             root,
@@ -169,6 +175,7 @@ class LaunchFaultTests(unittest.TestCase):
                     "12345.json",
                     json.dumps({"pid": FAKE_PID, "start_token": TOKEN}),
                 )
+                self._recorded_history(root)
                 killed = []
                 reap(root, kill=lambda pid, _sig: killed.append(pid), identify=lambda _pid: view)
                 self.assertEqual(killed, [])
@@ -176,6 +183,7 @@ class LaunchFaultTests(unittest.TestCase):
 
         root = self._root("lookup-error")
         self._identity(root, "child.json", json.dumps({"pid": FAKE_PID, "start_token": TOKEN}))
+        self._recorded_history(root)
         killed = []
 
         def fail(_pid: int) -> ProcessView:
@@ -224,6 +232,7 @@ class LaunchFaultTests(unittest.TestCase):
             root / "durable.json",
             {"phase": "intent", "nonce": "n1", "child": "uncertain"},
         )
+        self._recorded_history(root)
 
         def identify(pid: int) -> ProcessView:
             raise AssertionError(f"looked up {pid}")
@@ -247,6 +256,7 @@ class LaunchFaultTests(unittest.TestCase):
             root / "durable.json",
             {"phase": "intent", "nonce": "n1", "child": "uncertain"},
         )
+        self._recorded_history(root)
         self._identity(root, "child.json", json.dumps({"pid": FAKE_PID, "start_token": TOKEN}))
         killed: list[int] = []
         signaled = reap(
@@ -318,6 +328,66 @@ class LaunchFaultTests(unittest.TestCase):
         other = run_fault(root, "after_intent", "n2")
         self.assertEqual(other.returncode, EXIT_STOPPED, other.stderr)
         self.assertEqual(load_spent(root).nonces, {"n1", "n2"})
+
+    def test_deleted_spent_file_beside_durable_state_is_lost(self) -> None:
+        root = self._root("deleted-spent")
+        completed = run_fault(root, "after_consume", "n1")
+        self.assertEqual(completed.returncode, EXIT_STOPPED, completed.stderr)
+        durable = (root / "durable.json").read_text(encoding="utf-8")
+        (root / "spent.json").unlink()
+        self.assertFalse((root / "identity").exists())
+        self.assertFalse((root / "procs").exists())
+        state = load_spent(root)
+        self.assertEqual(state.status, "lost")
+        self.assertEqual(state.nonces, set())
+        decision = recover(root)
+        self.assertEqual(decision["history"], "lost")
+        self.assertEqual(decision["action"], "spent-history-lost")
+        self.assertTrue(decision["lease"])
+        self.assertFalse(decision["spawn"])
+        again = run_fault(root, "after_consume", "n1")
+        self.assertEqual(again.returncode, EXIT_LOST, again.stderr)
+        other = run_fault(root, "after_consume", "n2")
+        self.assertEqual(other.returncode, EXIT_LOST, other.stderr)
+        self.assertFalse((root / "spent.json").exists())
+        self.assertEqual((root / "durable.json").read_text(encoding="utf-8"), durable)
+        self.assertFalse((root / "identity").exists())
+        self.assertFalse((root / "procs").exists())
+
+    def test_missing_spent_after_a_finished_run_is_lost(self) -> None:
+        root = self._root("finished-missing-spent")
+        completed = run_fault(root, "after_running", "n1")
+        self.assertEqual(completed.returncode, EXIT_STOPPED, completed.stderr)
+        self.assertTrue(recover(root)["lease"])
+        self.assertTrue(reap(root))
+        cleared = recover(root)
+        self.assertFalse(cleared["lease"], cleared)
+        self.assertEqual(cleared["action"], "terminated-without-status")
+        durable = (root / "durable.json").read_text(encoding="utf-8")
+        identity_names = sorted(path.name for path in (root / "identity").glob("*.json"))
+        self.assertTrue(identity_names)
+        (root / "spent.json").unlink()
+        self.assertEqual(load_spent(root).status, "lost")
+        replay = run_fault(root, "after_consume", "n1")
+        self.assertEqual(replay.returncode, EXIT_LOST, replay.stderr)
+        other = run_fault(root, "after_intent", "n2")
+        self.assertEqual(other.returncode, EXIT_LOST, other.stderr)
+        self.assertFalse((root / "spent.json").exists())
+        self.assertEqual((root / "durable.json").read_text(encoding="utf-8"), durable)
+        self.assertEqual(
+            sorted(path.name for path in (root / "identity").glob("*.json")),
+            identity_names,
+        )
+
+    def test_identity_without_spent_history_is_lost(self) -> None:
+        root = self._root("identity-no-spent")
+        self._identity(root, "child.json", json.dumps({"pid": FAKE_PID, "start_token": TOKEN}))
+        self.assertEqual(load_spent(root).status, "lost")
+        completed = run_fault(root, "before_consume", "n1")
+        self.assertEqual(completed.returncode, EXIT_LOST, completed.stderr)
+        self.assertFalse((root / "spent.json").exists())
+        self.assertFalse((root / "durable.json").exists())
+        self.assertEqual(len(list((root / "identity").glob("*.json"))), 1)
 
     def test_linux_stat_token_uses_the_starttime_field(self) -> None:
         text = "4321 (weird) name) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 424242 99\n"
