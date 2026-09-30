@@ -302,10 +302,82 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
 
     deadline = time.monotonic() + contract.caps.wall_timeout_sec
     try:
+        # Held policies are supervised inside the holder after preflight checks.
+        # The client must not Popen that path. Ordinary phrase-approved runs still spawn here.
+        if holder_receipt is not None:
+            from runspecimen.holder_adapter import HolderRefusal, execute_held_execution
+
+            try:
+                holder_receipt = execute_held_execution(contract, workspace, holder, holder_receipt)
+            except HolderRefusal as exc:
+                raise PreflightError(str(exc)) from exc
+            if holder_receipt.get("supervisor") != "holder" or holder_receipt.get("executed") is not True:
+                raise PreflightError("held execution requires holder-owned spawn and completion")
+            import base64
+
+            stdout_data = base64.b64decode(str(holder_receipt.get("stdout_b64") or ""))
+            stderr_data = base64.b64decode(str(holder_receipt.get("stderr_b64") or ""))
+            stdout_trunc = bool(holder_receipt.get("stdout_truncated"))
+            stderr_trunc = bool(holder_receipt.get("stderr_truncated"))
+            exit_code = holder_receipt.get("exit_code")
+            timed_out = bool(holder_receipt.get("timed_out"))
+            if not isinstance(exit_code, int):
+                raise PreflightError("holder execute did not return an exit code")
+            atomic_write_bytes(state_dir / STDOUT_FILENAME, stdout_data)
+            atomic_write_bytes(state_dir / STDERR_FILENAME, stderr_data)
+            finished = utc_now_iso()
+            if timed_out:
+                result = {
+                    "run_result": "timeout",
+                    "exit_code": exit_code,
+                    "timed_out": True,
+                    "stdout_bytes": len(stdout_data),
+                    "stderr_bytes": len(stderr_data),
+                    "stdout_truncated": stdout_trunc,
+                    "stderr_truncated": stderr_trunc,
+                }
+                update_state(
+                    state_dir,
+                    phase="failed",
+                    run_result="timeout",
+                    exit_code=exit_code,
+                    timed_out=True,
+                    run_finished_at=finished,
+                    stdout_truncated=stdout_trunc,
+                    stderr_truncated=stderr_trunc,
+                )
+                log.append("run_timeout", result)
+                raise RunError(
+                    f"wall timeout after {contract.caps.wall_timeout_sec}s; process group killed"
+                )
+            result = {
+                "run_result": "completed",
+                "exit_code": exit_code,
+                "timed_out": False,
+                "stdout_bytes": len(stdout_data),
+                "stderr_bytes": len(stderr_data),
+                "stdout_truncated": stdout_trunc,
+                "stderr_truncated": stderr_trunc,
+            }
+            update_state(
+                state_dir,
+                phase="completed",
+                run_result="completed",
+                exit_code=exit_code,
+                timed_out=False,
+                run_finished_at=finished,
+                stdout_truncated=stdout_trunc,
+                stderr_truncated=stderr_trunc,
+            )
+            log.append("run_completed", result)
+            return {
+                "campaign_id": contract.campaign_id,
+                "run_id": contract.run_id,
+                **result,
+            }
+
         # Build launch vector using approved interpreter if present
         if runtime.get("interpreter"):
-            # When an interpreter is configured/detected, it must be the launch vector:
-            # [interpreter, interpreter_args..., executable, script_args...]
             interpreter_args = runtime.get("interpreter_args", [])
             launch_argv = [
                 str(runtime["interpreter"]),
@@ -314,30 +386,7 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
                 *contract.argv[1:],
             ]
         else:
-            # Direct executable launch (binaries, not scripts)
             launch_argv = [str(runtime["resolved_executable"]), *contract.argv[1:]]
-
-        if holder_receipt is not None:
-            from runspecimen.holder_adapter import (
-                HolderRefusal,
-                rewrite_launch_from_snapshots,
-            )
-
-            path_map = holder_receipt.get("path_map")
-            if not isinstance(path_map, dict):
-                raise PreflightError("holder consume did not return a snapshot path map")
-            try:
-                launch_argv = rewrite_launch_from_snapshots(
-                    launch_argv,
-                    path_map={str(k): str(v) for k, v in path_map.items()},
-                    workspace=workspace,
-                    live_executable=str(runtime.get("resolved_executable") or ""),
-                )
-            except HolderRefusal as exc:
-                raise PreflightError(str(exc)) from exc
-            # Relative writes still use the live workspace cwd. Only named
-            # inputs were snapshotted. Dynamic linker residuals stay in the
-            # holder receipt.
 
         launch_argv = confinement_argv(
             isolation,
@@ -346,8 +395,6 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
             cwd=cwd,
             profile_path=state_dir / "isolation.sb",
         )
-        # Hash again immediately before exec. A tool swapped after approval,
-        # or between the earlier check and this spawn, must not run.
         assert_tool_unchanged(isolation)
 
         proc = subprocess.Popen(  # noqa: S603

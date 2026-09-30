@@ -1,12 +1,10 @@
-"""Root-installed execution holder daemon.
+"""Root-installed execution holder daemon source.
 
-This process is meant to run as root under SMAppService.daemon. It owns a
-mode-0700 state directory under /Library/Application Support and serves the
-same authenticated AF_UNIX protocol as the unprivileged test adapter.
-
-``allow_test_double`` is off. ``installed_protection`` is on. A software test
-double is refused. An imported secure-enclave label is not attestation.
-Administrator or root can still defeat this holder.
+This module is the daemon source tree only. This pass does not modify, restart,
+or exercise any installed root daemon. ``allow_test_double`` is off.
+``installed_protection`` is on. A software test double is refused. An imported
+secure-enclave label is not attestation. Administrator or root can still defeat
+this holder. Unprivileged tests do not prove installed protection.
 """
 
 from __future__ import annotations
@@ -15,12 +13,22 @@ import argparse
 import json
 import os
 import socket
-import stat
 import sys
+import threading
 from pathlib import Path
 
 from runspecimen.execution_holder import ExecutionHolder, HolderRefusal, handle_message
-from runspecimen.holder_adapter import INSTALLED_SUPPORT_DIR, INSTALLED_SOCKET_NAME
+from runspecimen.holder_adapter import INSTALLED_SOCKET_NAME, INSTALLED_SUPPORT_DIR
+from runspecimen.holder_io import (
+    DEFAULT_ACCEPT_BACKLOG,
+    DEFAULT_MAX_IN_FLIGHT,
+    DEFAULT_READ_TIMEOUT_SEC,
+    MAX_FRAME_BYTES,
+    AdmissionGate,
+    FrameError,
+    read_frame,
+    write_frame,
+)
 
 BOOTSTRAP_ENV = "RS_HOLDER_BOOTSTRAP_SECRET"
 
@@ -36,62 +44,75 @@ def _prepare_dirs(support: Path) -> tuple[Path, Path]:
     state = support / "state"
     state.mkdir(parents=True, exist_ok=True)
     os.chmod(state, 0o700)
-    # Socket lives beside state so clients can traverse support (755) but cannot
-    # rewrite enrollment, policy, nonces, or leases under state (700).
     sock_path = support / INSTALLED_SOCKET_NAME
     return state, sock_path
-
-
-def _read_line(conn: socket.socket) -> str:
-    chunks: list[bytes] = []
-    while True:
-        piece = conn.recv(65536)
-        if not piece:
-            break
-        chunks.append(piece)
-        if b"\n" in piece:
-            break
-    text = b"".join(chunks).decode("utf-8")
-    if not text.endswith("\n"):
-        raise HolderRefusal("holder connection closed before a message")
-    return text
-
-
-def _write_line(conn: socket.socket, text: str) -> None:
-    conn.sendall(text.encode("utf-8") + b"\n")
 
 
 def serve(support: Path, *, bootstrap_secret: str) -> int:
     _ensure_root()
     state, sock_path = _prepare_dirs(support)
-    holder = ExecutionHolder(state, allow_test_double=False, installed_protection=True)
+    holder = ExecutionHolder(
+        state,
+        allow_test_double=False,
+        installed_protection=True,
+        bootstrap_secret=bootstrap_secret,
+    )
     if sock_path.exists():
         sock_path.unlink()
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(str(sock_path))
     # Authenticated protocol; world may connect, same-user cannot rewrite state.
+    # Framing/admission bounds still apply. This source change is not an install.
     os.chmod(sock_path, 0o666)
-    sock.listen(8)
+    sock.listen(DEFAULT_ACCEPT_BACKLOG)
+    admission = AdmissionGate(DEFAULT_MAX_IN_FLIGHT)
     while True:
         conn, _addr = sock.accept()
-        with conn:
+        if not admission.try_enter():
             try:
-                raw = _read_line(conn)
-                message = json.loads(raw)
-                if not isinstance(message, dict):
-                    raise HolderRefusal("holder message is not an object")
-                response = handle_message(
-                    holder,
-                    message,
-                    bootstrap_secret=bootstrap_secret,
+                write_frame(
+                    conn,
+                    json.dumps(
+                        {
+                            "ok": False,
+                            "error": "holder admission limit reached",
+                            "installed_protection": True,
+                        },
+                        sort_keys=True,
+                    ),
                 )
-            except (HolderRefusal, json.JSONDecodeError, OSError, ValueError) as exc:
-                response = {
-                    "ok": False,
-                    "error": str(exc),
-                    "installed_protection": True,
-                }
-            _write_line(conn, json.dumps(response, sort_keys=True))
+            except OSError:
+                pass
+            conn.close()
+            continue
+        def worker(connection: socket.socket) -> None:
+            try:
+                with connection:
+                    try:
+                        raw = read_frame(
+                            connection,
+                            max_bytes=MAX_FRAME_BYTES,
+                            timeout_sec=DEFAULT_READ_TIMEOUT_SEC,
+                        )
+                        message = json.loads(raw)
+                        if not isinstance(message, dict):
+                            raise HolderRefusal("holder message is not an object")
+                        response = handle_message(
+                            holder,
+                            message,
+                            bootstrap_secret=bootstrap_secret,
+                        )
+                    except (HolderRefusal, FrameError, json.JSONDecodeError, OSError, ValueError) as exc:
+                        response = {
+                            "ok": False,
+                            "error": str(exc),
+                            "installed_protection": True,
+                        }
+                    write_frame(connection, json.dumps(response, sort_keys=True))
+            finally:
+                admission.leave()
+
+        threading.Thread(target=worker, args=(conn,), daemon=True).start()
 
 
 def main(argv: list[str] | None = None) -> int:

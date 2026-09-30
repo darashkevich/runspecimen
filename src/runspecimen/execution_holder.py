@@ -14,10 +14,13 @@ installed root daemon. That is documented, not denied.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import os
 import secrets
+import select
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -26,6 +29,11 @@ from runspecimen.atomic import atomic_write_json, read_json
 from runspecimen.hashutil import canonical_json_bytes
 from runspecimen.holder_protocol import LaunchRequest, ProtocolError, bind_execution
 from runspecimen.paths import ensure_within
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None  # type: ignore[assignment]
 
 PROTOCOL = 1
 POLICIES = frozenset({"local", "companion", "dual"})
@@ -53,9 +61,12 @@ class ExecutionHolder:
     """Durable enrollment, devices, policy, consume, and lease records.
 
     ``allow_test_double`` accepts a software stand-in for a human
-    authorization. It does not accept a phrase, and it does not claim a
-    Secure Enclave or a paired phone. With the flag off, every human method
-    fails closed because no hardware verifier is connected.
+    authorization and must stay labeled not-hardware. It does not accept a
+    phrase, and an imported ``secure-enclave`` label is not attestation.
+    Real ``local`` / ``companion`` / ``dual`` methods require cryptographic
+    device signatures. Bootstrap enrollment/pairing is authenticated with the
+    bootstrap secret and is distinct from human authorization. Unprivileged
+    tests do not prove installed protection.
     """
 
     def __init__(
@@ -64,12 +75,14 @@ class ExecutionHolder:
         *,
         allow_test_double: bool = False,
         installed_protection: bool = False,
+        bootstrap_secret: str | None = None,
     ) -> None:
         if allow_test_double and installed_protection:
             raise ValueError("a software test double cannot claim installed protection")
         self.root = Path(root)
         self.allow_test_double = allow_test_double
         self.installed_protection = bool(installed_protection)
+        self.bootstrap_secret = bootstrap_secret
         self.root.mkdir(parents=True, exist_ok=True)
         if not (self.root / "meta.json").exists():
             if _has_history(self.root):
@@ -142,11 +155,22 @@ class ExecutionHolder:
             raise HolderRefusal("pairing fingerprint is missing")
         if human.get("attestation") == "secure-enclave" and human.get("hardware") is not True:
             raise HolderRefusal("imported secure-enclave label is unverified on this holder")
+        # Device HMAC secret is returned once. An imported secure-enclave label is
+        # still not attestation of hardware enrollment on this host.
+        device_secret = secrets.token_hex(32)
+        attestation = "unverified"
+        if human.get("method") == "software-test-double":
+            attestation = "software-test-double"
+        elif human.get("attestation"):
+            attestation = "unverified"
+        else:
+            attestation = "device-hmac"
         devices[device_id] = {
             "role": role,
             "fingerprint": fingerprint,
             "revoked": False,
-            "attestation": "unverified" if human.get("attestation") else "software-test-double",
+            "attestation": attestation,
+            "device_secret": device_secret,
             "generation": self.generation,
         }
         self._write("devices.json", devices)
@@ -154,7 +178,8 @@ class ExecutionHolder:
             "ok": True,
             "device_id": device_id,
             "role": role,
-            "attestation": devices[device_id]["attestation"],
+            "attestation": attestation,
+            "device_secret": device_secret,
             "installed_protection": self.installed_protection,
             "hardware": False,
         }
@@ -344,7 +369,7 @@ class ExecutionHolder:
         }
 
     def cancel_uncertain(self, token: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
-        """Human-authorized cancel of an uncertain child before a pid is known."""
+        """Cancel only before the holder has spawned. Authorization alone is not enough once a pid is recorded."""
         self._load()
         self._human(human, purpose="cancel", policy=human.get("policy"), subject=token, now=now)
         lease = self._read("lease.json") if (self.root / "lease.json").exists() else None
@@ -352,18 +377,26 @@ class ExecutionHolder:
             raise HolderRefusal("cancel does not match the recorded child")
         if lease.get("child") != "uncertain":
             raise HolderRefusal("only an uncertain child can be cancelled this way")
+        if lease.get("pid") is not None:
+            raise HolderRefusal("cancel cannot clear a lease after the holder has spawned")
         self._write("lease.json", {"held": False, "token": token, "child": "cancelled"})
         return {"ok": True, "cancelled": True, "installed_protection": self.installed_protection}
 
     def note_child_absent(self, token: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
-        """Drop the lease only for the recorded token. This does not signal a pid."""
+        """Refuse client assertions that a child is gone. Lease release requires verified termination."""
         self._load()
         self._human(human, purpose="note-absent", policy=human.get("policy"), subject=token, now=now)
         lease = self._read("lease.json") if (self.root / "lease.json").exists() else None
         if not isinstance(lease, dict) or lease.get("token") != token:
             raise HolderRefusal("absent observation does not match the recorded child")
-        self._write("lease.json", {"held": False, "token": token, "child": "absent"})
-        return {"ok": True, "installed_protection": self.installed_protection}
+        if lease.get("child") == "uncertain" and lease.get("pid") is None:
+            # Pre-spawn uncertain lease may be cleared only via cancel_uncertain.
+            raise HolderRefusal(
+                "note-absent cannot release a lease; cancel before spawn or wait for holder execute"
+            )
+        raise HolderRefusal(
+            "lease release requires verified termination inside the holder"
+        )
 
     def caller_secret(self, caller_id: str) -> str:
         callers = self._read("callers.json")
@@ -662,7 +695,224 @@ class ExecutionHolder:
         finally:
             bound.close()
         payload_digest = hashlib.sha256(canonical_json_bytes(list(digests))).hexdigest()
+        atomic_write_json(snapshot_root / "path_map.json", path_map)
         return path_map, payload_digest, str(snapshot_root)
+
+    def execute(
+        self,
+        *,
+        token: str,
+        human: dict[str, Any],
+        interpreter: str | None = None,
+        interpreter_args: list[str] | None = None,
+        now: float | None = None,
+    ) -> dict[str, Any]:
+        """Spawn and supervise the consumed snapshot. Lease clears only after wait."""
+        self._load()
+        self._human(human, purpose="execute", policy=human.get("policy"), subject=token, now=now)
+        lease_path = self.root / "lease.json"
+        if not lease_path.exists():
+            raise HolderRefusal("execute has no lease")
+        lease = self._read("lease.json")
+        if lease.get("token") != token or lease.get("held") is not True:
+            raise HolderRefusal("execute does not match the held lease")
+        if lease.get("child") != "uncertain":
+            raise HolderRefusal("execute requires an uncertain lease before spawn")
+        spent = self._spent()
+        record = next((item for item in spent if item.get("nonce") == token), None)
+        if not isinstance(record, dict):
+            raise HolderRefusal("execute nonce is not in replay history")
+        binding = record.get("binding")
+        if not isinstance(binding, dict):
+            raise HolderRefusal("execute binding is missing")
+        bounds = binding.get("bounds")
+        if not isinstance(bounds, dict):
+            raise HolderRefusal("execute bounds are missing")
+        try:
+            wall = float(bounds["wall_timeout_sec"])
+            out_max = int(bounds["stdout_max_bytes"])
+            err_max = int(bounds["stderr_max_bytes"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HolderRefusal("execute bounds are malformed") from exc
+        snapshot_root = self.root / "snapshots" / token
+        if not snapshot_root.is_dir():
+            raise HolderRefusal("execute snapshot root is missing")
+        workspace = Path(str(binding["workspace"]))
+        executable = str(binding["executable"])
+        argv = [str(item) for item in binding["argv"]]
+        path_map: dict[str, str] = {}
+        for original in snapshot_root.rglob("*"):
+            if not original.is_file():
+                continue
+            # Snapshots store under digest-named paths; rebuild map from spent files via binding reads
+        # Prefer path_map reconstructed from snapshot directory index written at consume.
+        index_path = snapshot_root / "path_map.json"
+        if index_path.is_file():
+            loaded = read_json(index_path)
+            if not isinstance(loaded, dict):
+                raise HolderRefusal("snapshot path map is malformed")
+            path_map = {str(k): str(v) for k, v in loaded.items()}
+        else:
+            raise HolderRefusal("snapshot path map is missing")
+        from runspecimen.holder_adapter import rewrite_launch_from_snapshots
+
+        if interpreter:
+            launch = [interpreter, *(interpreter_args or []), executable, *argv[1:]]
+        else:
+            launch = [executable, *argv[1:]]
+        launch = rewrite_launch_from_snapshots(
+            launch,
+            path_map=path_map,
+            workspace=workspace,
+            live_executable=executable,
+        )
+        cwd = Path(str(binding.get("cwd") or workspace))
+        if not cwd.is_dir():
+            raise HolderRefusal("execute cwd is missing")
+        # Refuse launching a live workspace file that should have been snapshotted.
+        ws = workspace.resolve()
+        for token_path in launch:
+            candidate = Path(token_path)
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                continue
+            try:
+                resolved.relative_to(ws)
+            except ValueError:
+                continue
+            if str(resolved) in path_map and str(resolved) == token_path:
+                raise HolderRefusal("execute refused a live workspace path after consume")
+        self._write(
+            "lease.json",
+            {"held": True, "token": token, "child": "running", "pid": None},
+        )
+        try:
+            proc = subprocess.Popen(  # noqa: S603
+                launch,
+                cwd=str(cwd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=0,
+                shell=False,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            self._write("lease.json", {"held": False, "token": token, "child": "spawn-failed"})
+            raise HolderRefusal(f"holder spawn failed: {exc}") from exc
+        self._write(
+            "lease.json",
+            {"held": True, "token": token, "child": "running", "pid": int(proc.pid)},
+        )
+        stdout = bytearray()
+        stderr = bytearray()
+        stdout_trunc = False
+        stderr_trunc = False
+        deadline = time.monotonic() + max(0.1, wall)
+        timed_out = False
+        assert proc.stdout is not None and proc.stderr is not None
+        try:
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    break
+                ready, _, _ = select.select([proc.stdout, proc.stderr], [], [], min(0.1, remaining))
+                for stream in ready:
+                    chunk = stream.read(65536)
+                    if not chunk:
+                        continue
+                    if stream is proc.stdout:
+                        if len(stdout) < out_max:
+                            take = chunk[: out_max - len(stdout)]
+                            stdout.extend(take)
+                            if len(take) < len(chunk):
+                                stdout_trunc = True
+                        else:
+                            stdout_trunc = True
+                    else:
+                        if len(stderr) < err_max:
+                            take = chunk[: err_max - len(stderr)]
+                            stderr.extend(take)
+                            if len(take) < len(chunk):
+                                stderr_trunc = True
+                        else:
+                            stderr_trunc = True
+                if proc.poll() is not None:
+                    # Drain remaining bounded bytes after exit.
+                    for stream, bucket, limit, flag_name in (
+                        (proc.stdout, stdout, out_max, "stdout"),
+                        (proc.stderr, stderr, err_max, "stderr"),
+                    ):
+                        while True:
+                            chunk = stream.read(65536)
+                            if not chunk:
+                                break
+                            if len(bucket) < limit:
+                                take = chunk[: limit - len(bucket)]
+                                bucket.extend(take)
+                                if len(take) < len(chunk):
+                                    if flag_name == "stdout":
+                                        stdout_trunc = True
+                                    else:
+                                        stderr_trunc = True
+                            else:
+                                if flag_name == "stdout":
+                                    stdout_trunc = True
+                                else:
+                                    stderr_trunc = True
+                    break
+            if timed_out:
+                try:
+                    os.killpg(proc.pid, 15)
+                except ProcessLookupError:
+                    pass
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(proc.pid, 9)
+                    except ProcessLookupError:
+                        pass
+                    proc.wait(timeout=2)
+            else:
+                proc.wait(timeout=2)
+        finally:
+            try:
+                proc.stdout.close()
+            except OSError:
+                pass
+            try:
+                proc.stderr.close()
+            except OSError:
+                pass
+        # Verified termination only: wait returned.
+        exit_code = proc.returncode
+        if exit_code is None:
+            raise HolderRefusal("holder execute did not observe process termination")
+        self._write(
+            "lease.json",
+            {
+                "held": False,
+                "token": token,
+                "child": "timeout" if timed_out else "exited",
+                "pid": int(proc.pid),
+                "exit_code": int(exit_code),
+            },
+        )
+        return {
+            "ok": True,
+            "token": token,
+            "exit_code": int(exit_code),
+            "timed_out": bool(timed_out),
+            "stdout_b64": base64.b64encode(bytes(stdout)).decode("ascii"),
+            "stderr_b64": base64.b64encode(bytes(stderr)).decode("ascii"),
+            "stdout_truncated": bool(stdout_trunc),
+            "stderr_truncated": bool(stderr_trunc),
+            "installed_protection": self.installed_protection,
+            "hardware": False,
+            "supervisor": "holder",
+        }
 
     def _human(
         self,
@@ -698,18 +948,114 @@ class ExecutionHolder:
             if not self.allow_test_double or human.get("hardware") is not False:
                 raise HolderRefusal("software test double is not a human authorization")
             return
+        if method == "bootstrap":
+            # Authenticated bootstrap is distinct from human authorization.
+            if not isinstance(self.bootstrap_secret, str) or len(self.bootstrap_secret) < 32:
+                raise HolderRefusal("bootstrap verifier is not configured")
+            proof = human.get("bootstrap_mac")
+            challenge = {
+                "purpose": purpose,
+                "subject": subject,
+                "policy": policy,
+                "devices": list(devices),
+                "expires_at": expires,
+            }
+            expected = message_mac(self.bootstrap_secret, challenge)
+            if not isinstance(proof, str) or not hmac.compare_digest(proof, expected):
+                raise HolderRefusal("bootstrap authentication failed")
+            if human.get("hardware") is True:
+                raise HolderRefusal("bootstrap authorization is not hardware")
+            return
         if method in {"local", "companion", "dual"}:
-            raise HolderRefusal("human verifier is not connected")
+            if method != policy:
+                raise HolderRefusal("human authorization method does not match policy")
+            self._verify_device_signatures(human, purpose=purpose, policy=str(policy), subject=subject)
+            return
         raise HolderRefusal("human authorization method is not accepted")
+
+    def _verify_device_signatures(
+        self,
+        human: dict[str, Any],
+        *,
+        purpose: str,
+        policy: str,
+        subject: object,
+    ) -> None:
+        signatures = human.get("signatures")
+        if not isinstance(signatures, dict) or not signatures:
+            raise HolderRefusal("cryptographic device signatures are missing")
+        devices = self._devices()
+        required_roles = set(_DEVICES[policy])
+        covered_roles: set[str] = set()
+        challenge = {
+            "purpose": purpose,
+            "subject": subject,
+            "policy": policy,
+            "devices": sorted(required_roles),
+            "expires_at": human.get("expires_at"),
+            "holder_id": self.holder_id,
+            "generation": self.generation,
+        }
+        for device_id, signature in signatures.items():
+            record = devices.get(device_id)
+            if not isinstance(record, dict) or record.get("revoked") is True:
+                raise HolderRefusal("a signing device is missing or revoked")
+            secret = record.get("device_secret")
+            if not isinstance(secret, str):
+                raise HolderRefusal("device signing material is missing")
+            if not isinstance(signature, str) or not hmac.compare_digest(
+                signature, message_mac(secret, challenge)
+            ):
+                raise HolderRefusal("device signature verification failed")
+            role = record.get("role")
+            if role in required_roles:
+                covered_roles.add(str(role))
+        if covered_roles != required_roles:
+            raise HolderRefusal("required device signatures are incomplete")
+        if human.get("hardware") is True:
+            # Transport signatures are not a biometric attestation claim.
+            raise HolderRefusal("device HMAC signatures are not hardware attestation")
 
     def _read(self, name: str) -> dict[str, Any]:
         value = read_json(self.root / name)
         if not isinstance(value, dict):
             raise HolderRefusal(f"{name} is not a holder record")
+        self._validate_record_schema(name, value)
         return value
 
     def _write(self, name: str, value: dict[str, Any]) -> None:
-        atomic_write_json(self.root / name, value)
+        self._validate_record_schema(name, value)
+        lock_path = self.root / ".holder.op.lock"
+        lock_path.touch(exist_ok=True)
+        fd = os.open(str(lock_path), os.O_RDWR)
+        try:
+            if fcntl is not None:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            atomic_write_json(self.root / name, value)
+        finally:
+            if fcntl is not None:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            os.close(fd)
+
+    def _validate_record_schema(self, name: str, value: dict[str, Any]) -> None:
+        allowed = {
+            "meta.json": {"protocol", "generation", "holder_id", "installed_protection", "key_generation"},
+            "enrollment.json": {"caller_id", "policy", "method", "hardware", "generation", "key_generation"},
+            "policy.json": {"name", "generation", "method", "hardware", "devices"},
+            "lease.json": {"held", "token", "child", "pid", "exit_code"},
+            "spent.json": {"nonces"},
+            "callers.json": None,
+            "devices.json": None,
+        }
+        keys = allowed.get(name)
+        if keys is None:
+            return
+        unknown = set(value) - keys
+        if unknown:
+            raise HolderRefusal(f"{name} has unknown fields: {sorted(unknown)}")
 
 
 def message_mac(secret_hex: str, payload: dict[str, Any]) -> str:
@@ -793,6 +1139,16 @@ def dispatch(holder: ExecutionHolder, body: dict[str, Any], *, caller_id: str) -
             workspace=Path(str(body.get("workspace"))),
             files=pairs,
             binding=binding if isinstance(binding, dict) else None,
+            now=clock,
+        )
+    if op == "execute":
+        interpreter = body.get("interpreter")
+        interpreter_args = body.get("interpreter_args")
+        return holder.execute(
+            token=str(body.get("token")),
+            human=human_dict,
+            interpreter=str(interpreter) if isinstance(interpreter, str) else None,
+            interpreter_args=[str(x) for x in interpreter_args] if isinstance(interpreter_args, list) else None,
             now=clock,
         )
     if op == "cancel":

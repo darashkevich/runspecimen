@@ -96,8 +96,9 @@ class HolderCoreTests(unittest.TestCase):
         with self.assertRaises(HolderRefusal) as expired_ctx:
             self.holder.set_policy(expired)
         self.assertIn("expired", str(expired_ctx.exception))
-        with self.assertRaises(HolderRefusal):
+        with self.assertRaises(HolderRefusal) as local_ctx:
             self.holder.set_policy(_human("set-policy", "local", method="local"))
+        self.assertIn("signature", str(local_ctx.exception).lower())
         closed = ExecutionHolder(Path(self._td.name) / "closed", allow_test_double=False)
         with self.assertRaises(HolderRefusal):
             closed.enroll("app", _human("enroll", "app"))
@@ -124,7 +125,7 @@ class HolderCoreTests(unittest.TestCase):
                 files=[("payload.txt", digest)],
                 binding=_binding(self.ws, path, digest),
             )
-        self.holder.note_child_absent("n1", _human("note-absent", "n1"))
+        self.holder.cancel_uncertain("n1", _human("cancel", "n1"))
         with self.assertRaises(HolderRefusal) as replay:
             self.holder.consume(
                 nonce="n1",
@@ -340,33 +341,37 @@ class HeldRunTests(RunSpecimenTestCase):
             state["execution_holder"]["payload_digest"],
         )
         self.assertTrue(state["execution_holder"]["snapshot_root"])
-        # Mutating the live script after consume must not affect a spent nonce.
+        # Mutating the live script after a completed held run must not revive a spent nonce.
         (self.ws / "work" / "job.py").write_text("raise SystemExit('live tree')\n", encoding="utf-8")
         server.stop()
         restarted = AdapterServer(Path(td.name), bootstrap_secret="ef" * 32)
         restarted.start()
         self.addCleanup(restarted.stop)
         again = HolderClient(restarted.socket_path, "app", enrolled["caller_secret"], _human)
-        with self.assertRaises(HolderRefusal):
+        with self.assertRaises(HolderRefusal) as spent:
             again.call(
                 {
                     "op": "consume",
-                    "nonce": "different-after-restart",
+                    "nonce": state["contract_hash"],
                     "policy": "local",
-                    "human": _human("consume", "different-after-restart"),
+                    "human": _human("consume", state["contract_hash"]),
                     "workspace": str(self.ws),
                     "files": [[str((self.ws / "work" / "job.py").resolve()), sha256_file(self.ws / "work" / "job.py")]],
                     "binding": {
-                        "contract_hash": "d" * 64,
+                        "contract_hash": state["contract_hash"],
                         "workspace": str(self.ws.resolve()),
                         "argv": ["job.py"],
                         "executable": str((self.ws / "work" / "job.py").resolve()),
                         "policy": "local",
+                        "cwd": str(self.ws.resolve()),
                         "bounds": {"wall_timeout_sec": 1, "stdout_max_bytes": 1, "stderr_max_bytes": 1},
                         "key_generation": 1,
                     },
                 }
             )
+        self.assertIn("already consumed", str(spent.exception))
+        # Unprivileged adapter tests do not prove installed protection.
+        self.assertFalse(state["execution_holder"]["installed_protection"])
 
 
 
@@ -461,3 +466,240 @@ class PhrasePathUnchangedTests(RunSpecimenTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _sign_human(
+    holder: ExecutionHolder,
+    device_secrets: dict[str, str],
+    purpose: str,
+    subject: str,
+    policy: str,
+) -> dict:
+    """Build a cryptographically signed local/companion/dual authorization.
+
+    This is device-HMAC verification, not biometric execution and not installed
+    protection.
+    """
+    from runspecimen.execution_holder import message_mac
+
+    devices = {"local": ["mac"], "companion": ["phone"], "dual": ["mac", "phone"]}[policy]
+    expires_at = int(time.time()) + 3600
+    challenge = {
+        "purpose": purpose,
+        "subject": subject,
+        "policy": policy,
+        "devices": sorted(devices),
+        "expires_at": expires_at,
+        "holder_id": holder.holder_id,
+        "generation": holder.generation,
+    }
+    signatures = {
+        device_id: message_mac(secret, challenge) for device_id, secret in device_secrets.items()
+    }
+    return {
+        "method": policy,
+        "purpose": purpose,
+        "subject": subject,
+        "policy": policy,
+        "devices": devices,
+        "expires_at": expires_at,
+        "hardware": False,
+        "signatures": signatures,
+    }
+
+
+class HolderSocketAdmissionTests(unittest.TestCase):
+    """Unprivileged harness only. These tests do not prove installed protection."""
+
+    def test_stalled_client_and_oversize_frame_are_refused(self) -> None:
+        import socket
+        import threading
+
+        from runspecimen.holder_io import MAX_FRAME_BYTES
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-sock-", dir="/tmp")
+        self.addCleanup(td.cleanup)
+        server = AdapterServer(
+            Path(td.name),
+            bootstrap_secret="ab" * 32,
+            read_timeout_sec=0.2,
+            max_frame_bytes=4096,
+            max_in_flight=1,
+        )
+        server.start()
+        self.addCleanup(server.stop)
+
+        def stall() -> None:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.connect(str(server.socket_path))
+            try:
+                sock.sendall(b"x" * 16)  # no newline
+                time.sleep(0.6)
+            finally:
+                sock.close()
+
+        t = threading.Thread(target=stall)
+        t.start()
+        time.sleep(0.05)
+        # While stalled connection holds admission, second client is refused.
+        sock2 = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock2.connect(str(server.socket_path))
+        sock2.sendall(b'{"ok":false}\n')
+        raw = sock2.recv(4096).decode("utf-8")
+        sock2.close()
+        t.join(timeout=2)
+        self.assertIn("admission limit reached", raw)
+
+        # Oversize frame
+        sock3 = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock3.connect(str(server.socket_path))
+        sock3.sendall(b"y" * 5000 + b"\n")
+        raw3 = sock3.recv(4096).decode("utf-8")
+        sock3.close()
+        self.assertIn("frame limit", raw3)
+        self.assertLess(4096, MAX_FRAME_BYTES)
+
+
+class HolderCryptoAndExecuteTests(unittest.TestCase):
+    """Unprivileged core. These tests do not prove installed protection."""
+
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory(prefix="rsh-crypto-")
+        self.root = Path(self._td.name) / "state"
+        self.ws = Path(self._td.name) / "ws"
+        self.ws.mkdir()
+        self.bootstrap = "cd" * 32
+        self.holder = ExecutionHolder(
+            self.root,
+            allow_test_double=False,
+            bootstrap_secret=self.bootstrap,
+        )
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
+    def test_bootstrap_and_signed_local_execute_from_snapshots(self) -> None:
+        from runspecimen.execution_holder import message_mac
+
+        enroll_human = {
+            "method": "bootstrap",
+            "purpose": "enroll",
+            "subject": "app",
+            "policy": "local",
+            "devices": ["mac"],
+            "expires_at": int(time.time()) + 60,
+            "hardware": False,
+            "bootstrap_mac": message_mac(
+                self.bootstrap,
+                {
+                    "purpose": "enroll",
+                    "subject": "app",
+                    "policy": "local",
+                    "devices": ["mac"],
+                    "expires_at": int(time.time()) + 60,
+                },
+            ),
+        }
+        # expires_at must match exactly in MAC — rebuild carefully
+        expires_at = int(time.time()) + 60
+        enroll_human["expires_at"] = expires_at
+        enroll_human["bootstrap_mac"] = message_mac(
+            self.bootstrap,
+            {
+                "purpose": "enroll",
+                "subject": "app",
+                "policy": "local",
+                "devices": ["mac"],
+                "expires_at": expires_at,
+            },
+        )
+        enrolled = self.holder.enroll("app", enroll_human)
+        self.assertFalse(enrolled["hardware"])
+
+        pair_expires = int(time.time()) + 60
+        pair_human = {
+            "method": "bootstrap",
+            "purpose": "pair",
+            "subject": "mac-1",
+            "policy": "local",
+            "role": "mac",
+            "fingerprint": "fp-mac",
+            "devices": ["mac"],
+            "expires_at": pair_expires,
+            "hardware": False,
+            "bootstrap_mac": message_mac(
+                self.bootstrap,
+                {
+                    "purpose": "pair",
+                    "subject": "mac-1",
+                    "policy": "local",
+                    "devices": ["mac"],
+                    "expires_at": pair_expires,
+                },
+            ),
+        }
+        paired = self.holder.pair_device("mac-1", pair_human)
+        secrets_map = {"mac-1": paired["device_secret"]}
+
+        policy_human = _sign_human(self.holder, secrets_map, "set-policy", "local", "local")
+        self.holder.set_policy(policy_human)
+
+        script = self.ws / "job.py"
+        script.write_text("print('from-snapshot')\n", encoding="utf-8")
+        digest = sha256_file(script)
+        binding = {
+            "contract_hash": "e" * 64,
+            "workspace": str(self.ws.resolve()),
+            "argv": [str(script.resolve())],
+            "executable": str(script.resolve()),
+            "policy": "local",
+            "cwd": str(self.ws.resolve()),
+            "bounds": {"wall_timeout_sec": 5, "stdout_max_bytes": 4096, "stderr_max_bytes": 4096},
+            "key_generation": 1,
+            "reads": [str(script.resolve())],
+        }
+        consume_human = _sign_human(self.holder, secrets_map, "consume", "n-exec", "local")
+        consumed = self.holder.consume(
+            nonce="n-exec",
+            policy="local",
+            human=consume_human,
+            workspace=self.ws,
+            files=[(str(script.resolve()), digest)],
+            binding=binding,
+        )
+        self.assertIn(str(script.resolve()), consumed["path_map"])
+        # Mutate live tree after consume; execute must still see snapshot bytes.
+        script.write_text("raise SystemExit('live-tree')\n", encoding="utf-8")
+        execute_human = _sign_human(self.holder, secrets_map, "execute", "n-exec", "local")
+        result = self.holder.execute(
+            token="n-exec",
+            human=execute_human,
+            interpreter="python3",
+            interpreter_args=[],
+        )
+        self.assertEqual(result["exit_code"], 0)
+        self.assertIn(b"from-snapshot", __import__("base64").b64decode(result["stdout_b64"]))
+        self.assertFalse(result["installed_protection"])
+        # Client note-absent cannot release; lease already cleared by verified exit.
+        with self.assertRaises(HolderRefusal):
+            self.holder.note_child_absent(
+                "n-exec", _sign_human(self.holder, secrets_map, "note-absent", "n-exec", "local")
+            )
+
+
+class HolderSchemaRegressionTests(unittest.TestCase):
+    """These tests do not prove installed protection."""
+
+    def test_unknown_lease_field_fails_closed(self) -> None:
+        td = tempfile.TemporaryDirectory(prefix="rsh-schema-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name) / "state"
+        holder = ExecutionHolder(root, allow_test_double=True)
+        holder.enroll("app", _human("enroll", "app"))
+        (root / "lease.json").write_text(
+            '{"held": false, "token": "t", "child": "exited", "surprise": true}\n',
+            encoding="utf-8",
+        )
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder._read("lease.json")
+        self.assertIn("unknown fields", str(ctx.exception))
