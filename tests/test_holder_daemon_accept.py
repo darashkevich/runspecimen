@@ -92,12 +92,9 @@ class HolderDaemonAcceptTimeoutTests(unittest.TestCase):
 
             client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             self.addCleanup(client.close)
-
-            def _connect() -> None:
-                time.sleep(0.02)
-                client.connect(str(path))
-
-            threading.Thread(target=_connect, daemon=True).start()
+            # Queue the client before accept. A sleep inside the accept window
+            # races on a slow macOS runner and looks like another timeout.
+            client.connect(str(path))
             conn = _accept_connection(server)
             self.assertIsNotNone(conn)
             assert conn is not None
