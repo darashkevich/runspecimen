@@ -1541,7 +1541,10 @@ class ExecutionHolder:
         root = self.snapshot_base / token
         if root.exists():
             raise HolderRefusal("payload snapshot token already exists")
-        root.mkdir(parents=True, exist_ok=False)
+        try:
+            root.mkdir(parents=True, exist_ok=False)
+        except FileExistsError as exc:
+            raise HolderRefusal("payload snapshot token already exists") from exc
         try:
             os.chmod(root, 0o700)
         except OSError as exc:

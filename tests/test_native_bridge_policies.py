@@ -15,6 +15,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from runspecimen.execution_holder import ExecutionHolder, HolderRefusal, handle_message, message_mac
 from runspecimen.hashutil import canonical_json_bytes, sha256_file
@@ -277,10 +278,10 @@ class LabeledBridgePolicyTests(unittest.TestCase):
         binding = self._binding(ws, script, "local")
         errors: list[BaseException] = []
         ok = []
+        human = self._consume_human(holder, binary, {"mac-1": device}, "local", "race", ws, script, binding)
 
         def _once() -> None:
             try:
-                human = self._consume_human(holder, binary, {"mac-1": device}, "local", "race", ws, script, binding)
                 holder.consume(
                     nonce="race",
                     policy="local",
@@ -301,6 +302,20 @@ class LabeledBridgePolicyTests(unittest.TestCase):
             thread.join(timeout=10)
         self.assertEqual(len(ok), 1, ok)
         self.assertTrue(any(isinstance(item, HolderRefusal) for item in errors), errors)
+
+    def test_snapshot_mkdir_collision_is_a_refusal(self) -> None:
+        secret = "aa" * 32
+        td = tempfile.TemporaryDirectory(prefix="rsh-snap-race-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name) / "state", Path(td.name) / "snaps", secret, "local")
+
+        def _collide(self_path: Path, *args, **kwargs) -> None:
+            raise FileExistsError(17, "File exists")
+
+        with mock.patch.object(Path, "mkdir", _collide):
+            with self.assertRaises(HolderRefusal) as ctx:
+                holder._prepare_payload_snapshot("race-token")
+        self.assertIn("already exists", str(ctx.exception))
 
     def _execute(self, binary: Path, policy: str, roles: tuple[str, ...]) -> dict:
         secret = "ab" * 32
