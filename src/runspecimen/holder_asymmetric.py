@@ -77,6 +77,57 @@ def verify_device_signature(public_hex: str, signature_hex: str, message: bytes)
     return True
 
 
+def verify_native_p256(public_b64: str, signature_b64: str, message: bytes) -> bool:
+    """Verify a P-256 signature with CryptoKit.
+
+    A true result is not a Secure Enclave, Touch ID, or Face ID approval.
+    A missing compiler or a bad signature is false. There is no handwritten
+    verifier in this function.
+    """
+    import os
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    source = Path(__file__).resolve().with_name("native_p256_verify.swift")
+    compiler = "/usr/bin/swiftc"
+    if not source.is_file() or not os.path.isfile(compiler):
+        return False
+    cache = getattr(verify_native_p256, "_binary", None)
+    if not isinstance(cache, Path) or not cache.is_file():
+        try:
+            directory = Path(tempfile.mkdtemp(prefix="rs-p256-"))
+            os.chmod(directory, 0o700)
+            binary = directory / "native_p256_verify"
+            built = subprocess.run(
+                [compiler, "-O", "-o", str(binary), str(source)],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        if built.returncode != 0 or not binary.is_file():
+            return False
+        os.chmod(binary, 0o700)
+        setattr(verify_native_p256, "_binary", binary)
+        cache = binary
+    try:
+        with tempfile.NamedTemporaryFile(prefix="rs-p256-msg-") as handle:
+            handle.write(message)
+            handle.flush()
+            checked = subprocess.run(
+                [str(cache), public_b64, signature_b64, handle.name],
+                check=False,
+                capture_output=True,
+                timeout=10,
+            )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return checked.returncode == 0
+
+
 def digest_challenge(payload: dict) -> bytes:
     """Canonical challenge bytes. Not a verifier."""
     from runspecimen.hashutil import canonical_json_bytes
@@ -95,6 +146,7 @@ def constant_time_label_ok(attestation_class: object, *, hardware: object) -> No
     if attestation_class not in {
         None,
         "device-ed25519-not-hardware",
+        "device-p256-not-hardware",
         "software-test-double-not-hardware",
     }:
         raise AsymmetricError("device signatures must stay labeled not-hardware")

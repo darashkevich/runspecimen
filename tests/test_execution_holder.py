@@ -728,7 +728,7 @@ class HolderCryptoAndExecuteTests(unittest.TestCase):
         script = self.ws / "job.py"
         script.write_text("print('from-snapshot')\n", encoding="utf-8")
         digest = sha256_file(script)
-        launch_argv = ["python3", str(script.resolve())]
+        launch_argv = [sys.executable, str(script.resolve())]
         binding = {
             "contract_hash": "e" * 64,
             "workspace": str(self.ws.resolve()),
@@ -821,7 +821,8 @@ class HolderCryptoAndExecuteTests(unittest.TestCase):
             self.holder, secrets_map, "execute", "n-exec", "local", authorized=exec_authorized
         )
         result = self.holder.execute(token="n-exec", human=execute_human)
-        self.assertEqual(result["exit_code"], 0)
+        stderr = __import__("base64").b64decode(result["stderr_b64"])
+        self.assertEqual(result["exit_code"], 0, stderr)
         self.assertIn(b"from-snapshot", __import__("base64").b64decode(result["stdout_b64"]))
         self.assertFalse(result["installed_protection"])
         # Client note-absent cannot release; lease already cleared by verified exit.
@@ -953,7 +954,7 @@ class HolderQA69RegressionTests(unittest.TestCase):
         path.write_text("print('uid-ok')\n", encoding="utf-8")
         digest = sha256_file(path)
         binding = _binding(self.ws, path, digest)
-        binding["launch_argv"] = ["python3", str(path.resolve())]
+        binding["launch_argv"] = [sys.executable, str(path.resolve())]
         binding["argv"] = [str(path.resolve())]
         self.holder.consume(
             nonce="uid",
@@ -1197,7 +1198,7 @@ class HolderQA5dd1PrivilegeAndSnapshotTests(unittest.TestCase):
         )
         digest = sha256_file(path)
         binding = _binding(self.ws, path, digest)
-        binding["launch_argv"] = ["python3", str(path.resolve())]
+        binding["launch_argv"] = [sys.executable, str(path.resolve())]
         binding["argv"] = [str(path.resolve())]
         binding["bounds"] = {
             "wall_timeout_sec": 5,
@@ -1217,9 +1218,10 @@ class HolderQA5dd1PrivilegeAndSnapshotTests(unittest.TestCase):
             files=[(str(path.resolve()), digest)],
             binding=binding,
         )
-        result = self.holder.execute(token="sid1", human=_human("execute", "sid1"))
-        self.assertTrue(result.get("descendants_absent") or result.get("ok") is True)
-        self.assertFalse(self.holder._lease_held())
+        with self.assertRaises(HolderRefusal) as ctx:
+            self.holder.execute(token="sid1", human=_human("execute", "sid1"))
+        self.assertIn("lease", str(ctx.exception))
+        self.assertTrue(self.holder._lease_held())
 
 
 class HolderQA5dd1AsymmetricTests(unittest.TestCase):
@@ -1402,7 +1404,7 @@ class HolderForgedSignatureAndSupervisionTests(unittest.TestCase):
         path.write_text("print('ok')\n", encoding="utf-8")
         digest = sha256_file(path)
         binding = _binding(ws, path, digest)
-        binding["launch_argv"] = ["python3", str(path.resolve())]
+        binding["launch_argv"] = [sys.executable, str(path.resolve())]
         binding["argv"] = [str(path.resolve())]
         holder.consume(
             nonce="unc",
@@ -1640,6 +1642,377 @@ class HolderForgedSignatureAndSupervisionTests(unittest.TestCase):
         self.assertEqual(result["exit_code"], 0)
         self.assertIn((36, 1, 0, 0, 0), calls)
         self.assertEqual(calls[-1], (36, 0, 0, 0, 0))
+
+    def test_closed_gate_wrong_byte_and_read_error_do_not_exec(self) -> None:
+        """EOF, a wrong byte, and a read error are not permission to run."""
+        from runspecimen.holder_supervise_exec import GO_BYTE, main
+
+        supervise = Path(__file__).resolve().parents[1] / "src" / "runspecimen" / "holder_supervise_exec.py"
+        td = tempfile.TemporaryDirectory(prefix="rsh-gate-")
+        self.addCleanup(td.cleanup)
+        marker = Path(td.name) / "ran"
+        script = Path(td.name) / "job.py"
+        script.write_text(
+            "import pathlib, sys\npathlib.Path(sys.argv[1]).write_text('ran')\n",
+            encoding="utf-8",
+        )
+        payload = [sys.executable, str(script), str(marker)]
+
+        def _spawn(prelude: bytes | None) -> subprocess.CompletedProcess[bytes]:
+            read_fd, write_fd = os.pipe()
+            try:
+                if prelude is not None:
+                    os.write(write_fd, prelude)
+                os.close(write_fd)
+                write_fd = -1
+                return subprocess.run(
+                    [sys.executable, "-I", str(supervise), str(read_fd), "--", *payload],
+                    check=False,
+                    capture_output=True,
+                    timeout=5,
+                    pass_fds=(read_fd,),
+                )
+            finally:
+                if write_fd >= 0:
+                    os.close(write_fd)
+                os.close(read_fd)
+
+        closed = _spawn(None)
+        self.assertNotEqual(closed.returncode, 0, closed.stderr)
+        self.assertFalse(marker.exists())
+        wrong = _spawn(b"\x01")
+        self.assertNotEqual(wrong.returncode, 0, wrong.stderr)
+        self.assertFalse(marker.exists())
+        read_fd, write_fd = os.pipe()
+        os.close(read_fd)
+        os.close(write_fd)
+        self.assertEqual(main([str(read_fd), "--", *payload]), 2)
+        self.assertFalse(marker.exists())
+        allowed = _spawn(GO_BYTE)
+        self.assertEqual(allowed.returncode, 0, allowed.stderr)
+        self.assertTrue(marker.is_file())
+
+    def test_relative_interpreter_is_refused_before_spawn(self) -> None:
+        td = tempfile.TemporaryDirectory(prefix="rsh-rel-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name) / "state"
+        ws = Path(td.name) / "ws"
+        ws.mkdir()
+        marker = Path(td.name) / "ran"
+        holder = ExecutionHolder(
+            root,
+            allow_test_double=True,
+            snapshot_base=Path(td.name) / "run-snapshots",
+        )
+        holder.enroll("app", _human("enroll", "app"))
+        holder.set_policy(_human("set-policy", "local"))
+        script = ws / "job.py"
+        script.write_text(
+            "import pathlib, sys\npathlib.Path(sys.argv[1]).write_text('ran')\n",
+            encoding="utf-8",
+        )
+        digest = sha256_file(script)
+        binding = _binding(ws, script, digest)
+        binding["launch_argv"] = ["python3", str(script.resolve()), str(marker)]
+        binding["argv"] = [str(script.resolve()), str(marker)]
+        holder.consume(
+            nonce="rel",
+            policy="local",
+            human=_human("consume", "rel"),
+            workspace=ws,
+            files=[(str(script.resolve()), digest)],
+            binding=binding,
+        )
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.execute(token="rel", human=_human("execute", "rel"))
+        self.assertIn("absolute", str(ctx.exception))
+        self.assertFalse(marker.exists())
+        self.assertTrue(holder._lease_held())
+
+    def test_unarmed_spawn_reaps_without_running_and_keeps_a_living_child(self) -> None:
+        td = tempfile.TemporaryDirectory(prefix="rsh-arm-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name) / "state"
+        ws = Path(td.name) / "ws"
+        ws.mkdir()
+        marker = Path(td.name) / "ran"
+        holder = ExecutionHolder(
+            root,
+            allow_test_double=True,
+            snapshot_base=Path(td.name) / "run-snapshots",
+        )
+        holder.enroll("app", _human("enroll", "app"))
+        holder.set_policy(_human("set-policy", "local"))
+        script = ws / "job.py"
+        script.write_text(
+            "import pathlib, sys\npathlib.Path(sys.argv[1]).write_text('ran')\n",
+            encoding="utf-8",
+        )
+        digest = sha256_file(script)
+        binding = _binding(ws, script, digest)
+        launch = [sys.executable, str(script.resolve()), str(marker)]
+        binding["launch_argv"] = launch
+        binding["argv"] = [str(script.resolve()), str(marker)]
+        holder.consume(
+            nonce="arm",
+            policy="local",
+            human=_human("consume", "arm"),
+            workspace=ws,
+            files=[(str(script.resolve()), digest)],
+            binding=binding,
+        )
+
+        def _unarmed(pid: int) -> dict:
+            return {
+                "armed": False,
+                "fork_seen": False,
+                "kq": None,
+                "started": None,
+                "baseline": set(),
+                "payload_pid": pid,
+                "identities": [],
+            }
+
+        holder._arm_payload_watch = _unarmed  # type: ignore[method-assign]
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.execute(token="arm", human=_human("execute", "arm"))
+        self.assertIn("armed", str(ctx.exception))
+        self.assertFalse(marker.exists())
+        lease = json.loads((root / "lease.json").read_text(encoding="utf-8"))
+        self.assertFalse(lease["held"])
+        self.assertEqual(lease["child"], "spawn-failed")
+
+        holder.consume(
+            nonce="arm2",
+            policy="local",
+            human=_human("consume", "arm2"),
+            workspace=ws,
+            files=[(str(script.resolve()), digest)],
+            binding=binding,
+        )
+
+        def _timeout(self: subprocess.Popen, timeout: float | None = None) -> int:
+            raise subprocess.TimeoutExpired(self.args, timeout or 0)
+
+        def _no_kill(pid: int, sig: int) -> None:
+            raise PermissionError("not this child")
+
+        with mock.patch.object(subprocess.Popen, "wait", _timeout), mock.patch("os.killpg", _no_kill):
+            with self.assertRaises(HolderRefusal) as stuck:
+                holder.execute(token="arm2", human=_human("execute", "arm2"))
+        self.assertIn("lease retained", str(stuck.exception))
+        self.assertFalse(marker.exists())
+        retained = json.loads((root / "lease.json").read_text(encoding="utf-8"))
+        self.assertTrue(retained["held"])
+        self.assertIs(retained["descendants_absent"], False)
+
+        def _drain() -> None:
+            while True:
+                try:
+                    pid, _status = os.waitpid(-1, os.WNOHANG)
+                except ChildProcessError:
+                    return
+                if pid == 0:
+                    return
+
+        _drain()
+
+    def test_cryptokit_p256_authorizes_a_bounded_run_and_is_not_hardware(self) -> None:
+        """CryptoKit can verify a signature. That signature is not a Secure Enclave."""
+        if not os.path.isfile("/usr/bin/swiftc"):
+            self.skipTest("CryptoKit verifier compiler is absent")
+        from runspecimen.execution_holder import message_mac
+        from runspecimen.holder_asymmetric import digest_challenge
+
+        signer_src = r'''
+import CryptoKit
+import Foundation
+let args = CommandLine.arguments
+guard args.count >= 2 else { exit(2) }
+if args[1] == "key" {
+    let key = P256.Signing.PrivateKey()
+    print(key.publicKey.x963Representation.base64EncodedString())
+    print(key.rawRepresentation.base64EncodedString())
+    exit(0)
+}
+guard args.count == 4, args[1] == "sign",
+      let raw = Data(base64Encoded: args[2]) else { exit(2) }
+let key = try! P256.Signing.PrivateKey(rawRepresentation: raw)
+let message = try! Data(contentsOf: URL(fileURLWithPath: args[3]))
+print(try! key.signature(for: message).rawRepresentation.base64EncodedString())
+'''
+        tool_dir = tempfile.TemporaryDirectory(prefix="rsh-p256-")
+        self.addCleanup(tool_dir.cleanup)
+        source = Path(tool_dir.name) / "sign.swift"
+        binary = Path(tool_dir.name) / "sign"
+        source.write_text(signer_src, encoding="utf-8")
+        built = subprocess.run(
+            ["/usr/bin/swiftc", "-O", "-o", str(binary), str(source)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        self.assertEqual(built.returncode, 0, built.stderr)
+        key_out = subprocess.run([str(binary), "key"], check=True, capture_output=True, text=True, timeout=10)
+        public_b64, private_b64 = key_out.stdout.splitlines()
+
+        def _sign(message: bytes) -> str:
+            with tempfile.NamedTemporaryFile(prefix="rs-msg-") as handle:
+                handle.write(message)
+                handle.flush()
+                signed = subprocess.run(
+                    [str(binary), "sign", private_b64, handle.name],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+            return signed.stdout.strip()
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-p256-run-")
+        self.addCleanup(td.cleanup)
+        secret = "ab" * 32
+        holder = ExecutionHolder(
+            Path(td.name) / "state",
+            allow_test_double=False,
+            bootstrap_secret=secret,
+            snapshot_base=Path(td.name) / "run-snapshots",
+        )
+        expires = int(time.time()) + 60
+
+        def _boot(purpose: str, subject: str, **extra: object) -> dict:
+            fields = {
+                "purpose": purpose,
+                "subject": subject,
+                "policy": "local",
+                "devices": ["mac"],
+                "expires_at": expires,
+                "domain": "holder-bootstrap-v1",
+            }
+            body = {
+                "method": "bootstrap",
+                "purpose": purpose,
+                "subject": subject,
+                "policy": "local",
+                "devices": ["mac"],
+                "expires_at": expires,
+                "hardware": False,
+                "bootstrap_mac": message_mac(secret, fields),
+            }
+            body.update(extra)
+            return body
+
+        holder.enroll("app", _boot("enroll", "app"))
+        holder.pair_device(
+            "mac-1",
+            _boot("pair", "mac-1", role="mac", fingerprint="fp-p256", algorithm="p256", public_key=public_b64),
+        )
+
+        def _authorize(purpose: str, subject: str, authorized: dict | None = None) -> dict:
+            challenge = {
+                "purpose": purpose,
+                "subject": subject,
+                "policy": "local",
+                "devices": ["mac"],
+                "expires_at": expires,
+                "holder_id": holder.holder_id,
+                "generation": holder.generation,
+                "domain": "holder-device-p256-v1",
+                "attestation_class": "device-p256-not-hardware",
+                "authorized": authorized or {},
+            }
+            return {
+                "method": "local",
+                "purpose": purpose,
+                "policy": "local",
+                "subject": subject,
+                "devices": ["mac"],
+                "expires_at": expires,
+                "hardware": False,
+                "attestation_class": "device-p256-not-hardware",
+                "signatures": {"mac-1": _sign(digest_challenge(challenge))},
+            }
+
+        holder.set_policy(_authorize("set-policy", "local"))
+        ws = Path(td.name) / "ws"
+        ws.mkdir()
+        marker = Path(td.name) / "ran"
+        script = ws / "job.py"
+        script.write_text(
+            "import pathlib, sys\npathlib.Path(sys.argv[1]).write_text('ran')\n",
+            encoding="utf-8",
+        )
+        digest = sha256_file(script)
+        binding = _binding(ws, script, digest)
+        launch = [sys.executable, str(script.resolve()), str(marker)]
+        binding["launch_argv"] = launch
+        binding["argv"] = [str(script.resolve()), str(marker)]
+        from runspecimen.hashutil import canonical_json_bytes
+
+        envelope = holder._binding_envelope(binding)
+        mutation = hashlib.sha256(
+            canonical_json_bytes({"files": [[str(script.resolve()), digest]], "binding": envelope})
+        ).hexdigest()
+        _path_map, payload_digest, snapshot_root = holder._bind(
+            "p256",
+            ws,
+            [(str(script.resolve()), digest)],
+            executable=str(script.resolve()),
+            argv=[str(script.resolve()), str(marker)],
+        )
+        _remove_sealed_tree(Path(snapshot_root))
+        authorized = {
+            "payload_digest": payload_digest,
+            "launch_argv": launch,
+            "bounds": binding["bounds"],
+            "mutation_digest": mutation,
+            "attestation_class": "device-ed25519-not-hardware",
+        }
+        holder.consume(
+            nonce="p256",
+            policy="local",
+            human=_authorize("consume", "p256", authorized),
+            workspace=ws,
+            files=[(str(script.resolve()), digest)],
+            binding=binding,
+        )
+        spent = json.loads((Path(td.name) / "state" / "spent.json").read_text(encoding="utf-8"))
+        record = next(item for item in spent["nonces"] if item["nonce"] == "p256")
+        exec_authorized = {
+            "payload_digest": record["payload_digest"],
+            "launch_argv": list(record["binding"]["launch_argv"]),
+            "bounds": record["binding"]["bounds"],
+            "mutation_digest": record["binding"]["mutation_digest"],
+            "attestation_class": "device-ed25519-not-hardware",
+        }
+        result = holder.execute(token="p256", human=_authorize("execute", "p256", exec_authorized))
+        stderr = __import__("base64").b64decode(result["stderr_b64"])
+        self.assertEqual(result["exit_code"], 0, stderr)
+        self.assertTrue(marker.is_file())
+        self.assertFalse(result["hardware"])
+        self.assertNotEqual(result["attestation_class"], "secure-enclave")
+        protected = ExecutionHolder(
+            Path(td.name) / "protected",
+            allow_test_double=False,
+            installed_protection=True,
+            bootstrap_secret=secret,
+            snapshot_base=Path(td.name) / "protected-snaps",
+        )
+        protected.enroll("app", _boot("enroll", "app"))
+        with self.assertRaises(HolderRefusal) as refused:
+            protected.pair_device(
+                "mac-1",
+                _boot(
+                    "pair",
+                    "mac-1",
+                    role="mac",
+                    fingerprint="fp-p256",
+                    algorithm="p256",
+                    public_key=public_b64,
+                ),
+            )
+        self.assertIn("not a Secure Enclave", str(refused.exception))
 
     def test_vetted_ed25519_is_not_secure_enclave_approval(self) -> None:
         from runspecimen.holder_asymmetric import (

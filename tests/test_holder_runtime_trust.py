@@ -35,6 +35,7 @@ class RuntimeTrustChainTests(unittest.TestCase):
             "holder_adapter.py",
             "execution_holder.py",
             "holder_asymmetric.py",
+            "native_p256_verify.swift",
             "holder_protocol.py",
         ):
             (pkg / name).write_text("# fixture\n", encoding="utf-8")

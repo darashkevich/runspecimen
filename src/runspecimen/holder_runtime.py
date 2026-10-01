@@ -26,6 +26,7 @@ _REQUIRED_RELATIVE = (
     "runspecimen/holder_adapter.py",
     "runspecimen/execution_holder.py",
     "runspecimen/holder_asymmetric.py",
+    "runspecimen/native_p256_verify.swift",
     "runspecimen/holder_protocol.py",
 )
 

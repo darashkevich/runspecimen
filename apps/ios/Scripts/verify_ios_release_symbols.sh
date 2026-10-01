@@ -1,8 +1,8 @@
 #!/bin/sh
 # Shipping symbol gate. Does not install an iOS app and does not request
-# provisioning updates. A Debug object that defines a forbidden name must
-# fail. A clean object must pass. This is not device Release acceptance
-# and not a Face ID proof.
+# provisioning updates. Fixture tests and a Debug positive control always run.
+# On Darwin the shipping Observe Release product is built without signing and
+# scanned. This is not device Release acceptance and not a Face ID proof.
 set -eu
 root=$(CDPATH= cd -- "$(dirname "$0")/../../.." && pwd)
 export PYTHONPATH="$root/src${PYTHONPATH:+:$PYTHONPATH}"
@@ -36,4 +36,78 @@ with tempfile.TemporaryDirectory() as td:
     subprocess.run(["cc", "-c", str(clean_src), "-o", str(clean_obj)], check=True)
     gate.scan_path(clean_obj)
 print("ios symbol gate fixtures passed")
+PY
+
+if [ "$(uname)" != "Darwin" ]; then
+  echo "shipping Observe product scan requires Darwin"
+  exit 0
+fi
+
+scan_root=$(mktemp -d "${TMPDIR:-/tmp}/rs-ios-symbols.XXXXXX")
+cleanup() {
+  rm -rf "$scan_root"
+}
+trap cleanup EXIT
+
+xcodebuild \
+  -project "$root/apps/ios/RunSpecimenObserve.xcodeproj" \
+  -scheme RunSpecimenObserve \
+  -configuration Release \
+  -destination 'generic/platform=iOS' \
+  -derivedDataPath "$scan_root/Release" \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
+  build
+
+xcodebuild \
+  -project "$root/apps/ios/RunSpecimenObserve.xcodeproj" \
+  -scheme RunSpecimenObserve \
+  -configuration Debug \
+  -destination 'generic/platform=iOS' \
+  -derivedDataPath "$scan_root/Debug" \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
+  build
+
+python3 - "$root" "$scan_root" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(sys.argv[1]) / "apps" / "ios" / "Scripts"))
+import nm_symbol_gate as gate
+
+root = Path(sys.argv[2])
+
+def machos(config: str) -> list[Path]:
+    apps = [path for path in root.joinpath(config).rglob("RunSpecimenObserve.app") if path.is_dir()]
+    if len(apps) != 1:
+        raise SystemExit(f"{config} Observe app was not built: {apps}")
+    app = apps[0]
+    found = [path for path in app.rglob("*") if path.is_file() and path.suffix in {".dylib", ""}]
+    binaries = []
+    for path in found:
+        if path.name.startswith("RunSpecimenObserve"):
+            binaries.append(path)
+    if not binaries:
+        raise SystemExit(f"{config} Observe product was not built")
+    return binaries
+
+release_bins = machos("Release")
+for path in release_bins:
+    gate.scan_path(path)
+rejected = False
+for path in machos("Debug"):
+    try:
+        gate.scan_path(path)
+    except gate.SymbolGateError as exc:
+        if "beforeFinalSignatureDecision" not in str(exc):
+            raise
+        rejected = True
+if not rejected:
+    raise SystemExit("Debug Observe product was not rejected")
+release = next(path for path in release_bins if path.suffix == "")
+digest = hashlib.sha256(release.read_bytes()).hexdigest()
+print(f"ios shipping Observe scan passed {release}")
+print(f"unsigned release executable sha256 {digest}")
 PY

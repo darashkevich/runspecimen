@@ -35,4 +35,4 @@ runspecimen = "runspecimen.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-runspecimen = ["py.typed"]
+runspecimen = ["py.typed", "native_p256_verify.swift"]

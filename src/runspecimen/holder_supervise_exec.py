@@ -11,6 +11,10 @@ from __future__ import annotations
 import os
 import sys
 
+# The holder writes this single byte only after supervision is armed.
+# Any other result, including EOF when the holder dies, is not permission.
+GO_BYTE = b"\0"
+
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
@@ -27,15 +31,28 @@ def main(argv: list[str] | None = None) -> int:
         print("holder-supervise-exec: payload argv is missing", file=sys.stderr)
         return 2
     try:
-        os.read(gate, 1)
+        got = os.read(gate, 1)
     except OSError as exc:
         print(f"holder-supervise-exec: gate read failed: {exc}", file=sys.stderr)
+        return 2
+    if got != GO_BYTE:
+        if got == b"":
+            print("holder-supervise-exec: gate closed without the go byte", file=sys.stderr)
+        else:
+            print("holder-supervise-exec: unexpected gate byte", file=sys.stderr)
         return 2
     try:
         os.close(gate)
     except OSError:
         pass
-    os.execv(payload[0], payload)
+    if not payload[0] or not os.path.isabs(payload[0]):
+        print("holder-supervise-exec: payload executable is not absolute", file=sys.stderr)
+        return 2
+    try:
+        os.execv(payload[0], payload)
+    except OSError as exc:
+        print(f"holder-supervise-exec: exec failed: {exc}", file=sys.stderr)
+        return 2
     return 2
 
 

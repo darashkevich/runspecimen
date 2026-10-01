@@ -53,6 +53,15 @@ public struct CompanionPairingRecord: Equatable {
 /// The button in the app calls the Secure Enclave methods directly. Tests call
 /// `automationRefused()` and the file-only helpers. A Boolean at the call site
 /// is not hardware authentication.
+#if RUNSPECIMEN_TEST_HOOKS
+/// Visible to the Release symbol gate. Debug must be rejected. Release does not compile this.
+@used
+@_cdecl("beforeFinalSignatureDecision")
+func beforeFinalSignatureDecisionHook() {
+    CompanionSecureEnclaveEnrollment.beforeFinalSignatureDecision?()
+}
+#endif
+
 public enum CompanionSecureEnclaveEnrollment {
     public static let keychainService = "com.darashkevich.runspecimen.observe.biometric"
     public static let active = "active"

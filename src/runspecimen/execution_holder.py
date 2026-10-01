@@ -192,7 +192,19 @@ class ExecutionHolder:
         attestation = "unverified"
         private_hex = None
         public_hex = None
-        if human.get("method") == "software-test-double":
+        algorithm = "ed25519"
+        if human.get("algorithm") == "p256":
+            if self.installed_protection or human.get("hardware") is True:
+                raise HolderRefusal("software P-256 is not a Secure Enclave")
+            if human.get("attestation") in {"secure-enclave", "touch-id", "face-id"}:
+                raise HolderRefusal("software P-256 is not a Secure Enclave")
+            supplied_p256 = human.get("public_key")
+            if not isinstance(supplied_p256, str) or not supplied_p256:
+                raise HolderRefusal("pairing public key is missing")
+            public_hex = supplied_p256
+            attestation = "device-p256-not-hardware"
+            algorithm = "p256"
+        elif human.get("method") == "software-test-double":
             attestation = "software-test-double"
             # Test double may omit asymmetric material; local/companion/dual cannot.
             public_hex = human.get("public_key") if isinstance(human.get("public_key"), str) else None
@@ -220,6 +232,7 @@ class ExecutionHolder:
             "fingerprint": fingerprint,
             "revoked": False,
             "attestation": attestation,
+            "algorithm": algorithm,
             "public_key": public_hex,
             "generation": self.generation,
         }
@@ -934,6 +947,8 @@ class ExecutionHolder:
                 workspace=workspace,
                 live_executable=str(binding.get("executable") or ""),
             )
+            if not launch or not os.path.isabs(launch[0]) or not os.path.isfile(launch[0]):
+                raise HolderRefusal("launch executable is not an absolute file")
             # Detect mutation of the authorized launch vector after consume.
             if [str(x) for x in launch_argv] != [str(x) for x in binding["launch_argv"]]:
                 raise HolderRefusal("launch vector mutated after consume")
@@ -972,16 +987,28 @@ class ExecutionHolder:
                     "run_gid": run_gid,
                 },
             )
+            proc: subprocess.Popen | None = None
+            abort_payload = None
             try:
-                proc, release_payload = self._spawn_dropped(launch, cwd=cwd, uid=run_uid, gid=run_gid)
+                proc, release_payload, abort_payload = self._spawn_dropped(
+                    launch, cwd=cwd, uid=run_uid, gid=run_gid
+                )
                 watch = self._arm_payload_watch(int(proc.pid))
                 if not watch["armed"]:
-                    self._signal_matching_identity(int(proc.pid), watch.get("started"), 9)
                     raise HolderRefusal("holder supervision could not be armed")
                 release_payload()
+                abort_payload = None
             except (OSError, HolderRefusal) as exc:
                 self._disable_child_subreaper()
-                self._write("lease.json", {"held": False, "token": token, "child": "spawn-failed"})
+                if proc is not None:
+                    self._reap_unreleased_child(
+                        proc, abort_payload, token, run_uid, run_gid
+                    )
+                else:
+                    self._write(
+                        "lease.json",
+                        {"held": False, "token": token, "child": "spawn-failed"},
+                    )
                 raise HolderRefusal(f"holder spawn failed: {exc}") from exc
             observed_pids: set[int] = {int(proc.pid)}
             observed_uncertain = False
@@ -1296,6 +1323,7 @@ class ExecutionHolder:
             constant_time_label_ok,
             digest_challenge,
             verify_device_signature,
+            verify_native_p256,
         )
 
         signatures = human.get("signatures")
@@ -1316,6 +1344,18 @@ class ExecutionHolder:
             "attestation_class": "device-ed25519-not-hardware",
             "authorized": authorized or {},
         }
+        algorithms = set()
+        for device_id in signatures:
+            record = devices.get(device_id)
+            if isinstance(record, dict):
+                algorithms.add(str(record.get("algorithm") or "ed25519"))
+        if algorithms == {"p256"}:
+            if self.installed_protection:
+                raise HolderRefusal("software P-256 is not a Secure Enclave")
+            challenge["domain"] = "holder-device-p256-v1"
+            challenge["attestation_class"] = "device-p256-not-hardware"
+        elif algorithms and algorithms != {"ed25519"}:
+            raise HolderRefusal("device signature algorithms disagree")
         message = digest_challenge(challenge)
         for device_id, signature in signatures.items():
             record = devices.get(device_id)
@@ -1324,15 +1364,21 @@ class ExecutionHolder:
             public_key = record.get("public_key")
             if not isinstance(public_key, str) or not public_key:
                 raise HolderRefusal("device public key is missing")
-            if not isinstance(signature, str) or not verify_device_signature(
-                public_key, signature, message
-            ):
+            if not isinstance(signature, str):
+                raise HolderRefusal("device signature verification failed")
+            if record.get("algorithm") == "p256":
+                verified = verify_native_p256(public_key, signature, message)
+            else:
+                verified = verify_device_signature(public_key, signature, message)
+            if not verified:
                 raise HolderRefusal("device signature verification failed")
             role = record.get("role")
             if role in required_roles:
                 covered_roles.add(str(role))
         if covered_roles != required_roles:
             raise HolderRefusal("required device signatures are incomplete")
+        if human.get("attestation_class") != challenge["attestation_class"]:
+            raise HolderRefusal("device signatures must stay labeled not-hardware")
         try:
             constant_time_label_ok(human.get("attestation_class"), hardware=human.get("hardware"))
         except AsymmetricError as exc:
@@ -1429,6 +1475,44 @@ class ExecutionHolder:
         # Root daemon: require an authenticated peer from the connection.
         raise HolderRefusal("holder requires authenticated non-root peer identity for payload")
 
+    def _reap_unreleased_child(
+        self,
+        proc: subprocess.Popen,
+        abort: Any,
+        token: str,
+        run_uid: int,
+        run_gid: int,
+    ) -> None:
+        """Close the gate, reap the paused child, and keep the lease if it remains.
+
+        The go byte is not written. A cleared lease means the child is gone.
+        """
+        if abort is not None:
+            try:
+                abort()
+            except OSError:
+                pass
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, 9)
+            except (ProcessLookupError, PermissionError):
+                pass
+            try:
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                self._retain_uncertain_lease(token, int(proc.pid), run_uid, run_gid, None)
+                raise HolderRefusal(
+                    "holder spawn failed and the child is still alive; lease retained"
+                ) from None
+        if proc.poll() is None or not self._pid_absent(int(proc.pid)):
+            self._retain_uncertain_lease(token, int(proc.pid), run_uid, run_gid, None)
+            raise HolderRefusal(
+                "holder spawn failed and the child is still alive; lease retained"
+            )
+        self._write("lease.json", {"held": False, "token": token, "child": "spawn-failed"})
+
     def _spawn_dropped(
         self,
         launch: list[str],
@@ -1436,7 +1520,7 @@ class ExecutionHolder:
         cwd: Path,
         uid: int,
         gid: int,
-    ) -> tuple[subprocess.Popen, Any]:
+    ) -> tuple[subprocess.Popen, Any, Any]:
         """Spawn paused until supervision is armed. Never use preexec_fn."""
         if uid == 0:
             raise HolderRefusal("payload identity refuses uid 0")
@@ -1462,6 +1546,8 @@ class ExecutionHolder:
                 "--",
                 *launch,
             ]
+        from runspecimen.holder_supervise_exec import GO_BYTE
+
         gate_r, gate_w = os.pipe()
         argv = [sys.executable, "-I", str(supervise), str(gate_r), "--", *payload]
         try:
@@ -1480,14 +1566,27 @@ class ExecutionHolder:
             os.close(gate_w)
             raise
         os.close(gate_r)
+        gate = {"fd": gate_w}
 
         def release() -> None:
+            fd = gate["fd"]
+            if fd is None:
+                return
+            gate["fd"] = None
             try:
-                os.write(gate_w, b"\0")
+                os.write(fd, GO_BYTE)
             finally:
-                os.close(gate_w)
+                os.close(fd)
 
-        return proc, release
+        def abort() -> None:
+            """Close the gate without the go byte. EOF is not permission to exec."""
+            fd = gate["fd"]
+            if fd is None:
+                return
+            gate["fd"] = None
+            os.close(fd)
+
+        return proc, release, abort
 
     def _arm_payload_watch(self, pid: int) -> dict[str, Any]:
         """Register a fork watch before the payload is released.
