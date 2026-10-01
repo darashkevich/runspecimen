@@ -4,7 +4,7 @@ Files here are **local QA notes**, not App Store Connect uploads or production s
 
 | File | What it records |
 | --- | --- |
-| [ios-release-symbol-proof-5dd1eb1ae.md](ios-release-symbol-proof-5dd1eb1ae.md) | Simulator Release `nm -Uj` empty matches for test-hook symbols; Debug contrast present for `beforeFinalSignatureDecision` |
+| [ios-release-symbol-proof-b9452205b.md](ios-release-symbol-proof-b9452205b.md) | Simulator Release `nm -Uj` empty matches for test-hook symbols on `b945220`; Debug contrast present for `beforeFinalSignatureDecision`. Unsigned local build; not installed. |
 
 Re-run:
 
