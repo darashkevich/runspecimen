@@ -497,7 +497,7 @@ class ExecutionHolder:
             "launch_argv": list(envelope["launch_argv"]),
             "bounds": envelope["bounds"],
             "mutation_digest": mutation_digest,
-            "attestation_class": "device-ed25519-not-hardware",
+            "attestation_class": self._paired_attestation_class(),
         }
         path_map, payload_digest, snapshot_root = self._bind(
             nonce,
@@ -632,6 +632,19 @@ class ExecutionHolder:
             if not isinstance(policy, dict) or policy.get("generation") != meta.get("generation"):
                 raise HolderRefusal("holder generation does not match the policy record")
         self._meta = meta
+
+    def _paired_attestation_class(self) -> str:
+        """Challenge label follows the paired algorithm. It is not hardware."""
+        algorithms = set()
+        for record in self._devices().values():
+            if not isinstance(record, dict) or record.get("revoked") is True:
+                continue
+            if not record.get("public_key"):
+                continue
+            algorithms.add(str(record.get("algorithm") or "ed25519"))
+        if algorithms == {"p256"}:
+            return "device-p256-not-hardware"
+        return "device-ed25519-not-hardware"
 
     def _active_policy_name(self) -> str | None:
         path = self.root / "policy.json"
@@ -945,7 +958,7 @@ class ExecutionHolder:
                 "launch_argv": list(binding.get("launch_argv") or []),
                 "bounds": binding.get("bounds"),
                 "mutation_digest": binding.get("mutation_digest"),
-                "attestation_class": "device-ed25519-not-hardware",
+                "attestation_class": self._paired_attestation_class(),
             }
             self._human(
                 human,
@@ -1288,7 +1301,7 @@ class ExecutionHolder:
                 "stderr_truncated": bool(stderr_trunc),
                 "installed_protection": self.installed_protection,
                 "hardware": False,
-                "attestation_class": "device-ed25519-not-hardware",
+                "attestation_class": self._paired_attestation_class(),
                 "supervisor": "holder",
                 "run_uid": run_uid,
                 "run_gid": run_gid,

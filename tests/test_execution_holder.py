@@ -2099,7 +2099,7 @@ print(try! key.signature(for: message).rawRepresentation.base64EncodedString())
             "launch_argv": launch,
             "bounds": binding["bounds"],
             "mutation_digest": mutation,
-            "attestation_class": "device-ed25519-not-hardware",
+            "attestation_class": "device-p256-not-hardware",
         }
         holder.consume(
             nonce="p256",
@@ -2116,7 +2116,7 @@ print(try! key.signature(for: message).rawRepresentation.base64EncodedString())
             "launch_argv": list(record["binding"]["launch_argv"]),
             "bounds": record["binding"]["bounds"],
             "mutation_digest": record["binding"]["mutation_digest"],
-            "attestation_class": "device-ed25519-not-hardware",
+            "attestation_class": "device-p256-not-hardware",
         }
         result = holder.execute(token="p256", human=_authorize("execute", "p256", exec_authorized))
         stderr = __import__("base64").b64decode(result["stderr_b64"])

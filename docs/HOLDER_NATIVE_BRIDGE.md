@@ -21,7 +21,7 @@ A P-256 public key is stored only when all of these match:
 | `provenance.policy` | the policy in force for the pair call |
 | `provenance.generation` | the holder generation at pair time |
 
-The stored device record keeps that role, generation, policy, and fingerprint. Later local, companion, and dual challenges include those paired fields plus `holder-device-p256-v1`. A client `hardware: true` value, or an imported `secure-enclave`, `touch-id`, or `face-id` label, is refused. `installed_protection` refuses the labeled bridge double and a software P-256 key.
+The stored device record keeps that role, generation, policy, and fingerprint. Later local, companion, and dual challenges include those paired fields plus `holder-device-p256-v1`. Consume and execute label that challenge `device-p256-not-hardware` when every live paired key is P-256. A client `hardware: true` value, or an imported `secure-enclave`, `touch-id`, or `face-id` label, is refused. `installed_protection` refuses the labeled bridge double and a software P-256 key.
 
 The labeled bridge is a test double. It does not create a Secure Enclave private key and it does not prompt for a biometric.
 
