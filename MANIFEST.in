@@ -5,6 +5,7 @@ include docs/ABOUT.md
 include docs/ED25519_RECEIPTS.md
 include docs/FAQ.md
 include docs/HOLDER_NATIVE_BRIDGE.md
+include docs/HOLDER_GATE_LEDGER.md
 include docs/INTEGRATIONS.md
 include docs/MARKET_AND_DISTRIBUTION.md
 include docs/NEXT_CHANGES.md

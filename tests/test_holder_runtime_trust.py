@@ -38,6 +38,7 @@ class RuntimeTrustChainTests(unittest.TestCase):
             "native_p256_verify.swift",
             "native_p256_verify",
             "native_p256_verify.provenance.json",
+            "native_bridge.py",
             "holder_protocol.py",
         ):
             (pkg / name).write_text("# fixture\n", encoding="utf-8")

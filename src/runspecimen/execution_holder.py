@@ -193,7 +193,11 @@ class ExecutionHolder:
         public_hex = None
         algorithm = "ed25519"
         if human.get("algorithm") == "p256":
-            if self.installed_protection or human.get("hardware") is True:
+            if self.installed_protection:
+                from runspecimen.native_bridge import production_enrollment_refusal
+
+                raise HolderRefusal(production_enrollment_refusal())
+            if human.get("hardware") is True:
                 raise HolderRefusal("software P-256 is not a Secure Enclave")
             if human.get("attestation") in {"secure-enclave", "touch-id", "face-id"}:
                 raise HolderRefusal("software P-256 is not a Secure Enclave")
@@ -1392,6 +1396,12 @@ class ExecutionHolder:
             verify_native_p256,
         )
 
+        if self.installed_protection:
+            from runspecimen.native_bridge import native_signers_connected, production_enrollment_refusal
+
+            connected = native_signers_connected()
+            if not connected.get("local") or not connected.get("companion"):
+                raise HolderRefusal(production_enrollment_refusal())
         signatures = human.get("signatures")
         if not isinstance(signatures, dict) or not signatures:
             raise HolderRefusal("cryptographic device signatures are missing")

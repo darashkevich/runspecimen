@@ -1258,6 +1258,15 @@ final class PolicyBoundApprovalTests: XCTestCase {
             provenance: record.provenance,
             state: record.state
         ))
+        XCTAssertFalse(ProductionNativeBridgeGate.allowsProductionEnrollment(
+            backend: EnrollmentIdentity.backendSecureEnclave,
+            provenance: EnrollmentIdentity.provenanceProduction
+        ))
+        XCTAssertFalse(ProductionNativeBridgeGate.allowsProductionEnrollment(
+            backend: record.backend,
+            provenance: record.provenance
+        ))
+        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("not Developer ID"))
         var swapped = carried
         swapped["role"] = EnrollmentIdentity.roleLocal
         XCTAssertThrowsError(try BiometricEnrollmentDirectory.pinCarriedCompanion(

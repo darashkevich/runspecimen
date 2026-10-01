@@ -48,6 +48,25 @@ public enum EnrollmentIdentity {
     }
 }
 
+/// Production enrollment status for the Mac app.
+///
+/// This does not create a Secure Enclave key and does not prompt. Pinning a
+/// carried public key is not this bridge. An ad-hoc verifier is not Developer ID.
+public enum ProductionNativeBridgeGate {
+    public static let blockReason = "The production native bridge is not connected. The packaged P-256 verifier is ad-hoc, not Developer ID. A carried public key is not enrollment. Secure Enclave key creation is not called from this control. Native local and companion signers are not connected."
+
+    public static func status() -> String {
+        blockReason
+    }
+
+    public static func allowsProductionEnrollment(backend: String, provenance: String) -> Bool {
+        if backend == EnrollmentIdentity.backendSecureEnclave && provenance == EnrollmentIdentity.provenanceProduction {
+            return false
+        }
+        return false
+    }
+}
+
 /// Enrollment facts checked again after a biometric wait.
 ///
 /// Passing this check is not evidence that the person understood the command.

@@ -29,6 +29,7 @@ _REQUIRED_RELATIVE = (
     "runspecimen/native_p256_verify.swift",
     "runspecimen/native_p256_verify",
     "runspecimen/native_p256_verify.provenance.json",
+    "runspecimen/native_bridge.py",
     "runspecimen/holder_protocol.py",
 )
 

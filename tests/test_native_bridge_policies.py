@@ -100,6 +100,47 @@ def _boot(secret: str, purpose: str, subject: str, policy: str, **extra: object)
 
 
 class LabeledBridgePolicyTests(unittest.TestCase):
+    def test_production_bridge_rejects_adhoc_verifier_and_the_labeled_double(self) -> None:
+        secret = "99" * 32
+        td = tempfile.TemporaryDirectory(prefix="rsh-prod-bridge-")
+        self.addCleanup(td.cleanup)
+        holder = ExecutionHolder(
+            Path(td.name) / "state",
+            allow_test_double=False,
+            installed_protection=True,
+            bootstrap_secret=secret,
+            snapshot_base=Path(td.name) / "snaps",
+        )
+        holder.enroll("app", _boot(secret, "enroll", "app", "local"))
+        compared = public_key_fingerprint("AQID")
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.pair_device(
+                "mac-1",
+                _boot(
+                    secret,
+                    "pair",
+                    "mac-1",
+                    "local",
+                    role="mac",
+                    fingerprint=compared,
+                    algorithm="p256",
+                    public_key="AQID",
+                    key_comparison=compared,
+                    provenance={
+                        "bridge": "labeled-native-bridge-double-not-hardware",
+                        "public_key": "AQID",
+                        "role": "mac",
+                        "policy": "local",
+                        "generation": holder.generation,
+                    },
+                ),
+            )
+        message = str(ctx.exception)
+        self.assertIn("Developer ID", message)
+        self.assertIn("labeled-native-bridge-double-not-hardware", message)
+        self.assertIn("not a Secure Enclave", message)
+        self.assertIn("not connected", message)
+
     def test_local_companion_and_dual_execute_and_are_not_hardware(self) -> None:
         binary, _public, _private = _signer(self)
         for policy, roles in (
