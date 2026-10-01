@@ -159,7 +159,7 @@ class HolderSocketIsolationTests(RunSpecimenTestCase):
         self.assertFalse((self.ws / "outputs" / "out.json").exists())
 
     def test_named_policy_hardware_true_fails_closed(self) -> None:
-        """CLI helper claims hardware:True; HMAC is not biometric."""
+        """CLI helper claims hardware:True; a device signature is not biometric."""
         for policy in ("local", "companion", "dual"):
             with self.subTest(policy=policy):
                 env = _EnvIsolation(self)
@@ -206,8 +206,7 @@ class HolderSocketIsolationTests(RunSpecimenTestCase):
                 with self.assertRaises(PreflightError) as ctx:
                     run_contract(contract_path=path, workspace=ws)
                 message = str(ctx.exception)
-                # Fail closed: missing device signatures, or explicit HMAC≠hardware.
-                # Fail closed before spawn: unpaired devices, missing HMAC
+                # Fail closed before spawn: unpaired devices, missing device
                 # signatures, or an explicit hardware claim refusal.
                 self.assertTrue(
                     "required approval devices" in message
@@ -219,25 +218,31 @@ class HolderSocketIsolationTests(RunSpecimenTestCase):
                 )
                 self.assertFalse((ws / "outputs" / "out.json").exists())
 
-    def test_signed_hmac_with_hardware_true_is_refused(self) -> None:
-        """Device HMAC must stay labeled not-hardware; it is not biometric."""
-        from runspecimen.execution_holder import ExecutionHolder, HolderRefusal, message_mac
+    def test_signed_device_with_hardware_true_is_refused(self) -> None:
+        """Ed25519 device signatures must stay labeled not-hardware; they are not biometric."""
+        from runspecimen.execution_holder import ExecutionHolder, HolderRefusal
+        from runspecimen.holder_asymmetric import (
+            digest_challenge,
+            generate_device_keypair,
+            sign_device_challenge,
+        )
         import time
 
-        td = tempfile.TemporaryDirectory(prefix="rsh-hmac-hw-", dir="/tmp")
+        td = tempfile.TemporaryDirectory(prefix="rsh-ed25519-hw-", dir="/tmp")
         self.addCleanup(td.cleanup)
         root = Path(td.name) / "state"
         holder = ExecutionHolder(root, allow_test_double=True, bootstrap_secret="22" * 32)
         holder.enroll("app", _human("enroll", "app"))
-        paired = holder.pair_device(
+        private_hex, public_hex = generate_device_keypair()
+        holder.pair_device(
             "mac-1",
             {
                 **_human("pair", "mac-1"),
                 "role": "mac",
                 "fingerprint": "fp-mac",
+                "public_key": public_hex,
             },
         )
-        secrets = {"mac-1": paired["device_secret"]}
         holder.set_policy(_human("set-policy", "local"))
         expires_at = int(time.time()) + 3600
         challenge = {
@@ -248,8 +253,8 @@ class HolderSocketIsolationTests(RunSpecimenTestCase):
             "expires_at": expires_at,
             "holder_id": holder.holder_id,
             "generation": holder.generation,
-            "domain": "holder-device-hmac-v1",
-            "attestation_class": "device-hmac-not-hardware",
+            "domain": "holder-device-ed25519-v1",
+            "attestation_class": "device-ed25519-not-hardware",
             "authorized": {},
         }
         human = {
@@ -260,8 +265,10 @@ class HolderSocketIsolationTests(RunSpecimenTestCase):
             "devices": ["mac"],
             "expires_at": expires_at,
             "hardware": True,
-            "attestation_class": "device-hmac-not-hardware",
-            "signatures": {"mac-1": message_mac(secrets["mac-1"], challenge)},
+            "attestation_class": "device-ed25519-not-hardware",
+            "signatures": {
+                "mac-1": sign_device_challenge(private_hex, digest_challenge(challenge)),
+            },
         }
         with self.assertRaises(HolderRefusal) as ctx:
             holder.set_policy(human)
