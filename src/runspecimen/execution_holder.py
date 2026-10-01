@@ -980,6 +980,7 @@ class ExecutionHolder:
                     raise HolderRefusal("holder supervision could not be armed")
                 release_payload()
             except (OSError, HolderRefusal) as exc:
+                self._disable_child_subreaper()
                 self._write("lease.json", {"held": False, "token": token, "child": "spawn-failed"})
                 raise HolderRefusal(f"holder spawn failed: {exc}") from exc
             observed_pids: set[int] = {int(proc.pid)}
@@ -1056,6 +1057,8 @@ class ExecutionHolder:
                             else:
                                 stderr_trunc = True
                     if proc.poll() is not None:
+                        # Capture reparented children while the subreaper is still set.
+                        watch["reparented"] = self._reparented_still_alive(watch)
                         # Bounded nonblocking drain; never exceed the wall deadline.
                         drain_deadline = min(deadline, time.monotonic() + 0.2)
                         while time.monotonic() < drain_deadline:
@@ -1116,6 +1119,7 @@ class ExecutionHolder:
                     except subprocess.TimeoutExpired as exc:
                         raise HolderRefusal("holder parent wait did not complete") from exc
             finally:
+                self._disable_child_subreaper()
                 for stream in (proc.stdout, proc.stderr):
                     try:
                         stream.close()
@@ -1128,7 +1132,7 @@ class ExecutionHolder:
             # A fork note without a child identity, or a reparented child of this
             # supervisor, means a setsid descendant cannot be excluded. Do not
             # mark descendants absent and do not signal a pid we cannot match.
-            if watch["fork_seen"] or self._reparented_still_alive(watch):
+            if watch["fork_seen"] or watch.get("reparented") or self._reparented_still_alive(watch):
                 self._retain_uncertain_lease(
                     token,
                     proc.pid,
@@ -1538,6 +1542,26 @@ class ExecutionHolder:
             return libc.prctl(36, 1, 0, 0, 0) == 0
         except (AttributeError, OSError):
             return False
+
+    def _disable_child_subreaper(self) -> None:
+        """Drop the subreaper so later tests are not the parent of foreign orphans."""
+        if sys.platform != "linux":
+            return
+        try:
+            import ctypes
+
+            libc = ctypes.CDLL(None, use_errno=True)
+            libc.prctl.argtypes = [
+                ctypes.c_int,
+                ctypes.c_ulong,
+                ctypes.c_ulong,
+                ctypes.c_ulong,
+                ctypes.c_ulong,
+            ]
+            libc.prctl.restype = ctypes.c_int
+            libc.prctl(36, 0, 0, 0, 0)
+        except (AttributeError, OSError):
+            return
 
     def _poll_payload_watch(self, watch: dict[str, Any]) -> None:
         kq = watch.get("kq")

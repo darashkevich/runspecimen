@@ -7,6 +7,7 @@ a paired phone.
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import json
 import os
@@ -16,6 +17,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests.helpers import (
     NullWriter,
@@ -1583,6 +1585,61 @@ class HolderForgedSignatureAndSupervisionTests(unittest.TestCase):
         self.assertNotIn("chown", refused.lower())
         self.assertEqual(os.stat(approved).st_uid, os.getuid())
         self.assertEqual(os.stat(snap).st_mode & 0o077, 0)
+
+    def test_linux_subreaper_is_cleared_after_the_payload_exits(self) -> None:
+        """PR_SET_CHILD_SUBREAPER must not stay on after the payload parent exits.
+
+        Leaving it set made later waitpid checks reap a foreign orphan
+        ('waited') instead of reporting ECHILD.
+        """
+        calls: list[tuple[int, ...]] = []
+
+        class _Prctl:
+            argtypes = None
+            restype = None
+
+            def __call__(self, op: int, enable: int, a: int, b: int, c: int) -> int:
+                calls.append((int(op), int(enable), int(a), int(b), int(c)))
+                return 0
+
+        class _Libc:
+            def __init__(self) -> None:
+                self.prctl = _Prctl()
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-subreaper-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name) / "state"
+        ws = Path(td.name) / "ws"
+        ws.mkdir()
+        holder = ExecutionHolder(
+            root,
+            allow_test_double=True,
+            snapshot_base=Path(td.name) / "run-snapshots",
+        )
+        holder.enroll("app", _human("enroll", "app"))
+        holder.set_policy(_human("set-policy", "local"))
+        script = ws / "job.py"
+        script.write_text("print('subreaper-off')\n", encoding="utf-8")
+        digest = sha256_file(script)
+        binding = _binding(ws, script, digest)
+        launch = [sys.executable, str(script.resolve())]
+        binding["launch_argv"] = launch
+        binding["argv"] = [str(script.resolve())]
+        holder.consume(
+            nonce="sub",
+            policy="local",
+            human=_human("consume", "sub"),
+            workspace=ws,
+            files=[(str(script.resolve()), digest)],
+            binding=binding,
+        )
+        with mock.patch.object(sys, "platform", "linux"), mock.patch.object(
+            ctypes, "CDLL", lambda *_args, **_kwargs: _Libc()
+        ):
+            result = holder.execute(token="sub", human=_human("execute", "sub"))
+        self.assertEqual(result["exit_code"], 0)
+        self.assertIn((36, 1, 0, 0, 0), calls)
+        self.assertEqual(calls[-1], (36, 0, 0, 0, 0))
 
     def test_vetted_ed25519_is_not_secure_enclave_approval(self) -> None:
         from runspecimen.holder_asymmetric import (
