@@ -1841,6 +1841,80 @@ class HolderForgedSignatureAndSupervisionTests(unittest.TestCase):
 
         _drain()
 
+    def test_verifier_does_not_compile_on_the_customer_machine(self) -> None:
+        """Customer verification must not invoke swiftc."""
+        from runspecimen.holder_asymmetric import verify_native_p256
+
+        calls: list[list[str]] = []
+        real = subprocess.run
+
+        def _spy(argv, *args, **kwargs):
+            calls.append([str(part) for part in argv])
+            return real(argv, *args, **kwargs)
+
+        with mock.patch("subprocess.run", _spy):
+            verify_native_p256("AAAA", "AAAA", b"not-a-signature")
+        joined = " ".join(part for argv in calls for part in argv)
+        self.assertNotIn("swiftc", joined)
+
+    def test_p256_pairing_without_key_comparison_is_refused(self) -> None:
+        td = tempfile.TemporaryDirectory(prefix="rsh-compare-")
+        self.addCleanup(td.cleanup)
+        holder = ExecutionHolder(Path(td.name) / "state", allow_test_double=True)
+        holder.enroll("app", _human("enroll", "app"))
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.pair_device(
+                "mac-1",
+                _human(
+                    "pair",
+                    "mac-1",
+                    role="mac",
+                    fingerprint="unconfirmed",
+                    algorithm="p256",
+                    public_key="AQID",
+                ),
+            )
+        self.assertIn("key comparison", str(ctx.exception))
+        from runspecimen.holder_asymmetric import public_key_fingerprint
+
+        compared = public_key_fingerprint("AQID")
+        with self.assertRaises(HolderRefusal) as mismatch:
+            holder.pair_device(
+                "mac-1",
+                _human(
+                    "pair",
+                    "mac-1",
+                    role="mac",
+                    fingerprint="unconfirmed",
+                    algorithm="p256",
+                    public_key="AQID",
+                    key_comparison="ab" * 32,
+                    provenance={
+                        "bridge": "labeled-native-bridge-double-not-hardware",
+                        "public_key": "AQID",
+                        "role": "mac",
+                        "policy": "local",
+                        "generation": holder.generation,
+                    },
+                ),
+            )
+        self.assertIn("key comparison", str(mismatch.exception))
+        with self.assertRaises(HolderRefusal) as hardware:
+            holder.pair_device(
+                "mac-1",
+                _human(
+                    "pair",
+                    "mac-1",
+                    role="mac",
+                    fingerprint=compared,
+                    algorithm="p256",
+                    public_key="AQID",
+                    key_comparison=compared,
+                    hardware=True,
+                ),
+            )
+        self.assertIn("not a human authorization", str(hardware.exception))
+
     def test_cryptokit_p256_authorizes_a_bounded_run_and_is_not_hardware(self) -> None:
         """CryptoKit can verify a signature. That signature is not a Secure Enclave."""
         if not os.path.isfile("/usr/bin/swiftc"):
@@ -1928,9 +2002,34 @@ print(try! key.signature(for: message).rawRepresentation.base64EncodedString())
             return body
 
         holder.enroll("app", _boot("enroll", "app"))
+        from runspecimen.holder_asymmetric import public_key_fingerprint
+
+        compared = public_key_fingerprint(public_b64)
+        paired_generation = holder.generation
         holder.pair_device(
             "mac-1",
-            _boot("pair", "mac-1", role="mac", fingerprint="fp-p256", algorithm="p256", public_key=public_b64),
+            _boot(
+                "pair",
+                "mac-1",
+                role="mac",
+                fingerprint=compared,
+                algorithm="p256",
+                public_key=public_b64,
+                key_comparison=compared,
+                provenance={
+                    "bridge": "labeled-native-bridge-double-not-hardware",
+                    "public_key": public_b64,
+                    "role": "mac",
+                    "policy": "local",
+                    "generation": paired_generation,
+                },
+            ),
+        )
+        holder = ExecutionHolder(
+            Path(td.name) / "state",
+            allow_test_double=False,
+            bootstrap_secret=secret,
+            snapshot_base=Path(td.name) / "run-snapshots",
         )
 
         def _authorize(purpose: str, subject: str, authorized: dict | None = None) -> dict:
@@ -1945,6 +2044,15 @@ print(try! key.signature(for: message).rawRepresentation.base64EncodedString())
                 "domain": "holder-device-p256-v1",
                 "attestation_class": "device-p256-not-hardware",
                 "authorized": authorized or {},
+                "paired": [
+                    {
+                        "device_id": "mac-1",
+                        "fingerprint": compared,
+                        "generation": paired_generation,
+                        "policy": "local",
+                        "role": "mac",
+                    }
+                ],
             }
             return {
                 "method": "local",

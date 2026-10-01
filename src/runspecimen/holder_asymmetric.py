@@ -77,48 +77,71 @@ def verify_device_signature(public_hex: str, signature_hex: str, message: bytes)
     return True
 
 
-def verify_native_p256(public_b64: str, signature_b64: str, message: bytes) -> bool:
-    """Verify a P-256 signature with CryptoKit.
+_P256_IDENTIFIER = "com.darashkevich.runspecimen.native-p256-verify"
+_LABELED_NATIVE_BRIDGE = "labeled-native-bridge-double-not-hardware"
 
-    A true result is not a Secure Enclave, Touch ID, or Face ID approval.
-    A missing compiler or a bad signature is false. There is no handwritten
-    verifier in this function.
+
+def public_key_fingerprint(public_key: str) -> str:
+    """Fingerprint the caller must compare before a native public key is stored."""
+    import hashlib
+
+    return hashlib.sha256(public_key.encode("utf-8")).hexdigest()
+
+
+def verify_native_p256(public_b64: str, signature_b64: str, message: bytes) -> bool:
+    """Verify a P-256 signature with the packaged CryptoKit binary.
+
+    The binary is hash-pinned and ad-hoc signed at package time. This function
+    does not invoke swiftc. A true result is not a Secure Enclave, Touch ID,
+    or Face ID approval. A missing binary, a provenance mismatch, or a bad
+    signature is false. There is no handwritten verifier in this function.
     """
-    import os
+    import hashlib
+    import json
     import subprocess
+    import sys
     import tempfile
     from pathlib import Path
 
-    source = Path(__file__).resolve().with_name("native_p256_verify.swift")
-    compiler = "/usr/bin/swiftc"
-    if not source.is_file() or not os.path.isfile(compiler):
+    if sys.platform != "darwin":
         return False
-    cache = getattr(verify_native_p256, "_binary", None)
-    if not isinstance(cache, Path) or not cache.is_file():
-        try:
-            directory = Path(tempfile.mkdtemp(prefix="rs-p256-"))
-            os.chmod(directory, 0o700)
-            binary = directory / "native_p256_verify"
-            built = subprocess.run(
-                [compiler, "-O", "-o", str(binary), str(source)],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return False
-        if built.returncode != 0 or not binary.is_file():
-            return False
-        os.chmod(binary, 0o700)
-        setattr(verify_native_p256, "_binary", binary)
-        cache = binary
+    here = Path(__file__).resolve().parent
+    binary = here / "native_p256_verify"
+    provenance_path = here / "native_p256_verify.provenance.json"
+    if not binary.is_file() or not provenance_path.is_file():
+        return False
+    try:
+        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+    except (OSError, json.JSONDecodeError, UnicodeError):
+        return False
+    if not isinstance(provenance, dict):
+        return False
+    if provenance.get("sha256") != digest:
+        return False
+    if provenance.get("identifier") != _P256_IDENTIFIER:
+        return False
+    if provenance.get("signed") != "adhoc":
+        return False
+    if provenance.get("not_secure_enclave") is not True:
+        return False
+    try:
+        verified = subprocess.run(
+            ["/usr/bin/codesign", "--verify", "--strict", str(binary)],
+            check=False,
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if verified.returncode != 0:
+        return False
     try:
         with tempfile.NamedTemporaryFile(prefix="rs-p256-msg-") as handle:
             handle.write(message)
             handle.flush()
             checked = subprocess.run(
-                [str(cache), public_b64, signature_b64, handle.name],
+                [str(binary), public_b64, signature_b64, handle.name],
                 check=False,
                 capture_output=True,
                 timeout=10,

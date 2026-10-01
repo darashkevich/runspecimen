@@ -200,9 +200,59 @@ class ExecutionHolder:
             supplied_p256 = human.get("public_key")
             if not isinstance(supplied_p256, str) or not supplied_p256:
                 raise HolderRefusal("pairing public key is missing")
+            from runspecimen.holder_asymmetric import (
+                _LABELED_NATIVE_BRIDGE,
+                public_key_fingerprint,
+            )
+
+            compared = public_key_fingerprint(supplied_p256)
+            if human.get("key_comparison") != compared:
+                raise HolderRefusal("human key comparison does not match the public key")
+            provenance = human.get("provenance")
+            if not isinstance(provenance, dict):
+                raise HolderRefusal("pairing public key provenance is missing")
+            policy_name = auth_policy if isinstance(auth_policy, str) else human.get("policy")
+            if provenance.get("bridge") != _LABELED_NATIVE_BRIDGE:
+                raise HolderRefusal("native enrollment bridge is not connected")
+            if provenance.get("public_key") != supplied_p256:
+                raise HolderRefusal("pairing public key provenance does not match")
+            if provenance.get("role") != role or provenance.get("policy") != policy_name:
+                raise HolderRefusal("pairing provenance role or policy does not match")
+            if provenance.get("generation") != self.generation:
+                raise HolderRefusal("pairing provenance generation does not match")
+            fingerprint = compared
             public_hex = supplied_p256
             attestation = "device-p256-not-hardware"
             algorithm = "p256"
+            devices[device_id] = {
+                "role": role,
+                "fingerprint": fingerprint,
+                "revoked": False,
+                "attestation": attestation,
+                "algorithm": algorithm,
+                "public_key": public_hex,
+                "generation": self.generation,
+                "provenance": {
+                    "bridge": _LABELED_NATIVE_BRIDGE,
+                    "role": role,
+                    "policy": policy_name,
+                    "generation": self.generation,
+                    "fingerprint": fingerprint,
+                    "not_hardware": True,
+                },
+            }
+            self._write("devices.json", devices)
+            return {
+                "ok": True,
+                "device_id": device_id,
+                "role": role,
+                "attestation": attestation,
+                "public_key": public_hex,
+                "fingerprint": fingerprint,
+                "generation": self.generation,
+                "installed_protection": self.installed_protection,
+                "hardware": False,
+            }
         elif human.get("method") == "software-test-double":
             attestation = "software-test-double"
             # Test double may omit asymmetric material; local/companion/dual cannot.
@@ -1357,6 +1407,24 @@ class ExecutionHolder:
                 raise HolderRefusal("software P-256 is not a Secure Enclave")
             challenge["domain"] = "holder-device-p256-v1"
             challenge["attestation_class"] = "device-p256-not-hardware"
+            paired: list[dict[str, Any]] = []
+            for device_id in sorted(signatures):
+                record = devices.get(device_id)
+                if not isinstance(record, dict):
+                    continue
+                provenance = record.get("provenance")
+                if not isinstance(provenance, dict) or provenance.get("not_hardware") is not True:
+                    raise HolderRefusal("pairing public key provenance is missing")
+                paired.append(
+                    {
+                        "device_id": device_id,
+                        "fingerprint": record.get("fingerprint"),
+                        "generation": record.get("generation"),
+                        "policy": provenance.get("policy"),
+                        "role": record.get("role"),
+                    }
+                )
+            challenge["paired"] = paired
         elif algorithms and algorithms != {"ed25519"}:
             raise HolderRefusal("device signature algorithms disagree")
         message = digest_challenge(challenge)

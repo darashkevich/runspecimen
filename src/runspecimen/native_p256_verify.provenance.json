@@ -1,0 +1,9 @@
+{
+  "algorithm": "p256-cryptokit",
+  "identifier": "com.darashkevich.runspecimen.native-p256-verify",
+  "not_secure_enclave": true,
+  "platform": "darwin-arm64",
+  "sha256": "1f61d80cefecadb0f1e4629530544bf0e28a8d27e2b4d57dfc253d3bec041bcc",
+  "signed": "adhoc",
+  "source_sha256": "6da9a6066606afcef9c0a9834694dc58f47b69db9861dcefa75bdea2afec7a5d"
+}
