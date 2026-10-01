@@ -22,7 +22,6 @@ import secrets
 import sys
 import pwd
 import select
-import sys
 import subprocess
 import time
 from pathlib import Path
@@ -1000,15 +999,19 @@ class ExecutionHolder:
                 abort_payload = None
             except (OSError, HolderRefusal) as exc:
                 self._disable_child_subreaper()
-                if proc is not None:
-                    self._reap_unreleased_child(
-                        proc, abort_payload, token, run_uid, run_gid
-                    )
-                else:
-                    self._write(
-                        "lease.json",
-                        {"held": False, "token": token, "child": "spawn-failed"},
-                    )
+                try:
+                    if proc is not None:
+                        self._reap_unreleased_child(
+                            proc, abort_payload, token, run_uid, run_gid
+                        )
+                    else:
+                        self._write(
+                            "lease.json",
+                            {"held": False, "token": token, "child": "spawn-failed"},
+                        )
+                finally:
+                    if proc is not None:
+                        self._close_child_streams(proc)
                 raise HolderRefusal(f"holder spawn failed: {exc}") from exc
             observed_pids: set[int] = {int(proc.pid)}
             observed_uncertain = False
@@ -1474,6 +1477,16 @@ class ExecutionHolder:
             return uid, gid
         # Root daemon: require an authenticated peer from the connection.
         raise HolderRefusal("holder requires authenticated non-root peer identity for payload")
+
+    def _close_child_streams(self, proc: subprocess.Popen) -> None:
+        """Close holder-owned pipes even when spawn aborts before the read loop."""
+        for stream in (proc.stdin, proc.stdout, proc.stderr):
+            if stream is None:
+                continue
+            try:
+                stream.close()
+            except OSError:
+                pass
 
     def _reap_unreleased_child(
         self,

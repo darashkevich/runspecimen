@@ -8,6 +8,7 @@ a paired phone.
 from __future__ import annotations
 
 import ctypes
+import gc
 import hashlib
 import json
 import os
@@ -16,6 +17,7 @@ import sys
 import tempfile
 import time
 import unittest
+import warnings
 from pathlib import Path
 from unittest import mock
 
@@ -376,10 +378,17 @@ class HeldRunTests(RunSpecimenTestCase):
             )
         self.assertIn("no typed-phrase fallback", str(ctx.exception))
         self.assertEqual(reader._pos, 0)
-        with self.assertRaises(PreflightError) as missing:
-            run_contract(contract_path=path, workspace=self.ws)
-        self.assertIn("requires the holder", str(missing.exception))
-        self.assertIn("no typed-phrase fallback", str(missing.exception))
+        missing_sock = Path(self.ws) / "absent-holder.sock"
+        with mock.patch(
+            "runspecimen.holder_adapter.installed_socket_path",
+            return_value=missing_sock,
+        ):
+            with self.assertRaises(PreflightError) as missing:
+                run_contract(contract_path=path, workspace=self.ws)
+        message = str(missing.exception)
+        self.assertIn("requires the holder", message)
+        self.assertIn("socket is missing", message)
+        self.assertIn("no typed-phrase fallback", message)
         self.assertFalse((self.ws / "outputs" / "out.json").exists())
 
     def test_adapter_consume_runs_from_snapshots_once(self) -> None:
@@ -1774,8 +1783,13 @@ class HolderForgedSignatureAndSupervisionTests(unittest.TestCase):
             }
 
         holder._arm_payload_watch = _unarmed  # type: ignore[method-assign]
-        with self.assertRaises(HolderRefusal) as ctx:
-            holder.execute(token="arm", human=_human("execute", "arm"))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", ResourceWarning)
+            with self.assertRaises(HolderRefusal) as ctx:
+                holder.execute(token="arm", human=_human("execute", "arm"))
+            gc.collect()
+        leaked = [str(item.message) for item in caught if issubclass(item.category, ResourceWarning)]
+        self.assertFalse(leaked, leaked)
         self.assertIn("armed", str(ctx.exception))
         self.assertFalse(marker.exists())
         lease = json.loads((root / "lease.json").read_text(encoding="utf-8"))
@@ -1797,14 +1811,24 @@ class HolderForgedSignatureAndSupervisionTests(unittest.TestCase):
         def _no_kill(pid: int, sig: int) -> None:
             raise PermissionError("not this child")
 
-        with mock.patch.object(subprocess.Popen, "wait", _timeout), mock.patch("os.killpg", _no_kill):
-            with self.assertRaises(HolderRefusal) as stuck:
-                holder.execute(token="arm2", human=_human("execute", "arm2"))
-        self.assertIn("lease retained", str(stuck.exception))
-        self.assertFalse(marker.exists())
-        retained = json.loads((root / "lease.json").read_text(encoding="utf-8"))
-        self.assertTrue(retained["held"])
-        self.assertIs(retained["descendants_absent"], False)
+        with warnings.catch_warnings(record=True) as retained_warnings:
+            warnings.simplefilter("always", ResourceWarning)
+            with mock.patch.object(subprocess.Popen, "wait", _timeout), mock.patch("os.killpg", _no_kill):
+                with self.assertRaises(HolderRefusal) as stuck:
+                    holder.execute(token="arm2", human=_human("execute", "arm2"))
+            self.assertIn("lease retained", str(stuck.exception))
+            self.assertFalse(marker.exists())
+            retained = json.loads((root / "lease.json").read_text(encoding="utf-8"))
+            self.assertTrue(retained["held"])
+            self.assertIs(retained["descendants_absent"], False)
+            del stuck
+            gc.collect()
+        unclosed = [
+            str(item.message)
+            for item in retained_warnings
+            if issubclass(item.category, ResourceWarning) and "unclosed file" in str(item.message)
+        ]
+        self.assertFalse(unclosed, unclosed)
 
         def _drain() -> None:
             while True:
