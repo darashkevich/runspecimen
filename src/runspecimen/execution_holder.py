@@ -444,6 +444,13 @@ class ExecutionHolder:
             executable=str(envelope["executable"]),
             argv=[str(item) for item in envelope["argv"]],
         )
+        snapshot_path = Path(snapshot_root)
+        os.chmod(snapshot_path, 0o700)
+        atomic_write_json(
+            snapshot_path / "authorized_launch.json",
+            {"launch_argv": [str(item) for item in envelope["launch_argv"]]},
+        )
+        self._restrict_snapshot_modes(snapshot_path)
         if payload_digest == self.holder_id:
             raise HolderRefusal("payload digest is not a distinct identity from the holder")
         authorized["payload_digest"] = payload_digest
@@ -903,6 +910,15 @@ class ExecutionHolder:
             if not isinstance(launch_argv, list) or not launch_argv:
                 raise HolderRefusal("execute binding is missing launch_argv")
             launch_argv = [str(item) for item in launch_argv]
+            sealed_launch_path = snapshot_root / "authorized_launch.json"
+            if not sealed_launch_path.is_file():
+                raise HolderRefusal("sealed launch vector is missing")
+            sealed_launch = read_json(sealed_launch_path)
+            if not isinstance(sealed_launch, dict):
+                raise HolderRefusal("sealed launch vector is malformed")
+            sealed_argv = sealed_launch.get("launch_argv")
+            if not isinstance(sealed_argv, list) or [str(item) for item in sealed_argv] != launch_argv:
+                raise HolderRefusal("launch vector mutated after consume")
             index_path = snapshot_root / "path_map.json"
             if not index_path.is_file():
                 raise HolderRefusal("snapshot path map is missing")
@@ -957,7 +973,12 @@ class ExecutionHolder:
                 },
             )
             try:
-                proc = self._spawn_dropped(launch, cwd=cwd, uid=run_uid, gid=run_gid)
+                proc, release_payload = self._spawn_dropped(launch, cwd=cwd, uid=run_uid, gid=run_gid)
+                watch = self._arm_payload_watch(int(proc.pid))
+                if not watch["armed"]:
+                    self._signal_matching_identity(int(proc.pid), watch.get("started"), 9)
+                    raise HolderRefusal("holder supervision could not be armed")
+                release_payload()
             except (OSError, HolderRefusal) as exc:
                 self._write("lease.json", {"held": False, "token": token, "child": "spawn-failed"})
                 raise HolderRefusal(f"holder spawn failed: {exc}") from exc
@@ -995,6 +1016,7 @@ class ExecutionHolder:
                 os.set_blocking(stream.fileno(), False)
             try:
                 while True:
+                    self._poll_payload_watch(watch)
                     try:
                         snap = self._process_table()
                         if snap is None:
@@ -1102,6 +1124,20 @@ class ExecutionHolder:
             exit_code = proc.returncode
             if exit_code is None:
                 raise HolderRefusal("holder execute did not observe process termination")
+            self._poll_payload_watch(watch)
+            # A fork note without a child identity, or a reparented child of this
+            # supervisor, means a setsid descendant cannot be excluded. Do not
+            # mark descendants absent and do not signal a pid we cannot match.
+            if watch["fork_seen"] or self._reparented_still_alive(watch):
+                self._retain_uncertain_lease(
+                    token,
+                    proc.pid,
+                    run_uid,
+                    run_gid,
+                    exit_code,
+                    identities=list(watch["identities"]),
+                )
+                raise HolderRefusal("holder supervision is uncertain; lease retained")
             # Process-group absence is not descendant absence. Pids observed
             # while the parent was alive are required because setsid reparents
             # children to init before a post-wait scan. Inspection failure retains
@@ -1128,10 +1164,11 @@ class ExecutionHolder:
                 for pid in list(tracked):
                     if pid == int(proc.pid):
                         continue
+                    started = self._start_token(pid)
+                    if started is None:
+                        continue
                     try:
-                        os.kill(pid, 9)
-                    except ProcessLookupError:
-                        pass
+                        self._signal_matching_identity(pid, started, 9)
                     except PermissionError:
                         self._retain_uncertain_lease(token, proc.pid, run_uid, run_gid, exit_code)
                         raise HolderRefusal("holder could not signal a descendant; lease retained")
@@ -1314,28 +1351,46 @@ class ExecutionHolder:
         except OSError as exc:
             raise HolderRefusal("payload snapshot could not be sealed") from exc
 
-    def _seal_payload_snapshot(self, snapshot_root: Path, *, uid: int, gid: int | None = None) -> None:
-        """Give the authenticated payload user read without write or other access.
+    def _apply_read_acl(self, path: Path, uid: int) -> None:
+        """Grant read and traverse without write. Never changes ownership."""
+        if sys.platform == "darwin":
+            spec = f"user:{uid} allow read,execute,file_inherit,directory_inherit"
+            argv = ["chmod", "+a", spec, str(path)]
+        else:
+            argv = ["setfacl", "-m", f"u:{uid}:rX", str(path)]
+        try:
+            proc = subprocess.run(argv, check=False, capture_output=True, text=True)
+        except OSError as exc:
+            raise HolderRefusal("payload snapshot read grant failed") from exc
+        if proc.returncode != 0:
+            raise HolderRefusal("payload snapshot read grant failed")
 
-        Enrollment, policy, spent nonces, and leases stay in the 0700 state
-        directory and are not part of this tree. Unprivileged tests do not
-        prove a second-uid install. Mode bits are the evidence those tests can
-        check.
+    def _seal_payload_snapshot(self, snapshot_root: Path, *, uid: int, gid: int | None = None) -> None:
+        """Keep the snapshot owned by the holder. The payload must not own it.
+
+        An owner can chmod 0500/0400 back to writable and change approved bytes.
+        Mode bits do not stop that. When the holder is root, read and traverse
+        are granted with an ACL and ownership stays root. Enrollment, policy,
+        spent nonces, and leases stay in the 0700 state directory.
         """
+        del gid
         if uid == 0:
             raise HolderRefusal("payload snapshot refuses uid 0")
-        if os.geteuid() == 0:
-            owner_gid = uid if gid is None else gid
-            if owner_gid == 0:
-                raise HolderRefusal("payload snapshot refuses gid 0")
-            try:
-                for dirpath, _dirnames, filenames in os.walk(snapshot_root):
-                    os.chown(dirpath, uid, owner_gid)
-                    for name in filenames:
-                        os.chown(Path(dirpath) / name, uid, owner_gid)
-            except OSError as exc:
-                raise HolderRefusal("payload snapshot could not be sealed") from exc
         self._restrict_snapshot_modes(snapshot_root)
+        if os.geteuid() != 0:
+            return
+        holder_uid = os.geteuid()
+        try:
+            paths = [snapshot_root]
+            for dirpath, _dirnames, filenames in os.walk(snapshot_root):
+                paths.append(Path(dirpath))
+                paths.extend(Path(dirpath) / name for name in filenames)
+            for path in paths:
+                if os.stat(path).st_uid != holder_uid:
+                    raise HolderRefusal("payload snapshot ownership escaped the holder")
+                self._apply_read_acl(path, uid)
+        except OSError as exc:
+            raise HolderRefusal("payload snapshot could not be sealed") from exc
 
     def _prepare_payload_snapshot(self, token: str) -> Path:
         """Create an immutable-for-payload snapshot dir outside 0700 state."""
@@ -1377,48 +1432,172 @@ class ExecutionHolder:
         cwd: Path,
         uid: int,
         gid: int,
-    ) -> subprocess.Popen:
-        """Spawn via a dedicated drop-exec helper. Never use preexec_fn in threads."""
+    ) -> tuple[subprocess.Popen, Any]:
+        """Spawn paused until supervision is armed. Never use preexec_fn."""
         if uid == 0:
             raise HolderRefusal("payload identity refuses uid 0")
-        helper = Path(__file__).resolve().with_name("holder_drop_exec.py")
-        if not helper.is_file():
-            raise HolderRefusal("holder drop-exec helper is missing")
-        # When not root, run the payload directly as the current non-root user.
+        supervise = Path(__file__).resolve().with_name("holder_supervise_exec.py")
+        drop = Path(__file__).resolve().with_name("holder_drop_exec.py")
+        if not supervise.is_file() or not drop.is_file():
+            raise HolderRefusal("holder exec helper is missing")
         if os.geteuid() != 0:
             if os.getuid() != uid:
                 raise HolderRefusal("unprivileged holder cannot impersonate another uid")
-            return subprocess.Popen(  # noqa: S603
-                launch,
+            payload = list(launch)
+        else:
+            payload = [
+                sys.executable,
+                "-I",
+                str(drop),
+                "--uid",
+                str(uid),
+                "--gid",
+                str(gid),
+                "--cwd",
+                str(cwd),
+                "--",
+                *launch,
+            ]
+        gate_r, gate_w = os.pipe()
+        argv = [sys.executable, "-I", str(supervise), str(gate_r), "--", *payload]
+        try:
+            proc = subprocess.Popen(  # noqa: S603
+                argv,
                 cwd=str(cwd),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 bufsize=0,
                 shell=False,
                 start_new_session=True,
+                pass_fds=(gate_r,),
             )
-        argv = [
-            sys.executable,
-            "-I",
-            str(helper),
-            "--uid",
-            str(uid),
-            "--gid",
-            str(gid),
-            "--cwd",
-            str(cwd),
-            "--",
-            *launch,
-        ]
-        return subprocess.Popen(  # noqa: S603
-            argv,
-            cwd=str(cwd),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=0,
-            shell=False,
-            start_new_session=True,
-        )
+        except OSError:
+            os.close(gate_r)
+            os.close(gate_w)
+            raise
+        os.close(gate_r)
+
+        def release() -> None:
+            try:
+                os.write(gate_w, b"\0")
+            finally:
+                os.close(gate_w)
+
+        return proc, release
+
+    def _arm_payload_watch(self, pid: int) -> dict[str, Any]:
+        """Register a fork watch before the payload is released.
+
+        Darwin kqueue NOTE_FORK does not report the child pid. A fork note
+        therefore makes supervision uncertain. Linux uses a child subreaper so
+        a setsid grandchild is reparented here instead of disappearing.
+        """
+        watch: dict[str, Any] = {
+            "armed": False,
+            "fork_seen": False,
+            "kq": None,
+            "started": self._start_token(pid),
+            "baseline": self._child_pids(os.getpid()) or set(),
+            "payload_pid": pid,
+            "identities": [],
+        }
+        watch["baseline"].add(pid)
+        if hasattr(select, "kqueue"):
+            try:
+                kq = select.kqueue()
+                event = select.kevent(
+                    pid,
+                    select.KQ_FILTER_PROC,
+                    select.KQ_EV_ADD | select.KQ_EV_ENABLE,
+                    select.KQ_NOTE_EXIT | select.KQ_NOTE_FORK,
+                )
+                kq.control([event], 0)
+                watch["kq"] = kq
+                watch["armed"] = True
+            except (AttributeError, OSError):
+                watch["kq"] = None
+        if sys.platform == "linux" and self._enable_child_subreaper():
+            watch["armed"] = True
+        return watch
+
+    def _enable_child_subreaper(self) -> bool:
+        if sys.platform != "linux":
+            return False
+        try:
+            import ctypes
+
+            libc = ctypes.CDLL(None, use_errno=True)
+            libc.prctl.argtypes = [
+                ctypes.c_int,
+                ctypes.c_ulong,
+                ctypes.c_ulong,
+                ctypes.c_ulong,
+                ctypes.c_ulong,
+            ]
+            libc.prctl.restype = ctypes.c_int
+            return libc.prctl(36, 1, 0, 0, 0) == 0
+        except (AttributeError, OSError):
+            return False
+
+    def _poll_payload_watch(self, watch: dict[str, Any]) -> None:
+        kq = watch.get("kq")
+        if kq is None:
+            return
+        try:
+            events = kq.control(None, 32, 0)
+        except OSError:
+            watch["fork_seen"] = True
+            return
+        note_fork = getattr(select, "KQ_NOTE_FORK", 0)
+        for event in events:
+            if note_fork and event.fflags & note_fork:
+                watch["fork_seen"] = True
+
+    def _child_pids(self, parent: int) -> set[int] | None:
+        table = self._process_table()
+        if table is None:
+            return None
+        return {pid for pid, ppid in table.items() if ppid == parent}
+
+    def _start_token(self, pid: int) -> str | None:
+        """Process start stamp. A reused pid has a different stamp."""
+        try:
+            out = subprocess.check_output(
+                ["ps", "-p", str(pid), "-o", "lstart="],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            return None
+        token = out.strip()
+        return token or None
+
+    def _signal_matching_identity(self, pid: int, started: str | None, sig: int) -> None:
+        """Signal only when the start stamp still matches. Never a reused pid."""
+        if started is None:
+            return
+        current = self._start_token(pid)
+        if current != started:
+            return
+        os.kill(pid, sig)
+
+    def _reparented_still_alive(self, watch: dict[str, Any]) -> bool:
+        """True when a child of this supervisor appeared after the launch."""
+        current = self._child_pids(os.getpid())
+        if current is None:
+            return True
+        extra = set(current) - set(watch["baseline"])
+        extra.discard(int(watch["payload_pid"]))
+        identities: list[dict[str, Any]] = []
+        alive = False
+        for pid in sorted(extra):
+            started = self._start_token(pid)
+            if started is None:
+                continue
+            identities.append({"pid": int(pid), "started": started})
+            alive = True
+        watch["identities"] = identities
+        return alive
 
     def _process_table(self) -> dict[int, int] | None:
         """Return pid -> ppid, or None when inspection fails.
@@ -1487,23 +1666,24 @@ class ExecutionHolder:
         run_uid: int,
         run_gid: int,
         exit_code: int | None,
+        identities: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Keep the lease. Uncertainty is not a release."""
-        self._write(
-            "lease.json",
-            {
-                "held": True,
-                "token": token,
-                "child": "supervision-uncertain",
-                "pid": int(pid),
-                "pgid": int(pid),
-                "exit_code": exit_code,
-                "launch_started": True,
-                "descendants_absent": False,
-                "run_uid": run_uid,
-                "run_gid": run_gid,
-            },
-        )
+        """Keep the lease. Uncertainty is not a release and not descendant absence."""
+        record: dict[str, Any] = {
+            "held": True,
+            "token": token,
+            "child": "supervision-uncertain",
+            "pid": int(pid),
+            "pgid": int(pid),
+            "exit_code": exit_code,
+            "launch_started": True,
+            "descendants_absent": False,
+            "run_uid": run_uid,
+            "run_gid": run_gid,
+        }
+        if identities:
+            record["tracked_identities"] = identities
+        self._write("lease.json", record)
 
     def _pids_absent(self, pids: set[int]) -> bool:
         for pid in pids:
@@ -1568,7 +1748,20 @@ class ExecutionHolder:
             "meta.json": {"protocol", "generation", "holder_id", "installed_protection", "key_generation"},
             "enrollment.json": {"caller_id", "policy", "method", "hardware", "generation", "key_generation"},
             "policy.json": {"name", "generation", "method", "hardware", "devices"},
-            "lease.json": {"held", "token", "child", "pid", "pgid", "exit_code", "launch_started", "descendants_absent", "run_uid", "run_gid", "tracked_pids"},
+            "lease.json": {
+                "held",
+                "token",
+                "child",
+                "pid",
+                "pgid",
+                "exit_code",
+                "launch_started",
+                "descendants_absent",
+                "run_uid",
+                "run_gid",
+                "tracked_pids",
+                "tracked_identities",
+            },
             "spent.json": {"nonces"},
             "callers.json": None,
             "devices.json": None,

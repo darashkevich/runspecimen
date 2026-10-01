@@ -29,6 +29,7 @@ class RuntimeTrustChainTests(unittest.TestCase):
             "holder_daemon.py",
             "holder_entry.py",
             "holder_drop_exec.py",
+            "holder_supervise_exec.py",
             "holder_runtime.py",
             "holder_io.py",
             "holder_adapter.py",

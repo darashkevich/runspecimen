@@ -8,7 +8,10 @@ a paired phone.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -69,6 +72,58 @@ def _binding(workspace: Path, path: Path, digest: str, policy: str = "local") ->
         "bounds": {"wall_timeout_sec": 10, "stdout_max_bytes": 65536, "stderr_max_bytes": 65536},
         "key_generation": 1,
     }
+
+
+def _remove_sealed_tree(path: Path) -> None:
+    """Remove a holder snapshot. Owner-only modes are restored first."""
+    import shutil
+
+    if not path.exists():
+        return
+    for dirpath, _dirnames, filenames in os.walk(path):
+        os.chmod(dirpath, 0o700)
+        for name in filenames:
+            os.chmod(Path(dirpath) / name, 0o600)
+    shutil.rmtree(path)
+    if path.exists():
+        raise AssertionError(f"snapshot cleanup left {path}")
+
+
+def _snapshot_execute_roundtrip(test: unittest.TestCase) -> None:
+    """Positive snapshot execute without PyNaCl. Not a hardware approval."""
+    td = tempfile.TemporaryDirectory(prefix="rsh-snap-exec-")
+    test.addCleanup(td.cleanup)
+    root = Path(td.name) / "state"
+    ws = Path(td.name) / "ws"
+    ws.mkdir()
+    holder = ExecutionHolder(
+        root,
+        allow_test_double=True,
+        snapshot_base=Path(td.name) / "run-snapshots",
+    )
+    holder.enroll("app", _human("enroll", "app"))
+    holder.set_policy(_human("set-policy", "local"))
+    script = ws / "job.py"
+    script.write_text("print('from-snapshot')\n", encoding="utf-8")
+    digest = sha256_file(script)
+    binding = _binding(ws, script, digest)
+    launch = [sys.executable, str(script.resolve())]
+    binding["launch_argv"] = launch
+    binding["argv"] = [str(script.resolve())]
+    consumed = holder.consume(
+        nonce="n-exec",
+        policy="local",
+        human=_human("consume", "n-exec"),
+        workspace=ws,
+        files=[(str(script.resolve()), digest)],
+        binding=binding,
+    )
+    test.assertIn("snapshot_root", consumed)
+    result = holder.execute(token="n-exec", human=_human("execute", "n-exec"))
+    test.assertEqual(result["exit_code"], 0)
+    test.assertIn(b"from-snapshot", __import__("base64").b64decode(result["stdout_b64"]))
+    test.assertFalse(result["hardware"])
+    test.assertNotEqual(result["attestation_class"], "secure-enclave")
 
 
 def _payload(directory: Path, text: str = "alpha\n") -> tuple[Path, str]:
@@ -659,6 +714,8 @@ class HolderCryptoAndExecuteTests(unittest.TestCase):
             with self.assertRaises(HolderRefusal) as closed:
                 self.holder.pair_device("mac-1", pair_human)
             self.assertIn("vetted device verifier is not connected", str(closed.exception))
+            # The signed branch needs PyNaCl. Snapshot execute still runs.
+            _snapshot_execute_roundtrip(self)
             return
         paired = self.holder.pair_device("mac-1", pair_human)
         secrets_map = {"mac-1": paired["private_key"]}
@@ -729,9 +786,8 @@ class HolderCryptoAndExecuteTests(unittest.TestCase):
             executable=str(script.resolve()),
             argv=[str(script.resolve())],
         )
-        # Clean the snapshot from dry-bind so consume can recreate
-        import shutil
-        shutil.rmtree(Path(snapshot_root), ignore_errors=True)
+        # 0500 directories make rmtree(ignore_errors=True) leave the tree in place.
+        _remove_sealed_tree(Path(snapshot_root))
         authorized = {
             "payload_digest": payload_digest,
             "launch_argv": launch_argv,
@@ -1398,6 +1454,150 @@ class HolderForgedSignatureAndSupervisionTests(unittest.TestCase):
         descendants = holder._descendants_of(dead_parent, table)
         self.assertNotIn(sleeper.pid, descendants)
         self.assertFalse(holder._pid_absent(sleeper.pid))
+
+    def test_double_fork_setsid_retains_the_lease(self) -> None:
+        """A real fast setsid grandchild must not clear the lease."""
+        td = tempfile.TemporaryDirectory(prefix="rsh-fork-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name) / "state"
+        ws = Path(td.name) / "ws"
+        ws.mkdir()
+        marker = Path(td.name) / "grandchild"
+        holder = ExecutionHolder(
+            root,
+            allow_test_double=True,
+            snapshot_base=Path(td.name) / "run-snapshots",
+        )
+        holder.enroll("app", _human("enroll", "app"))
+        holder.set_policy(_human("set-policy", "local"))
+        script = ws / "job.py"
+        script.write_text(
+            "import os, sys, time\n"
+            "marker = sys.argv[1]\n"
+            "if os.fork() == 0:\n"
+            "    os.setsid()\n"
+            "    if os.fork() == 0:\n"
+            "        open(marker, 'w').write(str(os.getpid()))\n"
+            "        time.sleep(30)\n"
+            "        os._exit(0)\n"
+            "    os._exit(0)\n"
+            "os._exit(0)\n",
+            encoding="utf-8",
+        )
+        digest = sha256_file(script)
+        binding = _binding(ws, script, digest)
+        launch = [sys.executable, str(script.resolve()), str(marker)]
+        binding["launch_argv"] = launch
+        binding["argv"] = [str(script.resolve()), str(marker)]
+        holder.consume(
+            nonce="fork",
+            policy="local",
+            human=_human("consume", "fork"),
+            workspace=ws,
+            files=[(str(script.resolve()), digest)],
+            binding=binding,
+        )
+
+        def _stop_grandchild() -> None:
+            if not marker.is_file():
+                return
+            try:
+                pid = int(marker.read_text(encoding="utf-8").strip())
+            except ValueError:
+                return
+            command = ""
+            try:
+                command = subprocess.check_output(
+                    ["ps", "-p", str(pid), "-o", "command="],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                )
+            except (OSError, subprocess.CalledProcessError):
+                return
+            if "time.sleep" not in command and str(marker) not in command:
+                return
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+
+        self.addCleanup(_stop_grandchild)
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.execute(token="fork", human=_human("execute", "fork"))
+        self.assertIn("lease", str(ctx.exception))
+        lease = json.loads((root / "lease.json").read_text(encoding="utf-8"))
+        self.assertTrue(lease["held"])
+        self.assertIs(lease["descendants_absent"], False)
+        self.assertTrue(marker.is_file())
+        restarted = ExecutionHolder(
+            root,
+            allow_test_double=True,
+            snapshot_base=Path(td.name) / "run-snapshots",
+        )
+        with self.assertRaises(HolderRefusal):
+            restarted.consume(
+                nonce="after-fork",
+                policy="local",
+                human=_human("consume", "after-fork"),
+                workspace=ws,
+                files=[(str(script.resolve()), digest)],
+                binding=binding,
+            )
+
+    def test_owner_chmod_mutates_and_root_seal_does_not_chown_payload(self) -> None:
+        td = tempfile.TemporaryDirectory(prefix="rsh-own-")
+        self.addCleanup(td.cleanup)
+        snap = Path(td.name) / "snap"
+        snap.mkdir()
+        approved = snap / "payload.txt"
+        approved.write_text("approved\n", encoding="utf-8")
+        os.chmod(approved, 0o400)
+        os.chmod(approved, 0o600)
+        approved.write_text("mutated\n", encoding="utf-8")
+        self.assertEqual(approved.read_text(encoding="utf-8"), "mutated\n")
+        holder = ExecutionHolder(
+            Path(td.name) / "state",
+            allow_test_double=True,
+            snapshot_base=Path(td.name) / "snaps",
+        )
+        chowns: list[int] = []
+        real_chown = os.chown
+        real_euid = os.geteuid
+
+        def _record_chown(path: object, uid: int, gid: int) -> None:
+            del path, gid
+            chowns.append(int(uid))
+
+        os.chown = _record_chown  # type: ignore[assignment]
+        os.geteuid = lambda: 0  # type: ignore[assignment]
+        refused = ""
+        try:
+            try:
+                holder._seal_payload_snapshot(snap, uid=424242, gid=424242)
+            except HolderRefusal as exc:
+                refused = str(exc)
+        finally:
+            os.chown = real_chown  # type: ignore[assignment]
+            os.geteuid = real_euid  # type: ignore[assignment]
+        self.assertNotIn(424242, chowns)
+        self.assertNotIn("chown", refused.lower())
+        self.assertEqual(os.stat(approved).st_uid, os.getuid())
+        self.assertEqual(os.stat(snap).st_mode & 0o077, 0)
+
+    def test_vetted_ed25519_is_not_secure_enclave_approval(self) -> None:
+        from runspecimen.holder_asymmetric import (
+            AsymmetricError,
+            constant_time_label_ok,
+            verify_device_signature,
+        )
+
+        self.assertFalse(
+            verify_device_signature("01" + "00" * 31, "01" + "00" * 63, b"unapproved message")
+        )
+        with self.assertRaises(AsymmetricError):
+            constant_time_label_ok("secure-enclave", hardware=True)
+        with self.assertRaises(AsymmetricError):
+            constant_time_label_ok("device-ed25519-not-hardware", hardware=True)
 
     def test_production_rejects_software_test_double(self) -> None:
         td = tempfile.TemporaryDirectory(prefix="rsh-prod-")

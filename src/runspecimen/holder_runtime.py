@@ -20,6 +20,7 @@ _REQUIRED_RELATIVE = (
     "runspecimen/holder_daemon.py",
     "runspecimen/holder_entry.py",
     "runspecimen/holder_drop_exec.py",
+    "runspecimen/holder_supervise_exec.py",
     "runspecimen/holder_runtime.py",
     "runspecimen/holder_io.py",
     "runspecimen/holder_adapter.py",
