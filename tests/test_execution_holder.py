@@ -653,6 +653,13 @@ class HolderCryptoAndExecuteTests(unittest.TestCase):
                 },
             ),
         }
+        from runspecimen.holder_asymmetric import vetted_verifier_available
+
+        if not vetted_verifier_available():
+            with self.assertRaises(HolderRefusal) as closed:
+                self.holder.pair_device("mac-1", pair_human)
+            self.assertIn("vetted device verifier is not connected", str(closed.exception))
+            return
         paired = self.holder.pair_device("mac-1", pair_human)
         secrets_map = {"mac-1": paired["private_key"]}
 
@@ -1217,20 +1224,190 @@ class HolderQA5dd1AsymmetricTests(unittest.TestCase):
                 },
             ),
         }
-        paired = holder.pair_device("mac-1", pair)
-        self.assertIn("private_key", paired)
-        self.assertEqual(paired["attestation"], "device-ed25519-not-hardware")
-        # HMAC over the challenge must not verify as an Ed25519 signature.
-        bad = {
-            "method": "local",
-            "purpose": "set-policy",
-            "subject": "local",
-            "policy": "local",
-            "devices": ["mac"],
-            "expires_at": int(time.time()) + 60,
-            "hardware": False,
-            "attestation_class": "device-ed25519-not-hardware",
-            "signatures": {"mac-1": message_mac(paired["private_key"], {"x": 1})},
-        }
+        from runspecimen.holder_asymmetric import verify_device_signature, vetted_verifier_available
+
+        if not vetted_verifier_available():
+            with self.assertRaises(HolderRefusal) as closed:
+                holder.pair_device("mac-1", pair)
+            self.assertIn("vetted device verifier is not connected", str(closed.exception))
+        else:
+            paired = holder.pair_device("mac-1", pair)
+            self.assertIn("private_key", paired)
+            self.assertEqual(paired["attestation"], "device-ed25519-not-hardware")
+            self.assertFalse(paired["hardware"])
+            bad = {
+                "method": "local",
+                "purpose": "set-policy",
+                "subject": "local",
+                "policy": "local",
+                "devices": ["mac"],
+                "expires_at": int(time.time()) + 60,
+                "hardware": False,
+                "attestation_class": "device-ed25519-not-hardware",
+                "signatures": {"mac-1": message_mac(paired["private_key"], {"x": 1})},
+            }
+            with self.assertRaises(HolderRefusal):
+                holder.set_policy(bad)
+        # Identity-point forge that the removed handwritten verifier accepted.
+        self.assertFalse(
+            verify_device_signature("01" + "00" * 31, "01" + "00" * 63, b"unapproved message")
+        )
+        self.assertFalse(verify_device_signature("zz", "00" * 64, b"invalid-key"))
+        self.assertFalse(verify_device_signature("ab" * 32, "cd" * 64, b"invalid-signature"))
+
+
+class HolderForgedSignatureAndSupervisionTests(unittest.TestCase):
+    """Codex recheck of b945220. These tests do not prove installed protection.
+
+    They do not run Touch ID, Face ID, or a paired phone. A software signature
+    is not a Secure Enclave.
+    """
+
+    def test_identity_point_forge_is_rejected_without_handwritten_verifier(self) -> None:
+        from runspecimen.holder_asymmetric import verify_device_signature
+
+        self.assertFalse(
+            verify_device_signature(
+                "01" + "00" * 31,
+                "01" + "00" * 63,
+                b"unapproved message",
+            )
+        )
+        self.assertFalse(verify_device_signature("not-hex", "00" * 64, b"x"))
+        self.assertFalse(verify_device_signature("aa" * 16, "bb" * 32, b"short"))
+
+    def test_production_socket_path_ignores_env_override(self) -> None:
+        from runspecimen.holder_adapter import INSTALLED_SUPPORT_DIR, installed_socket_path
+
+        previous = os.environ.get("RS_HOLDER_SOCKET")
+        os.environ["RS_HOLDER_SOCKET"] = "/tmp/not-the-live-holder.sock"
+        try:
+            path = installed_socket_path()
+        finally:
+            if previous is None:
+                os.environ.pop("RS_HOLDER_SOCKET", None)
+            else:
+                os.environ["RS_HOLDER_SOCKET"] = previous
+        self.assertEqual(path, INSTALLED_SUPPORT_DIR / "holder.sock")
+        self.assertFalse(str(path).startswith("/tmp"))
+
+    def test_snapshot_is_not_world_readable_and_omits_protected_state(self) -> None:
+        td = tempfile.TemporaryDirectory(prefix="rsh-snap-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name) / "state"
+        snaps = Path(td.name) / "run-snapshots"
+        ws = Path(td.name) / "ws"
+        ws.mkdir()
+        holder = ExecutionHolder(root, allow_test_double=True, snapshot_base=snaps)
+        holder.enroll("app", _human("enroll", "app"))
+        holder.set_policy(_human("set-policy", "local"))
+        path = ws / "job.py"
+        path.write_text("print(1)\n", encoding="utf-8")
+        digest = sha256_file(path)
+        binding = _binding(ws, path, digest)
+        binding["launch_argv"] = ["python3", str(path.resolve())]
+        binding["argv"] = [str(path.resolve())]
+        consumed = holder.consume(
+            nonce="priv",
+            policy="local",
+            human=_human("consume", "priv"),
+            workspace=ws,
+            files=[(str(path.resolve()), digest)],
+            binding=binding,
+        )
+        snap = Path(consumed["snapshot_root"])
+        self.assertTrue(str(snap).startswith(str(snaps)))
+        self.assertFalse((snap / "enrollment.json").exists())
+        self.assertFalse((snap / "spent.json").exists())
+        self.assertFalse((snap / "lease.json").exists())
+        mode = os.stat(snap).st_mode
+        self.assertEqual(mode & 0o077, 0)
+        for dirpath, _dirs, files in os.walk(snap):
+            self.assertEqual(os.stat(dirpath).st_mode & 0o077, 0)
+            for name in files:
+                self.assertEqual(os.stat(Path(dirpath) / name).st_mode & 0o077, 0)
+
+    def test_inspection_failure_retains_the_lease(self) -> None:
+        td = tempfile.TemporaryDirectory(prefix="rsh-sup-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name) / "state"
+        ws = Path(td.name) / "ws"
+        ws.mkdir()
+        holder = ExecutionHolder(
+            root,
+            allow_test_double=True,
+            snapshot_base=Path(td.name) / "run-snapshots",
+        )
+        holder.enroll("app", _human("enroll", "app"))
+        holder.set_policy(_human("set-policy", "local"))
+        path = ws / "job.py"
+        path.write_text("print('ok')\n", encoding="utf-8")
+        digest = sha256_file(path)
+        binding = _binding(ws, path, digest)
+        binding["launch_argv"] = ["python3", str(path.resolve())]
+        binding["argv"] = [str(path.resolve())]
+        holder.consume(
+            nonce="unc",
+            policy="local",
+            human=_human("consume", "unc"),
+            workspace=ws,
+            files=[(str(path.resolve()), digest)],
+            binding=binding,
+        )
+        holder._process_table = lambda: None  # type: ignore[method-assign]
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.execute(token="unc", human=_human("execute", "unc"))
+        self.assertIn("lease", str(ctx.exception))
+        self.assertTrue(holder._lease_held())
+        restarted = ExecutionHolder(
+            root,
+            allow_test_double=True,
+            snapshot_base=Path(td.name) / "run-snapshots",
+        )
         with self.assertRaises(HolderRefusal):
-            holder.set_policy(bad)
+            restarted.consume(
+                nonce="after-crash",
+                policy="local",
+                human=_human("consume", "after-crash"),
+                workspace=ws,
+                files=[(str(path.resolve()), digest)],
+                binding=binding,
+            )
+
+    def test_reparented_pid_is_outside_the_post_wait_tree(self) -> None:
+        """setsid children reparent to init and disappear from the parent tree."""
+        import subprocess
+        import sys
+
+        sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+
+        def _stop() -> None:
+            sleeper.kill()
+            sleeper.wait(timeout=2)
+
+        self.addCleanup(_stop)
+        td = tempfile.TemporaryDirectory(prefix="rsh-tree-")
+        self.addCleanup(td.cleanup)
+        holder = ExecutionHolder(
+            Path(td.name) / "state",
+            allow_test_double=True,
+            snapshot_base=Path(td.name) / "snaps",
+        )
+        dead_parent = 2**30
+        table = {sleeper.pid: 1, 1: 0}
+        descendants = holder._descendants_of(dead_parent, table)
+        self.assertNotIn(sleeper.pid, descendants)
+        self.assertFalse(holder._pid_absent(sleeper.pid))
+
+    def test_production_rejects_software_test_double(self) -> None:
+        td = tempfile.TemporaryDirectory(prefix="rsh-prod-")
+        self.addCleanup(td.cleanup)
+        holder = ExecutionHolder(
+            Path(td.name) / "state",
+            allow_test_double=False,
+            installed_protection=True,
+            snapshot_base=Path(td.name) / "snaps",
+        )
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.enroll("app", _human("enroll", "app"))
+        self.assertIn("software test double", str(ctx.exception))

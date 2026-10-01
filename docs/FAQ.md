@@ -25,7 +25,15 @@ the workspace evidence with matching host runtime expectations.
 
 Published CLI and plugin: **0.2.0rc14**. That release does not include evidence-expansion commands.
 
-The Mac App Store package recorded as waiting for review is **0.1.4 (9)**. It freezes **0.2.0rc14** and does not include evidence expansion. It is not an App Store install, and there is no `apps.apple.com` link.
+The Mac App Store package recorded in Connect on 2026-09-28 as **0.1.4 (9)** `READY_FOR_SALE` freezes **0.2.0rc14**. That record is not a public `apps.apple.com` URL, and it is not this unpublished candidate.
+
+## Does the Mac App Store app include the protected holder?
+
+No. Those are different guarantees and different products.
+
+Guarantee (1) is the Store app: a person types `APPROVE` on a real terminal for an ordinary contract. Approved **0.1.4 (9)** is that app. It does not ship the Developer ID holder.
+
+Guarantee (2) is a separate Developer ID holder for enrollment, policy, spent nonces, and leases. It is not installed, not notarized, and not part of the Store app. HMAC, a software Ed25519 signature, and an imported Secure Enclave label are not Touch ID, Face ID, or a hardware verifier. Production device checks fail closed unless a vetted verifier is connected. This candidate does not claim Store parity or production sign-off.
 
 A local package that reused the label 0.1.4 (9) and included evidence expansion is a different file. Local **0.1.5 (10)** was an earlier signed app. Local **0.1.5 (11)** from `3a0f483` is SHA-256 `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309` and does not include the later confirmation or pipe fixes. The next local candidate is **0.1.5 (12)** from `c400f2d`, SHA-256 `6b3e9b3e1db219aafd834dd894b4ce04a8269cedb34dc116a4a154c22bb09a38`. It is not uploaded and not approved. See [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md) and [NATIVE_FEATURE_COVERAGE.md](NATIVE_FEATURE_COVERAGE.md).
 

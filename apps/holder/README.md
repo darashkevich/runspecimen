@@ -1,8 +1,11 @@
 # RunSpecimen Holder (Developer ID)
 
 Separate product from the Mac App Store app. Bundle id
-`com.darashkevich.runspecimen.holder`. Install path
-`/Applications/RunSpecimen Holder.app`.
+`com.darashkevich.runspecimen.holder`. The Store app is guarantee (1), a typed
+`APPROVE` phrase. This holder is guarantee (2) and is not part of that app.
+Nothing in this candidate installs or notarizes Holder.app. Production device
+verification fails closed unless a vetted verifier is connected. A software
+signature is not Touch ID, Face ID, or a Secure Enclave.
 
 ## Mechanism
 

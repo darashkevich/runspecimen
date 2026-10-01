@@ -101,10 +101,11 @@ class ExecutionHolder:
         except OSError:
             pass
         try:
-            # Root-owned immutable-for-payload tree: readable, not writable.
-            os.chmod(self.snapshot_base, 0o755)
-        except OSError:
-            pass
+            # Traverse-only parent. Listing would expose nonce names. Per-run
+            # trees are sealed without group or world access.
+            os.chmod(self.snapshot_base, 0o711)
+        except OSError as exc:
+            raise HolderRefusal("payload snapshot directory could not be sealed") from exc
         if not (self.root / "meta.json").exists():
             if _has_history(self.root):
                 raise HolderRefusal("holder history is missing its generation record")
@@ -202,11 +203,18 @@ class ExecutionHolder:
                 raise HolderRefusal("pairing public key is missing")
         else:
             attestation = "device-ed25519-not-hardware"
+            from runspecimen.holder_asymmetric import AsymmetricError, vetted_verifier_available
+
+            if not vetted_verifier_available():
+                raise HolderRefusal("vetted device verifier is not connected")
             supplied = human.get("public_key")
             if isinstance(supplied, str) and supplied:
                 public_hex = supplied
             else:
-                private_hex, public_hex = generate_device_keypair()
+                try:
+                    private_hex, public_hex = generate_device_keypair()
+                except AsymmetricError as exc:
+                    raise HolderRefusal("vetted device verifier is not connected") from exc
         devices[device_id] = {
             "role": role,
             "fingerprint": fingerprint,
@@ -824,6 +832,7 @@ class ExecutionHolder:
             bound.close()
         payload_digest = hashlib.sha256(canonical_json_bytes(list(digests))).hexdigest()
         atomic_write_json(snapshot_root / "path_map.json", path_map)
+        self._restrict_snapshot_modes(snapshot_root)
         return path_map, payload_digest, str(snapshot_root)
 
     def execute(
@@ -932,17 +941,9 @@ class ExecutionHolder:
             # Snapshot tree must be readable by the deprivileged payload without
             # exposing the 0700 state directory.
             try:
-                for dirpath, dirnames, filenames in os.walk(snapshot_root):
-                    os.chmod(dirpath, 0o755)
-                    for name in filenames:
-                        fpath = Path(dirpath) / name
-                        mode = 0o555 if os.access(fpath, os.X_OK) else 0o444
-                        try:
-                            os.chmod(fpath, mode)
-                        except OSError:
-                            pass
+                self._seal_payload_snapshot(snapshot_root, uid=run_uid, gid=run_gid)
             except OSError as exc:
-                raise HolderRefusal(f"payload snapshot could not be sealed read-only: {exc}") from exc
+                raise HolderRefusal(f"payload snapshot could not be sealed: {exc}") from exc
             self._write(
                 "lease.json",
                 {
@@ -960,8 +961,15 @@ class ExecutionHolder:
             except (OSError, HolderRefusal) as exc:
                 self._write("lease.json", {"held": False, "token": token, "child": "spawn-failed"})
                 raise HolderRefusal(f"holder spawn failed: {exc}") from exc
-            tracked = self._descendants_of(int(proc.pid))
-            tracked.add(int(proc.pid))
+            observed_pids: set[int] = {int(proc.pid)}
+            observed_uncertain = False
+            try:
+                tracked = self._descendants_of(int(proc.pid))
+                tracked.add(int(proc.pid))
+                observed_pids |= tracked
+            except HolderRefusal:
+                observed_uncertain = True
+                tracked = set(observed_pids)
             self._write(
                 "lease.json",
                 {
@@ -987,6 +995,14 @@ class ExecutionHolder:
                 os.set_blocking(stream.fileno(), False)
             try:
                 while True:
+                    try:
+                        snap = self._process_table()
+                        if snap is None:
+                            observed_uncertain = True
+                        else:
+                            observed_pids |= self._descendants_of(int(proc.pid), snap)
+                    except HolderRefusal:
+                        observed_uncertain = True
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         timed_out = True
@@ -1086,22 +1102,42 @@ class ExecutionHolder:
             exit_code = proc.returncode
             if exit_code is None:
                 raise HolderRefusal("holder execute did not observe process termination")
-            # killpg alone does not prove setsid / reparented descendants are gone.
-            tracked = set(self._descendants_of(int(proc.pid)))
-            tracked.add(int(proc.pid))
-            if not self._process_group_absent(int(proc.pid)) or not self._pids_absent(tracked):
+            # Process-group absence is not descendant absence. Pids observed
+            # while the parent was alive are required because setsid reparents
+            # children to init before a post-wait scan. Inspection failure retains
+            # the lease.
+            if observed_uncertain:
+                self._retain_uncertain_lease(token, proc.pid, run_uid, run_gid, exit_code)
+                raise HolderRefusal("holder supervision is uncertain; lease retained")
+            try:
+                table = self._process_table()
+                if table is None:
+                    raise HolderRefusal("holder process inspection failed; lease retained")
+                tracked = set(observed_pids)
+                tracked |= self._descendants_of(int(proc.pid), table)
+                tracked.add(int(proc.pid))
+            except HolderRefusal:
+                self._retain_uncertain_lease(token, proc.pid, run_uid, run_gid, exit_code)
+                raise
+            lingering = {pid for pid in tracked if pid != int(proc.pid) and not self._pid_absent(pid)}
+            if lingering or not self._process_group_absent(int(proc.pid)):
                 try:
                     os.killpg(proc.pid, 9)
                 except ProcessLookupError:
                     pass
                 for pid in list(tracked):
+                    if pid == int(proc.pid):
+                        continue
                     try:
                         os.kill(pid, 9)
-                    except (ProcessLookupError, PermissionError):
+                    except ProcessLookupError:
                         pass
-                tracked = set(self._descendants_of(int(proc.pid)))
-                tracked.add(int(proc.pid))
-                if not self._process_group_absent(int(proc.pid)) or not self._pids_absent(tracked):
+                    except PermissionError:
+                        self._retain_uncertain_lease(token, proc.pid, run_uid, run_gid, exit_code)
+                        raise HolderRefusal("holder could not signal a descendant; lease retained")
+                still = {pid for pid in tracked if pid != int(proc.pid) and not self._pid_absent(pid)}
+                if still or not self._process_group_absent(int(proc.pid)):
+                    self._retain_uncertain_lease(token, proc.pid, run_uid, run_gid, exit_code)
                     raise HolderRefusal(
                         "holder descendants are still alive (setsid-aware tree); lease not released"
                     )
@@ -1261,6 +1297,46 @@ class ExecutionHolder:
         except AsymmetricError as exc:
             raise HolderRefusal(str(exc)) from exc
 
+    def _restrict_snapshot_modes(self, snapshot_root: Path) -> None:
+        """Remove group and world access. Failure is not ignored."""
+        try:
+            for dirpath, _dirnames, filenames in os.walk(snapshot_root):
+                os.chmod(dirpath, 0o500)
+                st_dir = os.stat(dirpath)
+                if st_dir.st_mode & 0o077:
+                    raise HolderRefusal("payload snapshot is readable by other users")
+                for name in filenames:
+                    fpath = Path(dirpath) / name
+                    mode = 0o500 if os.access(fpath, os.X_OK) else 0o400
+                    os.chmod(fpath, mode)
+                    if os.stat(fpath).st_mode & 0o077:
+                        raise HolderRefusal("payload snapshot is readable by other users")
+        except OSError as exc:
+            raise HolderRefusal("payload snapshot could not be sealed") from exc
+
+    def _seal_payload_snapshot(self, snapshot_root: Path, *, uid: int, gid: int | None = None) -> None:
+        """Give the authenticated payload user read without write or other access.
+
+        Enrollment, policy, spent nonces, and leases stay in the 0700 state
+        directory and are not part of this tree. Unprivileged tests do not
+        prove a second-uid install. Mode bits are the evidence those tests can
+        check.
+        """
+        if uid == 0:
+            raise HolderRefusal("payload snapshot refuses uid 0")
+        if os.geteuid() == 0:
+            owner_gid = uid if gid is None else gid
+            if owner_gid == 0:
+                raise HolderRefusal("payload snapshot refuses gid 0")
+            try:
+                for dirpath, _dirnames, filenames in os.walk(snapshot_root):
+                    os.chown(dirpath, uid, owner_gid)
+                    for name in filenames:
+                        os.chown(Path(dirpath) / name, uid, owner_gid)
+            except OSError as exc:
+                raise HolderRefusal("payload snapshot could not be sealed") from exc
+        self._restrict_snapshot_modes(snapshot_root)
+
     def _prepare_payload_snapshot(self, token: str) -> Path:
         """Create an immutable-for-payload snapshot dir outside 0700 state."""
         root = self.snapshot_base / token
@@ -1268,9 +1344,9 @@ class ExecutionHolder:
             raise HolderRefusal("payload snapshot token already exists")
         root.mkdir(parents=True, exist_ok=False)
         try:
-            os.chmod(root, 0o755)
-        except OSError:
-            pass
+            os.chmod(root, 0o700)
+        except OSError as exc:
+            raise HolderRefusal("payload snapshot could not be sealed") from exc
         return root
 
     def _payload_identity(self, *, peer_uid: int | None = None, peer_gid: int | None = None) -> tuple[int, int]:
@@ -1344,15 +1420,21 @@ class ExecutionHolder:
             start_new_session=True,
         )
 
-    def _process_table(self) -> dict[int, int]:
-        """Return pid -> ppid for the host process table (best-effort)."""
+    def _process_table(self) -> dict[int, int] | None:
+        """Return pid -> ppid, or None when inspection fails.
+
+        An empty or failed process table is supervision uncertainty. It is not
+        proof that descendants are gone.
+        """
         table: dict[int, int] = {}
         try:
             import subprocess as _sp
 
             out = _sp.check_output(["ps", "-axo", "pid=,ppid="], text=True)
         except (OSError, _sp.SubprocessError):
-            return table
+            return None
+        if not out.strip():
+            return None
         for line in out.splitlines():
             parts = line.split()
             if len(parts) != 2:
@@ -1364,8 +1446,16 @@ class ExecutionHolder:
         return table
 
     def _descendants_of(self, root_pid: int, table: dict[int, int] | None = None) -> set[int]:
-        """Collect the ppid-tree under root_pid. setsid alone does not escape this."""
-        table = self._process_table() if table is None else table
+        """Collect the ppid-tree under root_pid.
+
+        ``table is None`` means inspection failed. Callers must retain the lease
+        instead of treating that as an empty descendant set. setsid reparents
+        children, so callers must also keep pids observed before the parent exits.
+        """
+        if table is None:
+            table = self._process_table()
+        if table is None:
+            raise HolderRefusal("holder process inspection failed; lease retained")
         children: dict[int, list[int]] = {}
         for pid, ppid in table.items():
             children.setdefault(ppid, []).append(pid)
@@ -1378,6 +1468,42 @@ class ExecutionHolder:
             seen.add(current)
             stack.extend(children.get(current, []))
         return seen
+
+    def _pid_absent(self, pid: int) -> bool:
+        if pid <= 0:
+            return True
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        except PermissionError:
+            return False
+        return False
+
+    def _retain_uncertain_lease(
+        self,
+        token: str,
+        pid: int,
+        run_uid: int,
+        run_gid: int,
+        exit_code: int | None,
+    ) -> None:
+        """Keep the lease. Uncertainty is not a release."""
+        self._write(
+            "lease.json",
+            {
+                "held": True,
+                "token": token,
+                "child": "supervision-uncertain",
+                "pid": int(pid),
+                "pgid": int(pid),
+                "exit_code": exit_code,
+                "launch_started": True,
+                "descendants_absent": False,
+                "run_uid": run_uid,
+                "run_gid": run_gid,
+            },
+        )
 
     def _pids_absent(self, pids: set[int]) -> bool:
         for pid in pids:

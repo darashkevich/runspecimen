@@ -64,7 +64,7 @@ python3 "$ROOT/Scripts/verify_mas_runtime.py" verify-identity \
   --expect "$ARCHIVE_PATH/runtime-identity.json" \
   --stage signed-archive \
   --release-gate \
-  --expect-commit "$RS_EXPECTED_GIT_COMMIT" \
+  --expected-commit "$RS_EXPECTED_GIT_COMMIT" \
   "$DERIVED_APP"
 APP_ENTITLEMENTS="$(codesign -d --entitlements - "$DERIVED_APP" 2>/dev/null)"
 if printf '%s' "$APP_ENTITLEMENTS" | grep -q 'com.apple.security.network.server'; then

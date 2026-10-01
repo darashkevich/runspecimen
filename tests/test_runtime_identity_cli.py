@@ -161,13 +161,14 @@ class RuntimeIdentityCLITests(unittest.TestCase):
             "--stage",
             "signed-archive",
             "--release-gate",
-            "--expect-commit",
+            "--expected-commit",
             zeros,
             str(self.root),
         )
         self.assertEqual(gated.returncode, 1)
         self.assertIn("dirty source", gated.stderr)
         self.assertIn("not recorded under the release source gate", gated.stderr)
+        self.assertNotIn("deprecated", gated.stderr)
 
     def test_release_gate_rejects_the_wrong_expected_commit(self) -> None:
         other = "ab" * 20
@@ -193,12 +194,45 @@ class RuntimeIdentityCLITests(unittest.TestCase):
             "--stage",
             "signed-archive",
             "--release-gate",
-            "--expect-commit",
+            "--expected-commit",
             other,
             str(self.root),
         )
         self.assertEqual(wrong.returncode, 1)
         self.assertIn("does not match the expected candidate", wrong.stderr)
+
+    def test_deprecated_expect_commit_alias_warns_once(self) -> None:
+        recorded = run_gate(
+            "record-identity",
+            "--stage",
+            "signed-archive",
+            "--git-commit",
+            COMMIT,
+            "--git-dirty",
+            "false",
+            "--release-gate",
+            "--expected-commit",
+            COMMIT,
+            str(self.root),
+            str(self.post_sign),
+        )
+        self.assertEqual(recorded.returncode, 0, recorded.stderr)
+        aliased = run_gate(
+            "verify-identity",
+            "--expect",
+            str(self.post_sign),
+            "--stage",
+            "signed-archive",
+            "--release-gate",
+            "--expect-commit",
+            COMMIT,
+            str(self.root),
+        )
+        self.assertEqual(aliased.returncode, 0, aliased.stderr)
+        self.assertEqual(
+            aliased.stderr.count("WARNING: --expect-commit is deprecated; use --expected-commit"),
+            1,
+        )
 
     def test_a_source_change_during_the_build_fails_the_release_gate(self) -> None:
         repo = self.root / "src"

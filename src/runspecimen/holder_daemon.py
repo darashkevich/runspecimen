@@ -35,11 +35,28 @@ from runspecimen.holder_io import (
 from runspecimen.holder_runtime import RuntimeTrustError, refuse_user_python_injection
 
 BOOTSTRAP_ENV = "RS_HOLDER_BOOTSTRAP_SECRET"
+ACCEPT_TIMEOUT_SEC = 0.2
 
 
 def _ensure_root() -> None:
     if os.geteuid() != 0:
         raise SystemExit("holder daemon must run as root")
+
+
+
+def _accept_connection(sock: socket.socket) -> socket.socket | None:
+    """Accept one connection, or None when the accept deadline fires.
+
+    Python 3.9 raises socket.timeout. Python 3.10+ may raise TimeoutError.
+    Any other accept error propagates. This loop has no shutdown flag.
+    """
+    try:
+        conn, _addr = sock.accept()
+    except TimeoutError:
+        return None
+    except socket.timeout:
+        return None
+    return conn
 
 
 def _peer_ids(conn: socket.socket) -> tuple[int, int]:
@@ -82,7 +99,7 @@ def _prepare_dirs(support: Path) -> tuple[Path, Path, Path]:
     os.chmod(state, 0o700)
     snapshots = support / "run-snapshots"
     snapshots.mkdir(parents=True, exist_ok=True)
-    os.chmod(snapshots, 0o755)
+    os.chmod(snapshots, 0o711)
     sock_path = support / INSTALLED_SOCKET_NAME
     return state, snapshots, sock_path
 
@@ -107,9 +124,12 @@ def serve(support: Path, *, bootstrap_secret: str) -> int:
     sock.bind(str(sock_path))
     os.chmod(sock_path, 0o666)
     sock.listen(DEFAULT_ACCEPT_BACKLOG)
+    sock.settimeout(ACCEPT_TIMEOUT_SEC)
     admission = AdmissionGate(DEFAULT_MAX_IN_FLIGHT)
     while True:
-        conn, _addr = sock.accept()
+        conn = _accept_connection(sock)
+        if conn is None:
+            continue
         if not admission.try_enter():
             try:
                 write_frame(

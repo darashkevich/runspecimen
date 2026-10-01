@@ -407,6 +407,12 @@ advice in the artifact (`## Grok evaluation`).
 `APPROVE`. RunSpecimen approval stays an interactive TTY action; adapters
 exclude `approve`.
 
+## Store approval and the Developer ID holder
+
+The Mac App Store app is guarantee (1). An ordinary contract is bound when a person types `APPROVE` in a real terminal. That phrase does not authorize a contract whose policy is local, companion, or dual.
+
+Guarantee (2) is a separate Developer ID holder. It is not in the Store app, it is not installed from this guide, and a software test double is not Touch ID or Face ID. Do not describe the approved 0.1.4 (9) app as the protected holder.
+
 ## Troubleshooting
 
 | Symptom | What to check |
