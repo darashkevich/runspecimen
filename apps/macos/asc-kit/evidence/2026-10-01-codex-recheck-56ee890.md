@@ -2,6 +2,8 @@
 
 Comment: https://github.com/darashkevich/runspecimen/pull/39#issuecomment-5932238955
 
+Code SHA: `888b2c718ea492c26a8288eb70457f1d8ab882f8`. The candidate tip is the commit that adds this sentence; its parent is that code SHA.
+
 PRs #40–#45 had no comments newer than that recheck. This note is not production sign-off. Nothing here was installed, published, merged, or submitted. No biometric prompt was run. The live holder was not repaired.
 
 The GUI app sources did not change. The previous development GUI remains the build of `27bb0c7` app sources at `/tmp/rs-qa-codex-20261001/DerivedData/Build/Products/Release/RunSpecimen.app`. That bundle has no holder. This pass does not claim a new GUI acceptance.
