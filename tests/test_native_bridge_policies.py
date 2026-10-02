@@ -140,7 +140,7 @@ class LabeledBridgePolicyTests(unittest.TestCase):
         self.assertIn("Developer ID", message)
         self.assertIn("labeled-native-bridge-double-not-hardware", message)
         self.assertIn("not a Secure Enclave", message)
-        self.assertIn("not pinned", message)
+        self.assertIn("does not authorize a software key", message)
         self.assertIn("installed protection is on", message)
 
     def test_local_companion_and_dual_execute_and_are_not_hardware(self) -> None:

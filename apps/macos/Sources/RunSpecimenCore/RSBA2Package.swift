@@ -101,15 +101,15 @@ public enum ProductionEnrollmentError: Error, Equatable {
 /// Production enrollment status for the Mac app.
 ///
 /// A caller boundary flag is not production enrollment. The Secure Enclave
-/// prompt is the human step and is not invoked from this type. The shipped
-/// pin stays unset and unconfirmed.
+/// prompt is the human step and is not invoked from this type. This Store
+/// app does not carry the Developer ID verifier pin.
 public enum ProductionNativeBridgeGate {
     public static let boundaryBackend = "production-boundary-double-not-hardware"
     public static let productionBridge = "native-production-bridge"
 
     public static func status(signers: [IsolatedNativeSigner] = []) -> String {
         let connected = IsolatedNativeEnrollment.connected(signers)
-        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. The shipped verifier pin is unset and unconfirmed. A display name is not a pin. A verifier pin does not authorize a software key. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
+        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. This Store app does not carry the Developer ID verifier pin and stays guarantee (1). A display name is not a pin. A verifier pin does not authorize a software key. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
     }
 
     /// Wire and file labels never select the human step.

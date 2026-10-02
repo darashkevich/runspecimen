@@ -1269,8 +1269,9 @@ final class PolicyBoundApprovalTests: XCTestCase {
             origin: ProductionNativeBridgeGate.origin(fromCallerBackend: record.backend)
         ))
         XCTAssertTrue(ProductionNativeBridgeGate.status().contains("native enrollment remains open"))
-        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("pin is unset"))
-        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("unconfirmed"))
+        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("does not carry the Developer ID verifier pin"))
+        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("stays guarantee (1)"))
+        XCTAssertFalse(ProductionNativeBridgeGate.status().contains("guarantee (2)"))
         XCTAssertFalse(ProductionNativeBridgeGate.status().contains("until a person"))
         XCTAssertFalse(ProductionNativeBridgeGate.allowsProductionEnrollment(
             origin: .callerSupplied,

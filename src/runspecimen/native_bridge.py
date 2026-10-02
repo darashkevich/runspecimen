@@ -5,9 +5,10 @@ verifier pin and the binary's team identifier and designated requirement
 match that pin. Installed protection refuses that double. A caller
 ``boundary_double`` flag is not a trusted native boundary. Production wire
 input, environment, and config cannot select the software double.
-``production_verifier_pin`` stays unset, so a display name that contains
-"Developer ID" is not trusted. A pin match checks verifier code only. It
-does not authorize a software key.
+``production_verifier_pin`` is the confirmed Developer ID holder identity.
+A display name that contains "Developer ID" is not that pin. A pin match
+checks verifier code only. It does not authorize a software key. The Store
+app does not carry this pin.
 
 This module does not create a Secure Enclave key and it does not prompt.
 """
@@ -68,17 +69,31 @@ class VerifierIdentityError(Exception):
     """The verifier binary did not match the pinned team and requirement."""
 
 
-def production_verifier_pin() -> VerifierPin | None:
-    """Shipped pin. Stays unset until a person confirms an identity.
+# Yahor confirmed this pair for the Developer ID holder. Do not weaken it.
+# A match authenticates verifier code. It is not biometric origin and not
+# the Store app's guarantee.
+_CONFIRMED_TEAM_ID = "UN6KF8636A"
+_CONFIRMED_DESIGNATED_REQUIREMENT = (
+    'identifier "com.darashkevich.runspecimen.native-p256-verify" '
+    "and anchor apple generic "
+    "and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ "
+    "and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ "
+    "and certificate leaf[subject.OU] = UN6KF8636A"
+)
 
-    Returning None fails closed. A proposal in the evidence file is not this pin.
+
+def production_verifier_pin() -> VerifierPin | None:
+    """Confirmed Developer ID holder pin. Not a Store-app claim.
+
+    The designated requirement is the exact confirmed string. Display text,
+    Apple Development, and a wildcard identifier are not this pin.
     """
 
-    return None
+    return VerifierPin(_CONFIRMED_TEAM_ID, _CONFIRMED_DESIGNATED_REQUIREMENT)
 
 
 def effective_verifier_pin(injected: VerifierPin | None) -> VerifierPin | None:
-    """Injected boundary pin wins. The shipped pin is otherwise unset."""
+    """An injected test pin wins. Otherwise the confirmed holder pin is used."""
 
     if injected is not None:
         return injected
@@ -314,7 +329,7 @@ def platform_verifier_report(root: Path | None = None) -> dict[str, object]:
     return {
         "present": present,
         "pure_wheel_includes_verifier": False,
-        "production_pin": "unset",
+        "production_pin": "confirmed-developer-id-holder",
         "enrollment": "fail-closed",
         "cli_when_absent": (
             "doctor, validate, and status do not enroll a device. "
@@ -348,8 +363,7 @@ def production_enrollment_refusal() -> str:
     """Why installed protection will not store a software or isolated key."""
 
     return (
-        "native production enrollment is not accepted: verifier team and "
-        "designated requirement are not pinned. A display name containing "
+        "native production enrollment is not accepted. A display name containing "
         "Developer ID is not a verifier identity. A verifier pin does not "
         "authorize a software key. A caller boundary_double flag is refused "
         "when installed protection is on. The "

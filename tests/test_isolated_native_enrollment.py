@@ -1,6 +1,6 @@
 """Isolated native enrollment. Not hardware and not a production identity.
 
-The test pin is a fixture. ``production_verifier_pin`` stays unset.
+The test pin is a fixture. The confirmed pin is the Developer ID holder identity.
 """
 
 from __future__ import annotations
@@ -81,8 +81,15 @@ class VerifierIdentityTests(unittest.TestCase):
         }
         self.assertFalse(identity_matches(parsed, _pin()))
 
-    def test_production_pin_is_unset(self) -> None:
-        self.assertIsNone(production_verifier_pin())
+    def test_confirmed_pin_rejects_the_fixture_identity(self) -> None:
+        pin = production_verifier_pin()
+        self.assertIsNotNone(pin)
+        self.assertFalse(
+            identity_matches(
+                {"team_identifier": TEST_TEAM, "designated_requirement": TEST_REQUIREMENT},
+                pin,
+            )
+        )
         self.assertFalse(
             identity_matches(
                 {"team_identifier": TEST_TEAM, "designated_requirement": TEST_REQUIREMENT},

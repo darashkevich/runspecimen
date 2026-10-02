@@ -1,6 +1,6 @@
 """Production control flow with an injected boundary double. Not hardware.
 
-The shipped pin stays unset. TESTTEAMID is a fixture, not an authorized identity.
+The confirmed pin is the Developer ID holder identity. TESTTEAMID is a fixture.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from runspecimen.native_bridge import (
     parse_codesign_identity,
     platform_verifier_report,
     production_verifier_pin,
+    read_verifier_identity,
     refresh_verifier_provenance,
     require_verifier_identity,
     resolve_verifier,
@@ -39,6 +40,15 @@ TEST_TEAM = "TESTTEAMID"
 TEST_REQUIREMENT = (
     'identifier "com.darashkevich.runspecimen.native-p256-verify" '
     "and certificate leaf[subject.OU] = TESTTEAMID"
+)
+
+
+CONFIRMED_REQUIREMENT = (
+    'identifier "com.darashkevich.runspecimen.native-p256-verify" '
+    "and anchor apple generic "
+    "and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ "
+    "and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ "
+    "and certificate leaf[subject.OU] = UN6KF8636A"
 )
 
 
@@ -136,14 +146,78 @@ class ProductionBoundaryTests(unittest.TestCase):
         )
         holder.pair_device(f"{role}-1", human)
 
-    def test_shipped_pin_is_unset_and_refuses_the_boundary(self) -> None:
-        self.assertIsNone(production_verifier_pin())
-        td = tempfile.TemporaryDirectory(prefix="rsh-bound-unset-")
+    def test_confirmed_pin_is_exact_and_refuses_a_software_key(self) -> None:
+        pin = production_verifier_pin()
+        self.assertIsNotNone(pin)
+        assert pin is not None
+        self.assertEqual(pin.team_identifier, "UN6KF8636A")
+        self.assertEqual(pin.designated_requirement, CONFIRMED_REQUIREMENT)
+        self.assertEqual(pin.designated_requirement.count("identifier"), 1)
+        self.assertNotIn('identifier "*"', pin.designated_requirement)
+        self.assertNotIn("Apple Development", pin.designated_requirement)
+        td = tempfile.TemporaryDirectory(prefix="rsh-bound-confirmed-")
         self.addCleanup(td.cleanup)
-        holder = self._holder(Path(td.name), pin=None)
+        holder = self._holder(Path(td.name), pin=pin)
         with self.assertRaises(HolderRefusal) as ctx:
             self._pair(holder, "mac", "local")
-        self.assertIn("not pinned", str(ctx.exception))
+        self.assertIn("does not authorize a software key", str(ctx.exception))
+
+    def test_identity_mismatch_against_the_confirmed_pin(self) -> None:
+        pin = production_verifier_pin()
+        assert pin is not None
+        display = parse_codesign_identity(
+            "Authority=Developer ID Application: Not A Pin\nTeamIdentifier=not set\n",
+            "designated =>\n",
+        )
+        self.assertFalse(identity_matches(display, pin))
+        self.assertNotIn("Developer ID", display["team_identifier"])
+        wrong_team = {
+            "team_identifier": "WRONGTEAM",
+            "designated_requirement": CONFIRMED_REQUIREMENT,
+        }
+        self.assertFalse(identity_matches(wrong_team, pin))
+        wrong_identifier = {
+            "team_identifier": "UN6KF8636A",
+            "designated_requirement": CONFIRMED_REQUIREMENT.replace(
+                "com.darashkevich.runspecimen.native-p256-verify",
+                "com.example.other",
+            ),
+        }
+        self.assertFalse(identity_matches(wrong_identifier, pin))
+        apple_development = {
+            "team_identifier": "UN6KF8636A",
+            "designated_requirement": (
+                'identifier "com.darashkevich.runspecimen.native-p256-verify" '
+                "and anchor apple generic and certificate leaf[subject.OU] = UN6KF8636A"
+            ),
+        }
+        self.assertNotEqual(apple_development["designated_requirement"], CONFIRMED_REQUIREMENT)
+        self.assertFalse(identity_matches(apple_development, pin))
+        with mock.patch(
+            "runspecimen.native_bridge.read_verifier_identity",
+            return_value=wrong_team,
+        ), mock.patch("runspecimen.native_bridge.verifier_signature_strict", return_value=True):
+            with self.assertRaises(Exception) as team:
+                require_verifier_identity(pin)
+        self.assertIn("team identifier does not match", str(team.exception))
+        with mock.patch(
+            "runspecimen.native_bridge.read_verifier_identity",
+            return_value=wrong_identifier,
+        ), mock.patch("runspecimen.native_bridge.verifier_signature_strict", return_value=True):
+            with self.assertRaises(Exception) as requirement:
+                require_verifier_identity(pin)
+        self.assertIn("designated requirement does not match", str(requirement.exception))
+
+    def test_adhoc_repository_verifier_does_not_meet_the_confirmed_pin(self) -> None:
+        if sys.platform != "darwin":
+            self.skipTest("codesign identity is macOS-only")
+        pin = production_verifier_pin()
+        assert pin is not None
+        with self.assertRaises(Exception) as ctx:
+            require_verifier_identity(pin)
+        self.assertTrue(
+            "does not match" in str(ctx.exception) or "not pinned" in str(ctx.exception)
+        )
 
     def test_hardware_claim_is_refused(self) -> None:
         td = tempfile.TemporaryDirectory(prefix="rsh-bound-hw-")
@@ -628,6 +702,17 @@ class CleanPackageTests(unittest.TestCase):
         self.assertEqual(body["signed"], "codesign" if sign_as == identity else "adhoc")
         self.assertEqual(body["sha256"], hashlib.sha256(placed.read_bytes()).hexdigest())
         self.assertNotIn("Developer ID", json.dumps(body))
+        parsed = read_verifier_identity(placed)
+        confirmed = production_verifier_pin()
+        assert confirmed is not None
+        if sign_as == identity:
+            self.assertEqual(parsed["team_identifier"], confirmed.team_identifier)
+            self.assertEqual(parsed["designated_requirement"], confirmed.designated_requirement)
+            require_verifier_identity(confirmed, placed)
+        else:
+            self.assertNotEqual(parsed.get("designated_requirement"), confirmed.designated_requirement)
+            with self.assertRaises(Exception):
+                require_verifier_identity(confirmed, placed)
         self.assertEqual(repo_provenance.read_text(encoding="utf-8"), repo_before)
         archive = Path(td.name) / "verifier.zip"
         with zipfile.ZipFile(archive, "w") as packed:
