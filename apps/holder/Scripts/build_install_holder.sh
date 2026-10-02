@@ -1,8 +1,8 @@
 #!/bin/bash
 # Stage a separate RunSpecimen Holder package.
-# install, update, rollback, and uninstall are refused unless
-# RS_HOLDER_INSTALL_CONSENT=yes, and this engineering pass still does not
-# perform them. Does not touch /Applications/RunSpecimen.app.
+# install, update, rollback, and uninstall always exit 4. This script does
+# not install, even if a consent variable is set. It does not touch
+# /Applications/RunSpecimen.app.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -44,8 +44,13 @@ chmod 755 "$APP/Contents/Resources/Runtime/bin/python3"
 if [[ "${RS_HOLDER_STAGE_FIXTURES:-}" == "1" ]]; then
   printf 'fixture\n' > "$APP/Contents/MacOS/RunSpecimenHolder"
   chmod 755 "$APP/Contents/MacOS/RunSpecimenHolder"
+elif [[ "${RS_HOLDER_STAGE_COMPILE:-}" == "1" ]]; then
+  /usr/bin/xcrun swiftc -O \
+    -o "$APP/Contents/MacOS/RunSpecimenHolder" \
+    "$ROOT/apps/holder/Sources/RunSpecimenHolderDaemon/main.swift"
+  /usr/bin/codesign --force --sign - "$APP/Contents/MacOS/RunSpecimenHolder"
 else
-  echo "REFUSING: a compiled stage is not run from this pass. Set RS_HOLDER_STAGE_FIXTURES=1 to stage a layout without installing." >&2
+  echo "REFUSING: set RS_HOLDER_STAGE_FIXTURES=1 or RS_HOLDER_STAGE_COMPILE=1. Neither installs." >&2
   exit 2
 fi
 

@@ -115,6 +115,42 @@ exit $fail
                 self.assertEqual(blocked.returncode, 4, command)
                 self.assertIn("was not run", blocked.stderr)
 
+    def test_compiled_stage_is_adhoc_signed_and_not_installed(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="rs-runtime-src-") as td:
+            source = Path(td) / "python3"
+            source.write_bytes(Path("/tmp/rs-py312-rel-holder/bin/python").read_bytes())
+            source.chmod(0o755)
+            env = os.environ.copy()
+            env["RS_HOLDER_STAGE_COMPILE"] = "1"
+            env["RS_HOLDER_RUNTIME_SOURCE"] = str(source)
+            env.pop("HOLDER_BUILD_DIR", None)
+            staged = subprocess.run(
+                ["bash", str(STAGE), "stage"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env=env,
+            )
+            self.assertEqual(staged.returncode, 0, staged.stderr)
+            app = ""
+            for line in staged.stdout.splitlines():
+                if line.startswith("STAGED="):
+                    app = line.split("=", 1)[1]
+            binary = Path(app) / "Contents/MacOS/RunSpecimenHolder"
+            self.assertTrue(binary.is_file())
+            kind = subprocess.run(["/usr/bin/file", str(binary)], capture_output=True, text=True, timeout=10)
+            self.assertIn("Mach-O", kind.stdout)
+            signed = subprocess.run(
+                ["/usr/bin/codesign", "-dv", str(binary)],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertIn("Signature=adhoc", signed.stderr)
+            self.assertFalse(Path("/Applications/RunSpecimen Holder.app").joinpath("Contents/MacOS/RunSpecimenHolder").samefile(binary))
+            self.assertIn("NOT_INSTALLED=1", staged.stdout)
+
 
 class TrustOrderTests(unittest.TestCase):
     def test_pre_import_refuses_a_symlink_and_a_writable_file(self) -> None:
