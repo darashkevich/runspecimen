@@ -1397,6 +1397,48 @@ final class PolicyBoundApprovalTests: XCTestCase {
         }
     }
 
+    func testInjectedNativeSignerEnrollsWithoutABiometricPrompt() throws {
+        struct FixtureNativeSigner: HumanNativeSigning {
+            var hardware = false
+            func publicKey(role: String) -> Data {
+                Data([0x04, UInt8(role.utf8.first ?? 0)])
+            }
+
+            func sign(role: String, message: Data) -> Data {
+                message + Data(role.utf8)
+            }
+        }
+
+        let receipt = try ProductionNativeBridgeGate.beginHumanSecureEnclaveEnrollment(
+            signer: FixtureNativeSigner(),
+            policy: "dual"
+        )
+        XCTAssertFalse(receipt.hardware)
+        XCTAssertFalse(receipt.biometricInvoked)
+        XCTAssertEqual(receipt.policy, "dual")
+        XCTAssertEqual(receipt.roles, ["mac", "phone"])
+        XCTAssertEqual(Set(receipt.publicKeys.keys), Set(["mac", "phone"]))
+        XCTAssertFalse(receipt.signatures["mac"]?.isEmpty ?? true)
+        XCTAssertFalse(receipt.signatures["phone"]?.isEmpty ?? true)
+        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("injected native signer is not hardware"))
+        XCTAssertThrowsError(
+            try ProductionNativeBridgeGate.beginHumanSecureEnclaveEnrollment(
+                signer: Optional<FixtureNativeSigner>.none,
+                policy: "local"
+            )
+        ) { error in
+            XCTAssertEqual(error as? ProductionEnrollmentError, .biometricPromptNotInvoked)
+        }
+        XCTAssertThrowsError(
+            try ProductionNativeBridgeGate.beginHumanSecureEnclaveEnrollment(
+                signer: FixtureNativeSigner(hardware: true),
+                policy: "local"
+            )
+        ) { error in
+            XCTAssertEqual(error as? ProductionEnrollmentError, .callerHardwareLabelRefused)
+        }
+    }
+
     private func submit(
         _ request: PolicyBoundApprovalRequest,
         local: P256.Signing.PrivateKey?,

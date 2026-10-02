@@ -80,12 +80,16 @@ if getenv("RS_HOLDER_PYTHON") != nil {
 if getenv("PYTHONPATH") != nil {
     die("PYTHONPATH is refused for protected holder runtime")
 }
+if getenv("PYTHONHOME") != nil {
+    die("PYTHONHOME is refused for protected holder runtime")
+}
 
 let fm = FileManager.default
 let execURL = absoluteExecutableURL()
 let contents = execURL.deletingLastPathComponent().deletingLastPathComponent()
 let resources = contents.appendingPathComponent("Resources")
-let embedded = resources.appendingPathComponent("Runtime/bin/python3")
+let runtime = resources.appendingPathComponent("Runtime")
+let embedded = runtime.appendingPathComponent("bin/python3")
 let moduleRoot = resources.appendingPathComponent("Python")
 let entry = moduleRoot.appendingPathComponent("runspecimen/holder_entry.py")
 
@@ -139,18 +143,19 @@ if !fm.isReadableFile(atPath: entry.path) {
 log("exec=\(execURL.path) python=\(python) entry=\(entry.path)")
 
 unsetenv("PYTHONPATH")
-unsetenv("PYTHONHOME")
 unsetenv("PYTHONUSERBASE")
 unsetenv("RS_HOLDER_PYTHON")
 unsetenv("RS_HOLDER_MODULE_ROOT")
+setenv("PYTHONHOME", runtime.path, 1)
+setenv("PYTHONNOUSERSITE", "1", 1)
 setenv("RS_HOLDER_BOOTSTRAP_SECRET", secret, 1)
 setenv("PYTHONDONTWRITEBYTECODE", "1", 1)
 
-// Execute the isolated entrypoint by path. Do not use python -m: that cannot
-// discover Resources/Python before import without a prior path mutation.
+// Execute the entrypoint by path. Do not use python -m: that cannot discover
+// Resources/Python before import without a prior path mutation. Isolated mode
+// would ignore the embedded runtime prefix and keep a build-machine prefix.
 let args = [
     python,
-    "-I",
     entry.path,
     "--support-dir", support.path,
 ]

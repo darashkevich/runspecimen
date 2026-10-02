@@ -155,6 +155,194 @@ exit $fail
                 self.assertFalse(live.samefile(binary))
             self.assertIn("NOT_INSTALLED=1", staged.stdout)
 
+    def _live_mtimes(self) -> dict[str, int | None]:
+        found = {}
+        for path in (
+            "/Applications/RunSpecimen.app",
+            "/Applications/RunSpecimen Holder.app",
+        ):
+            candidate = Path(path)
+            found[path] = candidate.stat().st_mtime_ns if candidate.exists() else None
+        return found
+
+    def _stage(self, env: dict[str, str], timeout: int = 60) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(STAGE), "stage"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+
+    def _field(self, completed: subprocess.CompletedProcess[str], name: str) -> str:
+        for line in completed.stdout.splitlines():
+            if line.startswith(f"{name}="):
+                return line.split("=", 1)[1]
+        self.fail(f"missing {name} in {completed.stdout}")
+        return ""
+
+    def test_fixture_lifecycle_stays_in_a_temp_root(self) -> None:
+        before = self._live_mtimes()
+        with tempfile.TemporaryDirectory(prefix="rs-runtime-src-") as td:
+            source = Path(td) / "python3"
+            source.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            source.chmod(0o755)
+            env = os.environ.copy()
+            env["RS_HOLDER_STAGE_FIXTURES"] = "1"
+            env["RS_HOLDER_RUNTIME_SOURCE"] = str(source)
+            env.pop("HOLDER_BUILD_DIR", None)
+            staged = self._stage(env)
+            self.assertEqual(staged.returncode, 0, staged.stderr)
+            app = self._field(staged, "STAGED")
+            plist = Path(self._field(staged, "PLIST"))
+            self.assertTrue(plist.is_file())
+            self.assertIn("Contents/MacOS/RunSpecimenHolderDaemon", plist.read_text(encoding="utf-8"))
+            self.assertTrue((Path(app) / "Contents/MacOS/RunSpecimenHolderDaemon").is_file())
+            info = (Path(app) / "Contents/Info.plist").read_text(encoding="utf-8")
+            self.assertIn("RunSpecimenHolder", info)
+            self.assertNotEqual(Path(self._field(staged, "EMBEDDED")).resolve(), Path("/usr/bin/python3"))
+            blocked = subprocess.run(
+                ["bash", str(STAGE), "install"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=20,
+                env=env,
+            )
+            self.assertEqual(blocked.returncode, 4)
+            self.assertIn("was not run", blocked.stderr)
+            env["RS_HOLDER_INSTALL_CONSENT"] = "yes"
+            env["RS_HOLDER_PACKAGE"] = app
+            env["RS_HOLDER_INSTALL_ROOT"] = "/Applications"
+            refused = subprocess.run(
+                ["bash", str(STAGE), "install"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=20,
+                env=env,
+            )
+            self.assertEqual(refused.returncode, 4, refused.stderr)
+            self.assertIn("was not run", refused.stderr)
+            with tempfile.TemporaryDirectory(prefix="rs-holder-root-", dir="/tmp") as root:
+                env["RS_HOLDER_INSTALL_ROOT"] = root
+                installed = subprocess.run(
+                    ["bash", str(STAGE), "install"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                    env=env,
+                )
+                self.assertEqual(installed.returncode, 0, installed.stderr)
+                dest = Path(root) / "RunSpecimen Holder.app"
+                self.assertTrue(dest.is_dir())
+                marker = dest / "Contents/Resources/generation.txt"
+                marker.write_text("v1\n", encoding="utf-8")
+                updated = subprocess.run(
+                    ["bash", str(STAGE), "update"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                    env=env,
+                )
+                self.assertEqual(updated.returncode, 0, updated.stderr)
+                self.assertFalse(marker.exists())
+                saved = Path(root) / "rollback" / "RunSpecimen Holder.app" / "Contents/Resources/generation.txt"
+                self.assertEqual(saved.read_text(encoding="utf-8"), "v1\n")
+                rolled = subprocess.run(
+                    ["bash", str(STAGE), "rollback"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                    env=env,
+                )
+                self.assertEqual(rolled.returncode, 0, rolled.stderr)
+                self.assertEqual(marker.read_text(encoding="utf-8"), "v1\n")
+                removed = subprocess.run(
+                    ["bash", str(STAGE), "uninstall"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                    env=env,
+                )
+                self.assertEqual(removed.returncode, 0, removed.stderr)
+                self.assertFalse(dest.exists())
+                self.assertTrue((Path(root) / "removed" / "RunSpecimen Holder.app").is_dir())
+        self.assertEqual(self._live_mtimes(), before)
+
+    def test_compiled_package_relocates_runtime_without_a_developer_interpreter(self) -> None:
+        if sys.platform != "darwin" or not Path("/usr/bin/otool").is_file() or not Path("/usr/bin/xcrun").is_file():
+            self.skipTest("relocatable Mach-O staging is macOS-only")
+        source_exec = Path(sys.executable).resolve()
+        if source_exec == Path("/usr/bin/python3"):
+            self.skipTest("refusing /usr/bin/python3 as the payload interpreter")
+        kind = subprocess.run(["/usr/bin/file", "-b", str(source_exec)], capture_output=True, text=True, timeout=10)
+        if "Mach-O" not in kind.stdout:
+            self.skipTest("the test interpreter is not a Mach-O payload")
+        before = self._live_mtimes()
+        with tempfile.TemporaryDirectory(prefix="rs-runtime-src-") as td:
+            source = Path(td) / "python3"
+            subprocess.run(["/bin/cp", "-p", str(source_exec), str(source)], check=True, timeout=20)
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+            env["RS_HOLDER_STAGE_COMPILE"] = "1"
+            env["RS_HOLDER_RUNTIME_SOURCE"] = str(source)
+            env.pop("HOLDER_BUILD_DIR", None)
+            staged = self._stage(env, timeout=180)
+            self.assertEqual(staged.returncode, 0, staged.stderr)
+            app = Path(self._field(staged, "STAGED"))
+            embedded = Path(self._field(staged, "EMBEDDED"))
+            ui = Path(self._field(staged, "UI"))
+            daemon = Path(self._field(staged, "DAEMON"))
+            plist = Path(self._field(staged, "PLIST"))
+            self.assertNotEqual(embedded.resolve(), Path("/usr/bin/python3"))
+            self.assertFalse(ui.samefile(daemon))
+            for binary in (ui, daemon, embedded):
+                described = subprocess.run(["/usr/bin/file", "-b", str(binary)], capture_output=True, text=True, timeout=10)
+                self.assertIn("Mach-O", described.stdout, binary)
+            linked = subprocess.run(["/usr/bin/otool", "-L", str(embedded)], capture_output=True, text=True, timeout=10)
+            self.assertNotIn("/opt/homebrew", linked.stdout)
+            self.assertNotIn("/usr/local", linked.stdout)
+            self.assertNotIn("/usr/bin/python3", linked.stdout)
+            listed = plist.read_text(encoding="utf-8")
+            self.assertIn("Contents/MacOS/RunSpecimenHolderDaemon", listed)
+            self.assertTrue(daemon.is_file())
+            info = (app / "Contents/Info.plist").read_text(encoding="utf-8")
+            self.assertIn("<string>RunSpecimenHolder</string>", info)
+            named = subprocess.run(["/usr/bin/strings", str(ui)], capture_output=True, text=True, timeout=20)
+            self.assertIn("com.darashkevich.runspecimen.holder.daemon.plist", named.stdout)
+            runtime = embedded.parent.parent
+            probe_env = os.environ.copy()
+            probe_env.pop("PYTHONPATH", None)
+            probe_env["PYTHONHOME"] = str(runtime)
+            probe_env["PYTHONNOUSERSITE"] = "1"
+            probed = subprocess.run(
+                [str(embedded), "-c", "import encodings,sys\nprint(sys.prefix)\nprint(encodings.__file__)\n"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=probe_env,
+            )
+            self.assertEqual(probed.returncode, 0, probed.stderr)
+            prefix, encodings = [line.strip() for line in probed.stdout.splitlines() if line.strip()]
+            self.assertEqual(Path(prefix).resolve(), runtime.resolve())
+            self.assertTrue(Path(encodings).resolve().is_relative_to(runtime.resolve()))
+            self.assertNotIn("/opt/homebrew", encodings)
+            self.assertNotIn("/usr/bin/python3", encodings)
+            daemon_text = (ROOT / "apps/holder/Sources/RunSpecimenHolderDaemon/main.swift").read_text(encoding="utf-8")
+            self.assertIn('getenv("PYTHONPATH")', daemon_text)
+            self.assertIn('getenv("PYTHONHOME")', daemon_text)
+            self.assertIn('setenv("PYTHONHOME"', daemon_text)
+            self.assertNotIn('"-I"', daemon_text)
+            self.assertNotIn('"/usr/bin/python3"', daemon_text)
+        self.assertEqual(self._live_mtimes(), before)
+
 
 class TrustOrderTests(unittest.TestCase):
     def test_pre_import_refuses_a_symlink_and_a_writable_file(self) -> None:

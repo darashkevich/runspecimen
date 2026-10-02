@@ -175,12 +175,151 @@ class ExecutionHolder:
             "key_generation": 1,
         }
 
-    def begin_human_secure_enclave_enrollment(self) -> None:
-        """Human step. Does not call Secure Enclave and does not prompt."""
+    def begin_human_secure_enclave_enrollment(
+        self,
+        signer: object | None = None,
+        *,
+        policy: str = "local",
+    ) -> dict[str, Any]:
+        """Pair roles with an injected native signer, or refuse before any prompt.
 
-        raise HolderRefusal(
-            "secure enclave enrollment is the human biometric step and was not invoked"
-        )
+        ``signer`` must be a ``HumanNativeSigner`` instance. Wire JSON, an
+        environment variable, and a config dict are not that object. The
+        signer is not hardware. Installed protection still refuses it, because
+        a software key is not a Secure Enclave enrollment. This method does
+        not call ``SecureEnclave.P256.Signing.PrivateKey``.
+        """
+
+        from runspecimen.holder_asymmetric import public_key_fingerprint
+        from runspecimen.native_bridge import HumanNativeSigner, production_enrollment_refusal
+
+        if not isinstance(signer, HumanNativeSigner):
+            raise HolderRefusal(
+                "secure enclave enrollment is the human biometric step and was not invoked"
+            )
+        if signer.hardware is not False:
+            raise HolderRefusal("a caller hardware label is not a native signer")
+        if policy not in {"local", "companion", "dual"}:
+            raise HolderRefusal("human native enrollment policy is not accepted")
+        if self.installed_protection:
+            raise HolderRefusal(production_enrollment_refusal())
+        roles = {"local": ("mac",), "companion": ("phone",), "dual": ("mac", "phone")}[policy]
+        devices = self._devices()
+        paired: list[str] = []
+        for role in roles:
+            public = signer.public_key(role)
+            if not isinstance(public, str) or not public:
+                raise HolderRefusal("human native signer did not provide a public key")
+            device_id = f"{role}-human"
+            compared = public_key_fingerprint(public)
+            devices[device_id] = {
+                "role": role,
+                "fingerprint": compared,
+                "revoked": False,
+                "attestation": "device-p256-not-hardware",
+                "algorithm": "p256",
+                "public_key": public,
+                "generation": self.generation,
+                "hardware": False,
+                "provenance": {
+                    "bridge": "human-native-signer",
+                    "role": role,
+                    "policy": policy,
+                    "generation": self.generation,
+                    "fingerprint": compared,
+                    "not_hardware": True,
+                    "origin": "injected-human-native-signer",
+                    "hardware": False,
+                },
+            }
+            paired.append(device_id)
+        self._write("devices.json", devices)
+        return {
+            "ok": True,
+            "hardware": False,
+            "biometric_invoked": False,
+            "policy": policy,
+            "devices": paired,
+            "origin": "injected-human-native-signer",
+        }
+
+    def sign_with_human_native_signer(
+        self,
+        signer: object,
+        purpose: str,
+        subject: str,
+        policy: str,
+        authorized: dict[str, Any] | None = None,
+        expires_at: int | None = None,
+    ) -> dict[str, Any]:
+        """Build a holder authorization and sign it with the injected signer."""
+
+        import time
+
+        from runspecimen.holder_asymmetric import digest_challenge
+        from runspecimen.native_bridge import HumanNativeSigner
+
+        if not isinstance(signer, HumanNativeSigner):
+            raise TypeError("human native signer cannot be selected from wire input or config")
+        if signer.hardware is not False:
+            raise HolderRefusal("a caller hardware label is not a native signer")
+        names = {"local": ["mac"], "companion": ["phone"], "dual": ["mac", "phone"]}[policy]
+        devices = self._devices()
+        paired = []
+        signatures: dict[str, str] = {}
+        for device_id, record in sorted(devices.items()):
+            if not isinstance(record, dict):
+                continue
+            provenance = record.get("provenance")
+            if not isinstance(provenance, dict):
+                continue
+            if provenance.get("origin") != "injected-human-native-signer":
+                continue
+            if record.get("hardware") is not False:
+                raise HolderRefusal("a caller hardware label is not a native signer")
+            paired.append(
+                {
+                    "device_id": device_id,
+                    "fingerprint": record.get("fingerprint"),
+                    "generation": record.get("generation"),
+                    "policy": provenance.get("policy"),
+                    "role": record.get("role"),
+                }
+            )
+        if not paired:
+            raise HolderRefusal("human native signer has not enrolled a device")
+        when = int(time.time()) + 60 if expires_at is None else expires_at
+        challenge = {
+            "purpose": purpose,
+            "subject": subject,
+            "policy": policy,
+            "devices": sorted(names),
+            "expires_at": when,
+            "holder_id": self.holder_id,
+            "generation": self.generation,
+            "domain": "holder-device-p256-v1",
+            "attestation_class": "device-p256-not-hardware",
+            "authorized": authorized or {},
+            "paired": paired,
+        }
+        message = digest_challenge(challenge)
+        for item in paired:
+            role = str(item["role"])
+            signature = signer.sign(role, message)
+            if not isinstance(signature, str) or not signature:
+                raise HolderRefusal("human native signer did not sign")
+            signatures[str(item["device_id"])] = signature
+        return {
+            "method": policy,
+            "purpose": purpose,
+            "policy": policy,
+            "subject": subject,
+            "devices": sorted(names),
+            "expires_at": when,
+            "hardware": False,
+            "attestation_class": "device-p256-not-hardware",
+            "signatures": signatures,
+        }
 
     def pair_device(self, device_id: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         with self._transaction():

@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import inspect
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,11 +21,14 @@ from pathlib import Path
 from unittest import mock
 
 from runspecimen.execution_holder import ExecutionHolder, HolderRefusal, handle_message, seal
+from runspecimen.hashutil import canonical_json_bytes, sha256_file
 from runspecimen.native_bridge import (
     BOUNDARY_DOUBLE,
     PRODUCTION_BRIDGE,
+    HumanNativeSigner,
     TrustedNativeBoundary,
     VerifierPin,
+    production_enrollment_refusal,
     assemble_developer_id_artifact,
     identity_matches,
     native_signers_connected,
@@ -758,3 +763,363 @@ print(os.path.realpath(binary))
         self.assertEqual(launched.returncode, 0, launched.stderr)
         self.assertIn(str(extracted), launched.stdout)
         self.assertNotIn(str(source), launched.stdout)
+
+
+class _KitSigner(HumanNativeSigner):
+    """Software CryptoKit signer injected in-process. Not a Secure Enclave key."""
+
+    def __init__(self, binary: Path, keys: dict[str, tuple[str, str]]) -> None:
+        self.binary = binary
+        self.keys = keys
+        self.hardware = False
+
+    def public_key(self, role: str) -> str:
+        return self.keys[role][0]
+
+    def sign(self, role: str, message: bytes) -> str:
+        from tests.test_native_bridge_policies import _sign
+
+        return _sign(self.binary, self.keys[role][1], message)
+
+
+class HumanNativeSignerTests(unittest.TestCase):
+    def _keys(self) -> tuple[Path, dict[str, tuple[str, str]]]:
+        from tests.test_native_bridge_policies import _signer
+
+        binary, _public, _private = _signer(self)
+        keys = {}
+        for role in ("mac", "phone"):
+            key_out = subprocess.run(
+                [str(binary), "key"], check=True, capture_output=True, text=True, timeout=10
+            )
+            public_b64, private_b64 = key_out.stdout.splitlines()
+            keys[role] = (public_b64, private_b64)
+        return binary, keys
+
+    def _holder(self, root: Path, *, installed: bool) -> ExecutionHolder:
+        from tests.test_native_bridge_policies import _boot
+
+        secret = "ab" * 32
+        holder = ExecutionHolder(
+            root / "state",
+            allow_test_double=False,
+            installed_protection=installed,
+            bootstrap_secret=secret,
+            snapshot_base=root / "snaps",
+            verifier_pin=production_verifier_pin(),
+        )
+        holder.enroll("app", _boot(secret, "enroll", "app", "local"))
+        return holder
+
+    def _binding(self, ws: Path, script: Path, policy: str) -> dict:
+        launch = [sys.executable, str(script.resolve()), str(ws.parent / "ran")]
+        return {
+            "contract_hash": "c" * 64,
+            "workspace": str(ws.resolve()),
+            "argv": [str(script.resolve()), str(ws.parent / "ran")],
+            "executable": str(script.resolve()),
+            "policy": policy,
+            "cwd": str(ws.resolve()),
+            "launch_argv": launch,
+            "bounds": {"wall_timeout_sec": 10, "stdout_max_bytes": 65536, "stderr_max_bytes": 65536},
+            "key_generation": 1,
+        }
+
+    def _workspace(self, ws: Path) -> tuple[Path, Path]:
+        ws.mkdir()
+        script = ws / "job.py"
+        script.write_text(
+            "import pathlib, sys\npathlib.Path(sys.argv[1]).write_text('ran')\n",
+            encoding="utf-8",
+        )
+        return ws, script
+
+    def _unseal(self, path: Path) -> None:
+        if not path.exists():
+            return
+        for dirpath, _dirnames, filenames in os.walk(path):
+            os.chmod(dirpath, 0o700)
+            for name in filenames:
+                os.chmod(Path(dirpath) / name, 0o600)
+        shutil.rmtree(path)
+
+    def _consume_authorization(self, holder: ExecutionHolder, nonce: str, ws: Path, script: Path, binding: dict) -> dict:
+        envelope = holder._binding_envelope(binding)
+        mutation = hashlib.sha256(
+            canonical_json_bytes(
+                {"files": [[str(script.resolve()), sha256_file(script)]], "binding": envelope}
+            )
+        ).hexdigest()
+        _path_map, payload_digest, snapshot_root = holder._bind(
+            nonce,
+            ws,
+            [(str(script.resolve()), sha256_file(script))],
+            executable=str(script.resolve()),
+            argv=[str(script.resolve())],
+        )
+        self._unseal(Path(snapshot_root))
+        return {
+            "payload_digest": payload_digest,
+            "launch_argv": list(envelope["launch_argv"]),
+            "bounds": envelope["bounds"],
+            "mutation_digest": mutation,
+            "attestation_class": "device-p256-not-hardware",
+        }
+
+    def test_handler_source_does_not_call_secure_enclave(self) -> None:
+        source = inspect.getsource(ExecutionHolder.begin_human_secure_enclave_enrollment)
+        self.assertNotIn("SecureEnclave.P256.Signing.PrivateKey(", source)
+        swift = (
+            Path(__file__).resolve().parents[1]
+            / "apps/macos/Sources/RunSpecimenCore/RSBA2Package.swift"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("SecureEnclave.P256.Signing.PrivateKey(", swift)
+        from tests.test_native_bridge_policies import _signer
+
+        self.assertNotIn("SecureEnclave", inspect.getsource(_signer))
+
+    def test_unattended_call_refuses_before_a_prompt(self) -> None:
+        td = tempfile.TemporaryDirectory(prefix="rsh-human-none-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+        with self.assertRaises(HolderRefusal) as missing:
+            holder.begin_human_secure_enclave_enrollment()
+        self.assertIn("was not invoked", str(missing.exception))
+
+    def test_wire_env_and_config_cannot_select_the_signer(self) -> None:
+        td = tempfile.TemporaryDirectory(prefix="rsh-human-wire-")
+        self.addCleanup(td.cleanup)
+        secret = "ab" * 32
+        holder = self._holder(Path(td.name), installed=False)
+        config = Path(td.name) / "signer.json"
+        config.write_text('{"hardware": true, "backend": "secure-enclave"}\n', encoding="utf-8")
+        with mock.patch.dict(
+            os.environ,
+            {
+                "RS_HOLDER_NATIVE_SIGNER": "secure-enclave",
+                "RS_HOLDER_SIGNER_CONFIG": str(config),
+            },
+        ):
+            with self.assertRaises(HolderRefusal) as unattended:
+                holder.begin_human_secure_enclave_enrollment()
+            self.assertIn("was not invoked", str(unattended.exception))
+            with self.assertRaises(HolderRefusal) as selected:
+                holder.begin_human_secure_enclave_enrollment(
+                    {"hardware": True, "backend": "secure-enclave"}
+                )
+            self.assertIn("was not invoked", str(selected.exception))
+            with self.assertRaises(TypeError) as signed:
+                holder.sign_with_human_native_signer(
+                    {"role": "mac"}, "set-policy", "local", "local"
+                )
+            self.assertIn("cannot be selected", str(signed.exception))
+        message = seal(
+            holder.caller_secret("app"),
+            caller_id="app",
+            body={"op": "begin-human", "signer": {"hardware": True, "backend": "secure-enclave"}},
+        )
+        with self.assertRaises(HolderRefusal) as wired:
+            handle_message(holder, message, bootstrap_secret=secret)
+        self.assertIn("unknown holder operation", str(wired.exception))
+
+    def test_caller_hardware_label_is_refused(self) -> None:
+        class Labeled(HumanNativeSigner):
+            hardware = True
+
+            def public_key(self, role: str) -> str:
+                return "labeled"
+
+            def sign(self, role: str, message: bytes) -> str:
+                return "labeled"
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-human-label-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.begin_human_secure_enclave_enrollment(Labeled(), policy="local")
+        self.assertIn("caller hardware label", str(ctx.exception))
+
+    def test_installed_protection_refuses_the_injected_signer_when_the_pin_matches(self) -> None:
+        from tests.test_native_bridge_policies import _boot
+
+        binary, keys = self._keys()
+        signer = _KitSigner(binary, keys)
+        td = tempfile.TemporaryDirectory(prefix="rsh-human-installed-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=True)
+        self.assertEqual(holder.verifier_pin.team_identifier, production_verifier_pin().team_identifier)
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.begin_human_secure_enclave_enrollment(signer, policy="dual")
+        self.assertIn(production_enrollment_refusal(), str(ctx.exception))
+        public_b64 = keys["mac"][0]
+        from runspecimen.holder_asymmetric import public_key_fingerprint
+
+        compared = public_key_fingerprint(public_b64)
+        with self.assertRaises(HolderRefusal) as doubled:
+            holder.pair_device(
+                "mac-1",
+                _boot(
+                    "ab" * 32,
+                    "pair",
+                    "mac-1",
+                    "local",
+                    role="mac",
+                    fingerprint=compared,
+                    algorithm="p256",
+                    public_key=public_b64,
+                    key_comparison=compared,
+                    provenance={
+                        "bridge": PRODUCTION_BRIDGE,
+                        "backend": BOUNDARY_DOUBLE,
+                        "boundary_double": True,
+                        "public_key": public_b64,
+                        "role": "mac",
+                        "policy": "local",
+                        "generation": holder.generation,
+                    },
+                ),
+            )
+        self.assertIn("does not authorize a software key", str(doubled.exception))
+
+    def test_injected_signer_enrolls_pairs_and_executes(self) -> None:
+        binary, keys = self._keys()
+        signer = _KitSigner(binary, keys)
+        for policy in ("local", "companion", "dual"):
+            with self.subTest(policy=policy):
+                self._execute(signer, policy)
+
+    def test_injected_signer_cancel_revoke_rotate_restart_downgrade_and_race(self) -> None:
+        binary, keys = self._keys()
+        signer = _KitSigner(binary, keys)
+        td = tempfile.TemporaryDirectory(prefix="rsh-human-flow-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        holder = self._holder(root, installed=False)
+        enrolled = holder.begin_human_secure_enclave_enrollment(signer, policy="local")
+        self.assertFalse(enrolled["hardware"])
+        self.assertFalse(enrolled["biometric_invoked"])
+        holder.set_policy(holder.sign_with_human_native_signer(signer, "set-policy", "local", "local"))
+        ws, script = self._workspace(root / "ws")
+        binding = self._binding(ws, script, "local")
+        files = [(str(script.resolve()), sha256_file(script))]
+        human = holder.sign_with_human_native_signer(
+            signer,
+            "consume",
+            "once",
+            "local",
+            self._consume_authorization(holder, "once", ws, script, binding),
+        )
+        holder.consume(nonce="once", policy="local", human=human, workspace=ws, files=files, binding=binding)
+        restarted = ExecutionHolder(
+            root / "state",
+            allow_test_double=False,
+            installed_protection=False,
+            bootstrap_secret="ab" * 32,
+            snapshot_base=root / "snaps",
+            verifier_pin=production_verifier_pin(),
+        )
+        self.assertEqual(restarted.holder_id, holder.holder_id)
+        cancelled = restarted.cancel_uncertain(
+            "once", restarted.sign_with_human_native_signer(signer, "cancel", "once", "local")
+        )
+        self.assertTrue(cancelled["cancelled"])
+        race = restarted.sign_with_human_native_signer(
+            signer,
+            "consume",
+            "race",
+            "local",
+            self._consume_authorization(restarted, "race", ws, script, binding),
+        )
+        errors: list[BaseException] = []
+        ok: list[bool] = []
+
+        def _once() -> None:
+            try:
+                restarted.consume(
+                    nonce="race", policy="local", human=race, workspace=ws, files=files, binding=binding
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+            else:
+                ok.append(True)
+
+        threads = [threading.Thread(target=_once) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(len(ok), 1)
+        self.assertEqual(len(errors), 1)
+        restarted.cancel_uncertain(
+            "race", restarted.sign_with_human_native_signer(signer, "cancel", "race", "local")
+        )
+        rotated = restarted.rotate_caller(
+            restarted.sign_with_human_native_signer(signer, "rotate", "app", "local")
+        )
+        self.assertEqual(rotated["key_generation"], 2)
+        self.assertFalse(rotated["hardware"])
+        restarted.revoke_device(
+            "mac-human",
+            restarted.sign_with_human_native_signer(signer, "revoke", "mac-human", "local"),
+        )
+        with self.assertRaises(HolderRefusal) as revoked:
+            restarted.consume(
+                nonce="after-revoke",
+                policy="local",
+                human=restarted.sign_with_human_native_signer(signer, "consume", "after-revoke", "local"),
+                workspace=ws,
+                files=files,
+                binding=binding,
+            )
+        self.assertIn("revoked", str(revoked.exception))
+        covered = {"protocol": 0, "caller_id": "bootstrap", "body": {"op": "enroll"}}
+        with self.assertRaises(HolderRefusal) as downgraded:
+            handle_message(restarted, {**covered, "mac": "00"}, bootstrap_secret="ab" * 32)
+        self.assertIn("downgrade", str(downgraded.exception))
+
+    def _execute(self, signer: _KitSigner, policy: str) -> None:
+        td = tempfile.TemporaryDirectory(prefix=f"rsh-human-{policy}-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        holder = self._holder(root, installed=False)
+        enrolled = holder.begin_human_secure_enclave_enrollment(signer, policy=policy)
+        self.assertEqual(enrolled["hardware"], False)
+        self.assertEqual(enrolled["biometric_invoked"], False)
+        self.assertEqual(enrolled["origin"], "injected-human-native-signer")
+        for device_id in enrolled["devices"]:
+            record = holder._devices()[device_id]
+            self.assertFalse(record["hardware"])
+            self.assertEqual(record["provenance"]["origin"], "injected-human-native-signer")
+            self.assertNotIn("boundary_double", record["provenance"])
+        holder.set_policy(holder.sign_with_human_native_signer(signer, "set-policy", policy, policy))
+        ws, script = self._workspace(root / "ws")
+        binding = self._binding(ws, script, policy)
+        files = [(str(script.resolve()), sha256_file(script))]
+        human = holder.sign_with_human_native_signer(
+            signer,
+            "consume",
+            policy,
+            policy,
+            self._consume_authorization(holder, policy, ws, script, binding),
+        )
+        self.assertFalse(human["hardware"])
+        holder.consume(nonce=policy, policy=policy, human=human, workspace=ws, files=files, binding=binding)
+        spent = json.loads((root / "state" / "spent.json").read_text(encoding="utf-8"))["nonces"][0]
+        result = holder.execute(
+            token=policy,
+            human=holder.sign_with_human_native_signer(
+                signer,
+                "execute",
+                policy,
+                policy,
+                {
+                    "payload_digest": spent["payload_digest"],
+                    "launch_argv": list(binding["launch_argv"]),
+                    "bounds": binding["bounds"],
+                    "mutation_digest": spent["binding"]["mutation_digest"],
+                    "attestation_class": "device-p256-not-hardware",
+                },
+            ),
+        )
+        self.assertEqual((ws.parent / "ran").read_text(encoding="utf-8"), "ran")
+        self.assertNotEqual(result.get("hardware"), True)

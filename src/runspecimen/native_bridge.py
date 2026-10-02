@@ -53,6 +53,23 @@ class TrustedNativeBoundary:
         return dict(found)
 
 
+class HumanNativeSigner:
+    """In-process native signer. Not hardware and not a wire-selectable double.
+
+    Subclasses implement ``public_key`` and ``sign``. A dict, environment
+    variable, or config file cannot become this object. The production
+    unattended call does not construct a Secure Enclave key and does not prompt.
+    """
+
+    hardware = False
+
+    def public_key(self, role: str) -> str:
+        raise NotImplementedError(role)
+
+    def sign(self, role: str, message: bytes) -> str:
+        raise NotImplementedError(role)
+
+
 class VerifierPin:
     """Exact team identifier and designated requirement. Not a display name."""
 

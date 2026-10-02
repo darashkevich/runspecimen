@@ -96,6 +96,43 @@ public enum NativeSignerOrigin: String, Equatable, Sendable {
 
 public enum ProductionEnrollmentError: Error, Equatable {
     case biometricPromptNotInvoked
+    case callerHardwareLabelRefused
+    case signerIncomplete
+}
+
+/// In-process native signer. Not hardware. Wire JSON cannot become this type.
+///
+/// A conforming type must not call `SecureEnclave.P256.Signing.PrivateKey`.
+/// Automation supplies a fixture. A person pressing the biometric is a separate step.
+public protocol HumanNativeSigning: Sendable {
+    var hardware: Bool { get }
+    func publicKey(role: String) -> Data
+    func sign(role: String, message: Data) -> Data
+}
+
+public struct HumanEnrollmentReceipt: Equatable, Sendable {
+    public var hardware: Bool
+    public var biometricInvoked: Bool
+    public var policy: String
+    public var roles: [String]
+    public var publicKeys: [String: Data]
+    public var signatures: [String: Data]
+
+    public init(
+        hardware: Bool,
+        biometricInvoked: Bool,
+        policy: String,
+        roles: [String],
+        publicKeys: [String: Data],
+        signatures: [String: Data]
+    ) {
+        self.hardware = hardware
+        self.biometricInvoked = biometricInvoked
+        self.policy = policy
+        self.roles = roles
+        self.publicKeys = publicKeys
+        self.signatures = signatures
+    }
 }
 
 /// Production enrollment status for the Mac app.
@@ -109,7 +146,7 @@ public enum ProductionNativeBridgeGate {
 
     public static func status(signers: [IsolatedNativeSigner] = []) -> String {
         let connected = IsolatedNativeEnrollment.connected(signers)
-        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. This Store app does not carry the Developer ID verifier pin and stays guarantee (1). A display name is not a pin. A verifier pin does not authorize a software key. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
+        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. This Store app does not carry the Developer ID verifier pin and stays guarantee (1). A display name is not a pin. A verifier pin does not authorize a software key. An injected native signer is not hardware. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
     }
 
     /// Wire and file labels never select the human step.
@@ -134,9 +171,59 @@ public enum ProductionNativeBridgeGate {
         return installedProtection && pinConfigured && verifierConnected
     }
 
-    /// Human step. Does not call `SecureEnclave.P256.Signing.PrivateKey` and does not prompt.
+    /// Unattended call. Does not call `SecureEnclave.P256.Signing.PrivateKey` and does not prompt.
     public static func beginHumanSecureEnclaveEnrollment() throws {
         throw ProductionEnrollmentError.biometricPromptNotInvoked
+    }
+
+    /// Enroll, pair, and sign with an injected native signer.
+    ///
+    /// `signer` is an in-process dependency. A nil signer takes the unattended
+    /// path and throws before any key API. `hardware == true` is a caller label
+    /// and is refused. The receipt is not a Secure Enclave enrollment and not
+    /// installed protection. This function does not call
+    /// `SecureEnclave.P256.Signing.PrivateKey`.
+    public static func beginHumanSecureEnclaveEnrollment<S: HumanNativeSigning>(
+        signer: S?,
+        policy: String = "local"
+    ) throws -> HumanEnrollmentReceipt {
+        guard let signer else {
+            throw ProductionEnrollmentError.biometricPromptNotInvoked
+        }
+        if signer.hardware {
+            throw ProductionEnrollmentError.callerHardwareLabelRefused
+        }
+        let roles: [String]
+        switch policy {
+        case "local":
+            roles = ["mac"]
+        case "companion":
+            roles = ["phone"]
+        case "dual":
+            roles = ["mac", "phone"]
+        default:
+            throw ProductionEnrollmentError.signerIncomplete
+        }
+        let message = Data("holder-device-p256-v1:\(policy)".utf8)
+        var publicKeys: [String: Data] = [:]
+        var signatures: [String: Data] = [:]
+        for role in roles {
+            let publicKey = signer.publicKey(role: role)
+            let signature = signer.sign(role: role, message: message)
+            if publicKey.isEmpty || signature.isEmpty {
+                throw ProductionEnrollmentError.signerIncomplete
+            }
+            publicKeys[role] = publicKey
+            signatures[role] = signature
+        }
+        return HumanEnrollmentReceipt(
+            hardware: false,
+            biometricInvoked: false,
+            policy: policy,
+            roles: roles,
+            publicKeys: publicKeys,
+            signatures: signatures
+        )
     }
 }
 
