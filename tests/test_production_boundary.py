@@ -597,12 +597,21 @@ class CleanPackageTests(unittest.TestCase):
         self.addCleanup(td.cleanup)
         build = Path(td.name) / "build"
         placed = assemble_developer_id_artifact(build, source)
+        identity = "Developer ID Application: YAHOR DARASHKEVICH (UN6KF8636A)"
+        listed = subprocess.run(
+            ["/usr/bin/security", "find-identity", "-v", "-p", "codesigning"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        sign_as = identity if identity in listed.stdout else "-"
         signed = subprocess.run(
             [
                 "/usr/bin/codesign",
                 "--force",
                 "--sign",
-                "Developer ID Application: YAHOR DARASHKEVICH (UN6KF8636A)",
+                sign_as,
                 "--identifier",
                 "com.darashkevich.runspecimen.native-p256-verify",
                 "--timestamp=none",
@@ -616,7 +625,7 @@ class CleanPackageTests(unittest.TestCase):
         self.assertEqual(signed.returncode, 0, signed.stderr)
         refreshed = refresh_verifier_provenance(placed)
         body = json.loads(refreshed.read_text(encoding="utf-8"))
-        self.assertEqual(body["signed"], "codesign")
+        self.assertEqual(body["signed"], "codesign" if sign_as == identity else "adhoc")
         self.assertEqual(body["sha256"], hashlib.sha256(placed.read_bytes()).hexdigest())
         self.assertNotIn("Developer ID", json.dumps(body))
         self.assertEqual(repo_provenance.read_text(encoding="utf-8"), repo_before)
