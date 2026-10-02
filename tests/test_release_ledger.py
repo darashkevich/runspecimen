@@ -116,9 +116,11 @@ exit $fail
                 self.assertIn("was not run", blocked.stderr)
 
     def test_compiled_stage_is_adhoc_signed_and_not_installed(self) -> None:
+        if not Path("/usr/bin/xcrun").is_file():
+            self.skipTest("swiftc is not on this runner")
         with tempfile.TemporaryDirectory(prefix="rs-runtime-src-") as td:
             source = Path(td) / "python3"
-            source.write_bytes(Path("/tmp/rs-py312-rel-holder/bin/python").read_bytes())
+            source.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             source.chmod(0o755)
             env = os.environ.copy()
             env["RS_HOLDER_STAGE_COMPILE"] = "1"
@@ -148,7 +150,9 @@ exit $fail
                 timeout=10,
             )
             self.assertIn("Signature=adhoc", signed.stderr)
-            self.assertFalse(Path("/Applications/RunSpecimen Holder.app").joinpath("Contents/MacOS/RunSpecimenHolder").samefile(binary))
+            live = Path("/Applications/RunSpecimen Holder.app/Contents/MacOS/RunSpecimenHolder")
+            if live.exists():
+                self.assertFalse(live.samefile(binary))
             self.assertIn("NOT_INSTALLED=1", staged.stdout)
 
 
