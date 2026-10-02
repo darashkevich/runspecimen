@@ -2,7 +2,7 @@
 
 QA instruction: finish the unblocked engineering in `RELEASE-BLOCKER-LEDGER-2026-10-02.md`. The frozen baseline was tip `4a6b97fba97729b658a40ffc99d48c505978e4ba` (code `4b9755b66c5e60968cf3e432dd5e907f027d8393`). That baseline is not this candidate. A pin match authenticates verifier code. It does not authenticate biometric key origin or human approval.
 
-Code commits: `74914f9b52784509182318b5261f6747ccdf9f77` and `60ea6eea6b892b30d4d47baa021b0ad63cd8646e`. The candidate tip is the commit that adds this sentence. Its parent is `929234e409bd9187c246ee2a9e19ff5d717076e9`. On a Mac without that Developer ID identity, the extracted-verifier test signs ad-hoc and still refuses the repository fallback. The compile-stage test skips when `swiftc` is absent and does not read a machine-local interpreter path.
+Code commits: `74914f9b52784509182318b5261f6747ccdf9f77` and `60ea6eea6b892b30d4d47baa021b0ad63cd8646e`. The candidate tip is the commit that adds this sentence. Its parent is `9946eff53154f9ee7cbaf301ff35203b9b57b402`. On a Mac without that Developer ID identity, the extracted-verifier test signs ad-hoc and still refuses the repository fallback. The compile-stage test skips when `swiftc` is absent and does not read a machine-local interpreter path.
 
 This note is not production sign-off. Nothing here was installed, published, merged, notarized, or submitted. No biometric prompt was run. `SecureEnclave.P256.Signing.PrivateKey` was not called. The live `/Applications` apps and holder daemon pid 42554 were not repaired, signaled, or replaced. CI green is not readiness.
 
@@ -21,7 +21,7 @@ This note is not production sign-off. Nothing here was installed, published, mer
 | E9 | fixed as documentation; hashes stay out of the sdist | `74914f9b52784509182318b5261f6747ccdf9f77` | `docs/CHANNEL_MATRIX.md`, `docs/CANDIDATE_MANIFEST.md` | this file |
 | E10 | qualification-not-exploit | `74914f9b52784509182318b5261f6747ccdf9f77` | `test_holder_state_is_not_world_readable`; existing `test_every_crash_boundary_launches_once`, `test_setsid_descendant_keeps_lease_until_tree_gone`, `test_double_fork_setsid_retains_the_lease` | this file |
 | E11 | matrix written; publication comparison remains after an authorized publish | `74914f9b52784509182318b5261f6747ccdf9f77` | `docs/CHANNEL_MATRIX.md` | this file |
-| D1 | blocked on a named decision: Yahor confirms the verifier identity | none; pin not written | `test_shipped_pin_is_unset_and_refuses_the_boundary` | this file |
+| D1 | confirmed-and-implemented | `9946eff53154f9ee7cbaf301ff35203b9b57b402` | `test_confirmed_pin_is_exact_and_refuses_a_software_key`; `test_identity_mismatch_against_the_confirmed_pin`; `test_adhoc_repository_verifier_does_not_meet_the_confirmed_pin`; `test_extracted_artifact_is_the_holder_verifier_without_repo_fallback` | this file |
 | H1 | human gate | none | not performed | this file |
 | H2 | human gate | none | not performed | this file |
 | H3 | human gate | none | not performed | this file |
@@ -42,9 +42,13 @@ E7 prepared a wheel, an sdist, the unchanged plugin zip, and a separate Develope
 
 E10 did not inject a crash into daemon pid 42554, did not open a cross-user socket, and did not run as root. The mode check and the existing crash, descendant, and snapshot tests are qualification.
 
-## Unconfirmed D1 proposal
+## D1 confirmed
 
-Yahor has not confirmed this. It is not written into `production_verifier_pin()`. Confirmation must not enable the E1 software exception. The shipped pin stays unset and fails closed.
+Yahor confirmed this pair. `production_verifier_pin()` returns it. Confirmation did not enable a software key. The Store app does not carry the pin. This is not a production sign-off.
+
+Signing a copy with `Developer ID Application: YAHOR DARASHKEVICH (UN6KF8636A)` did not prompt. Signed-copy SHA-256 `e74c0d74c31a077c7fd3557dbc9d96f28da0ff95f41c5d3668ba0b2f3ca1622a`. Its team and designated requirement equal the pin exactly. The repository binary stays ad-hoc. No new identity was stored.
+
+## Earlier proposal text
 
 - Team: `UN6KF8636A`
 - Common name already on the login keychain: `Developer ID Application: YAHOR DARASHKEVICH (UN6KF8636A)`
@@ -75,13 +79,21 @@ Those ledger-directory hashes were built at `74914f9b52784509182318b5261f6747ccd
 
 That run reported 571 tests, 35 skipped, then the same 4-test follow-up, exit 0. The extra test is the compiled holder stage, which ran here because `swiftc` is present. The skip reasons are the same. The sdist hash above is not inside a file packed into that sdist.
 
+After the confirmed pin, `release_check` wrote `artifacts/rc15-2026-10-02-qa-py312-pin/` and did not replace the tip or ledger directories. Homebrew Python 3.12.14. 573 tests, 35 skipped, then the 4-test follow-up, exit 0. The same skip reasons. The new sdist hash is not inside a file packed into that sdist.
+
+- Wheel SHA-256: `84314444fdc97204cfc6bfe455b864b1cd43f8ad82f193dcdfedb708c5ec519e`
+- Sdist SHA-256: `24babb09a034c403bbf41129a36536a57111745a8b0d7b92c0e0713fff26a592`
+- Plugin zip SHA-256, unchanged: `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d`
+
 ## GUI
 
-Built from `74914f9b52784509182318b5261f6747ccdf9f77` into `/tmp/rs-qa-ledger-derived`. The following commit does not change the Mac app sources. Signature: Sign to Run Locally (ad-hoc). Sandbox on. `com.apple.security.network.client` present. `com.apple.security.network.server` absent. `get-task-allow` absent. The bundle has no holder. This is not holder acceptance.
+The `74914f9` GUI in `/tmp/rs-qa-ledger-derived` remains a receipt build and is not holder acceptance. Executable SHA-256 `b27d7d4d6553dec582cc9486ec73f4376ba82e439dd91315351e1540a9f30a7e`.
 
-Executable SHA-256: `b27d7d4d6553dec582cc9486ec73f4376ba82e439dd91315351e1540a9f30a7e`
+The pin commit changes the Mac app status string, so a new development build is `/tmp/rs-qa-pin-derived` from `9946eff53154f9ee7cbaf301ff35203b9b57b402`. Signature: Sign to Run Locally (ad-hoc). Sandbox on. `com.apple.security.network.client` present. `com.apple.security.network.server` absent. `get-task-allow` absent. The bundle has no holder. This is not holder acceptance.
 
-Labeled synthetic certificates, not a live run, were planted for `reviewer-demo/run-001` and `reviewer-demo/run-000`. Digest returned `certificate_id` `labeled-synthetic-reviewer-demo-run-001`. Live compare status was `match` for `outputs/labeled-synthetic.txt`. Diff reported `identical: false` with changed `exit_code` 0 versus 1 and `run_result` ok versus failed. Retain cancel left `/tmp/rs-qa-retain-ledger` empty. Retain confirm wrote `state.json`, `events.jsonl`, `approval.json`, `certificate.json`, and `manifest.json` (`kind` `retained_incident_bundle`, created `2026-10-02T15:04:24Z`, manifest SHA-256 `5d693e3f0f47ef3c516106258b4c821fce5bef2b788379d315eb8da8cd5a3c15`).
+Executable SHA-256: `0b2fbb2dd10fc6d6f6ebc87afd003e7aae72d729623e3da02b7cecb09765e2c4`
+
+The receipt session below is the `74914f9` build. The pin build was not used for another receipt session. Labeled synthetic certificates, not a live run, were planted for `reviewer-demo/run-001` and `reviewer-demo/run-000`. Digest returned `certificate_id` `labeled-synthetic-reviewer-demo-run-001`. Live compare status was `match` for `outputs/labeled-synthetic.txt`. Diff reported `identical: false` with changed `exit_code` 0 versus 1 and `run_result` ok versus failed. Retain cancel left `/tmp/rs-qa-retain-ledger` empty. Retain confirm wrote `state.json`, `events.jsonl`, `approval.json`, `certificate.json`, and `manifest.json` (`kind` `retained_incident_bundle`, created `2026-10-02T15:04:24Z`, manifest SHA-256 `5d693e3f0f47ef3c516106258b4c821fce5bef2b788379d315eb8da8cd5a3c15`).
 
 The window was resized to 900 by 700. Opening `/tmp/rs-qa-ledger-other-ws` (a truncated contract) disabled digest and showed "Select a contract with a campaign and a run." Opening the reviewer demo again restored the labeled digest. The specific stale-confirmation sentence was not observed because the workflow sheet closed during the switch. Large-output cancellation was not driven. Human approval was not performed.
 
@@ -89,7 +101,7 @@ Only QA pid 37395 was killed. The container `~/Library/Containers/com.darashkevi
 
 ## Human checklist
 
-1. Confirm or reject the D1 identity above. Do not treat a pin match as biometric origin.
+1. D1 is confirmed. Do not treat a pin match as biometric origin.
 2. On a provenance-identified build, enroll, sign, cancel, rotate, and revoke with a real biometric prompt (H1).
 3. Authorize a root-owned holder install, then run one bounded local, companion, and dual command and reject a replay (H2). Leave the approved Store app in place.
 4. Export the Store archive for this SHA and notarize the Developer ID holder (H3). Historical 0.1.4 (9) does not qualify this SHA.
