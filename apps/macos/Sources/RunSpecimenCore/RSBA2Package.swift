@@ -87,34 +87,56 @@ public enum IsolatedNativeEnrollment {
     }
 }
 
+/// Who created the key. A caller string cannot become the human Secure Enclave step.
+public enum NativeSignerOrigin: String, Equatable, Sendable {
+    case callerSupplied = "caller-supplied"
+    case softwareDouble = "software-double"
+    case secureEnclaveHumanStep = "secure-enclave-human-prompt"
+}
+
+public enum ProductionEnrollmentError: Error, Equatable {
+    case biometricPromptNotInvoked
+}
+
 /// Production enrollment status for the Mac app.
 ///
-/// Source integration and trust configuration remain open. A real biometric
-/// key stays closed. The boundary path is not hardware and needs an injected pin.
+/// A caller boundary flag is not production enrollment. The Secure Enclave
+/// prompt is the human step and is not invoked from this type. The shipped
+/// pin stays unset and unconfirmed.
 public enum ProductionNativeBridgeGate {
     public static let boundaryBackend = "production-boundary-double-not-hardware"
     public static let productionBridge = "native-production-bridge"
 
     public static func status(signers: [IsolatedNativeSigner] = []) -> String {
         let connected = IsolatedNativeEnrollment.connected(signers)
-        return "Source integration and trust configuration remain open. The shipped verifier pin is unset. A display name is not a pin. Hardware key creation stays closed. Production boundary enrollment requires an injected pin and a connected verifier, and that path stays hardware false. Isolated double local=\(connected.local) companion=\(connected.companion)."
+        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. The shipped verifier pin is unset and unconfirmed. A display name is not a pin. A verifier pin does not authorize a software key. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
     }
 
-    /// Biometric key creation stays false. The boundary path is true only when a pin and verifier are injected.
+    /// Wire and file labels never select the human step.
+    public static func origin(fromCallerBackend backend: String) -> NativeSignerOrigin {
+        if backend == boundaryBackend
+            || backend == EnrollmentIdentity.backendSoftwareTest
+            || backend == EnrollmentIdentity.backendSoftwareDevelopment {
+            return .softwareDouble
+        }
+        return .callerSupplied
+    }
+
+    /// True only for the human Secure Enclave step when a pin and verifier are connected.
+    /// The software double stays false under installed protection.
     public static func allowsProductionEnrollment(
-        backend: String,
-        provenance: String,
+        origin: NativeSignerOrigin,
         pinConfigured: Bool = false,
         verifierConnected: Bool = false,
-        hardware: Bool = false
+        installedProtection: Bool = false
     ) -> Bool {
-        if hardware || backend == EnrollmentIdentity.backendSecureEnclave {
-            return false
-        }
-        return backend == boundaryBackend
-            && provenance == productionBridge
-            && pinConfigured
-            && verifierConnected
+        guard origin == .secureEnclaveHumanStep else { return false }
+        return installedProtection && pinConfigured && verifierConnected
+    }
+
+    /// Human step. Does not call `SecureEnclave.P256.Signing.PrivateKey` and does not prompt.
+    public static func beginHumanSecureEnclaveEnrollment() throws {
+        throw ProductionEnrollmentError.biometricPromptNotInvoked
     }
 }
 

@@ -1,6 +1,6 @@
 # Candidate manifest
 
-This file is the current full-scope candidate. It is not a Store submission plan, and it does not describe a stable-only app update.
+This file is not a Store submission plan. The September 30 hash table below is historical. It is not the artifact set for the commit that adds the production-boundary refusal. That commit's `release_check` hashes are recorded in `apps/macos/asc-kit/evidence/` after the sdist is built, so this copy inside the sdist does not contain those new hashes. A version string does not identify the binary.
 
 | Item | Identity |
 | --- | --- |

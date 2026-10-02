@@ -181,6 +181,41 @@ def serve(support: Path, *, bootstrap_secret: str) -> int:
         threading.Thread(target=worker, args=(conn,), daemon=True).start()
 
 
+def assert_support_before_secret(support: Path, env: dict[str, str] | None = None) -> None:
+    """Check ancestors that already exist before a secret is read or created.
+
+    A missing tail may be created later. A symlink or a non-sticky
+    world-writable component fails closed. This is an ordering check, not a
+    claim that the live daemon was exploited.
+    """
+
+    import stat
+
+    from runspecimen.holder_runtime import RuntimeTrustError, refuse_user_python_injection
+
+    refuse_user_python_injection(env)
+    path = Path(support)
+    if path.is_symlink():
+        raise RuntimeTrustError(f"support path contains a symlink: {path}")
+    if not path.is_absolute():
+        path = Path(os.path.realpath(path))
+    else:
+        path = Path(os.path.realpath(path))
+    cursor = Path("/")
+    for part in path.parts[1:]:
+        cursor = cursor / part
+        if not cursor.exists() and not cursor.is_symlink():
+            return
+        st = os.lstat(cursor)
+        if stat.S_ISLNK(st.st_mode):
+            raise RuntimeTrustError(f"support path contains a symlink: {cursor}")
+        mode = stat.S_IMODE(st.st_mode)
+        if mode & stat.S_IWOTH:
+            sticky = bool(st.st_mode & stat.S_ISVTX) and stat.S_ISDIR(st.st_mode)
+            if not sticky:
+                raise RuntimeTrustError(f"support path is world-writable: {cursor}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="runspecimen-holder-daemon")
     parser.add_argument(
@@ -190,6 +225,11 @@ def main(argv: list[str] | None = None) -> int:
         help="root-owned support directory containing state/ and holder.sock",
     )
     args = parser.parse_args(argv)
+    try:
+        assert_support_before_secret(args.support_dir)
+    except RuntimeTrustError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     secret = os.environ.get(BOOTSTRAP_ENV, "").strip()
     if len(secret) < 32:
         print("RS_HOLDER_BOOTSTRAP_SECRET missing or too short", file=sys.stderr)

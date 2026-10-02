@@ -2,9 +2,12 @@
 
 The isolated double can enroll, pair, and sign when a caller supplies a
 verifier pin and the binary's team identifier and designated requirement
-match that pin. Installed protection refuses that double. Production does
-not invent a team identifier or a designated requirement: ``production_verifier_pin``
-stays unset, so a display name that contains "Developer ID" is not trusted.
+match that pin. Installed protection refuses that double. A caller
+``boundary_double`` flag is not a trusted native boundary. Production wire
+input, environment, and config cannot select the software double.
+``production_verifier_pin`` stays unset, so a display name that contains
+"Developer ID" is not trusted. A pin match checks verifier code only. It
+does not authorize a software key.
 
 This module does not create a Secure Enclave key and it does not prompt.
 """
@@ -21,6 +24,32 @@ LABELED_TEST_DOUBLE = "labeled-native-bridge-double-not-hardware"
 ISOLATED_DOUBLE = "isolated-native-bridge-double-not-hardware"
 BOUNDARY_DOUBLE = "production-boundary-double-not-hardware"
 VERIFIER_RELATIVE = Path("runspecimen/platform/darwin_arm64/native_p256_verify")
+_SIGNED_KINDS = frozenset({"adhoc", "codesign"})
+
+
+class TrustedNativeBoundary:
+    """In-process test double. JSON, environment, and config cannot construct it."""
+
+    def __init__(self) -> None:
+        self._issued: dict[str, dict[str, object]] = {}
+
+    def issue(self, *, public_key: str, role: str, policy: str, generation: int) -> None:
+        if not isinstance(public_key, str) or not public_key:
+            raise ValueError("injected boundary public key is missing")
+        self._issued[public_key] = {
+            "public_key": public_key,
+            "role": role,
+            "policy": policy,
+            "generation": generation,
+            "hardware": False,
+            "origin": "injected-trusted-native-boundary",
+        }
+
+    def lookup(self, public_key: str) -> dict[str, object] | None:
+        found = self._issued.get(public_key)
+        if found is None:
+            return None
+        return dict(found)
 
 
 class VerifierPin:
@@ -54,6 +83,33 @@ def effective_verifier_pin(injected: VerifierPin | None) -> VerifierPin | None:
     if injected is not None:
         return injected
     return production_verifier_pin()
+
+
+def supported_verifier_architecture(binary: Path | None = None) -> str:
+    """The packaged verifier is arm64. Other slices are unsupported.
+
+    This does not invent a publisher. A missing binary is ``absent``.
+    """
+
+    path = binary if binary is not None else platform_verifier_binary()
+    if path is None or not path.is_file():
+        return "absent"
+    if sys.platform != "darwin":
+        return "unverified"
+    try:
+        described = subprocess.run(
+            ["/usr/bin/file", str(path)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "unverified"
+    text = described.stdout
+    if "arm64" in text and "x86_64" not in text:
+        return "arm64"
+    return "unsupported"
 
 
 def platform_verifier_binary() -> Path | None:
@@ -175,6 +231,64 @@ def resolve_verifier(root: Path) -> Path | None:
     return None
 
 
+def _signature_kind(binary: Path) -> str:
+    """``adhoc`` or ``codesign``. Display text is not a signature kind."""
+
+    if not binary.is_file():
+        return "unpinned"
+    if sys.platform != "darwin":
+        return "adhoc"
+    try:
+        details = subprocess.run(
+            ["/usr/bin/codesign", "-dvvv", str(binary)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "unpinned"
+    text = f"{details.stdout}\n{details.stderr}"
+    if "Signature=adhoc" in text:
+        return "adhoc"
+    for line in text.splitlines():
+        if line.startswith("TeamIdentifier="):
+            value = line.split("=", 1)[1].strip()
+            if value and value != "not set":
+                return "codesign"
+    return "unpinned"
+
+
+def refresh_verifier_provenance(binary: Path) -> Path:
+    """Rewrite provenance beside this binary. Does not set the production pin.
+
+    The recorded ``signed`` value is ``adhoc`` or ``codesign``. A display name
+    that contains "Developer ID" is not stored.
+    """
+
+    import hashlib
+    import json
+
+    binary = Path(binary)
+    if not binary.is_file():
+        raise FileNotFoundError("platform verifier is absent")
+    digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+    signed = _signature_kind(binary)
+    if signed not in _SIGNED_KINDS:
+        raise VerifierIdentityError("verifier signature kind is not adhoc or codesign")
+    body = {
+        "algorithm": "p256-cryptokit",
+        "identifier": "com.darashkevich.runspecimen.native-p256-verify",
+        "not_secure_enclave": True,
+        "platform": "darwin-arm64",
+        "sha256": digest,
+        "signed": signed,
+    }
+    path = binary.parent / "native_p256_verify.provenance.json"
+    path.write_text(json.dumps(body, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
 def assemble_developer_id_artifact(destination: Path, source: Path | None = None) -> Path:
     """Place the verifier where the holder resolves it. Does not set the pin."""
 
@@ -186,9 +300,7 @@ def assemble_developer_id_artifact(destination: Path, source: Path | None = None
     dest = Path(destination) / VERIFIER_RELATIVE
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(binary, dest)
-    provenance = platform_verifier_provenance()
-    if provenance is not None and provenance.is_file():
-        shutil.copy2(provenance, dest.parent / provenance.name)
+    refresh_verifier_provenance(dest)
     return dest
 
 
@@ -238,7 +350,9 @@ def production_enrollment_refusal() -> str:
     return (
         "native production enrollment is not accepted: verifier team and "
         "designated requirement are not pinned. A display name containing "
-        "Developer ID is not a verifier identity. The "
+        "Developer ID is not a verifier identity. A verifier pin does not "
+        "authorize a software key. A caller boundary_double flag is refused "
+        "when installed protection is on. The "
         f"{LABELED_TEST_DOUBLE} path and the {ISOLATED_DOUBLE} path are "
         "refused when installed protection is on. software P-256 is not a "
         "Secure Enclave. Secure Enclave key creation was not called."

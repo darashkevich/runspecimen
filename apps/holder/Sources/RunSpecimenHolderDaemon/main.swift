@@ -82,12 +82,29 @@ if getenv("PYTHONPATH") != nil {
 }
 
 let fm = FileManager.default
+let execURL = absoluteExecutableURL()
+let contents = execURL.deletingLastPathComponent().deletingLastPathComponent()
+let resources = contents.appendingPathComponent("Resources")
+let embedded = resources.appendingPathComponent("Runtime/bin/python3")
+let moduleRoot = resources.appendingPathComponent("Python")
+let entry = moduleRoot.appendingPathComponent("runspecimen/holder_entry.py")
+
+// The installed holder is assumed to be root-owned under /Applications.
+// That is not the Store app. Trust the embedded interpreter before any
+// support directory or bootstrap secret is created. /usr/bin/python3 is not
+// a fallback.
+assertTrustedPath(execURL.path)
+assertTrustedPath(embedded.path)
+assertTrustedPath(moduleRoot.path)
+assertTrustedPath(entry.path)
+let python = embedded.path
+
 try? fm.createDirectory(at: support, withIntermediateDirectories: true)
 try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: support.path)
 try? fm.createDirectory(at: state, withIntermediateDirectories: true)
 try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: state.path)
 try? fm.createDirectory(at: snapshots, withIntermediateDirectories: true)
-try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: snapshots.path)
+try? fm.setAttributes([.posixPermissions: 0o711], ofItemAtPath: snapshots.path)
 
 if !fm.fileExists(atPath: secretFile.path) {
     var bytes = [UInt8](repeating: 0, count: 32)
@@ -115,35 +132,6 @@ if secret.count < 32 {
     die("bootstrap secret missing or too short")
 }
 
-let execURL = absoluteExecutableURL()
-let contents = execURL.deletingLastPathComponent().deletingLastPathComponent()
-let resources = contents.appendingPathComponent("Resources")
-let embedded = resources.appendingPathComponent("Runtime/bin/python3")
-let moduleRoot = resources.appendingPathComponent("Python")
-let entry = moduleRoot.appendingPathComponent("runspecimen/holder_entry.py")
-
-var python: String?
-if fm.isExecutableFile(atPath: embedded.path) {
-    assertTrustedPath(embedded.path)
-    assertTrustedPath(moduleRoot.path)
-    assertTrustedPath(entry.path)
-    python = embedded.path
-} else if fm.isExecutableFile(atPath: "/usr/bin/python3") {
-    assertTrustedPath("/usr/bin/python3")
-    if fm.fileExists(atPath: moduleRoot.path) {
-        assertTrustedPath(moduleRoot.path)
-    }
-    if fm.fileExists(atPath: entry.path) {
-        assertTrustedPath(entry.path)
-    }
-    python = "/usr/bin/python3"
-} else {
-    die("no protected interpreter available")
-}
-
-guard let python else {
-    die("no protected interpreter available")
-}
 if !fm.isReadableFile(atPath: entry.path) {
     die("holder_entry.py missing from protected module root")
 }

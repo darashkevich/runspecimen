@@ -1,0 +1,14 @@
+# Channel matrix
+
+This matrix is the unpublished candidate on `cursor/integrated-release-candidate`. It is not a listing, a Store submission, or a production sign-off. Marketplace presence is not acceptance. Historical **0.1.4 (9)** stays the approved Store app and is guarantee (1). The Developer ID holder is guarantee (2) and is not that app. A version label such as 0.1.5 (13) does not identify a binary.
+
+| Channel | Feature set | Version | Tested artifact | Limitation | Distribution |
+| --- | --- | --- | --- | --- | --- |
+| CLI wheel and sdist | Engine, doctor, validate, status, receipts | unpublished `0.2.0rc15` | The `release_check` directory named in the evidence file for this tip. The pure wheel omits `native_p256_verify` | Shipped verifier pin is unset. Not published to PyPI | Not published. Do not compare to GitHub or PyPI until a person authorizes publication |
+| Direct install / Homebrew | Same engine as the published formula pin | Formula still points at published `0.2.0rc14` | No new bottle was built | This candidate is not the Homebrew pin | Not updated |
+| Plugins | Adapter calls the CLI. It does not ship the verifier and does not pass a holder | `0.2.0-rc.15` | Plugin zip `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d` unless a plugin file changes | A missing Mach-O is reported by the CLI. The plugin does not enroll | Not submitted to a marketplace |
+| Mac App Store | Guarantee (1), typed phrase | Approved **0.1.4 (9)** only | Package `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` | This SHA has no new Store archive. The Store app does not have guarantee (2) | Not submitted |
+| Developer ID holder | Guarantee (2) source: enrollment, policy, spent nonces, leases | Unpublished | `apps/holder/Scripts/build_install_holder.sh stage` writes a unique directory with `Resources/Runtime/bin/python3`. It does not install | `install`, `update`, `rollback`, and `uninstall` exit 4. No notarization. The proposed team is unconfirmed | Not installed |
+| iOS companion | Observation and carried approval. Software signer is not a device prompt | Same sources as this branch | Swift tests. No device run | Face ID and a paired phone remain a person | Not submitted |
+
+`doctor`, `validate`, and `status` keep working when the Darwin verifier is absent. They do not enroll. Production enrollment fails closed.

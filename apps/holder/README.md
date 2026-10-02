@@ -30,11 +30,15 @@ are intentionally absent.
 ## Build / install
 
 ```sh
-apps/holder/Scripts/build_install_holder.sh
+RS_HOLDER_STAGE_FIXTURES=1 RS_HOLDER_RUNTIME_SOURCE=/path/to/python3 \
+  apps/holder/Scripts/build_install_holder.sh stage
 ```
 
-Signs with `Developer ID Application: YAHOR DARASHKEVICH (UN6KF8636A)`.
-Does not touch `/Applications/RunSpecimen.app`. Does not notarize.
+`stage` creates a unique directory and an embedded `Resources/Runtime/bin/python3`.
+It does not delete `HOLDER_BUILD_DIR` and it does not install. `install`,
+`update`, `rollback`, and `uninstall` exit 4. They are not run from this pass.
+`/usr/bin/python3` is not a fallback. Does not touch `/Applications/RunSpecimen.app`.
+Does not notarize.
 
 After install, macOS may show **System Settings → General → Login Items &
 Extensions** and ask you to allow Background Items for RunSpecimen Holder.

@@ -1258,41 +1258,47 @@ final class PolicyBoundApprovalTests: XCTestCase {
             provenance: record.provenance,
             state: record.state
         ))
+        XCTAssertEqual(
+            ProductionNativeBridgeGate.origin(fromCallerBackend: EnrollmentIdentity.backendSecureEnclave),
+            .callerSupplied
+        )
         XCTAssertFalse(ProductionNativeBridgeGate.allowsProductionEnrollment(
-            backend: EnrollmentIdentity.backendSecureEnclave,
-            provenance: EnrollmentIdentity.provenanceProduction
+            origin: .callerSupplied
         ))
         XCTAssertFalse(ProductionNativeBridgeGate.allowsProductionEnrollment(
-            backend: record.backend,
-            provenance: record.provenance
+            origin: ProductionNativeBridgeGate.origin(fromCallerBackend: record.backend)
         ))
-        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("trust configuration"))
+        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("native enrollment remains open"))
         XCTAssertTrue(ProductionNativeBridgeGate.status().contains("pin is unset"))
+        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("unconfirmed"))
         XCTAssertFalse(ProductionNativeBridgeGate.status().contains("until a person"))
         XCTAssertFalse(ProductionNativeBridgeGate.allowsProductionEnrollment(
-            backend: EnrollmentIdentity.backendSecureEnclave,
-            provenance: EnrollmentIdentity.provenanceProduction,
+            origin: .callerSupplied,
             pinConfigured: true,
             verifierConnected: true,
-            hardware: true
+            installedProtection: true
+        ))
+        XCTAssertFalse(ProductionNativeBridgeGate.allowsProductionEnrollment(
+            origin: ProductionNativeBridgeGate.origin(fromCallerBackend: ProductionNativeBridgeGate.boundaryBackend),
+            pinConfigured: true,
+            verifierConnected: true,
+            installedProtection: true
         ))
         XCTAssertTrue(ProductionNativeBridgeGate.allowsProductionEnrollment(
-            backend: ProductionNativeBridgeGate.boundaryBackend,
-            provenance: ProductionNativeBridgeGate.productionBridge,
+            origin: .secureEnclaveHumanStep,
             pinConfigured: true,
             verifierConnected: true,
-            hardware: false
+            installedProtection: true
         ))
         XCTAssertFalse(ProductionNativeBridgeGate.allowsProductionEnrollment(
-            backend: ProductionNativeBridgeGate.boundaryBackend,
-            provenance: ProductionNativeBridgeGate.productionBridge,
+            origin: .secureEnclaveHumanStep,
             pinConfigured: false,
-            verifierConnected: true
+            verifierConnected: true,
+            installedProtection: true
         ))
-        XCTAssertFalse(ProductionNativeBridgeGate.allowsProductionEnrollment(
-            backend: EnrollmentIdentity.backendSecureEnclave,
-            provenance: EnrollmentIdentity.provenanceProduction
-        ))
+        XCTAssertThrowsError(try ProductionNativeBridgeGate.beginHumanSecureEnclaveEnrollment()) { error in
+            XCTAssertEqual(error as? ProductionEnrollmentError, .biometricPromptNotInvoked)
+        }
         let local = IsolatedNativeEnrollment.complete(role: EnrollmentIdentity.roleLocal)
         let companion = IsolatedNativeEnrollment.complete(role: EnrollmentIdentity.roleCompanion)
         XCTAssertEqual(local?.hardware, false)

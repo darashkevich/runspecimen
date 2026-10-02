@@ -81,15 +81,24 @@ class ExecutionHolder:
         snapshot_base: Path | None = None,
         verifier_pin: object | None = None,
         verifier_root: Path | None = None,
+        trusted_native_boundary: object | None = None,
     ) -> None:
         if allow_test_double and installed_protection:
             raise ValueError("a software test double cannot claim installed protection")
+        from runspecimen.native_bridge import TrustedNativeBoundary
+
+        # Environment, config files, and wire JSON cannot construct this object.
+        if trusted_native_boundary is not None and not isinstance(
+            trusted_native_boundary, TrustedNativeBoundary
+        ):
+            raise TypeError("trusted native boundary cannot be selected from wire input or config")
         self.root = Path(root)
         self.allow_test_double = allow_test_double
         self.installed_protection = bool(installed_protection)
         self.bootstrap_secret = bootstrap_secret
         self.verifier_pin = verifier_pin
         self.verifier_root = Path(verifier_root) if verifier_root is not None else None
+        self.trusted_native_boundary = trusted_native_boundary
         # Per-run payload snapshots live outside the 0700 state tree so a
         # correctly deprivileged payload can read them without seeing
         # enrollment, policy, spent nonces, or leases.
@@ -166,6 +175,13 @@ class ExecutionHolder:
             "key_generation": 1,
         }
 
+    def begin_human_secure_enclave_enrollment(self) -> None:
+        """Human step. Does not call Secure Enclave and does not prompt."""
+
+        raise HolderRefusal(
+            "secure enclave enrollment is the human biometric step and was not invoked"
+        )
+
     def pair_device(self, device_id: str, human: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         with self._transaction():
             return self._pair_device_locked(device_id, human, now=now)
@@ -201,15 +217,9 @@ class ExecutionHolder:
                 raise HolderRefusal("software P-256 is not a Secure Enclave")
             if human.get("attestation") in {"secure-enclave", "touch-id", "face-id"}:
                 raise HolderRefusal("software P-256 is not a Secure Enclave")
-            from runspecimen.native_bridge import PRODUCTION_BRIDGE, production_enrollment_refusal
+            from runspecimen.native_bridge import production_enrollment_refusal
 
-            early = human.get("provenance")
-            boundary = (
-                isinstance(early, dict)
-                and early.get("bridge") == PRODUCTION_BRIDGE
-                and early.get("boundary_double") is True
-            )
-            if self.installed_protection and not boundary:
+            if self.installed_protection:
                 raise HolderRefusal(production_enrollment_refusal())
             supplied_p256 = human.get("public_key")
             if not isinstance(supplied_p256, str) or not supplied_p256:
@@ -218,7 +228,12 @@ class ExecutionHolder:
                 _LABELED_NATIVE_BRIDGE,
                 public_key_fingerprint,
             )
-            from runspecimen.native_bridge import BOUNDARY_DOUBLE, ISOLATED_DOUBLE, PRODUCTION_BRIDGE
+            from runspecimen.native_bridge import (
+                BOUNDARY_DOUBLE,
+                ISOLATED_DOUBLE,
+                PRODUCTION_BRIDGE,
+                TrustedNativeBoundary,
+            )
 
             compared = public_key_fingerprint(supplied_p256)
             if human.get("key_comparison") != compared:
@@ -227,19 +242,25 @@ class ExecutionHolder:
             if not isinstance(provenance, dict):
                 raise HolderRefusal("pairing public key provenance is missing")
             policy_name = auth_policy if isinstance(auth_policy, str) else human.get("policy")
-            if (
+            caller_claims_boundary = (
                 provenance.get("bridge") == PRODUCTION_BRIDGE
-                and provenance.get("boundary_double") is True
-            ):
+                or provenance.get("boundary_double") is True
+                or provenance.get("backend") == BOUNDARY_DOUBLE
+            )
+            if caller_claims_boundary:
+                issued = None
+                boundary = self.trusted_native_boundary
+                if isinstance(boundary, TrustedNativeBoundary):
+                    issued = boundary.lookup(supplied_p256)
+                if issued is None:
+                    raise HolderRefusal("a caller boundary flag is not a trusted native boundary")
+                if issued.get("role") != role or issued.get("policy") != policy_name:
+                    raise HolderRefusal("injected boundary role or policy does not match")
+                if issued.get("generation") != self.generation:
+                    raise HolderRefusal("injected boundary generation does not match")
+                if issued.get("hardware") is not False:
+                    raise HolderRefusal("injected boundary is not hardware")
                 self._require_production_boundary_identity()
-                if provenance.get("public_key") != supplied_p256:
-                    raise HolderRefusal("pairing public key provenance does not match")
-                if provenance.get("role") != role or provenance.get("policy") != policy_name:
-                    raise HolderRefusal("pairing provenance role or policy does not match")
-                if provenance.get("generation") != self.generation:
-                    raise HolderRefusal("pairing provenance generation does not match")
-                if provenance.get("backend") != BOUNDARY_DOUBLE:
-                    raise HolderRefusal("production boundary double is not connected")
                 fingerprint = compared
                 devices[device_id] = {
                     "role": role,
@@ -259,6 +280,7 @@ class ExecutionHolder:
                         "fingerprint": fingerprint,
                         "not_hardware": True,
                         "boundary_double": True,
+                        "origin": "injected-trusted-native-boundary",
                     },
                 }
                 self._write("devices.json", devices)
@@ -1507,7 +1529,7 @@ class ExecutionHolder:
             raise HolderRefusal(str(exc)) from exc
 
     def _require_installed_production_boundary(self, human: dict[str, Any], devices: dict[str, Any]) -> None:
-        from runspecimen.native_bridge import PRODUCTION_BRIDGE, production_enrollment_refusal
+        from runspecimen.native_bridge import production_enrollment_refusal
 
         if human.get("hardware") is True:
             raise HolderRefusal("software P-256 is not a Secure Enclave")
@@ -1519,10 +1541,13 @@ class ExecutionHolder:
             provenance = record.get("provenance") if isinstance(record, dict) else None
             if not isinstance(provenance, dict):
                 raise HolderRefusal(production_enrollment_refusal())
-            if provenance.get("bridge") != PRODUCTION_BRIDGE or provenance.get("boundary_double") is not True:
+            # A matching verifier pin is not biometric key origin.
+            if (
+                provenance.get("boundary_double") is True
+                or provenance.get("not_hardware") is True
+                or provenance.get("origin") != "secure-enclave-human-prompt"
+            ):
                 raise HolderRefusal(production_enrollment_refusal())
-            if provenance.get("not_hardware") is not True:
-                raise HolderRefusal("software P-256 is not a Secure Enclave")
         self._require_production_boundary_identity()
 
     def _verify_device_signatures(

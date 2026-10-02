@@ -130,7 +130,7 @@ def verify_native_p256(
         return False
     if provenance.get("identifier") != _P256_IDENTIFIER:
         return False
-    if provenance.get("signed") != "adhoc":
+    if provenance.get("signed") not in {"adhoc", "codesign"}:
         return False
     if provenance.get("not_secure_enclave") is not True:
         return False
