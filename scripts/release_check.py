@@ -373,6 +373,13 @@ def inspect_wheel(path: Path) -> None:
         }
         if not required.issubset(names):
             raise SystemExit(f"wheel is missing required files: {sorted(required - set(names))}")
+        if path.name.endswith("py3-none-any.whl"):
+            carried = [name for name in names if name.rsplit("/", 1)[-1] == "native_p256_verify"]
+            if carried:
+                raise SystemExit(
+                    "py3-none-any wheel must not carry the darwin arm64 verifier: "
+                    + ", ".join(carried)
+                )
         metadata = archive.read(f"{dist_info}/METADATA").decode("utf-8")
         if f"\nVersion: {EXPECTED_PYTHON_VERSION}\n" not in metadata:
             raise SystemExit("wheel metadata has the wrong version")

@@ -1266,7 +1266,21 @@ final class PolicyBoundApprovalTests: XCTestCase {
             backend: record.backend,
             provenance: record.provenance
         ))
-        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("not Developer ID"))
+        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("not pinned"))
+        XCTAssertFalse(ProductionNativeBridgeGate.allowsProductionEnrollment(
+            backend: EnrollmentIdentity.backendSecureEnclave,
+            provenance: EnrollmentIdentity.provenanceProduction
+        ))
+        let local = IsolatedNativeEnrollment.complete(role: EnrollmentIdentity.roleLocal)
+        let companion = IsolatedNativeEnrollment.complete(role: EnrollmentIdentity.roleCompanion)
+        XCTAssertEqual(local?.hardware, false)
+        XCTAssertEqual(local?.bridge, IsolatedNativeEnrollment.bridge)
+        XCTAssertEqual(companion?.role, EnrollmentIdentity.roleCompanion)
+        XCTAssertNil(IsolatedNativeEnrollment.complete(role: "production"))
+        let linked = IsolatedNativeEnrollment.connected([local!, companion!])
+        XCTAssertTrue(linked.local)
+        XCTAssertTrue(linked.companion)
+        XCTAssertTrue(ProductionNativeBridgeGate.status(signers: [local!, companion!]).contains("local=true"))
         var swapped = carried
         swapped["role"] = EnrollmentIdentity.roleLocal
         XCTAssertThrowsError(try BiometricEnrollmentDirectory.pinCarriedCompanion(

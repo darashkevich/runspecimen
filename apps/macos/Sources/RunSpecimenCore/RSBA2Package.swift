@@ -48,15 +48,53 @@ public enum EnrollmentIdentity {
     }
 }
 
+/// Engineering enrollment through the isolated double. Not hardware.
+///
+/// Completing this path does not create a Secure Enclave key and does not prompt.
+/// Installed protection and `allowsProductionEnrollment` stay closed.
+public struct IsolatedNativeSigner: Equatable, Sendable {
+    public var role: String
+    public var hardware: Bool
+    public var bridge: String
+
+    public init(role: String, hardware: Bool, bridge: String) {
+        self.role = role
+        self.hardware = hardware
+        self.bridge = bridge
+    }
+}
+
+public enum IsolatedNativeEnrollment {
+    public static let bridge = "isolated-native-bridge-double-not-hardware"
+
+    /// Stores an engineering signer. Hardware stays false. A production role is refused.
+    public static func complete(role: String) -> IsolatedNativeSigner? {
+        guard role == EnrollmentIdentity.roleLocal || role == EnrollmentIdentity.roleCompanion else {
+            return nil
+        }
+        return IsolatedNativeSigner(role: role, hardware: false, bridge: bridge)
+    }
+
+    public static func connected(_ signers: [IsolatedNativeSigner]) -> (local: Bool, companion: Bool) {
+        var local = false
+        var companion = false
+        for signer in signers {
+            guard signer.hardware == false, signer.bridge == bridge else { continue }
+            if signer.role == EnrollmentIdentity.roleLocal { local = true }
+            if signer.role == EnrollmentIdentity.roleCompanion { companion = true }
+        }
+        return (local, companion)
+    }
+}
+
 /// Production enrollment status for the Mac app.
 ///
-/// This does not create a Secure Enclave key and does not prompt. Pinning a
-/// carried public key is not this bridge. An ad-hoc verifier is not Developer ID.
+/// Hardware enrollment stays closed until a person runs the biometric.
+/// The isolated double can complete. A display name is not a verifier pin.
 public enum ProductionNativeBridgeGate {
-    public static let blockReason = "The production native bridge is not connected. The packaged P-256 verifier is ad-hoc, not Developer ID. A carried public key is not enrollment. Secure Enclave key creation is not called from this control. Native local and companion signers are not connected."
-
-    public static func status() -> String {
-        blockReason
+    public static func status(signers: [IsolatedNativeSigner] = []) -> String {
+        let connected = IsolatedNativeEnrollment.connected(signers)
+        return "Production hardware enrollment stays closed until a person runs the biometric. The verifier team identifier and designated requirement are not pinned. Isolated double local=\(connected.local) companion=\(connected.companion). That double is not installed protection and does not create a Secure Enclave key."
     }
 
     public static func allowsProductionEnrollment(backend: String, provenance: String) -> Bool {

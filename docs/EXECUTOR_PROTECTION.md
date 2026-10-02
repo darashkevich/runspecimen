@@ -172,7 +172,7 @@ These are not ways to get guarantee (2) on the Store channel: the app container,
 
 ## Approval policy
 
-This is the chosen policy for the Developer ID product. `runspecimen run` enforces it only as a fail-closed requirement: `local`, `companion`, or `dual` need a holder consume and never accept the typed phrase. The connected human verifier is not implemented. A packaged CryptoKit binary can check a labeled P-256 signature; that check is not Touch ID, Face ID, or a Secure Enclave. The test adapter's software stand-in is not a paired phone. See [HOLDER_NATIVE_BRIDGE.md](HOLDER_NATIVE_BRIDGE.md).
+This is the chosen policy for the Developer ID product. `runspecimen run` enforces it only as a fail-closed requirement: `local`, `companion`, or `dual` need a holder consume and never accept the typed phrase. The engineering path can enroll an isolated double for local, companion, and dual after the verifier team and designated requirement match a supplied pin. That double is not hardware. Production hardware enrollment stays closed, and the production pin is not set. See [HOLDER_NATIVE_BRIDGE.md](HOLDER_NATIVE_BRIDGE.md).
 
 | Run | Approval |
 | --- | --- |

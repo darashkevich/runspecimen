@@ -105,7 +105,7 @@ def verify_native_p256(public_b64: str, signature_b64: str, message: bytes) -> b
 
     if sys.platform != "darwin":
         return False
-    here = Path(__file__).resolve().parent
+    here = Path(__file__).resolve().parent / "platform" / "darwin_arm64"
     binary = here / "native_p256_verify"
     provenance_path = here / "native_p256_verify.provenance.json"
     if not binary.is_file() or not provenance_path.is_file():

@@ -1,26 +1,27 @@
 # Holder gate ledger
 
-This ledger separates engineering that is in the tree from actions a person still has to perform. It is not a production sign-off and it is not Store parity. Approved Mac App Store **0.1.4 (9)** is a different package.
+This ledger separates engineering that is in the tree from actions a person still has to perform. The bridge implementation is engineering. It is not a wait on Yahor. This note is not a production sign-off and it is not Store parity. Approved Mac App Store **0.1.4 (9)** is a different package. The Store app stays guarantee (1), a typed phrase. The Developer ID holder is guarantee (2). The Store app does not have guarantee (2).
 
 ## Engineering in this tree
 
 | Gate | What the code does |
 | --- | --- |
-| Packaged CryptoKit check | `native_p256_verify` is a Darwin arm64 Mach-O inside the `py3-none-any` wheel. Other platforms fail closed. `codesign --verify --strict` checks the ad-hoc signature. The SHA-256 pin is in `native_p256_verify.provenance.json`. |
-| Publisher identity | `packaged_verifier_publisher()` reads `codesign -dvvv`. Ad-hoc is not Developer ID. `publisher_trusted` stays false. |
-| Production bridge | `native-production-bridge` refuses enrollment while the verifier is ad-hoc and the local and companion signers are disconnected. It does not call Secure Enclave APIs. |
-| Labeled test double | `labeled-native-bridge-double-not-hardware` can pair and run local, companion, and dual only when installed protection is off. Those runs stay `hardware: false`. Installed protection does not accept that double. |
-| Mac app control | `ProductionNativeBridgeGate` shows that pinning a carried key is not production enrollment. It does not create a key. |
+| Verifier placement | The Darwin arm64 `native_p256_verify` binary is loaded from `runspecimen/platform/darwin_arm64/`. The `py3-none-any` wheel does not carry that Mach-O. Other platforms fail closed. |
+| Verifier identity | A signature is accepted only when the binary's `TeamIdentifier` and designated requirement match a pin, and `codesign --verify --strict` succeeds. A display name that contains "Developer ID" is not that pin. `production_verifier_pin()` is unset, so the packaged ad-hoc binary is not a production publisher. |
+| Isolated double | `isolated-native-bridge-double-not-hardware` enrolls, pairs, and signs for local, companion, and dual when the test pin matches. Those runs stay `hardware: false`. `native_signers_connected` reports the roles that actually paired. Installed protection refuses the double. |
+| Labeled test double | `labeled-native-bridge-double-not-hardware` remains a separate unprivileged double. It is not the isolated path and it is not installed protection. |
+| Production hardware | `allowsProductionEnrollment` stays false. This tree does not call `SecureEnclave.P256.Signing.PrivateKey` and does not prompt. |
+| Mac app control | `IsolatedNativeEnrollment.complete` records a local or companion engineering signer. `ProductionNativeBridgeGate` reports those signers and keeps hardware enrollment closed. |
 
-## Human steps, not run by this agent
+The production team identifier and designated requirement string are not in this protocol. The code fails closed until that pin exists. That is one unresolved design choice, not a reason to leave the engineering path as an unconditional refusal.
 
-1. Developer ID-sign and notarize the verifier, then replace the ad-hoc binary. Until that identity is present, production enrollment stays refused.
-2. On the signed holder, enroll the Mac key. That call is `SecureEnclave.P256.Signing.PrivateKey` and raises Touch ID or a password prompt. This agent does not make that call.
-3. Confirm the displayed public-key fingerprint on the Mac before the holder stores it.
-4. Enroll the companion on the paired phone and confirm that fingerprint. This agent does not show a paired-phone prompt.
-5. Install the holder only through the privileged path Yahor chooses. The live `/Applications/RunSpecimen Holder.app` is not repaired from this ledger.
-6. Run one real bounded contract after those enrollments. This agent does not type APPROVE and does not pass `--human-invoked`.
+## Human acceptance steps, not run by this agent
+
+1. Biometric enrollment. On the signed holder, create the Mac key with `SecureEnclave.P256.Signing.PrivateKey`. That raises Touch ID, Face ID, or a password prompt.
+2. Fingerprint confirmation. Compare the Mac public-key fingerprint, then the paired phone's fingerprint, before the holder stores either key.
+3. Privileged install. Install the holder only through the privileged path. The live `/Applications/RunSpecimen Holder.app` is not repaired from this ledger.
+4. One real bounded run after those enrollments. Do not type APPROVE and do not pass `--human-invoked` from automation.
 
 ## Packaging
 
-The wheel is `py3-none-any` and also contains one `darwin-arm64` executable. That combination does not make the binary a universal or a signed update channel. Linux and non-arm64 Darwin fail closed. A hash file next to an ad-hoc signature does not establish a trusted publisher against a writable tree.
+The pure wheel stays `py3-none-any` and must not contain `native_p256_verify`. The holder loads the helper from `platform/darwin_arm64/` in the runtime tree. A hash file next to an ad-hoc signature does not establish a trusted publisher. Trust is the pinned team identifier plus the designated requirement.

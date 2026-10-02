@@ -140,7 +140,8 @@ class LabeledBridgePolicyTests(unittest.TestCase):
         self.assertIn("Developer ID", message)
         self.assertIn("labeled-native-bridge-double-not-hardware", message)
         self.assertIn("not a Secure Enclave", message)
-        self.assertIn("not connected", message)
+        self.assertIn("not pinned", message)
+        self.assertIn("installed protection is on", message)
 
     def test_local_companion_and_dual_execute_and_are_not_hardware(self) -> None:
         binary, _public, _private = _signer(self)

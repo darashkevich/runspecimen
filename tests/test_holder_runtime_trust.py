@@ -36,12 +36,14 @@ class RuntimeTrustChainTests(unittest.TestCase):
             "execution_holder.py",
             "holder_asymmetric.py",
             "native_p256_verify.swift",
-            "native_p256_verify",
-            "native_p256_verify.provenance.json",
+            "platform/darwin_arm64/native_p256_verify",
+            "platform/darwin_arm64/native_p256_verify.provenance.json",
             "native_bridge.py",
             "holder_protocol.py",
         ):
-            (pkg / name).write_text("# fixture\n", encoding="utf-8")
+            path = pkg / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("# fixture\n", encoding="utf-8")
         for path in root.rglob("*"):
             path.chmod(0o755 if path.is_dir() else 0o644)
 

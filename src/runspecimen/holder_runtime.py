@@ -27,8 +27,8 @@ _REQUIRED_RELATIVE = (
     "runspecimen/execution_holder.py",
     "runspecimen/holder_asymmetric.py",
     "runspecimen/native_p256_verify.swift",
-    "runspecimen/native_p256_verify",
-    "runspecimen/native_p256_verify.provenance.json",
+    "runspecimen/platform/darwin_arm64/native_p256_verify",
+    "runspecimen/platform/darwin_arm64/native_p256_verify.provenance.json",
     "runspecimen/native_bridge.py",
     "runspecimen/holder_protocol.py",
 )
