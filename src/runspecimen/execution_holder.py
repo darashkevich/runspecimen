@@ -80,6 +80,7 @@ class ExecutionHolder:
         bootstrap_secret: str | None = None,
         snapshot_base: Path | None = None,
         verifier_pin: object | None = None,
+        verifier_root: Path | None = None,
     ) -> None:
         if allow_test_double and installed_protection:
             raise ValueError("a software test double cannot claim installed protection")
@@ -88,6 +89,7 @@ class ExecutionHolder:
         self.installed_protection = bool(installed_protection)
         self.bootstrap_secret = bootstrap_secret
         self.verifier_pin = verifier_pin
+        self.verifier_root = Path(verifier_root) if verifier_root is not None else None
         # Per-run payload snapshots live outside the 0700 state tree so a
         # correctly deprivileged payload can read them without seeing
         # enrollment, policy, spent nonces, or leases.
@@ -195,14 +197,20 @@ class ExecutionHolder:
         public_hex = None
         algorithm = "ed25519"
         if human.get("algorithm") == "p256":
-            if self.installed_protection:
-                from runspecimen.native_bridge import production_enrollment_refusal
-
-                raise HolderRefusal(production_enrollment_refusal())
             if human.get("hardware") is True:
                 raise HolderRefusal("software P-256 is not a Secure Enclave")
             if human.get("attestation") in {"secure-enclave", "touch-id", "face-id"}:
                 raise HolderRefusal("software P-256 is not a Secure Enclave")
+            from runspecimen.native_bridge import PRODUCTION_BRIDGE, production_enrollment_refusal
+
+            early = human.get("provenance")
+            boundary = (
+                isinstance(early, dict)
+                and early.get("bridge") == PRODUCTION_BRIDGE
+                and early.get("boundary_double") is True
+            )
+            if self.installed_protection and not boundary:
+                raise HolderRefusal(production_enrollment_refusal())
             supplied_p256 = human.get("public_key")
             if not isinstance(supplied_p256, str) or not supplied_p256:
                 raise HolderRefusal("pairing public key is missing")
@@ -210,7 +218,7 @@ class ExecutionHolder:
                 _LABELED_NATIVE_BRIDGE,
                 public_key_fingerprint,
             )
-            from runspecimen.native_bridge import ISOLATED_DOUBLE
+            from runspecimen.native_bridge import BOUNDARY_DOUBLE, ISOLATED_DOUBLE, PRODUCTION_BRIDGE
 
             compared = public_key_fingerprint(supplied_p256)
             if human.get("key_comparison") != compared:
@@ -219,6 +227,56 @@ class ExecutionHolder:
             if not isinstance(provenance, dict):
                 raise HolderRefusal("pairing public key provenance is missing")
             policy_name = auth_policy if isinstance(auth_policy, str) else human.get("policy")
+            if (
+                provenance.get("bridge") == PRODUCTION_BRIDGE
+                and provenance.get("boundary_double") is True
+            ):
+                self._require_production_boundary_identity()
+                if provenance.get("public_key") != supplied_p256:
+                    raise HolderRefusal("pairing public key provenance does not match")
+                if provenance.get("role") != role or provenance.get("policy") != policy_name:
+                    raise HolderRefusal("pairing provenance role or policy does not match")
+                if provenance.get("generation") != self.generation:
+                    raise HolderRefusal("pairing provenance generation does not match")
+                if provenance.get("backend") != BOUNDARY_DOUBLE:
+                    raise HolderRefusal("production boundary double is not connected")
+                fingerprint = compared
+                devices[device_id] = {
+                    "role": role,
+                    "fingerprint": fingerprint,
+                    "revoked": False,
+                    "attestation": "device-p256-not-hardware",
+                    "algorithm": "p256",
+                    "public_key": supplied_p256,
+                    "generation": self.generation,
+                    "hardware": False,
+                    "provenance": {
+                        "bridge": PRODUCTION_BRIDGE,
+                        "backend": BOUNDARY_DOUBLE,
+                        "role": role,
+                        "policy": policy_name,
+                        "generation": self.generation,
+                        "fingerprint": fingerprint,
+                        "not_hardware": True,
+                        "boundary_double": True,
+                    },
+                }
+                self._write("devices.json", devices)
+                return {
+                    "ok": True,
+                    "device_id": device_id,
+                    "role": role,
+                    "attestation": "device-p256-not-hardware",
+                    "public_key": supplied_p256,
+                    "fingerprint": fingerprint,
+                    "generation": self.generation,
+                    "installed_protection": self.installed_protection,
+                    "hardware": False,
+                }
+            if self.installed_protection:
+                from runspecimen.native_bridge import production_enrollment_refusal
+
+                raise HolderRefusal(production_enrollment_refusal())
             if provenance.get("bridge") == ISOLATED_DOUBLE:
                 self._require_isolated_verifier()
                 if provenance.get("public_key") != supplied_p256:
@@ -1421,13 +1479,51 @@ class ExecutionHolder:
             return
         raise HolderRefusal("human authorization method is not accepted")
 
+    def _verifier_binary(self) -> Path | None:
+        from runspecimen.native_bridge import platform_verifier_binary, resolve_verifier
+
+        if self.verifier_root is not None:
+            return resolve_verifier(self.verifier_root)
+        return platform_verifier_binary()
+
     def _require_isolated_verifier(self) -> None:
         from runspecimen.native_bridge import VerifierIdentityError, require_verifier_identity
 
         try:
-            require_verifier_identity(self.verifier_pin)
+            require_verifier_identity(self.verifier_pin, self._verifier_binary())
         except VerifierIdentityError as exc:
             raise HolderRefusal(str(exc)) from exc
+
+    def _require_production_boundary_identity(self) -> None:
+        from runspecimen.native_bridge import (
+            VerifierIdentityError,
+            effective_verifier_pin,
+            require_verifier_identity,
+        )
+
+        try:
+            require_verifier_identity(effective_verifier_pin(self.verifier_pin), self._verifier_binary())
+        except VerifierIdentityError as exc:
+            raise HolderRefusal(str(exc)) from exc
+
+    def _require_installed_production_boundary(self, human: dict[str, Any], devices: dict[str, Any]) -> None:
+        from runspecimen.native_bridge import PRODUCTION_BRIDGE, production_enrollment_refusal
+
+        if human.get("hardware") is True:
+            raise HolderRefusal("software P-256 is not a Secure Enclave")
+        signatures = human.get("signatures")
+        if not isinstance(signatures, dict) or not signatures:
+            raise HolderRefusal(production_enrollment_refusal())
+        for device_id in signatures:
+            record = devices.get(device_id)
+            provenance = record.get("provenance") if isinstance(record, dict) else None
+            if not isinstance(provenance, dict):
+                raise HolderRefusal(production_enrollment_refusal())
+            if provenance.get("bridge") != PRODUCTION_BRIDGE or provenance.get("boundary_double") is not True:
+                raise HolderRefusal(production_enrollment_refusal())
+            if provenance.get("not_hardware") is not True:
+                raise HolderRefusal("software P-256 is not a Secure Enclave")
+        self._require_production_boundary_identity()
 
     def _verify_device_signatures(
         self,
@@ -1446,20 +1542,12 @@ class ExecutionHolder:
             verify_native_p256,
         )
 
+        devices = self._devices()
         if self.installed_protection:
-            from runspecimen.native_bridge import native_signers_connected, production_enrollment_refusal
-
-            connected = native_signers_connected(devices)
-            if connected.get("local") or connected.get("companion"):
-                raise HolderRefusal(
-                    production_enrollment_refusal()
-                    + " Engineering signers that are connected stay refused here."
-                )
-            raise HolderRefusal(production_enrollment_refusal())
+            self._require_installed_production_boundary(human, devices)
         signatures = human.get("signatures")
         if not isinstance(signatures, dict) or not signatures:
             raise HolderRefusal("cryptographic device signatures are missing")
-        devices = self._devices()
         required_roles = set(_DEVICES[policy])
         covered_roles: set[str] = set()
         challenge = {
@@ -1480,8 +1568,6 @@ class ExecutionHolder:
             if isinstance(record, dict):
                 algorithms.add(str(record.get("algorithm") or "ed25519"))
         if algorithms == {"p256"}:
-            if self.installed_protection:
-                raise HolderRefusal("software P-256 is not a Secure Enclave")
             challenge["domain"] = "holder-device-p256-v1"
             challenge["attestation_class"] = "device-p256-not-hardware"
             paired: list[dict[str, Any]] = []
@@ -1520,7 +1606,15 @@ class ExecutionHolder:
 
                 if isinstance(provenance, dict) and provenance.get("bridge") == ISOLATED_DOUBLE:
                     self._require_isolated_verifier()
-                verified = verify_native_p256(public_key, signature, message)
+                if (
+                    isinstance(provenance, dict)
+                    and provenance.get("bridge") == "native-production-bridge"
+                    and provenance.get("boundary_double") is True
+                ):
+                    self._require_production_boundary_identity()
+                verified = verify_native_p256(
+                    public_key, signature, message, binary=self._verifier_binary()
+                )
             else:
                 verified = verify_device_signature(public_key, signature, message)
             if not verified:

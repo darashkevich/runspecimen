@@ -88,7 +88,12 @@ def public_key_fingerprint(public_key: str) -> str:
     return hashlib.sha256(public_key.encode("utf-8")).hexdigest()
 
 
-def verify_native_p256(public_b64: str, signature_b64: str, message: bytes) -> bool:
+def verify_native_p256(
+    public_b64: str,
+    signature_b64: str,
+    message: bytes,
+    binary: Path | None = None,
+) -> bool:
     """Verify a P-256 signature with the packaged CryptoKit binary.
 
     The binary is hash-pinned and ad-hoc signed at package time. This function
@@ -105,9 +110,13 @@ def verify_native_p256(public_b64: str, signature_b64: str, message: bytes) -> b
 
     if sys.platform != "darwin":
         return False
-    here = Path(__file__).resolve().parent / "platform" / "darwin_arm64"
-    binary = here / "native_p256_verify"
-    provenance_path = here / "native_p256_verify.provenance.json"
+    if binary is None:
+        here = Path(__file__).resolve().parent / "platform" / "darwin_arm64"
+        binary = here / "native_p256_verify"
+        provenance_path = here / "native_p256_verify.provenance.json"
+    else:
+        binary = Path(binary)
+        provenance_path = binary.parent / "native_p256_verify.provenance.json"
     if not binary.is_file() or not provenance_path.is_file():
         return False
     try:

@@ -1266,7 +1266,29 @@ final class PolicyBoundApprovalTests: XCTestCase {
             backend: record.backend,
             provenance: record.provenance
         ))
-        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("not pinned"))
+        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("trust configuration"))
+        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("pin is unset"))
+        XCTAssertFalse(ProductionNativeBridgeGate.status().contains("until a person"))
+        XCTAssertFalse(ProductionNativeBridgeGate.allowsProductionEnrollment(
+            backend: EnrollmentIdentity.backendSecureEnclave,
+            provenance: EnrollmentIdentity.provenanceProduction,
+            pinConfigured: true,
+            verifierConnected: true,
+            hardware: true
+        ))
+        XCTAssertTrue(ProductionNativeBridgeGate.allowsProductionEnrollment(
+            backend: ProductionNativeBridgeGate.boundaryBackend,
+            provenance: ProductionNativeBridgeGate.productionBridge,
+            pinConfigured: true,
+            verifierConnected: true,
+            hardware: false
+        ))
+        XCTAssertFalse(ProductionNativeBridgeGate.allowsProductionEnrollment(
+            backend: ProductionNativeBridgeGate.boundaryBackend,
+            provenance: ProductionNativeBridgeGate.productionBridge,
+            pinConfigured: false,
+            verifierConnected: true
+        ))
         XCTAssertFalse(ProductionNativeBridgeGate.allowsProductionEnrollment(
             backend: EnrollmentIdentity.backendSecureEnclave,
             provenance: EnrollmentIdentity.provenanceProduction

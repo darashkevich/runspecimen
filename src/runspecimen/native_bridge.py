@@ -19,6 +19,8 @@ from typing import Any, Mapping
 PRODUCTION_BRIDGE = "native-production-bridge"
 LABELED_TEST_DOUBLE = "labeled-native-bridge-double-not-hardware"
 ISOLATED_DOUBLE = "isolated-native-bridge-double-not-hardware"
+BOUNDARY_DOUBLE = "production-boundary-double-not-hardware"
+VERIFIER_RELATIVE = Path("runspecimen/platform/darwin_arm64/native_p256_verify")
 
 
 class VerifierPin:
@@ -38,12 +40,20 @@ class VerifierIdentityError(Exception):
 
 
 def production_verifier_pin() -> VerifierPin | None:
-    """Production team and designated requirement are not chosen in this tree.
+    """Shipped pin. Stays unset until a person confirms an identity.
 
-    Returning None fails closed. This is not a Developer ID display string.
+    Returning None fails closed. A proposal in the evidence file is not this pin.
     """
 
     return None
+
+
+def effective_verifier_pin(injected: VerifierPin | None) -> VerifierPin | None:
+    """Injected boundary pin wins. The shipped pin is otherwise unset."""
+
+    if injected is not None:
+        return injected
+    return production_verifier_pin()
 
 
 def platform_verifier_binary() -> Path | None:
@@ -141,18 +151,69 @@ def verifier_signature_strict(binary: Path | None = None) -> bool:
     return checked.returncode == 0
 
 
-def require_verifier_identity(pin: VerifierPin | None) -> None:
-    """Refuse unless the platform verifier matches the pin and its signature."""
+def require_verifier_identity(pin: VerifierPin | None, binary: Path | None = None) -> None:
+    """Refuse unless the verifier matches the pin and its signature."""
 
-    parsed = read_verifier_identity()
+    parsed = read_verifier_identity(binary)
     if pin is None:
         raise VerifierIdentityError("verifier team and designated requirement are not pinned")
     if parsed.get("team_identifier") != pin.team_identifier:
         raise VerifierIdentityError("verifier team identifier does not match the pin")
     if parsed.get("designated_requirement") != pin.designated_requirement:
         raise VerifierIdentityError("verifier designated requirement does not match the pin")
-    if not verifier_signature_strict():
+    target = binary if binary is not None else platform_verifier_binary()
+    if not verifier_signature_strict(target):
         raise VerifierIdentityError("verifier signature did not satisfy codesign --verify --strict")
+
+
+def resolve_verifier(root: Path) -> Path | None:
+    """Holder load path inside a Developer ID artifact. Absent is None."""
+
+    candidate = Path(root) / VERIFIER_RELATIVE
+    if candidate.is_file():
+        return candidate
+    return None
+
+
+def assemble_developer_id_artifact(destination: Path, source: Path | None = None) -> Path:
+    """Place the verifier where the holder resolves it. Does not set the pin."""
+
+    import shutil
+
+    binary = source if source is not None else platform_verifier_binary()
+    if binary is None or not binary.is_file():
+        raise FileNotFoundError("platform verifier is absent")
+    dest = Path(destination) / VERIFIER_RELATIVE
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(binary, dest)
+    provenance = platform_verifier_provenance()
+    if provenance is not None and provenance.is_file():
+        shutil.copy2(provenance, dest.parent / provenance.name)
+    return dest
+
+
+def platform_verifier_report(root: Path | None = None) -> dict[str, object]:
+    """What the CLI and plugin do when the Mach-O is not in the pure package."""
+
+    if root is None:
+        present = platform_verifier_binary() is not None
+    else:
+        present = resolve_verifier(root) is not None
+    return {
+        "present": present,
+        "pure_wheel_includes_verifier": False,
+        "production_pin": "unset",
+        "enrollment": "fail-closed",
+        "cli_when_absent": (
+            "doctor, validate, and status do not enroll a device. "
+            "They keep working and report the platform verifier as absent. "
+            "Production enrollment fails closed."
+        ),
+        "plugin_when_absent": (
+            "The plugin does not ship native_p256_verify, does not pass a holder, "
+            "and cannot enroll. It only calls the CLI."
+        ),
+    }
 
 
 def packaged_verifier_publisher() -> dict[str, object]:
@@ -198,7 +259,11 @@ def native_signers_connected(devices: Mapping[str, Any] | None = None) -> dict[s
         if not isinstance(provenance, dict) or provenance.get("not_hardware") is not True:
             continue
         bridge = provenance.get("bridge")
-        if bridge not in {ISOLATED_DOUBLE, PRODUCTION_BRIDGE}:
+        if bridge == ISOLATED_DOUBLE:
+            pass
+        elif bridge == PRODUCTION_BRIDGE and provenance.get("boundary_double") is True:
+            pass
+        else:
             continue
         role = record.get("role")
         if role == "mac":

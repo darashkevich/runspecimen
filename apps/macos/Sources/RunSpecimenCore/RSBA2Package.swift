@@ -89,19 +89,32 @@ public enum IsolatedNativeEnrollment {
 
 /// Production enrollment status for the Mac app.
 ///
-/// Hardware enrollment stays closed until a person runs the biometric.
-/// The isolated double can complete. A display name is not a verifier pin.
+/// Source integration and trust configuration remain open. A real biometric
+/// key stays closed. The boundary path is not hardware and needs an injected pin.
 public enum ProductionNativeBridgeGate {
+    public static let boundaryBackend = "production-boundary-double-not-hardware"
+    public static let productionBridge = "native-production-bridge"
+
     public static func status(signers: [IsolatedNativeSigner] = []) -> String {
         let connected = IsolatedNativeEnrollment.connected(signers)
-        return "Production hardware enrollment stays closed until a person runs the biometric. The verifier team identifier and designated requirement are not pinned. Isolated double local=\(connected.local) companion=\(connected.companion). That double is not installed protection and does not create a Secure Enclave key."
+        return "Source integration and trust configuration remain open. The shipped verifier pin is unset. A display name is not a pin. Hardware key creation stays closed. Production boundary enrollment requires an injected pin and a connected verifier, and that path stays hardware false. Isolated double local=\(connected.local) companion=\(connected.companion)."
     }
 
-    public static func allowsProductionEnrollment(backend: String, provenance: String) -> Bool {
-        if backend == EnrollmentIdentity.backendSecureEnclave && provenance == EnrollmentIdentity.provenanceProduction {
+    /// Biometric key creation stays false. The boundary path is true only when a pin and verifier are injected.
+    public static func allowsProductionEnrollment(
+        backend: String,
+        provenance: String,
+        pinConfigured: Bool = false,
+        verifierConnected: Bool = false,
+        hardware: Bool = false
+    ) -> Bool {
+        if hardware || backend == EnrollmentIdentity.backendSecureEnclave {
             return false
         }
-        return false
+        return backend == boundaryBackend
+            && provenance == productionBridge
+            && pinConfigured
+            && verifierConnected
     }
 }
 

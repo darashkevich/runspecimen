@@ -97,6 +97,9 @@ def inspect_environment(*, workspace: Path, contract_path: Path | None = None) -
         "active_lease": lease_meta.to_dict() if lease_meta else None,
         "docs": dict(DOCS_URLS),
         "isolation": host_capabilities(),
+        "platform_verifier": __import__(
+            "runspecimen.native_bridge", fromlist=["platform_verifier_report"]
+        ).platform_verifier_report(),
         "adapters": {
             "cli": True,
             "dashboard": "read_only_loopback",
