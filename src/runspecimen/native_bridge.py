@@ -104,22 +104,81 @@ class UserInvokedSecureEnclaveControl:
         self.action = action
 
 
-class OsBoundaryKey:
-    """Public key returned by the OS boundary. A caller origin string is not this object."""
+# Each live signature requires the current biometric set. Unattended code does
+# not evaluate this policy and does not prompt.
+BIOMETRIC_ACCESS_POLICY = "biometry-current-set-on-each-signature"
 
-    def __init__(self, public_key: str, sign) -> None:
+
+class OsBoundaryKey:
+    """OS key handle kept for later signing. Public bytes alone are not this object."""
+
+    def __init__(self, public_key: str, sign, *, access_policy: str = BIOMETRIC_ACCESS_POLICY) -> None:
         if not isinstance(public_key, str) or not public_key:
             raise ValueError("OS boundary public key is missing")
         if not callable(sign):
             raise ValueError("OS boundary sign function is missing")
+        if access_policy != BIOMETRIC_ACCESS_POLICY:
+            raise ValueError("biometric access policy is not the session policy")
         self.public_key = public_key
         self._sign = sign
+        self.access_policy = access_policy
 
     def sign(self, message: bytes) -> str:
         signed = self._sign(message)
         if not isinstance(signed, str) or not signed:
             raise ValueError("OS boundary signature is missing")
         return signed
+
+
+class UserSessionKeyCustody:
+    """User-session custody. The private signing capability stays on the handle."""
+
+    def __init__(self) -> None:
+        self._keys: dict[str, OsBoundaryKey] = {}
+
+    def keep(self, role: str, key: OsBoundaryKey) -> None:
+        if not isinstance(key, OsBoundaryKey):
+            raise TypeError("session custody keeps an OS key handle, not public bytes")
+        if role not in {"mac", "phone"}:
+            raise ValueError("session custody role is not mac or phone")
+        self._keys[role] = key
+
+    def key(self, role: str) -> OsBoundaryKey | None:
+        return self._keys.get(role)
+
+    def public_key(self, role: str) -> str | None:
+        held = self._keys.get(role)
+        return None if held is None else held.public_key
+
+    def sign(self, role: str, message: bytes) -> str:
+        held = self._keys.get(role)
+        if held is None:
+            raise KeyError(role)
+        return held.sign(message)
+
+    def drop(self, role: str) -> None:
+        self._keys.pop(role, None)
+
+
+class PhonePeer:
+    """A paired phone key. A local Mac key with a phone label is not this object."""
+
+    def __init__(self, public_key: str, sign) -> None:
+        if not isinstance(public_key, str) or not public_key:
+            raise ValueError("phone peer public key is missing")
+        if not callable(sign):
+            raise ValueError("phone peer sign function is missing")
+        self.public_key = public_key
+        self._sign = sign
+
+    def sign(self, message: bytes) -> str:
+        signed = self._sign(message)
+        if not isinstance(signed, str) or not signed:
+            raise ValueError("phone peer signature is missing")
+        return signed
+
+    def as_os_key(self) -> OsBoundaryKey:
+        return OsBoundaryKey(self.public_key, self._sign)
 
 
 class OsBoundaryNotInvoked(RuntimeError):

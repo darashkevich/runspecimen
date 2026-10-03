@@ -876,6 +876,8 @@ class HumanNativeSignerTests(unittest.TestCase):
                 ExecutionHolder.sign_with_human_operated_adapter,
                 ExecutionHolder.enroll_user_invoked_secure_enclave,
                 ExecutionHolder.sign_with_os_boundary,
+                ExecutionHolder.sign_from_session,
+                ExecutionHolder.accept_native_ipc,
             )
         )
         self.assertNotIn("SecureEnclave.P256.Signing.PrivateKey(", source)
@@ -1432,8 +1434,11 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
         with self.assertRaises(OsBoundaryNotInvoked):
             os_secure_enclave_create_key("mac")
         with self.assertRaises(HolderRefusal) as ctx:
-            holder.enroll_user_invoked_secure_enclave(UserInvokedSecureEnclaveControl("companion"))
+            holder.enroll_user_invoked_secure_enclave(UserInvokedSecureEnclaveControl("local"))
         self.assertIn("was not invoked", str(ctx.exception))
+        with self.assertRaises(HolderRefusal) as missing_peer:
+            holder.enroll_user_invoked_secure_enclave(UserInvokedSecureEnclaveControl("companion"))
+        self.assertIn("requires a phone peer", str(missing_peer.exception))
         self.assertFalse((holder.root / "os-boundary.json").exists())
         for supplied in (
             {"origin": "human-operated-native-adapter"},
@@ -1473,14 +1478,12 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
         self.assertNotIn("mac-human", holder._devices())
 
     def test_user_invoked_enrollment_rechecks_revocation_after_the_wait(self) -> None:
-        from runspecimen.native_bridge import OsBoundaryKey, UserInvokedSecureEnclaveControl
+        from runspecimen.native_bridge import PhonePeer, UserInvokedSecureEnclaveControl
 
         td = tempfile.TemporaryDirectory(prefix="rsh-os-revoke-")
         self.addCleanup(td.cleanup)
         holder = self._holder(Path(td.name), installed=False)
-
-        def fake(_role: str) -> OsBoundaryKey:
-            return OsBoundaryKey("AQIDBA==", lambda _message: "c2ln")
+        peer = PhonePeer("AQIDBA==", lambda _message: "c2ln")
 
         def wait() -> None:
             holder._write(
@@ -1488,12 +1491,12 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
                 {"phone-human": {"role": "phone", "revoked": True, "public_key": "revoked-during-wait"}},
             )
 
-        with mock.patch("runspecimen.native_bridge.os_secure_enclave_create_key", side_effect=fake):
-            with self.assertRaises(HolderRefusal) as ctx:
-                holder.enroll_user_invoked_secure_enclave(
-                    UserInvokedSecureEnclaveControl("companion"),
-                    wait=wait,
-                )
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.enroll_user_invoked_secure_enclave(
+                UserInvokedSecureEnclaveControl("companion"),
+                wait=wait,
+                phone_peer=peer,
+            )
         self.assertIn("revoked during the user wait", str(ctx.exception))
         self.assertFalse((holder.root / "os-boundary.json").exists())
         self.assertEqual(holder._devices()["phone-human"]["public_key"], "revoked-during-wait")
@@ -1501,16 +1504,24 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
     def test_os_boundary_mock_enrolls_local_and_paired_phone_without_a_prompt(self) -> None:
         """The mock replaces the OS call. It does not call SecureEnclave.P256.Signing.PrivateKey."""
 
-        from runspecimen.native_bridge import OsBoundaryKey, UserInvokedSecureEnclaveControl
+        from runspecimen.native_bridge import OsBoundaryKey, PhonePeer, UserInvokedSecureEnclaveControl
         from tests.test_native_bridge_policies import _boot, _sign, _signer
 
-        binary, public, private = _signer(self)
-        key = OsBoundaryKey(public, lambda message: _sign(binary, private, message))
+        if sys.platform != "darwin":
+            self.skipTest("phone peer comparison uses the Darwin verifier")
+        binary, mac_public, mac_private = _signer(self)
+        phone_out = subprocess.run(
+            [str(binary), "key"], check=True, capture_output=True, text=True, timeout=10
+        )
+        phone_public, phone_private = phone_out.stdout.splitlines()
+        self.assertNotEqual(mac_public, phone_public)
+        mac_key = OsBoundaryKey(mac_public, lambda message: _sign(binary, mac_private, message))
+        phone = PhonePeer(phone_public, lambda message: _sign(binary, phone_private, message))
         seen: list[str] = []
 
         def fake(role: str) -> OsBoundaryKey:
             seen.append(role)
-            return key
+            return mac_key
 
         td = tempfile.TemporaryDirectory(prefix="rsh-os-mock-")
         self.addCleanup(td.cleanup)
@@ -1526,26 +1537,302 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
         )
         holder.enroll("app", _boot(secret, "enroll", "app", "local"))
         with mock.patch("runspecimen.native_bridge.os_secure_enclave_create_key", side_effect=fake):
-            enrolled = holder.enroll_user_invoked_secure_enclave(UserInvokedSecureEnclaveControl("dual"))
-        self.assertEqual(seen, ["mac", "phone"])
-        self.assertFalse(enrolled["biometric_invoked"])
-        self.assertFalse(enrolled["e2_closed"])
-        self.assertFalse(enrolled["hardware"])
-        devices = holder._devices()
-        devices["phone-human"]["provenance"]["origin"] = "human-operated-native-adapter"
-        devices["mac-human"]["provenance"]["origin"] = "human-operated-native-adapter"
-        holder._write("devices.json", devices)
-        with (
-            mock.patch("runspecimen.native_bridge.read_verifier_identity", return_value=_parsed()),
-            mock.patch("runspecimen.native_bridge.verifier_signature_strict", return_value=True),
-        ):
-            changed = holder.set_policy(
-                holder.sign_with_os_boundary({"mac": key, "phone": key}, "set-policy", "dual", "dual")
-            )
-        self.assertTrue(changed["ok"])
-        self.assertEqual(changed["policy"], "dual")
-        self.assertFalse(enrolled["biometric_invoked"])
-        self.assertEqual(
-            holder._devices()["phone-human"]["provenance"]["origin"],
-            "human-operated-native-adapter",
+            with (
+                mock.patch("runspecimen.native_bridge.read_verifier_identity", return_value=_parsed()),
+                mock.patch("runspecimen.native_bridge.verifier_signature_strict", return_value=True),
+            ):
+                with self.assertRaises(HolderRefusal) as refused:
+                    holder.enroll_user_invoked_secure_enclave(
+                        UserInvokedSecureEnclaveControl("dual"),
+                        phone_peer=phone,
+                    )
+        self.assertEqual(seen, ["mac"])
+        self.assertIn("does not authorize a software key", str(refused.exception))
+        self.assertNotIn("team identifier does not match", str(refused.exception))
+        self.assertFalse((holder.root / "os-boundary.json").exists())
+
+    def _local_session(self, root: Path):
+        from runspecimen.native_bridge import (
+            OsBoundaryKey,
+            UserInvokedSecureEnclaveControl,
+            UserSessionKeyCustody,
         )
+        from tests.test_native_bridge_policies import _sign, _signer
+
+        binary, public, private = _signer(self)
+        key = OsBoundaryKey(public, lambda message: _sign(binary, private, message))
+        holder = self._holder(root, installed=False)
+        custody = UserSessionKeyCustody()
+        seen: list[str] = []
+
+        def fake(role: str) -> OsBoundaryKey:
+            seen.append(role)
+            if role != "mac":
+                raise AssertionError(role)
+            return key
+
+        with mock.patch("runspecimen.native_bridge.os_secure_enclave_create_key", side_effect=fake):
+            enrolled = holder.enroll_user_invoked_secure_enclave(
+                UserInvokedSecureEnclaveControl("local"),
+                custody=custody,
+            )
+        return holder, custody, key, seen, enrolled, binary, private
+
+    def test_ipc_binding_refuses_a_foreign_peer_and_an_origin_string(self) -> None:
+        from runspecimen.execution_holder import dispatch
+        from runspecimen.native_bridge import OsBoundaryKey, UserSessionKeyCustody
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-ipc-bind-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+        custody = UserSessionKeyCustody()
+        custody.keep("mac", OsBoundaryKey("AQID", lambda _message: "c2ln"))
+        started = holder.generation
+        foreign = {
+            "op": "native-enroll",
+            "policy": "local",
+            "peer_binding": 0,
+            "claimed_uid": 0,
+            "generation": started,
+            "public_keys": {"mac": "AQID"},
+            "origin": "human-operated-native-adapter",
+        }
+        with self.assertRaises(HolderRefusal) as origin:
+            holder.accept_native_ipc(foreign, peer_uid=os.getuid(), custody=custody, started=started)
+        self.assertIn("does not authorize a software key", str(origin.exception))
+        mismatched = {key: value for key, value in foreign.items() if key != "origin"}
+        with self.assertRaises(HolderRefusal) as peer:
+            holder.accept_native_ipc(mismatched, peer_uid=os.getuid(), custody=custody, started=started)
+        self.assertIn("ipc binding does not match the socket peer", str(peer.exception))
+        claimed = dict(mismatched)
+        claimed["peer_binding"] = os.getuid()
+        with self.assertRaises(HolderRefusal) as claimed_uid:
+            holder.accept_native_ipc(claimed, peer_uid=os.getuid(), custody=custody, started=started)
+        self.assertIn("ipc binding does not match the socket peer", str(claimed_uid.exception))
+        configured = dict(claimed)
+        configured.pop("claimed_uid")
+        configured["config"] = {"signer": "software"}
+        with self.assertRaises(HolderRefusal) as config:
+            holder.accept_native_ipc(configured, peer_uid=os.getuid(), custody=custody, started=started)
+        self.assertIn("does not authorize a software key", str(config.exception))
+        with self.assertRaises(HolderRefusal) as wire:
+            dispatch(holder, {"op": "native-enroll", "origin": "software"}, caller_id="app")
+        self.assertIn("cannot be selected from wire input", str(wire.exception))
+        with mock.patch.dict(os.environ, {"RS_NATIVE_SIGNER": "software"}):
+            from runspecimen.native_bridge import UserInvokedSecureEnclaveControl
+
+            with self.assertRaises(HolderRefusal) as env:
+                holder.enroll_user_invoked_secure_enclave(UserInvokedSecureEnclaveControl("local"))
+        self.assertIn("does not authorize a software key", str(env.exception))
+        self.assertFalse((holder.root / "os-boundary.json").exists())
+
+    def test_companion_requires_a_phone_peer_not_a_local_key(self) -> None:
+        from runspecimen.native_bridge import (
+            OsBoundaryKey,
+            PhonePeer,
+            UserInvokedSecureEnclaveControl,
+        )
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-phone-peer-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+        seen: list[str] = []
+
+        def fake(role: str) -> OsBoundaryKey:
+            seen.append(role)
+            return OsBoundaryKey("LOCALKEY", lambda _message: "c2ln")
+
+        with mock.patch("runspecimen.native_bridge.os_secure_enclave_create_key", side_effect=fake):
+            holder.enroll_user_invoked_secure_enclave(UserInvokedSecureEnclaveControl("local"))
+            with self.assertRaises(HolderRefusal) as same:
+                holder.enroll_user_invoked_secure_enclave(
+                    UserInvokedSecureEnclaveControl("companion"),
+                    phone_peer=PhonePeer("LOCALKEY", lambda _message: "c2ln"),
+                )
+            with self.assertRaises(HolderRefusal) as dual:
+                holder.enroll_user_invoked_secure_enclave(
+                    UserInvokedSecureEnclaveControl("dual"),
+                    phone_peer=PhonePeer("LOCALKEY", lambda _message: "c2ln"),
+                )
+        self.assertEqual(seen, ["mac", "mac"])
+        self.assertIn("a local key is not a phone peer", str(same.exception))
+        self.assertIn("a local key is not a phone peer", str(dual.exception))
+        self.assertNotIn("phone-human", holder._devices())
+
+    def test_stale_phone_challenge_is_refused(self) -> None:
+        from runspecimen.native_bridge import PhonePeer, UserInvokedSecureEnclaveControl
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-stale-challenge-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+        peer = PhonePeer("PHONEKEY", lambda _message: "c2ln")
+
+        def wait() -> None:
+            holder._phone_challenge["id"] = "stale"
+
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.enroll_user_invoked_secure_enclave(
+                UserInvokedSecureEnclaveControl("companion"),
+                wait=wait,
+                phone_peer=peer,
+            )
+        self.assertIn("stale phone challenge", str(ctx.exception))
+        self.assertFalse((holder.root / "os-boundary.json").exists())
+        self.assertNotIn("phone-human", holder._devices())
+
+    def test_session_custody_signs_after_holder_reload(self) -> None:
+        holder, custody, _key, seen, enrolled, _binary, _private = self._local_session(Path(tempfile.mkdtemp(prefix="rsh-reload-")))
+        self.addCleanup(shutil.rmtree, holder.root.parent, True)
+        self.assertEqual(seen, ["mac"])
+        self.assertTrue(enrolled["paired"])
+        self.assertFalse(enrolled["e2_closed"])
+        self.assertEqual(enrolled["access_policy"], "biometry-current-set-on-each-signature")
+        proof = (holder.root / "os-boundary.json").read_text(encoding="utf-8")
+        self.assertNotIn("c2ln", proof)
+        self.assertNotIn(_private, proof)
+        holder.set_policy(holder.sign_from_session(custody, "set-policy", "local", "local"))
+        reloaded = ExecutionHolder(
+            holder.root,
+            allow_test_double=False,
+            installed_protection=False,
+            bootstrap_secret="ab" * 32,
+            snapshot_base=holder.root.parent / "snaps",
+            verifier_pin=production_verifier_pin(),
+        )
+        reloaded.attach_session(custody)
+        again = reloaded.sign_from_session(custody, "set-policy", "local", "local")
+        self.assertIn("mac-human", again["signatures"])
+        with self.assertRaises(TypeError):
+            reloaded.sign_from_session("AQID", "set-policy", "local", "local")
+
+    def test_user_invoked_enrollment_cancel_rotation_and_revocation(self) -> None:
+        td = tempfile.TemporaryDirectory(prefix="rsh-custody-life-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        holder, custody, _key, _seen, _enrolled, _binary, _private = self._local_session(root / "holder")
+        holder.set_policy(holder.sign_from_session(custody, "set-policy", "local", "local"))
+        ws, script = self._workspace(root / "ws")
+        binding = self._binding(ws, script, "local")
+        files = [(str(script.resolve()), sha256_file(script))]
+        human = holder.sign_from_session(
+            custody,
+            "consume",
+            "life",
+            "local",
+            self._consume_authorization(holder, "life", ws, script, binding),
+        )
+        holder.consume(nonce="life", policy="local", human=human, workspace=ws, files=files, binding=binding)
+        spent = json.loads((holder.root / "spent.json").read_text(encoding="utf-8"))["nonces"][0]
+        holder.execute(
+            token="life",
+            human=holder.sign_from_session(
+                custody,
+                "execute",
+                "life",
+                "local",
+                {
+                    "payload_digest": spent["payload_digest"],
+                    "launch_argv": list(binding["launch_argv"]),
+                    "bounds": binding["bounds"],
+                    "mutation_digest": spent["binding"]["mutation_digest"],
+                    "attestation_class": "device-p256-not-hardware",
+                },
+            ),
+        )
+        self.assertEqual((ws.parent / "ran").read_text(encoding="utf-8"), "ran")
+        holder.consume(
+            nonce="cancel-me",
+            policy="local",
+            human=holder.sign_from_session(
+                custody,
+                "consume",
+                "cancel-me",
+                "local",
+                self._consume_authorization(holder, "cancel-me", ws, script, binding),
+            ),
+            workspace=ws,
+            files=files,
+            binding=binding,
+        )
+        holder.cancel_uncertain("cancel-me", holder.sign_from_session(custody, "cancel", "cancel-me", "local"))
+        rotated = holder.rotate_caller(holder.sign_from_session(custody, "rotate", "app", "local"))
+        self.assertEqual(rotated["key_generation"], 2)
+        after = holder.sign_from_session(custody, "consume", "after-revoke", "local")
+        holder.revoke_device(
+            "mac-human",
+            holder.sign_from_session(custody, "revoke", "mac-human", "local"),
+        )
+        with self.assertRaises(HolderRefusal) as revoked:
+            holder.consume(
+                nonce="after-revoke",
+                policy="local",
+                human=after,
+                workspace=ws,
+                files=files,
+                binding=binding,
+            )
+        self.assertIn("revoked", str(revoked.exception))
+
+    def test_concurrent_consume_of_a_custody_signature(self) -> None:
+        td = tempfile.TemporaryDirectory(prefix="rsh-custody-race-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        holder, custody, _key, _seen, _enrolled, _binary, _private = self._local_session(root / "holder")
+        holder.set_policy(holder.sign_from_session(custody, "set-policy", "local", "local"))
+        ws, script = self._workspace(root / "ws")
+        binding = self._binding(ws, script, "local")
+        files = [(str(script.resolve()), sha256_file(script))]
+        race = holder.sign_from_session(
+            custody,
+            "consume",
+            "race",
+            "local",
+            self._consume_authorization(holder, "race", ws, script, binding),
+        )
+        errors: list[BaseException] = []
+        ok: list[bool] = []
+
+        def _once() -> None:
+            try:
+                holder.consume(
+                    nonce="race", policy="local", human=race, workspace=ws, files=files, binding=binding
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+            else:
+                ok.append(True)
+
+        threads = [threading.Thread(target=_once) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(len(ok), 1)
+        self.assertEqual(len(errors), 1)
+
+    def test_phone_peer_comparison_enrolls_companion(self) -> None:
+        from runspecimen.native_bridge import PhonePeer, UserInvokedSecureEnclaveControl
+        from tests.test_native_bridge_policies import _sign, _signer
+
+        if sys.platform != "darwin":
+            self.skipTest("phone peer comparison uses the Darwin verifier")
+        binary, public, private = _signer(self)
+        bad = PhonePeer(public, lambda _message: _sign(binary, private, b"not-the-challenge"))
+        good = PhonePeer(public, lambda message: _sign(binary, private, message))
+        td = tempfile.TemporaryDirectory(prefix="rsh-phone-compare-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+        with self.assertRaises(HolderRefusal) as stale_sig:
+            holder.enroll_user_invoked_secure_enclave(
+                UserInvokedSecureEnclaveControl("companion"),
+                phone_peer=bad,
+            )
+        self.assertIn("phone peer comparison failed", str(stale_sig.exception))
+        enrolled = holder.enroll_user_invoked_secure_enclave(
+            UserInvokedSecureEnclaveControl("companion"),
+            phone_peer=good,
+        )
+        self.assertEqual(enrolled["devices"], ["phone-human"])
+        self.assertTrue(enrolled["paired"])
+        self.assertTrue(holder._devices()["phone-human"]["provenance"]["not_hardware"])
+        self.assertFalse((holder.root / "os-boundary.json").read_text(encoding="utf-8").find(private) >= 0)

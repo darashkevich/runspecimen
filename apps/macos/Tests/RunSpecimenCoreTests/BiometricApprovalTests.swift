@@ -1470,13 +1470,41 @@ final class PolicyBoundApprovalTests: XCTestCase {
         XCTAssertFalse(source.contains("SecureEnclave.P256.Signing.PrivateKey("))
         XCTAssertTrue(ProductionNativeBridgeGate.status().contains("An origin string is not production trust"))
         struct MockOsBoundary: SecureEnclaveKeyMaking {
-            func makePublicKey() throws -> Data { Data([9, 9, 9]) }
+            func makeSessionKey() throws -> NativeSessionKey {
+                NativeSessionKey(
+                    publicKey: Data([9, 9, 9]),
+                    accessPolicy: "biometry-current-set-on-each-signature"
+                )
+            }
         }
-        let paired = try ProductionNativeBridgeGate.enrollFromUserInvokedControl(
-            policy: "companion",
+        struct MockPhone: PhonePeerComparing {
+            var publicKey: Data
+            func sign(challenge: Data) throws -> Data { Data(challenge) }
+        }
+        let local = try ProductionNativeBridgeGate.enrollFromUserInvokedControl(
+            policy: "local",
             maker: MockOsBoundary()
         )
-        XCTAssertEqual(paired, Data([9, 9, 9]))
+        XCTAssertEqual(local.publicKey, Data([9, 9, 9]))
+        XCTAssertThrowsError(
+            try ProductionNativeBridgeGate.enrollFromUserInvokedControl(
+                policy: "companion",
+                maker: MockOsBoundary()
+            )
+        )
+        let compared = try ProductionNativeBridgeGate.enrollPairedPhone(
+            challenge: Data([1, 2, 3]),
+            peer: MockPhone(publicKey: Data([4, 5, 6])),
+            localPublicKey: local.publicKey
+        )
+        XCTAssertEqual(compared, Data([4, 5, 6]))
+        XCTAssertThrowsError(
+            try ProductionNativeBridgeGate.enrollPairedPhone(
+                challenge: Data([1, 2, 3]),
+                peer: MockPhone(publicKey: local.publicKey),
+                localPublicKey: local.publicKey
+            )
+        )
         let holderSource = try String(
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
@@ -1492,7 +1520,12 @@ final class PolicyBoundApprovalTests: XCTestCase {
         XCTAssertFalse(holderSource.contains("onAppear(perform: enroll"))
         let live = holderSource.split(separator: "struct LiveSecureEnclaveKeyMaker", maxSplits: 1)
         XCTAssertEqual(live.count, 2)
+        XCTAssertFalse(String(live[0]).contains("SecureEnclave.P256.Signing.PrivateKey("))
         XCTAssertTrue(live[1].contains("SecureEnclave.P256.Signing.PrivateKey("))
+        XCTAssertTrue(holderSource.contains("issuePhoneChallenge"))
+        XCTAssertTrue(holderSource.contains("enrollLocal"))
+        XCTAssertTrue(holderSource.contains("biometry-current-set-on-each-signature"))
+        XCTAssertTrue(holderSource.contains("A biometric press does not finish missing implementation"))
     }
 
     private func submit(

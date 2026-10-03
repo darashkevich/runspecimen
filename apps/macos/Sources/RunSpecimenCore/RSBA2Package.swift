@@ -112,8 +112,23 @@ public protocol HumanNativeSigning: Sendable {
 
 /// OS boundary the user-invoked control calls. Tests supply a mock.
 /// The live Secure Enclave constructor is not part of this protocol.
+public struct NativeSessionKey: Sendable {
+    public let publicKey: Data
+    public let accessPolicy: String
+
+    public init(publicKey: Data, accessPolicy: String) {
+        self.publicKey = publicKey
+        self.accessPolicy = accessPolicy
+    }
+}
+
 public protocol SecureEnclaveKeyMaking: Sendable {
-    func makePublicKey() throws -> Data
+    func makeSessionKey() throws -> NativeSessionKey
+}
+
+public protocol PhonePeerComparing: Sendable {
+    var publicKey: Data { get }
+    func sign(challenge: Data) throws -> Data
 }
 
 public struct HumanEnrollmentReceipt: Equatable, Sendable {
@@ -152,7 +167,7 @@ public enum ProductionNativeBridgeGate {
 
     public static func status(signers: [IsolatedNativeSigner] = []) -> String {
         let connected = IsolatedNativeEnrollment.connected(signers)
-        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. This Store app does not carry the Developer ID verifier pin and stays guarantee (1). A display name is not a pin. A verifier pin does not authorize a software key. An origin string is not production trust. An injected native signer is not hardware. A software signer is not the native adapter. E2 is not closed. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
+        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. This Store app does not carry the Developer ID verifier pin and stays guarantee (1). A display name is not a pin. A verifier pin does not authorize a software key. An origin string is not production trust. An injected native signer is not hardware. A software signer is not the native adapter. E2 is not closed. A biometric press does not finish missing implementation. Still unbuilt: a live iPhone transport and a root-owned installed holder. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
     }
 
     /// Wire and file labels never select the human step.
@@ -179,18 +194,38 @@ public enum ProductionNativeBridgeGate {
 
     /// Calls `maker` only when the caller passes the object from a user-invoked control.
     /// The live `SecureEnclave.P256.Signing.PrivateKey` call is not in this type.
+    /// Local session only. Companion and dual are `enrollPairedPhone`.
     public static func enrollFromUserInvokedControl(
         policy: String,
         maker: SecureEnclaveKeyMaking
-    ) throws -> Data {
-        guard policy == "local" || policy == "companion" || policy == "dual" else {
+    ) throws -> NativeSessionKey {
+        guard policy == "local" else {
             throw ProductionEnrollmentError.signerIncomplete
         }
-        let key = try maker.makePublicKey()
-        if key.isEmpty {
+        let key = try maker.makeSessionKey()
+        if key.publicKey.isEmpty || key.accessPolicy != "biometry-current-set-on-each-signature" {
             throw ProductionEnrollmentError.signerIncomplete
         }
         return key
+    }
+
+    /// Compares a phone peer with the local key. A matching local key is refused.
+    public static func enrollPairedPhone(
+        challenge: Data,
+        peer: PhonePeerComparing,
+        localPublicKey: Data?
+    ) throws -> Data {
+        if challenge.isEmpty {
+            throw ProductionEnrollmentError.signerIncomplete
+        }
+        if let localPublicKey, localPublicKey == peer.publicKey {
+            throw ProductionEnrollmentError.signerIncomplete
+        }
+        let signature = try peer.sign(challenge: challenge)
+        if signature.isEmpty {
+            throw ProductionEnrollmentError.signerIncomplete
+        }
+        return peer.publicKey
     }
 
     /// Unattended call. Does not call `SecureEnclave.P256.Signing.PrivateKey` and does not prompt.

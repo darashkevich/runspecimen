@@ -329,6 +329,9 @@ class ExecutionHolder:
         control: object,
         *,
         wait: object | None = None,
+        custody: object | None = None,
+        phone_peer: object | None = None,
+        peer_uid: int | None = None,
     ) -> dict[str, Any]:
         """Enroll after a person invokes the control.
 
@@ -337,102 +340,107 @@ class ExecutionHolder:
         ``SecureEnclave.P256.Signing.PrivateKey`` and does not prompt.
         Mutations take the holder lock. Generation and revocation are read
         again after ``wait``. A change during the wait fails closed and does
-        not store the key. E2 stays open until a person presses the control.
+        not store the key. The Mac signing handle stays in ``custody`` for a
+        later signature in this user session. Companion and dual compare a
+        phone peer and do not create a local key labeled phone. A software
+        double is stored as not-hardware and installed protection refuses it.
+        E2 is not closed. A biometric press does not finish missing
+        implementation.
         """
 
-        from runspecimen.holder_asymmetric import public_key_fingerprint
         from runspecimen.native_bridge import (
             HumanNativeSigner,
             HumanOperatedNativeAdapter,
             OsBoundaryKey,
             OsBoundaryNotInvoked,
+            PhonePeer,
             TrustedNativeBoundary,
             UserInvokedSecureEnclaveControl,
+            UserSessionKeyCustody,
             os_secure_enclave_create_key,
             production_enrollment_refusal,
         )
 
+        if os.environ.get("RS_NATIVE_SIGNER") or os.environ.get("RS_HOLDER_NATIVE_ORIGIN"):
+            raise HolderRefusal(production_enrollment_refusal())
         if isinstance(control, (HumanNativeSigner, HumanOperatedNativeAdapter, TrustedNativeBoundary, dict, str, bool)):
             raise HolderRefusal(production_enrollment_refusal())
         if not isinstance(control, UserInvokedSecureEnclaveControl):
             raise HolderRefusal("secure enclave enrollment was not invoked by a person")
         if wait is not None and not callable(wait):
             raise HolderRefusal("secure enclave user wait is not a callback")
+        if custody is None:
+            custody = UserSessionKeyCustody()
+        if not isinstance(custody, UserSessionKeyCustody):
+            raise TypeError("session custody keeps an OS key handle, not public bytes")
+        if peer_uid is None:
+            peer_uid = os.getuid()
+        if not isinstance(peer_uid, int):
+            raise HolderRefusal("ipc peer is missing")
+        self._session_custody = custody
         policy = control.action
         roles = {"local": ("mac",), "companion": ("phone",), "dual": ("mac", "phone")}[policy]
         with self._transaction():
             self._load()
             started = self.generation
-        created: list[tuple[str, OsBoundaryKey]] = []
-        try:
-            for role in roles:
-                key = os_secure_enclave_create_key(role)
-                if not isinstance(key, OsBoundaryKey):
-                    raise HolderRefusal("secure enclave boundary did not return an OS key")
-                created.append((role, key))
-        except OsBoundaryNotInvoked as exc:
-            raise HolderRefusal(str(exc)) from exc
+        peer = phone_peer if isinstance(phone_peer, PhonePeer) else None
+        if policy in {"companion", "dual"} and peer is None:
+            raise HolderRefusal("companion enrollment requires a phone peer")
+        if policy in {"local", "dual"}:
+            try:
+                created = os_secure_enclave_create_key("mac")
+            except OsBoundaryNotInvoked as exc:
+                raise HolderRefusal(str(exc)) from exc
+            if not isinstance(created, OsBoundaryKey):
+                raise HolderRefusal("secure enclave boundary did not return an OS key")
+            if peer is not None and peer.public_key == created.public_key:
+                raise HolderRefusal("a local key is not a phone peer")
+            custody.keep("mac", created)
+        if policy == "companion" and peer is not None:
+            mac_public = custody.public_key("mac")
+            existing = self._devices().get("mac-human")
+            existing_public = existing.get("public_key") if isinstance(existing, dict) else None
+            if peer.public_key in {mac_public, existing_public}:
+                raise HolderRefusal("a local key is not a phone peer")
+        if peer is not None:
+            challenge = secrets.token_bytes(32)
+            challenge_id = secrets.token_hex(8)
+            self._phone_challenge = {"bytes": challenge, "generation": started, "id": challenge_id}
+            try:
+                signature = peer.sign(challenge)
+            except Exception as exc:
+                raise HolderRefusal("phone peer comparison failed") from exc
+            self._pending_phone = {
+                "signature": signature,
+                "peer": peer,
+                "generation": started,
+                "challenge_id": challenge_id,
+                "signed_bytes": challenge,
+            }
         if wait is not None:
             wait()
-        with self._transaction():
-            self._load()
-            if self.generation != started:
-                raise HolderRefusal("enrollment generation changed during the user wait")
-            devices = self._devices()
-            for role, _key in created:
-                current = devices.get(f"{role}-human")
-                if isinstance(current, dict) and current.get("revoked") is True:
-                    raise HolderRefusal("enrollment device was revoked during the user wait")
-            proof_id = secrets.token_hex(16)
-            proof_keys: dict[str, Any] = {}
-            paired: list[str] = []
-            for role, key in created:
-                device_id = f"{role}-human"
-                public = key.public_key
-                compared = public_key_fingerprint(public)
-                devices[device_id] = {
-                    "role": role,
-                    "fingerprint": compared,
-                    "revoked": False,
-                    "attestation": "device-p256-not-hardware",
-                    "algorithm": "p256",
-                    "public_key": public,
-                    "generation": started,
-                    "hardware": False,
-                    "provenance": {
-                        "bridge": "os-secure-enclave-boundary",
-                        "role": role,
-                        "policy": policy,
-                        "generation": started,
-                        "fingerprint": compared,
-                        "not_hardware": False,
-                        "boundary_double": False,
-                        "origin": "os-secure-enclave-boundary",
-                        "os_boundary_id": proof_id,
-                        "biometric_invoked": False,
-                        "e2_closed": False,
-                    },
-                }
-                proof_keys[device_id] = {
-                    "id": proof_id,
-                    "public_key": public,
-                    "generation": started,
-                }
-                paired.append(device_id)
-            self._write("devices.json", devices)
-            atomic_write_json(
-                self.root / "os-boundary.json",
-                {"keys": proof_keys, "generation": started},
-            )
-        return {
-            "ok": True,
-            "hardware": False,
-            "biometric_invoked": False,
-            "e2_closed": False,
+        public_keys = {}
+        for role in roles:
+            if role == "phone":
+                if peer is None:
+                    raise HolderRefusal("companion enrollment requires a phone peer")
+                public_keys[role] = peer.public_key
+            else:
+                public_keys[role] = custody.public_key(role)
+        body = {
+            "op": "native-enroll",
             "policy": policy,
-            "devices": paired,
-            "installed_protection": self.installed_protection,
+            "peer_binding": peer_uid,
+            "generation": started,
+            "public_keys": public_keys,
         }
+        try:
+            return self.accept_native_ipc(body, peer_uid=peer_uid, custody=custody, started=started)
+        except HolderRefusal:
+            for role in roles:
+                custody.drop(role)
+            self._pending_phone = None
+            raise
 
     def sign_with_os_boundary(
         self,
@@ -504,6 +512,185 @@ class ExecutionHolder:
             "e2_closed": False,
             "attestation_class": "device-p256-not-hardware",
             "signatures": signatures,
+        }
+
+    def attach_session(self, custody: object) -> None:
+        """Reattach an in-memory signing handle after the holder reloads.
+
+        The private capability is not read from ``os-boundary.json``. That file
+        stores only the public key the holder accepted.
+        """
+
+        from runspecimen.native_bridge import UserSessionKeyCustody
+
+        if not isinstance(custody, UserSessionKeyCustody):
+            raise TypeError("session custody keeps an OS key handle, not public bytes")
+        self._session_custody = custody
+
+    def sign_from_session(
+        self,
+        custody: object,
+        purpose: str,
+        subject: str,
+        policy: str,
+        authorized: dict[str, Any] | None = None,
+        expires_at: int | None = None,
+    ) -> dict[str, Any]:
+        """Sign with the handle kept at enrollment. A new public-only value cannot."""
+
+        from runspecimen.native_bridge import UserSessionKeyCustody
+
+        if not isinstance(custody, UserSessionKeyCustody):
+            raise TypeError("session custody keeps an OS key handle, not public bytes")
+        names = {"local": ["mac"], "companion": ["phone"], "dual": ["mac", "phone"]}[policy]
+        keys = {}
+        for role in names:
+            key = custody.key(role)
+            if key is None:
+                raise HolderRefusal("session custody has no key for this role")
+            keys[role] = key
+        return self.sign_with_os_boundary(keys, purpose, subject, policy, authorized, expires_at)
+
+    def accept_native_ipc(
+        self,
+        message: object,
+        *,
+        peer_uid: int,
+        custody: object,
+        started: int,
+    ) -> dict[str, Any]:
+        """Pair keys the session already holds. Wire JSON cannot select this.
+
+        ``peer_uid`` is the socket peer, not a claimed uid inside ``message``.
+        An origin string, a hardware label, env, and config are refused.
+        Installed protection refuses the software double even when a later pin
+        check would match. A phone key is stored only after the challenge
+        still matches and the peer signature verifies.
+        """
+
+        from runspecimen.holder_asymmetric import public_key_fingerprint, verify_native_p256
+        from runspecimen.native_bridge import (
+            PhonePeer,
+            UserSessionKeyCustody,
+            production_enrollment_refusal,
+        )
+
+        if os.environ.get("RS_NATIVE_SIGNER") or os.environ.get("RS_HOLDER_NATIVE_ORIGIN"):
+            raise HolderRefusal(production_enrollment_refusal())
+        if not isinstance(custody, UserSessionKeyCustody):
+            raise TypeError("session custody keeps an OS key handle, not public bytes")
+        if not isinstance(peer_uid, int):
+            raise HolderRefusal("ipc peer is missing")
+        if not isinstance(message, dict) or message.get("op") != "native-enroll":
+            raise HolderRefusal("native enrollment cannot be selected from wire input")
+        if any(key in message for key in ("origin", "config", "signer", "hardware")):
+            raise HolderRefusal(production_enrollment_refusal())
+        claimed = message.get("claimed_uid")
+        if claimed is not None and claimed != peer_uid:
+            raise HolderRefusal("ipc binding does not match the socket peer")
+        if message.get("peer_binding") != peer_uid:
+            raise HolderRefusal("ipc binding does not match the socket peer")
+        policy = message.get("policy")
+        if policy not in {"local", "companion", "dual"}:
+            raise HolderRefusal("human native enrollment policy is not accepted")
+        roles = {"local": ("mac",), "companion": ("phone",), "dual": ("mac", "phone")}[policy]
+        public_keys = message.get("public_keys")
+        if not isinstance(public_keys, dict):
+            raise HolderRefusal("ipc public key does not match session custody")
+        with self._transaction():
+            self._load()
+            if self.generation != started or message.get("generation") != started:
+                raise HolderRefusal("enrollment generation changed during the user wait")
+            devices = self._devices()
+            for role in roles:
+                current = devices.get(f"{role}-human")
+                if isinstance(current, dict) and current.get("revoked") is True:
+                    raise HolderRefusal("enrollment device was revoked during the user wait")
+            if "phone" in roles:
+                pending = getattr(self, "_pending_phone", None)
+                challenge = getattr(self, "_phone_challenge", None)
+                if not isinstance(pending, dict) or not isinstance(challenge, dict):
+                    raise HolderRefusal("companion enrollment requires a phone peer")
+                if (
+                    challenge.get("generation") != started
+                    or pending.get("generation") != started
+                    or challenge.get("id") != pending.get("challenge_id")
+                    or challenge.get("bytes") != pending.get("signed_bytes")
+                ):
+                    raise HolderRefusal("stale phone challenge")
+                peer = pending.get("peer")
+                if not isinstance(peer, PhonePeer) or public_keys.get("phone") != peer.public_key:
+                    raise HolderRefusal("a local key is not a phone peer")
+                if custody.public_key("mac") == peer.public_key:
+                    raise HolderRefusal("a local key is not a phone peer")
+                signature = pending.get("signature")
+                raw = pending.get("signed_bytes")
+                if not isinstance(signature, str) or not isinstance(raw, bytes):
+                    raise HolderRefusal("phone peer comparison failed")
+                if not verify_native_p256(
+                    peer.public_key, signature, raw, binary=self._verifier_binary()
+                ):
+                    raise HolderRefusal("phone peer comparison failed")
+                custody.keep("phone", peer.as_os_key())
+            for role in roles:
+                if public_keys.get(role) != custody.public_key(role):
+                    raise HolderRefusal("ipc public key does not match session custody")
+            if self.installed_protection:
+                raise HolderRefusal(production_enrollment_refusal())
+            proof_id = secrets.token_hex(16)
+            proof_keys: dict[str, Any] = {}
+            paired: list[str] = []
+            for role in roles:
+                device_id = f"{role}-human"
+                public = custody.public_key(role)
+                if not isinstance(public, str) or not public:
+                    raise HolderRefusal("session custody has no key for this role")
+                compared = public_key_fingerprint(public)
+                devices[device_id] = {
+                    "role": role,
+                    "fingerprint": compared,
+                    "revoked": False,
+                    "attestation": "device-p256-not-hardware",
+                    "algorithm": "p256",
+                    "public_key": public,
+                    "generation": started,
+                    "hardware": False,
+                    "provenance": {
+                        "bridge": "os-secure-enclave-boundary",
+                        "role": role,
+                        "policy": policy,
+                        "generation": started,
+                        "fingerprint": compared,
+                        "not_hardware": True,
+                        "boundary_double": False,
+                        "origin": "os-secure-enclave-boundary",
+                        "os_boundary_id": proof_id,
+                        "biometric_invoked": False,
+                        "e2_closed": False,
+                        "access_policy": "biometry-current-set-on-each-signature",
+                    },
+                }
+                proof_keys[device_id] = {
+                    "id": proof_id,
+                    "public_key": public,
+                    "generation": started,
+                }
+                paired.append(device_id)
+            self._write("devices.json", devices)
+            atomic_write_json(
+                self.root / "os-boundary.json",
+                {"keys": proof_keys, "generation": started},
+            )
+        return {
+            "ok": True,
+            "hardware": False,
+            "biometric_invoked": False,
+            "e2_closed": False,
+            "policy": policy,
+            "devices": paired,
+            "paired": True,
+            "installed_protection": self.installed_protection,
+            "access_policy": "biometry-current-set-on-each-signature",
         }
 
     def sign_with_human_operated_adapter(
@@ -2751,6 +2938,8 @@ def dispatch(holder: ExecutionHolder, body: dict[str, Any], *, caller_id: str) -
     op = body.get("op")
     # Ignore any client-supplied clock. Expiry uses time.time() in the holder.
     clock = None
+    if op == "native-enroll":
+        raise HolderRefusal("native enrollment cannot be selected from wire input")
     if op == "enroll":
         if caller_id != "bootstrap":
             raise HolderRefusal("only the bootstrap caller can enroll")
