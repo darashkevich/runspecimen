@@ -2,7 +2,7 @@
 
 QA instruction: finish the unblocked engineering in `RELEASE-BLOCKER-LEDGER-2026-10-02.md`. The frozen baseline was tip `4a6b97fba97729b658a40ffc99d48c505978e4ba` (code `4b9755b66c5e60968cf3e432dd5e907f027d8393`). That baseline is not this candidate. A pin match authenticates verifier code. It does not authenticate biometric key origin or human approval.
 
-Code commits: `74914f9b52784509182318b5261f6747ccdf9f77` and `60ea6eea6b892b30d4d47baa021b0ad63cd8646e`. The candidate tip is the commit that adds this sentence. Its parent is `eb397ce7ec89ecad56eca7869b0432207001b93d`. On a Mac without that Developer ID identity, the extracted-verifier test signs ad-hoc and still refuses the repository fallback. The compile-stage test skips when `swiftc` is absent and does not read a machine-local interpreter path.
+Code commits: `74914f9b52784509182318b5261f6747ccdf9f77` and `60ea6eea6b892b30d4d47baa021b0ad63cd8646e`. The candidate tip is the commit that adds this sentence. Its parent is `a33ba2b5cef3da180f7ed7147d4da04defa98009`. On a Mac without that Developer ID identity, the extracted-verifier test signs ad-hoc and still refuses the repository fallback. The compile-stage test skips when `swiftc` is absent and does not read a machine-local interpreter path.
 
 This note is not production sign-off. Nothing here was installed, published, merged, notarized, or submitted. No biometric prompt was run. `SecureEnclave.P256.Signing.PrivateKey` was not called. The live `/Applications` apps and holder daemon pid 42554 were not repaired, signaled, or replaced. CI green is not readiness.
 
@@ -128,6 +128,15 @@ This tip's development GUI is `/tmp/rs-qa-adapter-derived`, built from parent `e
 A truncated contract at `/tmp/rs-qa-adapter-truncated/contract.json` made Digest receipt report "Select a contract with a campaign and a run." Opening the reviewer demo again restored the labeled digest. Digest returned `certificate_id` `labeled-synthetic-reviewer-demo-run-001`. Live compare status was `match` for `outputs/labeled-synthetic.txt` (`f56db73d871657d629ecddffa054fe9f22be1ba72f233f4804d663ca5e33ec9e`). Diff reported `identical: false` with `exit_code` 0 versus 1 and `run_result` ok versus failed. Retain cancel left `/tmp/rs-qa-adapter-retain` empty. Retain confirm wrote `state.json`, `events.jsonl`, `approval.json`, `certificate.json`, and `manifest.json` (`kind` `retained_incident_bundle`, created `2026-10-03T11:24:47Z`, manifest SHA-256 `b0e0c6b45c6907cd102d74dae33cae5cebeb824714b682fb0166c54f007e0170`). The sheet exposes Cancel workflow. It does not expose a separate control that cancels an in-flight large-output command.
 
 Only QA pid 37076 was killed. The container was restored from a backup taken before this session. `/Applications/RunSpecimen.app` mtime stayed `2026-09-26 13:56:03`. `/Applications/RunSpecimen Holder.app` mtime stayed `2026-09-30 15:19:13`. Daemon pid 42554 was still alive.
+
+`a33ba2b5cef3da180f7ed7147d4da04defa98009` changes the Linux socket-peer read only. It does not change Mac app sources, so the GUI above was not rebuilt and is not holder acceptance. Ubuntu CI had failed `test_socket_peer_ignores_a_claimed_foreign_uid` with `OverflowError` on the Darwin `LOCAL_PEERCRED` constant. Linux now uses `SO_PEERCRED`. The macOS jobs on that earlier push had already succeeded.
+
+`release_check` after that fix wrote `artifacts/rc15-2026-10-02-qa-py312-peer/` and did not replace the adapter directory. Homebrew Python 3.12.14. 598 tests, 35 skipped, then the 4-test follow-up, exit 0. The same skip reasons. The new sdist hash is not inside a file packed into that sdist.
+
+- Wheel SHA-256: `abebf177f221163a3fda57adb8c75d3c5b3cae71d96c85479835b51034c8ceaa`
+- Sdist SHA-256: `d43ae04b833fbcc99a88261009f48a866c0e9efdbbc12629d2fe3ae6c082bc68`
+- Plugin zip SHA-256, unchanged: `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d`
+- Staged holder package tar SHA-256, not installed: `f92d846630c979d9c379c46ddbeba48382b931fb2a3c5b6460bb88988981a1a3`
 
 ## Human checklist
 
