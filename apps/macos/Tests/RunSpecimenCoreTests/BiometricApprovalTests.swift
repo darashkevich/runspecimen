@@ -1285,7 +1285,7 @@ final class PolicyBoundApprovalTests: XCTestCase {
             verifierConnected: true,
             installedProtection: true
         ))
-        XCTAssertTrue(ProductionNativeBridgeGate.allowsProductionEnrollment(
+        XCTAssertFalse(ProductionNativeBridgeGate.allowsProductionEnrollment(
             origin: .secureEnclaveHumanStep,
             pinConfigured: true,
             verifierConnected: true,
@@ -1468,6 +1468,31 @@ final class PolicyBoundApprovalTests: XCTestCase {
             encoding: .utf8
         )
         XCTAssertFalse(source.contains("SecureEnclave.P256.Signing.PrivateKey("))
+        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("An origin string is not production trust"))
+        struct MockOsBoundary: SecureEnclaveKeyMaking {
+            func makePublicKey() throws -> Data { Data([9, 9, 9]) }
+        }
+        let paired = try ProductionNativeBridgeGate.enrollFromUserInvokedControl(
+            policy: "companion",
+            maker: MockOsBoundary()
+        )
+        XCTAssertEqual(paired, Data([9, 9, 9]))
+        let holderSource = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("holder/Sources/RunSpecimenHolderApp/main.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(holderSource.contains("SecureEnclave.P256.Signing.PrivateKey("))
+        XCTAssertTrue(holderSource.contains("Button(\"Enroll with Secure Enclave\")"))
+        XCTAssertTrue(holderSource.contains("Button(\"Enroll paired phone\")"))
+        XCTAssertFalse(holderSource.contains("onAppear(perform: enroll"))
+        let live = holderSource.split(separator: "struct LiveSecureEnclaveKeyMaker", maxSplits: 1)
+        XCTAssertEqual(live.count, 2)
+        XCTAssertTrue(live[1].contains("SecureEnclave.P256.Signing.PrivateKey("))
     }
 
     private func submit(

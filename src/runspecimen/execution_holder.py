@@ -249,15 +249,15 @@ class ExecutionHolder:
         *,
         policy: str = "local",
     ) -> dict[str, Any]:
-        """Enroll through the human-operated native adapter.
+        """Enroll through the human-operated adapter. Not production trust.
 
         ``adapter`` must be a ``HumanOperatedNativeAdapter``. A software
         ``HumanNativeSigner``, a boundary double, a dict, an environment
         variable, and a config file are not that object. Installed protection
-        does not take the software-key refusal for this adapter. A caller
-        hardware label is refused. This method does not call
-        ``SecureEnclave.P256.Signing.PrivateKey`` and does not prompt.
-        The biometric press remains a human step, so E2 stays open.
+        refuses it even when the verifier pin matches. A persisted origin
+        string is not an authenticated native implementation. This method
+        does not call ``SecureEnclave.P256.Signing.PrivateKey`` and does not
+        prompt. E2 stays open.
         """
 
         from runspecimen.holder_asymmetric import public_key_fingerprint
@@ -272,6 +272,8 @@ class ExecutionHolder:
             raise HolderRefusal(production_enrollment_refusal())
         if not isinstance(adapter, HumanOperatedNativeAdapter):
             raise HolderRefusal("human-operated native adapter was not invoked")
+        if self.installed_protection:
+            raise HolderRefusal(production_enrollment_refusal())
         if getattr(adapter, "hardware", None) is True or adapter.e2_closed is not False:
             raise HolderRefusal("a caller hardware label is not human approval")
         if adapter.biometric_invoked is not False:
@@ -320,6 +322,188 @@ class ExecutionHolder:
             "devices": paired,
             "origin": HumanOperatedNativeAdapter.origin,
             "installed_protection": self.installed_protection,
+        }
+
+    def enroll_user_invoked_secure_enclave(
+        self,
+        control: object,
+        *,
+        wait: object | None = None,
+    ) -> dict[str, Any]:
+        """Enroll after a person invokes the control.
+
+        The OS call is ``os_secure_enclave_create_key``. Tests replace that
+        function. This method does not call
+        ``SecureEnclave.P256.Signing.PrivateKey`` and does not prompt.
+        Mutations take the holder lock. Generation and revocation are read
+        again after ``wait``. A change during the wait fails closed and does
+        not store the key. E2 stays open until a person presses the control.
+        """
+
+        from runspecimen.holder_asymmetric import public_key_fingerprint
+        from runspecimen.native_bridge import (
+            HumanNativeSigner,
+            HumanOperatedNativeAdapter,
+            OsBoundaryKey,
+            OsBoundaryNotInvoked,
+            TrustedNativeBoundary,
+            UserInvokedSecureEnclaveControl,
+            os_secure_enclave_create_key,
+            production_enrollment_refusal,
+        )
+
+        if isinstance(control, (HumanNativeSigner, HumanOperatedNativeAdapter, TrustedNativeBoundary, dict, str, bool)):
+            raise HolderRefusal(production_enrollment_refusal())
+        if not isinstance(control, UserInvokedSecureEnclaveControl):
+            raise HolderRefusal("secure enclave enrollment was not invoked by a person")
+        if wait is not None and not callable(wait):
+            raise HolderRefusal("secure enclave user wait is not a callback")
+        policy = control.action
+        roles = {"local": ("mac",), "companion": ("phone",), "dual": ("mac", "phone")}[policy]
+        with self._transaction():
+            self._load()
+            started = self.generation
+        created: list[tuple[str, OsBoundaryKey]] = []
+        try:
+            for role in roles:
+                key = os_secure_enclave_create_key(role)
+                if not isinstance(key, OsBoundaryKey):
+                    raise HolderRefusal("secure enclave boundary did not return an OS key")
+                created.append((role, key))
+        except OsBoundaryNotInvoked as exc:
+            raise HolderRefusal(str(exc)) from exc
+        if wait is not None:
+            wait()
+        with self._transaction():
+            self._load()
+            if self.generation != started:
+                raise HolderRefusal("enrollment generation changed during the user wait")
+            devices = self._devices()
+            for role, _key in created:
+                current = devices.get(f"{role}-human")
+                if isinstance(current, dict) and current.get("revoked") is True:
+                    raise HolderRefusal("enrollment device was revoked during the user wait")
+            proof_id = secrets.token_hex(16)
+            proof_keys: dict[str, Any] = {}
+            paired: list[str] = []
+            for role, key in created:
+                device_id = f"{role}-human"
+                public = key.public_key
+                compared = public_key_fingerprint(public)
+                devices[device_id] = {
+                    "role": role,
+                    "fingerprint": compared,
+                    "revoked": False,
+                    "attestation": "device-p256-not-hardware",
+                    "algorithm": "p256",
+                    "public_key": public,
+                    "generation": started,
+                    "hardware": False,
+                    "provenance": {
+                        "bridge": "os-secure-enclave-boundary",
+                        "role": role,
+                        "policy": policy,
+                        "generation": started,
+                        "fingerprint": compared,
+                        "not_hardware": False,
+                        "boundary_double": False,
+                        "origin": "os-secure-enclave-boundary",
+                        "os_boundary_id": proof_id,
+                        "biometric_invoked": False,
+                        "e2_closed": False,
+                    },
+                }
+                proof_keys[device_id] = {
+                    "id": proof_id,
+                    "public_key": public,
+                    "generation": started,
+                }
+                paired.append(device_id)
+            self._write("devices.json", devices)
+            atomic_write_json(
+                self.root / "os-boundary.json",
+                {"keys": proof_keys, "generation": started},
+            )
+        return {
+            "ok": True,
+            "hardware": False,
+            "biometric_invoked": False,
+            "e2_closed": False,
+            "policy": policy,
+            "devices": paired,
+            "installed_protection": self.installed_protection,
+        }
+
+    def sign_with_os_boundary(
+        self,
+        keys: dict[str, object],
+        purpose: str,
+        subject: str,
+        policy: str,
+        authorized: dict[str, Any] | None = None,
+        expires_at: int | None = None,
+    ) -> dict[str, Any]:
+        """Sign with keys the OS boundary returned. An origin string cannot select this."""
+
+        import time
+
+        from runspecimen.holder_asymmetric import digest_challenge
+        from runspecimen.native_bridge import OsBoundaryKey
+
+        if not isinstance(keys, dict) or not keys or any(not isinstance(key, OsBoundaryKey) for key in keys.values()):
+            raise TypeError("OS boundary keys cannot be selected from wire input or config")
+        names = {"local": ["mac"], "companion": ["phone"], "dual": ["mac", "phone"]}[policy]
+        devices = self._devices()
+        paired = []
+        signatures: dict[str, str] = {}
+        for device_id, record in sorted(devices.items()):
+            if not isinstance(record, dict) or not self._os_boundary_authorizes(device_id, record):
+                continue
+            provenance = record.get("provenance")
+            paired.append(
+                {
+                    "device_id": device_id,
+                    "fingerprint": record.get("fingerprint"),
+                    "generation": record.get("generation"),
+                    "policy": provenance.get("policy") if isinstance(provenance, dict) else None,
+                    "role": record.get("role"),
+                }
+            )
+        if not paired:
+            raise HolderRefusal("secure enclave boundary has not enrolled a device")
+        when = int(time.time()) + 60 if expires_at is None else expires_at
+        challenge = {
+            "purpose": purpose,
+            "subject": subject,
+            "policy": policy,
+            "devices": sorted(names),
+            "expires_at": when,
+            "holder_id": self.holder_id,
+            "generation": self.generation,
+            "domain": "holder-device-p256-v1",
+            "attestation_class": "device-p256-not-hardware",
+            "authorized": authorized or {},
+            "paired": paired,
+        }
+        message = digest_challenge(challenge)
+        for item in paired:
+            role = str(item["role"])
+            key = keys.get(role)
+            if not isinstance(key, OsBoundaryKey):
+                raise HolderRefusal("secure enclave boundary did not sign")
+            signatures[str(item["device_id"])] = key.sign(message)
+        return {
+            "method": policy,
+            "purpose": purpose,
+            "policy": policy,
+            "subject": subject,
+            "devices": sorted(names),
+            "expires_at": when,
+            "hardware": False,
+            "biometric_invoked": False,
+            "e2_closed": False,
+            "attestation_class": "device-p256-not-hardware",
+            "signatures": signatures,
         }
 
     def sign_with_human_operated_adapter(
@@ -1836,6 +2020,36 @@ class ExecutionHolder:
         except VerifierIdentityError as exc:
             raise HolderRefusal(str(exc)) from exc
 
+    def _os_boundary_authorizes(self, device_id: str, record: dict[str, Any]) -> bool:
+        """True only when the holder wrote this public key after the OS call.
+
+        The origin string is not consulted. A caller-supplied
+        ``human-operated-native-adapter`` or ``secure-enclave-human-prompt``
+        value does not authorize the device.
+        """
+
+        proof_path = self.root / "os-boundary.json"
+        if not proof_path.is_file():
+            return False
+        try:
+            proof = read_json(proof_path)
+        except (OSError, ValueError):
+            return False
+        keys = proof.get("keys") if isinstance(proof, dict) else None
+        entry = keys.get(device_id) if isinstance(keys, dict) else None
+        provenance = record.get("provenance") if isinstance(record, dict) else None
+        if not isinstance(entry, dict) or not isinstance(provenance, dict):
+            return False
+        if record.get("revoked") is True:
+            return False
+        return (
+            provenance.get("os_boundary_id") == entry.get("id")
+            and record.get("public_key") == entry.get("public_key")
+            and provenance.get("generation") == entry.get("generation")
+            and isinstance(entry.get("id"), str)
+            and bool(entry.get("id"))
+        )
+
     def _require_installed_production_boundary(self, human: dict[str, Any], devices: dict[str, Any]) -> None:
         from runspecimen.native_bridge import production_enrollment_refusal
 
@@ -1847,28 +2061,14 @@ class ExecutionHolder:
         for device_id in signatures:
             record = devices.get(device_id)
             provenance = record.get("provenance") if isinstance(record, dict) else None
-            if not isinstance(provenance, dict):
+            if not isinstance(provenance, dict) or not isinstance(record, dict):
                 raise HolderRefusal(production_enrollment_refusal())
-            origin = provenance.get("origin")
-            # A matching verifier pin is not biometric key origin or human approval.
+            # A pin match authenticates verifier code later. It does not make
+            # a persisted origin string into a native key.
             if (
                 provenance.get("boundary_double") is True
-                or origin
-                in {
-                    "injected-human-native-signer",
-                    "injected-trusted-native-boundary",
-                }
-            ):
-                raise HolderRefusal(production_enrollment_refusal())
-            if origin == "human-operated-native-adapter":
-                if provenance.get("bridge") != "human-operated-native-adapter":
-                    raise HolderRefusal(production_enrollment_refusal())
-                if provenance.get("hardware") is True or human.get("hardware") is True:
-                    raise HolderRefusal("a caller hardware label is not human approval")
-                continue
-            if (
-                provenance.get("not_hardware") is True
-                or origin != "secure-enclave-human-prompt"
+                or provenance.get("not_hardware") is True
+                or not self._os_boundary_authorizes(str(device_id), record)
             ):
                 raise HolderRefusal(production_enrollment_refusal())
         self._require_production_boundary_identity()
@@ -1924,7 +2124,10 @@ class ExecutionHolder:
                 if not isinstance(record, dict):
                     continue
                 provenance = record.get("provenance")
-                if not isinstance(provenance, dict) or provenance.get("not_hardware") is not True:
+                os_authorized = self._os_boundary_authorizes(device_id, record)
+                if not isinstance(provenance, dict) or (
+                    provenance.get("not_hardware") is not True and not os_authorized
+                ):
                     raise HolderRefusal("pairing public key provenance is missing")
                 paired.append(
                     {

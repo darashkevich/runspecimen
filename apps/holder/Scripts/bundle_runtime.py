@@ -149,6 +149,220 @@ def _load_prefix(macho: Path, lib_dir: Path) -> str:
     return f"{base}/{relative}"
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def same_interpreter_image(source: Path, runner: Path) -> bool:
+    """Byte identity of the source and the intact runner.
+
+    Equal file size is not identity. A detached copy can share a size with a
+    different Mach-O and still be the wrong image.
+    """
+
+    if source.resolve() == runner.resolve():
+        return True
+    return _sha256_file(source) == _sha256_file(runner)
+
+
+def _install_id(path: Path) -> str:
+    try:
+        out = subprocess.check_output(
+            ["/usr/bin/otool", "-D", str(path)],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+    lines = [line.strip() for line in out.splitlines() if line.strip()]
+    if len(lines) >= 2:
+        return lines[1]
+    return ""
+
+
+def _rpaths(path: Path) -> list[str]:
+    try:
+        out = subprocess.check_output(
+            ["/usr/bin/otool", "-l", str(path)],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        _fail(f"could not read LC_RPATH from {path}")
+    found: list[str] = []
+    lines = out.splitlines()
+    for index, line in enumerate(lines):
+        if "LC_RPATH" not in line:
+            continue
+        for follow in lines[index : index + 6]:
+            stripped = follow.strip()
+            if stripped.startswith("path "):
+                token = stripped[len("path ") :].split(" (", 1)[0].strip()
+                if token:
+                    found.append(token)
+                break
+    return found
+
+
+def _expand_special(token: str, *, executable: Path, loader: Path) -> Path:
+    if token.startswith("@executable_path"):
+        rest = token[len("@executable_path") :].lstrip("/")
+        return executable.parent / rest
+    if token.startswith("@loader_path"):
+        rest = token[len("@loader_path") :].lstrip("/")
+        return loader.parent / rest
+    return Path(token)
+
+
+def resolve_dependency(
+    dep: str,
+    *,
+    executable: Path,
+    loader: Path,
+    rpaths: list[str],
+) -> Path | None:
+    """Resolve one load command against the original Mach-O graph.
+
+    ``@executable_path`` uses the intact executable. ``@loader_path`` uses the
+    original file being scanned. ``@rpath`` walks that file's ``LC_RPATH``,
+    including an rpath that itself starts with ``@executable_path`` or
+    ``@loader_path``. ``/usr/lib`` and ``/System`` stay system libraries.
+    Any other missing dependency fails closed.
+    """
+
+    if dep.startswith(SYSTEM_PREFIXES):
+        return None
+    candidates: list[Path] = []
+    if dep.startswith("@executable_path/"):
+        candidates.append(executable.parent / dep[len("@executable_path/") :])
+    elif dep.startswith("@loader_path/"):
+        candidates.append(loader.parent / dep[len("@loader_path/") :])
+    elif dep.startswith("@rpath/"):
+        relative = dep[len("@rpath/") :]
+        if not rpaths:
+            _fail(f"unresolved runtime dependency {dep}")
+        for rpath in rpaths:
+            candidates.append(_expand_special(rpath, executable=executable, loader=loader) / relative)
+    elif dep.startswith("@"):
+        _fail(f"unresolved runtime dependency {dep}")
+    else:
+        candidates.append(Path(dep))
+    for candidate in candidates:
+        try:
+            if not candidate.is_file():
+                continue
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if not resolved.is_file():
+            continue
+        if str(resolved).startswith(SYSTEM_PREFIXES):
+            return None
+        return resolved
+    _fail(f"unresolved runtime dependency {dep}")
+    return None
+
+
+def _stage_loaded_libraries(
+    pending: list[Path],
+    origins: dict[Path, Path],
+    lib_dir: Path,
+    executable: Path,
+    dest: Path,
+) -> None:
+    """Copy and rewrite non-system dependencies of ``pending``.
+
+    Load commands are resolved from ``origins`` (the original files), never
+    from the staged copy's directory.
+    """
+
+    copied: dict[tuple[int, int], Path] = {}
+    used_names: dict[str, Path] = {}
+    dep_names: dict[str, str] = {}
+    seen: set[tuple[int, int]] = set()
+    seen_machos: set[Path] = set()
+    while pending:
+        macho = pending.pop()
+        if not macho.is_file():
+            continue
+        macho_id = _inode(macho)
+        if macho_id in seen:
+            continue
+        if len(seen) >= MAX_STAGED_LIBRARIES:
+            _fail("runtime dependency graph exceeded the staged library bound")
+        seen.add(macho_id)
+        if _inside(macho, dest):
+            seen_machos.add(macho)
+        loader = origins.get(macho, macho)
+        if not loader.is_file():
+            loader = macho
+        install_id = _install_id(macho)
+        rpaths = _rpaths(loader)
+        for dep in _otool(macho):
+            if install_id and dep == install_id:
+                continue
+            if dep.startswith(SYSTEM_PREFIXES):
+                continue
+            resolved = resolve_dependency(
+                dep,
+                executable=executable,
+                loader=loader,
+                rpaths=rpaths,
+            )
+            if resolved is None:
+                continue
+            dep_id = _inode(resolved)
+            if dep_id == macho_id or dep_id == _inode(executable) or _inside(resolved, dest):
+                continue
+            target = copied.get(dep_id)
+            if target is None:
+                if len(copied) >= MAX_STAGED_LIBRARIES:
+                    _fail("runtime dependency graph exceeded the staged library bound")
+                name = assign_staged_name(resolved, used_names)
+                target = lib_dir / name
+                if target.exists() and _inode(target) != dep_id:
+                    _fail("staged library destination already belongs to another file")
+                shutil.copy2(resolved, target)
+                copied[dep_id] = target
+                seen_machos.add(target)
+                origins.setdefault(resolved, resolved)
+                pending.append(resolved)
+            dep_names[dep] = target.name
+            dep_names[str(resolved)] = target.name
+
+    for macho in list(seen_machos):
+        prefix_token = _load_prefix(macho, lib_dir)
+        for dep in _otool(macho):
+            name = dep_names.get(dep) or dep_names.get(str(Path(dep).resolve()) if not dep.startswith("@") else "")
+            if not name:
+                continue
+            new = f"{prefix_token}/{name}" if prefix_token else name
+            if new == dep:
+                continue
+            subprocess.check_call(
+                ["/usr/bin/install_name_tool", "-change", dep, new, str(macho)],
+                stderr=subprocess.DEVNULL,
+            )
+        if macho.suffix == ".dylib" or macho.parent == lib_dir:
+            subprocess.check_call(
+                ["/usr/bin/install_name_tool", "-id", f"@loader_path/{macho.name}", str(macho)],
+                stderr=subprocess.DEVNULL,
+            )
+        subprocess.check_call(
+            ["/usr/bin/codesign", "--force", "--sign", "-", str(macho)],
+            stderr=subprocess.DEVNULL,
+        )
+    for macho in seen_machos:
+        listed = subprocess.check_output(["/usr/bin/otool", "-L", str(macho)], text=True)
+        for marker in HOSTILE_MARKERS:
+            if marker in listed:
+                _fail(f"relocated runtime still links a build-machine path in {macho.name}")
+
+
 def bundle(source: Path, dest: Path) -> None:
     if not source.is_file() or source.is_symlink():
         _fail("runtime source must be a regular interpreter file")
@@ -166,8 +380,8 @@ def bundle(source: Path, dest: Path) -> None:
     shutil.copy2(source, python)
     python.chmod(0o755)
     runner = Path(sys.executable).resolve()
-    if source.resolve() != runner and source.stat().st_size != runner.stat().st_size:
-        _fail("bundle runner does not match the source image and the source was not executed")
+    if not same_interpreter_image(source, runner):
+        _fail("bundle runner bytes do not match the source image and the source was not executed")
     version = f"{sys.version_info.major}.{sys.version_info.minor}"
     prefix = Path(sys.base_prefix)
     stdlib = Path(prefix) / "lib" / f"python{version}"
@@ -181,81 +395,18 @@ def bundle(source: Path, dest: Path) -> None:
         shutil.copy2(app_src, app_dest)
         app_dest.chmod(0o755)
 
-    copied: dict[tuple[int, int], Path] = {}
-    used_names: dict[str, Path] = {}
-    dep_names: dict[str, str] = {}
+    stdlib_dest = lib_dir / f"python{version}"
+    origins: dict[Path, Path] = {python: runner}
+    if app_dest.is_file():
+        origins[app_dest] = app_src
     pending = [python]
     if app_dest.is_file():
         pending.append(app_dest)
-    pending.extend(
-        path
-        for path in (lib_dir / f"python{version}").rglob("*")
-        if path.is_file() and path.suffix != ".a" and _is_macho(path)
-    )
-    seen: set[tuple[int, int]] = set()
-    seen_machos: set[Path] = set()
-    while pending:
-        macho = pending.pop()
-        if not macho.is_file():
-            continue
-        macho_id = _inode(macho)
-        if macho_id in seen:
-            continue
-        if len(seen) >= MAX_STAGED_LIBRARIES:
-            _fail("runtime dependency graph exceeded the staged library bound")
-        seen.add(macho_id)
-        if _inside(macho, dest):
-            seen_machos.add(macho)
-        for dep in _otool(macho):
-            if dep.startswith(SYSTEM_PREFIXES) or dep.startswith("@"):
-                continue
-            resolved = Path(dep).resolve()
-            if not resolved.is_file():
-                _fail(f"missing runtime dependency {dep}")
-            dep_id = _inode(resolved)
-            if dep_id == macho_id or _inside(resolved, dest):
-                continue
-            target = copied.get(dep_id)
-            if target is None:
-                if len(copied) >= MAX_STAGED_LIBRARIES:
-                    _fail("runtime dependency graph exceeded the staged library bound")
-                name = assign_staged_name(resolved, used_names)
-                target = lib_dir / name
-                if target.exists() and _inode(target) != dep_id:
-                    _fail("staged library destination already belongs to another file")
-                shutil.copy2(resolved, target)
-                copied[dep_id] = target
-                seen_machos.add(target)
-                pending.append(resolved)
-            dep_names[dep] = target.name
-            dep_names[str(resolved)] = target.name
-
-    for macho in list(seen_machos):
-        prefix_token = _load_prefix(macho, lib_dir)
-        for dep in _otool(macho):
-            name = dep_names.get(dep) or dep_names.get(str(Path(dep).resolve()))
-            if not name:
-                continue
-            new = f"{prefix_token}/{name}" if prefix_token else name
-            subprocess.check_call(
-                ["/usr/bin/install_name_tool", "-change", dep, new, str(macho)],
-                stderr=subprocess.DEVNULL,
-            )
-        if macho.suffix == ".dylib" or macho.parent == lib_dir:
-            subprocess.check_call(
-                ["/usr/bin/install_name_tool", "-id", f"@loader_path/{macho.name}", str(macho)],
-                stderr=subprocess.DEVNULL,
-            )
-        subprocess.check_call(
-            ["/usr/bin/codesign", "--force", "--sign", "-", str(macho)],
-            stderr=subprocess.DEVNULL,
-        )
-
-    for macho in seen_machos:
-        listed = subprocess.check_output(["/usr/bin/otool", "-L", str(macho)], text=True)
-        for marker in HOSTILE_MARKERS:
-            if marker in listed:
-                _fail(f"relocated runtime still links a build-machine path in {macho.name}")
+    for path in stdlib_dest.rglob("*"):
+        if path.is_file() and path.suffix != ".a" and _is_macho(path):
+            origins[path] = stdlib / path.relative_to(stdlib_dest)
+            pending.append(path)
+    _stage_loaded_libraries(pending, origins, lib_dir, runner, dest)
 
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
@@ -283,6 +434,30 @@ def bundle(source: Path, dest: Path) -> None:
         _fail("embedded interpreter did not relocate onto the bundle prefix")
     if any(marker in lines[1] for marker in HOSTILE_MARKERS):
         _fail("embedded encodings path still points at the build machine")
+
+
+def copy_macho_closure(source: Path, dest: Path, *, original: Path) -> Path:
+    """Stage ``source`` plus the non-system libraries of ``original``.
+
+    The CI fixture is a small Mach-O layout, not the how-x20 ``.tools`` tree.
+    ``@executable_path`` resolves against ``original``. This function does not
+    execute ``source``.
+    """
+
+    if not source.is_file() or not original.is_file():
+        _fail("relocatable Mach-O source is missing")
+    if dest.exists():
+        shutil.rmtree(dest)
+    bin_dir = dest / "bin"
+    lib_dir = dest / "lib"
+    bin_dir.mkdir(parents=True)
+    lib_dir.mkdir()
+    staged = bin_dir / "python3"
+    shutil.copy2(source, staged)
+    staged.chmod(0o755)
+    original_file = original.resolve()
+    _stage_loaded_libraries([staged], {staged: original_file}, lib_dir, original_file, dest)
+    return staged
 
 
 def main() -> None:

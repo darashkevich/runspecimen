@@ -110,6 +110,12 @@ public protocol HumanNativeSigning: Sendable {
     func sign(role: String, message: Data) -> Data
 }
 
+/// OS boundary the user-invoked control calls. Tests supply a mock.
+/// The live Secure Enclave constructor is not part of this protocol.
+public protocol SecureEnclaveKeyMaking: Sendable {
+    func makePublicKey() throws -> Data
+}
+
 public struct HumanEnrollmentReceipt: Equatable, Sendable {
     public var hardware: Bool
     public var biometricInvoked: Bool
@@ -146,7 +152,7 @@ public enum ProductionNativeBridgeGate {
 
     public static func status(signers: [IsolatedNativeSigner] = []) -> String {
         let connected = IsolatedNativeEnrollment.connected(signers)
-        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. This Store app does not carry the Developer ID verifier pin and stays guarantee (1). A display name is not a pin. A verifier pin does not authorize a software key. An injected native signer is not hardware. A software signer is not the native adapter. E2 is not closed. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
+        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. This Store app does not carry the Developer ID verifier pin and stays guarantee (1). A display name is not a pin. A verifier pin does not authorize a software key. An origin string is not production trust. An injected native signer is not hardware. A software signer is not the native adapter. E2 is not closed. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
     }
 
     /// Wire and file labels never select the human step.
@@ -159,16 +165,32 @@ public enum ProductionNativeBridgeGate {
         return .callerSupplied
     }
 
-    /// True only for the human Secure Enclave step when a pin and verifier are connected.
-    /// The software double stays false under installed protection.
+    /// An origin enum is not production trust. A pin match authenticates verifier
+    /// code elsewhere. It does not admit `.secureEnclaveHumanStep` by itself.
     public static func allowsProductionEnrollment(
         origin: NativeSignerOrigin,
         pinConfigured: Bool = false,
         verifierConnected: Bool = false,
         installedProtection: Bool = false
     ) -> Bool {
-        guard origin == .secureEnclaveHumanStep else { return false }
-        return installedProtection && pinConfigured && verifierConnected
+        _ = (origin, pinConfigured, verifierConnected, installedProtection)
+        return false
+    }
+
+    /// Calls `maker` only when the caller passes the object from a user-invoked control.
+    /// The live `SecureEnclave.P256.Signing.PrivateKey` call is not in this type.
+    public static func enrollFromUserInvokedControl(
+        policy: String,
+        maker: SecureEnclaveKeyMaking
+    ) throws -> Data {
+        guard policy == "local" || policy == "companion" || policy == "dual" else {
+            throw ProductionEnrollmentError.signerIncomplete
+        }
+        let key = try maker.makePublicKey()
+        if key.isEmpty {
+            throw ProductionEnrollmentError.signerIncomplete
+        }
+        return key
     }
 
     /// Unattended call. Does not call `SecureEnclave.P256.Signing.PrivateKey` and does not prompt.

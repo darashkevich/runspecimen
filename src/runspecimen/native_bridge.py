@@ -73,14 +73,14 @@ class HumanNativeSigner:
 
 
 class HumanOperatedNativeAdapter:
-    """Human-operated native adapter. Tests inject a subclass here.
+    """Software injection point. An origin string is not production trust.
 
-    This is not ``HumanNativeSigner`` and it does not use ``hardware = False``
-    as its identity. Wire JSON, an environment variable, and a config dict
-    cannot construct it. A subclass implements ``public_key`` and ``sign``.
-    This class does not call ``SecureEnclave.P256.Signing.PrivateKey`` and
-    does not prompt. Pressing the biometric is still a human step. Constructing
-    this object does not close E2.
+    This is not ``HumanNativeSigner``. Wire JSON, an environment variable, and
+    a config dict cannot construct it. A subclass implements ``public_key``
+    and ``sign``. Installed protection refuses this object, including when the
+    persisted origin is ``human-operated-native-adapter`` and the verifier pin
+    matches. This class does not call ``SecureEnclave.P256.Signing.PrivateKey``
+    and does not prompt. Constructing it does not close E2.
     """
 
     origin = "human-operated-native-adapter"
@@ -93,6 +93,53 @@ class HumanOperatedNativeAdapter:
 
     def sign(self, role: str, message: bytes) -> str:
         raise NotImplementedError(role)
+
+
+class UserInvokedSecureEnclaveControl:
+    """In-process control a person invokes. A string, bool, or dict is not this object."""
+
+    def __init__(self, action: str) -> None:
+        if action not in {"local", "companion", "dual"}:
+            raise ValueError("secure enclave control action is not local, companion, or dual")
+        self.action = action
+
+
+class OsBoundaryKey:
+    """Public key returned by the OS boundary. A caller origin string is not this object."""
+
+    def __init__(self, public_key: str, sign) -> None:
+        if not isinstance(public_key, str) or not public_key:
+            raise ValueError("OS boundary public key is missing")
+        if not callable(sign):
+            raise ValueError("OS boundary sign function is missing")
+        self.public_key = public_key
+        self._sign = sign
+
+    def sign(self, message: bytes) -> str:
+        signed = self._sign(message)
+        if not isinstance(signed, str) or not signed:
+            raise ValueError("OS boundary signature is missing")
+        return signed
+
+
+class OsBoundaryNotInvoked(RuntimeError):
+    """The unpatched OS boundary was called. No biometric prompt was raised."""
+
+
+def os_secure_enclave_create_key(role: str) -> OsBoundaryKey:
+    """Secure Enclave / CryptoKit / XPC boundary.
+
+    The holder calls this only from ``enroll_user_invoked_secure_enclave``
+    after a ``UserInvokedSecureEnclaveControl``. The live
+    ``SecureEnclave.P256.Signing.PrivateKey`` call sits in the holder app
+    button action. This function does not call that API and does not prompt.
+    Tests replace this function. The unpatched function fails closed.
+    """
+
+    del role
+    raise OsBoundaryNotInvoked(
+        "Secure Enclave enrollment is the human step and was not invoked"
+    )
 
 
 class VerifierPin:

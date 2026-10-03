@@ -874,6 +874,8 @@ class HumanNativeSignerTests(unittest.TestCase):
                 ExecutionHolder.begin_human_secure_enclave_enrollment,
                 ExecutionHolder.begin_human_operated_native_adapter,
                 ExecutionHolder.sign_with_human_operated_adapter,
+                ExecutionHolder.enroll_user_invoked_secure_enclave,
+                ExecutionHolder.sign_with_os_boundary,
             )
         )
         self.assertNotIn("SecureEnclave.P256.Signing.PrivateKey(", source)
@@ -1200,22 +1202,16 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
             holder.begin_human_operated_native_adapter(Labeled(), policy="local")
         self.assertIn("caller hardware label", str(ctx.exception))
 
-    def test_installed_protection_does_not_use_the_software_refusal_for_the_adapter(self) -> None:
+    def test_installed_protection_refuses_the_adapter_origin_string(self) -> None:
         binary, keys = self._keys()
         adapter = _AdapterSigner(binary, keys)
         td = tempfile.TemporaryDirectory(prefix="rsh-adapter-installed-")
         self.addCleanup(td.cleanup)
         holder = self._holder(Path(td.name), installed=True)
-        enrolled = holder.begin_human_operated_native_adapter(adapter, policy="dual")
-        self.assertEqual(enrolled["origin"], "human-operated-native-adapter")
-        self.assertFalse(enrolled["biometric_invoked"])
-        self.assertFalse(enrolled["e2_closed"])
-        self.assertFalse(enrolled["hardware"])
-        with self.assertRaises(HolderRefusal) as ctx:
-            holder.set_policy(holder.sign_with_human_operated_adapter(adapter, "set-policy", "dual", "dual"))
-        message = str(ctx.exception)
-        self.assertIn("verifier team identifier does not match the pin", message)
-        self.assertNotIn("does not authorize a software key", message)
+        with self.assertRaises(HolderRefusal) as enrolled:
+            holder.begin_human_operated_native_adapter(adapter, policy="dual")
+        self.assertIn("does not authorize a software key", str(enrolled.exception))
+        self.assertFalse((holder.root / "os-boundary.json").exists())
 
     def test_adapter_enrolls_pairs_and_executes_for_local_companion_and_dual(self) -> None:
         binary, keys = self._keys()
@@ -1357,3 +1353,199 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
             ),
         )
         self.assertEqual((ws.parent / "ran").read_text(encoding="utf-8"), "ran")
+
+    def test_persisted_origin_string_is_not_production_trust(self) -> None:
+        """Source trust-boundary bug. The shipped product is not installed, and no live exploit is claimed."""
+
+        import time
+
+        from tests.test_native_bridge_policies import _boot
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-origin-string-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        secret = "ab" * 32
+        holder = ExecutionHolder(
+            root / "state",
+            allow_test_double=False,
+            installed_protection=True,
+            bootstrap_secret=secret,
+            snapshot_base=root / "snaps",
+            verifier_pin=_pin(),
+        )
+        holder.enroll("app", _boot(secret, "enroll", "app", "local"))
+        for origin in ("human-operated-native-adapter", "secure-enclave-human-prompt"):
+            with self.subTest(origin=origin):
+                holder._write(
+                    "devices.json",
+                    {
+                        "mac-human": {
+                            "role": "mac",
+                            "revoked": False,
+                            "algorithm": "p256",
+                            "public_key": "AQID",
+                            "generation": holder.generation,
+                            "hardware": False,
+                            "provenance": {
+                                "origin": origin,
+                                "bridge": origin,
+                                "not_hardware": True,
+                                "boundary_double": False,
+                                "policy": "local",
+                                "role": "mac",
+                                "generation": holder.generation,
+                                "biometric_invoked": False,
+                                "os_boundary_id": "caller-supplied",
+                            },
+                        }
+                    },
+                )
+                human = {
+                    "method": "local",
+                    "purpose": "set-policy",
+                    "policy": "local",
+                    "subject": "local",
+                    "devices": ["mac"],
+                    "expires_at": int(time.time()) + 60,
+                    "hardware": False,
+                    "signatures": {"mac-human": "not-a-signature"},
+                }
+                with (
+                    mock.patch("runspecimen.native_bridge.read_verifier_identity", return_value=_parsed()),
+                    mock.patch("runspecimen.native_bridge.verifier_signature_strict", return_value=True),
+                ):
+                    with self.assertRaises(HolderRefusal) as ctx:
+                        holder.set_policy(human)
+                self.assertIn("does not authorize a software key", str(ctx.exception))
+                self.assertNotIn("team identifier does not match", str(ctx.exception))
+
+    def test_unpatched_os_boundary_does_not_prompt(self) -> None:
+        from runspecimen.native_bridge import (
+            OsBoundaryNotInvoked,
+            UserInvokedSecureEnclaveControl,
+            os_secure_enclave_create_key,
+        )
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-os-unpatched-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+        with self.assertRaises(OsBoundaryNotInvoked):
+            os_secure_enclave_create_key("mac")
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.enroll_user_invoked_secure_enclave(UserInvokedSecureEnclaveControl("companion"))
+        self.assertIn("was not invoked", str(ctx.exception))
+        self.assertFalse((holder.root / "os-boundary.json").exists())
+        for supplied in (
+            {"origin": "human-operated-native-adapter"},
+            "human-operated-native-adapter",
+            True,
+            HumanNativeSigner(),
+            HumanOperatedNativeAdapter(),
+        ):
+            with self.subTest(supplied=type(supplied).__name__):
+                with self.assertRaises(HolderRefusal):
+                    holder.enroll_user_invoked_secure_enclave(supplied)
+
+    def test_user_invoked_enrollment_rechecks_generation_after_the_wait(self) -> None:
+        from runspecimen.native_bridge import OsBoundaryKey, UserInvokedSecureEnclaveControl
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-os-generation-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+        started = holder.generation
+
+        def fake(_role: str) -> OsBoundaryKey:
+            return OsBoundaryKey("AQID", lambda _message: "c2ln")
+
+        def wait() -> None:
+            meta = holder._read("meta.json")
+            meta["generation"] = started + 1
+            holder._write("meta.json", meta)
+
+        with mock.patch("runspecimen.native_bridge.os_secure_enclave_create_key", side_effect=fake):
+            with self.assertRaises(HolderRefusal) as ctx:
+                holder.enroll_user_invoked_secure_enclave(
+                    UserInvokedSecureEnclaveControl("local"),
+                    wait=wait,
+                )
+        self.assertIn("generation changed during the user wait", str(ctx.exception))
+        self.assertFalse((holder.root / "os-boundary.json").exists())
+        self.assertNotIn("mac-human", holder._devices())
+
+    def test_user_invoked_enrollment_rechecks_revocation_after_the_wait(self) -> None:
+        from runspecimen.native_bridge import OsBoundaryKey, UserInvokedSecureEnclaveControl
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-os-revoke-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+
+        def fake(_role: str) -> OsBoundaryKey:
+            return OsBoundaryKey("AQIDBA==", lambda _message: "c2ln")
+
+        def wait() -> None:
+            holder._write(
+                "devices.json",
+                {"phone-human": {"role": "phone", "revoked": True, "public_key": "revoked-during-wait"}},
+            )
+
+        with mock.patch("runspecimen.native_bridge.os_secure_enclave_create_key", side_effect=fake):
+            with self.assertRaises(HolderRefusal) as ctx:
+                holder.enroll_user_invoked_secure_enclave(
+                    UserInvokedSecureEnclaveControl("companion"),
+                    wait=wait,
+                )
+        self.assertIn("revoked during the user wait", str(ctx.exception))
+        self.assertFalse((holder.root / "os-boundary.json").exists())
+        self.assertEqual(holder._devices()["phone-human"]["public_key"], "revoked-during-wait")
+
+    def test_os_boundary_mock_enrolls_local_and_paired_phone_without_a_prompt(self) -> None:
+        """The mock replaces the OS call. It does not call SecureEnclave.P256.Signing.PrivateKey."""
+
+        from runspecimen.native_bridge import OsBoundaryKey, UserInvokedSecureEnclaveControl
+        from tests.test_native_bridge_policies import _boot, _sign, _signer
+
+        binary, public, private = _signer(self)
+        key = OsBoundaryKey(public, lambda message: _sign(binary, private, message))
+        seen: list[str] = []
+
+        def fake(role: str) -> OsBoundaryKey:
+            seen.append(role)
+            return key
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-os-mock-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        secret = "ab" * 32
+        holder = ExecutionHolder(
+            root / "state",
+            allow_test_double=False,
+            installed_protection=True,
+            bootstrap_secret=secret,
+            snapshot_base=root / "snaps",
+            verifier_pin=_pin(),
+        )
+        holder.enroll("app", _boot(secret, "enroll", "app", "local"))
+        with mock.patch("runspecimen.native_bridge.os_secure_enclave_create_key", side_effect=fake):
+            enrolled = holder.enroll_user_invoked_secure_enclave(UserInvokedSecureEnclaveControl("dual"))
+        self.assertEqual(seen, ["mac", "phone"])
+        self.assertFalse(enrolled["biometric_invoked"])
+        self.assertFalse(enrolled["e2_closed"])
+        self.assertFalse(enrolled["hardware"])
+        devices = holder._devices()
+        devices["phone-human"]["provenance"]["origin"] = "human-operated-native-adapter"
+        devices["mac-human"]["provenance"]["origin"] = "human-operated-native-adapter"
+        holder._write("devices.json", devices)
+        with (
+            mock.patch("runspecimen.native_bridge.read_verifier_identity", return_value=_parsed()),
+            mock.patch("runspecimen.native_bridge.verifier_signature_strict", return_value=True),
+        ):
+            changed = holder.set_policy(
+                holder.sign_with_os_boundary({"mac": key, "phone": key}, "set-policy", "dual", "dual")
+            )
+        self.assertTrue(changed["ok"])
+        self.assertEqual(changed["policy"], "dual")
+        self.assertFalse(enrolled["biometric_invoked"])
+        self.assertEqual(
+            holder._devices()["phone-human"]["provenance"]["origin"],
+            "human-operated-native-adapter",
+        )

@@ -367,6 +367,113 @@ exit $fail
             self.assertNotEqual(staged.returncode, 134)
             self.assertIn("was not executed", staged.stderr)
 
+    def test_interpreter_identity_uses_bytes_not_file_size(self) -> None:
+        import importlib.util
+
+        path = ROOT / "apps/holder/Scripts/bundle_runtime.py"
+        spec = importlib.util.spec_from_file_location("bundle_runtime_identity", path)
+        self.assertIsNotNone(spec and spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory(prefix="rs-image-id-") as td:
+            root = Path(td)
+            left = root / "left"
+            right = root / "right"
+            same_size = root / "same-size"
+            left.write_bytes(b"abc")
+            right.write_bytes(b"abc")
+            same_size.write_bytes(b"abcd")
+            self.assertTrue(module.same_interpreter_image(left, right))
+            self.assertFalse(module.same_interpreter_image(left, same_size))
+            padded = root / "padded"
+            padded.write_bytes(b"abX")
+            self.assertEqual(left.stat().st_size, padded.stat().st_size)
+            self.assertFalse(module.same_interpreter_image(left, padded))
+
+    def test_relocatable_executable_path_closure_is_copied(self) -> None:
+        if sys.platform != "darwin" or not Path("/usr/bin/clang").is_file() or not Path("/usr/bin/otool").is_file():
+            self.skipTest("relocatable Mach-O fixture is macOS-only")
+        import importlib.util
+
+        path = ROOT / "apps/holder/Scripts/bundle_runtime.py"
+        spec = importlib.util.spec_from_file_location("bundle_runtime_relocatable", path)
+        self.assertIsNotNone(spec and spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory(prefix="rs-reloc-fixture-") as td:
+            root = Path(td)
+            lib = root / "lib"
+            bindir = root / "bin"
+            lib.mkdir()
+            bindir.mkdir()
+            (root / "extra.c").write_text("int extra(void){return 1;}\n", encoding="utf-8")
+            (root / "py.c").write_text("int extra(void); int py(void){return extra();}\n", encoding="utf-8")
+            (root / "rpath.c").write_text("int rpath_mark(void){return 2;}\n", encoding="utf-8")
+            (root / "main.c").write_text(
+                "int py(void); int rpath_mark(void); int main(void){return py()+rpath_mark();}\n",
+                encoding="utf-8",
+            )
+            extra = lib / "libextra.dylib"
+            libpython = lib / "libpython3.11.dylib"
+            librpath = lib / "librpath.dylib"
+            executable = bindir / "python3"
+            commands = [
+                ["/usr/bin/clang", "-dynamiclib", "-install_name", "@loader_path/libextra.dylib", "-o", str(extra), str(root / "extra.c")],
+                ["/usr/bin/clang", "-dynamiclib", "-install_name", "@rpath/librpath.dylib", "-o", str(librpath), str(root / "rpath.c")],
+                [
+                    "/usr/bin/clang", "-dynamiclib",
+                    "-install_name", "@executable_path/../lib/libpython3.11.dylib",
+                    "-o", str(libpython), str(root / "py.c"), str(extra),
+                ],
+                [
+                    "/usr/bin/clang", "-o", str(executable), str(root / "main.c"),
+                    str(libpython), str(librpath),
+                    "-Wl,-rpath,@executable_path/../lib",
+                ],
+            ]
+            for command in commands:
+                built = subprocess.run(command, check=False, capture_output=True, text=True, timeout=30)
+                self.assertEqual(built.returncode, 0, built.stderr)
+            listed = subprocess.run(["/usr/bin/otool", "-L", str(executable)], check=True, capture_output=True, text=True, timeout=10)
+            self.assertIn("@executable_path/../lib/libpython3.11.dylib", listed.stdout)
+            self.assertIn("@rpath/librpath.dylib", listed.stdout)
+            py_listed = subprocess.run(["/usr/bin/otool", "-L", str(libpython)], check=True, capture_output=True, text=True, timeout=10)
+            self.assertIn("@loader_path/libextra.dylib", py_listed.stdout)
+            detached = root / "detached-python3"
+            subprocess.run(["/bin/cp", "-p", str(executable), str(detached)], check=True, timeout=10)
+            self.assertNotEqual(detached.stat().st_ino, executable.stat().st_ino)
+            staged_root = root / "staged"
+            staged = module.copy_macho_closure(detached, staged_root, original=executable)
+            self.assertTrue((staged_root / "lib" / "libpython3.11.dylib").is_file())
+            self.assertTrue((staged_root / "lib" / "libextra.dylib").is_file())
+            self.assertTrue((staged_root / "lib" / "librpath.dylib").is_file())
+            relocated = subprocess.run(["/usr/bin/otool", "-L", str(staged)], check=True, capture_output=True, text=True, timeout=10)
+            self.assertNotIn("/Users/", relocated.stdout)
+            for name in ("libpython3.11.dylib", "libextra.dylib", "librpath.dylib"):
+                self.assertTrue((staged_root / "lib" / name).is_file(), relocated.stdout)
+            ran = subprocess.run([str(staged)], check=False, capture_output=True, text=True, timeout=10)
+            self.assertEqual(ran.returncode, 3, ran.stderr)
+            gone = root / "gone"
+            gone.mkdir()
+            (root / "marker.c").write_text("int marker(void){return 7;}\n", encoding="utf-8")
+            (root / "main2.c").write_text("int marker(void); int main(void){return marker();}\n", encoding="utf-8")
+            marker = gone / "libmarker.dylib"
+            marker_exe = gone / "python3"
+            marker_built = subprocess.run(
+                ["/usr/bin/clang", "-dynamiclib", "-install_name", "@rpath/libmarker.dylib", "-o", str(marker), str(root / "marker.c")],
+                check=False, capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(marker_built.returncode, 0, marker_built.stderr)
+            linked = subprocess.run(
+                ["/usr/bin/clang", "-o", str(marker_exe), str(root / "main2.c"), str(marker), "-Wl,-rpath,@executable_path/../missing"],
+                check=False, capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(linked.returncode, 0, linked.stderr)
+            marker.unlink()
+            with self.assertRaises(SystemExit) as missing_dep:
+                module.copy_macho_closure(marker_exe, root / "missing-staged", original=marker_exe)
+            self.assertEqual(missing_dep.exception.code, 2)
+
     def test_dependency_cycles_and_collisions_are_bounded(self) -> None:
         import importlib.util
 

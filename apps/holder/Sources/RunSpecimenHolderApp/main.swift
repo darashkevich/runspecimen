@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import ServiceManagement
 import SwiftUI
 
@@ -22,13 +23,34 @@ struct RunSpecimenHolderApp: App {
                 Text(detail)
                     .font(.system(.body, design: .monospaced))
                     .textSelection(.enabled)
-                Text("Mechanism: SMAppService.daemon. State is root-owned. A same-user process must not rewrite enrollment, policy, nonces, or leases. Administrator or root can still defeat this holder. This is not human-only execution and not Store parity.")
+                Text("Mechanism: SMAppService.daemon. State is root-owned. A same-user process must not rewrite enrollment, policy, nonces, or leases. Administrator or root can still defeat this holder. This is not human-only execution and not Store parity. An origin string is not production trust. E2 is not closed.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Button("Enroll with Secure Enclave") {
+                    enrollFromPerson(policy: "local")
+                }
+                Button("Enroll paired phone") {
+                    enrollFromPerson(policy: "companion")
+                }
             }
             .padding(24)
             .frame(minWidth: 520, minHeight: 280)
             .onAppear(perform: registerDaemon)
+        }
+    }
+
+    /// The real Secure Enclave API runs only inside this button action.
+    private func enrollFromPerson(policy: String) {
+        do {
+            let key = try HolderSecureEnclaveEnrollment.enroll(
+                policy: policy,
+                maker: LiveSecureEnclaveKeyMaker()
+            )
+            statusText = "Secure Enclave control returned a key. E2 is not closed."
+            detail = "policy=\(policy) bytes=\(key.count). A biometric prompt is the human step."
+        } catch {
+            statusText = "Secure Enclave enrollment was not completed"
+            detail = "\(error)"
         }
     }
 
@@ -67,5 +89,34 @@ struct RunSpecimenHolderApp: App {
             statusText = "Unknown SMAppService status"
             detail = "raw=\(service.status.rawValue)"
         }
+    }
+}
+
+protocol HolderSecureEnclaveKeyMaking {
+    func makePublicKey() throws -> Data
+}
+
+struct LiveSecureEnclaveKeyMaker: HolderSecureEnclaveKeyMaking {
+    func makePublicKey() throws -> Data {
+        let key = try SecureEnclave.P256.Signing.PrivateKey()
+        return key.publicKey.x963Representation
+    }
+}
+
+enum HolderEnrollmentError: Error {
+    case emptyKey
+    case policyRefused
+}
+
+enum HolderSecureEnclaveEnrollment {
+    static func enroll(policy: String, maker: HolderSecureEnclaveKeyMaking) throws -> Data {
+        guard policy == "local" || policy == "companion" || policy == "dual" else {
+            throw HolderEnrollmentError.policyRefused
+        }
+        let key = try maker.makePublicKey()
+        if key.isEmpty {
+            throw HolderEnrollmentError.emptyKey
+        }
+        return key
     }
 }
