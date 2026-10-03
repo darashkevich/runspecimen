@@ -331,6 +331,7 @@ class ExecutionHolder:
         wait: object | None = None,
         custody: object | None = None,
         phone_peer: object | None = None,
+        phone_transport: object | None = None,
         peer_uid: int | None = None,
     ) -> dict[str, Any]:
         """Enroll after a person invokes the control.
@@ -384,7 +385,12 @@ class ExecutionHolder:
             self._load()
             started = self.generation
         peer = phone_peer if isinstance(phone_peer, PhonePeer) else None
-        if policy in {"companion", "dual"} and peer is None:
+        if phone_transport is not None and not (
+            callable(getattr(phone_transport, "publish_challenge", None))
+            and callable(getattr(phone_transport, "collect_signature", None))
+        ):
+            raise HolderRefusal("phone companion transport cannot be selected from wire input")
+        if policy in {"companion", "dual"} and peer is None and phone_transport is None:
             raise HolderRefusal("companion enrollment requires a phone peer")
         if policy in {"local", "dual"}:
             try:
@@ -402,23 +408,73 @@ class ExecutionHolder:
             existing_public = existing.get("public_key") if isinstance(existing, dict) else None
             if peer.public_key in {mac_public, existing_public}:
                 raise HolderRefusal("a local key is not a phone peer")
-        if peer is not None:
+        if policy in {"companion", "dual"} and (phone_transport is not None or peer is not None):
             challenge = secrets.token_bytes(32)
             challenge_id = secrets.token_hex(8)
             self._phone_challenge = {"bytes": challenge, "generation": started, "id": challenge_id}
+            if phone_transport is not None:
+                try:
+                    phone_transport.publish_challenge(
+                        challenge_id=challenge_id,
+                        generation=started,
+                        challenge=challenge,
+                        holder_id=self.holder_id,
+                    )
+                except Exception as exc:
+                    raise HolderRefusal("phone peer comparison failed") from exc
+            else:
+                try:
+                    signature = peer.sign(challenge)
+                except Exception as exc:
+                    raise HolderRefusal("phone peer comparison failed") from exc
+                self._pending_phone = {
+                    "signature": signature,
+                    "peer": peer,
+                    "generation": started,
+                    "challenge_id": challenge_id,
+                    "signed_bytes": challenge,
+                }
+        if wait is not None:
+            wait()
+        if policy in {"companion", "dual"} and phone_transport is not None:
+            from runspecimen.companion import ObserveTransportError
+
             try:
-                signature = peer.sign(challenge)
+                submission = phone_transport.collect_signature()
+            except ObserveTransportError as exc:
+                raise HolderRefusal(str(exc)) from exc
             except Exception as exc:
                 raise HolderRefusal("phone peer comparison failed") from exc
+            if (
+                not isinstance(submission, dict)
+                or submission.get("challenge_id") != challenge_id
+                or submission.get("challenge_bytes") != challenge
+            ):
+                raise HolderRefusal("stale phone challenge")
+            submitted_key = submission.get("public_key")
+            submitted_signature = submission.get("signature")
+            if not isinstance(submitted_key, str) or not isinstance(submitted_signature, str):
+                raise HolderRefusal("phone peer comparison failed")
+            if submitted_key == custody.public_key("mac"):
+                raise HolderRefusal("a local key is not a phone peer")
+            existing = self._devices().get("mac-human")
+            existing_public = existing.get("public_key") if isinstance(existing, dict) else None
+            if submitted_key == existing_public:
+                raise HolderRefusal("a local key is not a phone peer")
+
+            def _submitted(message: bytes, raw: bytes = challenge, signed: str = submitted_signature) -> str:
+                if message != raw:
+                    raise HolderRefusal("phone peer comparison failed")
+                return signed
+
+            peer = PhonePeer(submitted_key, _submitted)
             self._pending_phone = {
-                "signature": signature,
+                "signature": submitted_signature,
                 "peer": peer,
                 "generation": started,
                 "challenge_id": challenge_id,
                 "signed_bytes": challenge,
             }
-        if wait is not None:
-            wait()
         public_keys = {}
         for role in roles:
             if role == "phone":

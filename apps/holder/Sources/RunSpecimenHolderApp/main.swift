@@ -26,7 +26,7 @@ struct RunSpecimenHolderApp: App {
                 Text(detail)
                     .font(.system(.body, design: .monospaced))
                     .textSelection(.enabled)
-                Text("Mechanism: SMAppService.daemon. State is root-owned. A same-user process must not rewrite enrollment, policy, nonces, or leases. Administrator or root can still defeat this holder. This is not human-only execution and not Store parity. An origin string is not production trust. E2 is not closed. A biometric press does not finish missing implementation. A live iPhone transport and a root-owned install are still unbuilt.")
+                Text("Mechanism: SMAppService.daemon. State is root-owned. A same-user process must not rewrite enrollment, policy, nonces, or leases. Administrator or root can still defeat this holder. This is not human-only execution and not Store parity. An origin string is not production trust. E2 is not closed. A biometric press does not finish missing implementation. The Observe companion carries the phone challenge. A root-owned install is still unbuilt.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Enroll with Secure Enclave") {
@@ -65,7 +65,7 @@ struct RunSpecimenHolderApp: App {
         do {
             let challenge = try holderClient.issuePhoneChallenge()
             statusText = "Paired phone challenge is waiting for the iPhone peer."
-            detail = "challenge=\(challenge.count) bytes. A local key was not created. Companion enrollment is not complete until the peer key is compared. A live iPhone transport is still unbuilt."
+            detail = "challenge=\(challenge.count) bytes on /v1/phone-peer-challenge. A local key was not created. RunSpecimenObserve returns /v1/phone-peer-signature. The signature is accepted only after the peer key is compared. A root-owned install is still unbuilt."
         } catch {
             statusText = "Paired phone enrollment was not completed"
             detail = "\(error)"

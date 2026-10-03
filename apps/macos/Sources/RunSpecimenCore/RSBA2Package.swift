@@ -167,7 +167,7 @@ public enum ProductionNativeBridgeGate {
 
     public static func status(signers: [IsolatedNativeSigner] = []) -> String {
         let connected = IsolatedNativeEnrollment.connected(signers)
-        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. This Store app does not carry the Developer ID verifier pin and stays guarantee (1). A display name is not a pin. A verifier pin does not authorize a software key. An origin string is not production trust. An injected native signer is not hardware. A software signer is not the native adapter. E2 is not closed. A biometric press does not finish missing implementation. Still unbuilt: a live iPhone transport and a root-owned installed holder. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
+        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. This Store app does not carry the Developer ID verifier pin and stays guarantee (1). A display name is not a pin. A verifier pin does not authorize a software key. An origin string is not production trust. An injected native signer is not hardware. A software signer is not the native adapter. E2 is not closed. A biometric press does not finish missing implementation. The Observe companion carries the phone challenge. Still unbuilt: a root-owned installed holder. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
     }
 
     /// Wire and file labels never select the human step.

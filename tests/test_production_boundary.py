@@ -1836,3 +1836,232 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
         self.assertTrue(enrolled["paired"])
         self.assertTrue(holder._devices()["phone-human"]["provenance"]["not_hardware"])
         self.assertFalse((holder.root / "os-boundary.json").read_text(encoding="utf-8").find(private) >= 0)
+
+    def _observe_transport(self):
+        import threading
+
+        from tests.helpers import base_contract, write_contract
+        from runspecimen.companion import ObservePhoneTransport, generate_pairing_token, start_companion
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-observe-")
+        self.addCleanup(td.cleanup)
+        workspace = Path(td.name)
+        contract = write_contract(workspace, "contract.json", base_contract())
+        token = generate_pairing_token()
+        server, url, _meta = start_companion(
+            workspace=workspace,
+            contract_path=contract,
+            pairing_token=token,
+            host="127.0.0.1",
+            port=0,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.shutdown)
+        self.addCleanup(server.server_close)
+        return ObservePhoneTransport(url, token), server, token
+
+    def test_observe_transport_challenge_bytes_match(self) -> None:
+        import base64
+
+        from runspecimen.native_bridge import UserInvokedSecureEnclaveControl
+        from tests.test_native_bridge_policies import _sign, _signer
+
+        if sys.platform != "darwin":
+            self.skipTest("phone peer comparison uses the Darwin verifier")
+        binary, public, private = _signer(self)
+        transport, _server, _token = self._observe_transport()
+        seen: dict[str, bytes] = {}
+
+        def wait() -> None:
+            fetched = transport.fetch_challenge()
+            raw = base64.b64decode(fetched["challenge"])
+            seen["bytes"] = raw
+            seen["id"] = fetched["challenge_id"]
+            transport.submit_signature(
+                challenge_id=fetched["challenge_id"],
+                challenge=raw,
+                public_key=public,
+                signature=_sign(binary, private, raw),
+            )
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-observe-enroll-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+        enrolled = holder.enroll_user_invoked_secure_enclave(
+            UserInvokedSecureEnclaveControl("companion"),
+            phone_transport=transport,
+            wait=wait,
+        )
+        self.assertEqual(len(seen["bytes"]), 32)
+        self.assertEqual(enrolled["devices"], ["phone-human"])
+        self.assertEqual(holder._devices()["phone-human"]["public_key"], public)
+        self.assertTrue(holder._devices()["phone-human"]["provenance"]["not_hardware"])
+        self.assertNotIn("mac-human", holder._devices())
+
+    def test_observe_transport_stale_challenge_is_refused(self) -> None:
+        import base64
+
+        from runspecimen.companion import ObserveTransportError
+        from runspecimen.native_bridge import UserInvokedSecureEnclaveControl
+
+        transport, _server, _token = self._observe_transport()
+
+        def wait() -> None:
+            fetched = transport.fetch_challenge()
+            raw = base64.b64decode(fetched["challenge"])
+            with self.assertRaises(ObserveTransportError) as stale:
+                transport.submit_signature(
+                    challenge_id="stale-id",
+                    challenge=raw,
+                    public_key="PHONE",
+                    signature="c2ln",
+                )
+            self.assertIn("stale phone challenge", str(stale.exception))
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-observe-stale-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.enroll_user_invoked_secure_enclave(
+                UserInvokedSecureEnclaveControl("companion"),
+                phone_transport=transport,
+                wait=wait,
+            )
+        self.assertIn("stale phone challenge", str(ctx.exception))
+        self.assertFalse((holder.root / "os-boundary.json").exists())
+
+    def test_observe_transport_wrong_key_is_refused(self) -> None:
+        import base64
+
+        from runspecimen.native_bridge import UserInvokedSecureEnclaveControl
+        from tests.test_native_bridge_policies import _sign, _signer
+
+        if sys.platform != "darwin":
+            self.skipTest("phone peer comparison uses the Darwin verifier")
+        binary, public, private = _signer(self)
+        other = subprocess.run([str(binary), "key"], check=True, capture_output=True, text=True, timeout=10)
+        other_public = other.stdout.splitlines()[0]
+        self.assertNotEqual(public, other_public)
+        transport, _server, _token = self._observe_transport()
+
+        def wait() -> None:
+            fetched = transport.fetch_challenge()
+            raw = base64.b64decode(fetched["challenge"])
+            transport.submit_signature(
+                challenge_id=fetched["challenge_id"],
+                challenge=raw,
+                public_key=other_public,
+                signature=_sign(binary, private, raw),
+            )
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-observe-wrong-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.enroll_user_invoked_secure_enclave(
+                UserInvokedSecureEnclaveControl("companion"),
+                phone_transport=transport,
+                wait=wait,
+            )
+        self.assertIn("phone peer comparison failed", str(ctx.exception))
+        self.assertFalse((holder.root / "os-boundary.json").exists())
+
+    def test_observe_reload_rejects_the_old_challenge(self) -> None:
+        import base64
+
+        from runspecimen.companion import ObserveTransportError
+        from runspecimen.native_bridge import UserInvokedSecureEnclaveControl
+
+        transport, server, token = self._observe_transport()
+        first = {"id": "", "raw": b""}
+
+        def capture() -> None:
+            fetched = transport.fetch_challenge()
+            first["id"] = fetched["challenge_id"]
+            first["raw"] = base64.b64decode(fetched["challenge"])
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-observe-reload-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+        with self.assertRaises(HolderRefusal):
+            holder.enroll_user_invoked_secure_enclave(
+                UserInvokedSecureEnclaveControl("companion"),
+                phone_transport=transport,
+                wait=capture,
+            )
+        self.assertTrue(first["raw"])
+        transport.publish_challenge(
+            challenge_id="reloaded",
+            generation=holder.generation,
+            challenge=b"reloaded-challenge-bytes-32b!!",
+            holder_id=holder.holder_id,
+        )
+        with self.assertRaises(ObserveTransportError) as stale:
+            transport.submit_signature(
+                challenge_id=first["id"],
+                challenge=first["raw"],
+                public_key="PHONE",
+                signature="c2ln",
+            )
+        self.assertIn("stale phone challenge", str(stale.exception))
+        server.shutdown()
+        server.server_close()
+        restarted, _token = self._observe_transport()[0], None
+        with self.assertRaises(ObserveTransportError) as restarted_error:
+            restarted.submit_signature(
+                challenge_id=first["id"],
+                challenge=first["raw"],
+                public_key="PHONE",
+                signature="c2ln",
+            )
+        self.assertIn("stale phone challenge", str(restarted_error.exception))
+
+    def test_observe_transport_software_double_is_refused_when_the_pin_matches(self) -> None:
+        import base64
+
+        from runspecimen.execution_holder import ExecutionHolder
+        from runspecimen.native_bridge import UserInvokedSecureEnclaveControl
+        from tests.test_native_bridge_policies import _boot, _sign, _signer
+
+        if sys.platform != "darwin":
+            self.skipTest("phone peer comparison uses the Darwin verifier")
+        binary, public, private = _signer(self)
+        transport, _server, _token = self._observe_transport()
+
+        def wait() -> None:
+            fetched = transport.fetch_challenge()
+            raw = base64.b64decode(fetched["challenge"])
+            transport.submit_signature(
+                challenge_id=fetched["challenge_id"],
+                challenge=raw,
+                public_key=public,
+                signature=_sign(binary, private, raw),
+            )
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-observe-installed-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        secret = "ab" * 32
+        holder = ExecutionHolder(
+            root / "state",
+            allow_test_double=False,
+            installed_protection=True,
+            bootstrap_secret=secret,
+            snapshot_base=root / "snaps",
+            verifier_pin=_pin(),
+        )
+        holder.enroll("app", _boot(secret, "enroll", "app", "local"))
+        with (
+            mock.patch("runspecimen.native_bridge.read_verifier_identity", return_value=_parsed()),
+            mock.patch("runspecimen.native_bridge.verifier_signature_strict", return_value=True),
+        ):
+            with self.assertRaises(HolderRefusal) as refused:
+                holder.enroll_user_invoked_secure_enclave(
+                    UserInvokedSecureEnclaveControl("companion"),
+                    phone_transport=transport,
+                    wait=wait,
+                )
+        self.assertIn("does not authorize a software key", str(refused.exception))
+        self.assertNotIn("team identifier does not match", str(refused.exception))
+        self.assertFalse((holder.root / "os-boundary.json").exists())

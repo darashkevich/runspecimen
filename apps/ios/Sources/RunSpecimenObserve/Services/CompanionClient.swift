@@ -122,6 +122,28 @@ struct CompanionClient {
         return try JSONDecoder().decode(RemoteConfirmResult.self, from: data)
     }
 
+    /// Read the holder phone-peer challenge. Does not sign and does not enroll.
+    func fetchPhonePeerChallenge() async throws -> PhonePeerChallengeMessage {
+        let data = try await request(path: "/v1/phone-peer-challenge")
+        return try JSONDecoder().decode(PhonePeerChallengeMessage.self, from: data)
+    }
+
+    /// Return a signature the phone already produced. The Mac holder verifies it.
+    func submitPhonePeerSignature(
+        challengeId: String,
+        challenge: String,
+        publicKey: String,
+        signature: String
+    ) async throws {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "challenge_id": challengeId,
+            "challenge": challenge,
+            "public_key": publicKey,
+            "signature": signature,
+        ])
+        _ = try await request(path: "/v1/phone-peer-signature", method: "POST", body: payload)
+    }
+
     /// Consume a Mac-armed pending without writing approval. Requires typed challenge + reason.
     func submitRemoteRefuse(challenge: String, reason: String) async throws -> RemoteConfirmResult {
         let payload = try JSONSerialization.data(withJSONObject: [
