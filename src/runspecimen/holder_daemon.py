@@ -76,14 +76,27 @@ def _peer_ids(conn: socket.socket) -> tuple[int, int]:
             return int(uid), int(gid)
     except OSError:
         pass
-    # macOS / some BSDs
+    if sys.platform == "linux":
+        try:
+            import struct
+
+            option = getattr(socket, "SO_PEERCRED", 17)
+            data = conn.getsockopt(socket.SOL_SOCKET, option, struct.calcsize("3i"))
+            _pid, uid, gid = struct.unpack("3i", data)
+            return int(uid), int(gid)
+        except (OSError, OverflowError, struct.error):
+            pass
+    # macOS / some BSDs. The Darwin constant does not fit a Linux C int.
     try:
         import struct
 
-        LOCAL_PEERCRED = getattr(socket, "LOCAL_PEERCRED", 0x200000108)
-        data = conn.getsockopt(0, LOCAL_PEERCRED, 24)  # SOL_LOCAL ≈ 0 on Darwin for this
-        # fallback via ctypes getpeereid
-    except OSError:
+        LOCAL_PEERCRED = getattr(socket, "LOCAL_PEERCRED", None)
+        if LOCAL_PEERCRED is None and sys.platform == "darwin":
+            LOCAL_PEERCRED = 0x200000108
+        if LOCAL_PEERCRED is not None:
+            data = conn.getsockopt(0, LOCAL_PEERCRED, 24)  # SOL_LOCAL ≈ 0 on Darwin for this
+            # fallback via ctypes getpeereid
+    except (OSError, OverflowError):
         data = b""
     try:
         import ctypes
