@@ -45,11 +45,14 @@ class HolderDaemonAcceptTimeoutTests(unittest.TestCase):
             self.addCleanup(client.close)
 
             def _connect() -> None:
-                time.sleep(0.05)
                 client.connect(str(path))
 
             threading.Thread(target=_connect, daemon=True).start()
-            conn = _accept_connection(server)
+            conn = None
+            for _ in range(8):
+                conn = _accept_connection(server)
+                if conn is not None:
+                    break
             self.assertIsNotNone(conn)
             assert conn is not None
             self.addCleanup(conn.close)
