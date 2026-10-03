@@ -1,4 +1,7 @@
+import CryptoKit
 import Foundation
+import LocalAuthentication
+import Security
 import SwiftUI
 
 @MainActor
@@ -15,6 +18,8 @@ final class CompanionSession: ObservableObject {
     @Published var approvePhraseInput: String = ""
     @Published var refuseReasonInput: String = ""
     @Published var lastRemoteConfirmNote: String?
+    @Published var phonePeerNote: String = "No phone-peer signature has been returned. Signing uses the published challenge. It does not approve a run."
+    private var phoneChallenge: PhonePeerChallengeMessage?
 
     private let defaultsKey = "rs.observe.pairing"
 
@@ -93,6 +98,36 @@ final class CompanionSession: ObservableObject {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    func signPhonePeerChallenge(signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner()) async {
+        lastError = nil
+        guard let client = makeClient() else {
+            lastError = CompanionClientError.notPaired.localizedDescription
+            return
+        }
+        do {
+            let message = try await client.fetchPhonePeerChallenge()
+            phoneChallenge = message
+            let bytes = try boundPhoneChallengeBytes(message)
+            let signed = try signer.sign(message: bytes)
+            try await client.submitPhonePeerSignature(
+                challengeId: message.challengeId,
+                challenge: message.challenge,
+                publicKey: signed.publicKey,
+                signature: signed.signature
+            )
+            phoneChallenge = nil
+            phonePeerNote = "Signature returned for challenge \(message.challengeId). The Mac holder still has to verify it. This is not approval."
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func cancelPhonePeerChallenge() async {
+        phoneChallenge = nil
+        phonePeerNote = "Phone peer challenge cancelled before a signature was returned."
+        lastError = nil
     }
 
     func requestAttention() async {
@@ -236,4 +271,42 @@ final class CompanionSession: ObservableObject {
         tlsFingerprint = config.tlsFingerprint ?? ""
         isPaired = true
     }
+}
+
+protocol PhoneChallengeSigning {
+    func sign(message: Data) throws -> (publicKey: String, signature: String)
+}
+
+struct LivePhoneSecureEnclaveSigner: PhoneChallengeSigning {
+    func sign(message: Data) throws -> (publicKey: String, signature: String) {
+        var error: Unmanaged<CFError>?
+        guard let access = SecAccessControlCreateWithFlags(
+            kCFAllocatorDefault,
+            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            [.privateKeyUsage, .biometryCurrentSet],
+            &error
+        ) else {
+            throw CompanionClientError.transport("biometric access policy was refused")
+        }
+        let key = try SecureEnclave.P256.Signing.PrivateKey(
+            accessControl: access,
+            authenticationContext: LAContext()
+        )
+        let signature = try key.signature(for: message).rawRepresentation
+        return (
+            key.publicKey.x963Representation.base64EncodedString(),
+            signature.base64EncodedString()
+        )
+    }
+}
+
+func boundPhoneChallengeBytes(_ message: PhonePeerChallengeMessage) throws -> Data {
+    guard let expiry = message.expiry else {
+        throw CompanionClientError.transport("phone peer challenge is missing its expiry")
+    }
+    let role = message.role ?? "phone"
+    let object = """
+    {"challenge":"\(message.challenge)","domain":"holder-device-p256-v1","expiry":\(expiry),"generation":\(message.generation),"holder_id":"\(message.holderId)","nonce":"\(message.challengeId)","role":"\(role)"}
+    """
+    return Data(object.utf8)
 }

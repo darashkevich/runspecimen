@@ -107,6 +107,23 @@ struct PairingView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(RSTheme.elevated)
                 }
+
+                NavigationLink("Review a carried approval") {
+                    CompanionApprovalPreviewView()
+                }
+                .accessibilityHint("Shows a package a person carried. Does not call Face ID.")
+
+                NavigationLink("Sign on this iPhone") {
+                    CompanionHardwareApprovalView()
+                }
+                .accessibilityHint("Opens Face ID enrollment. Nothing runs until a button on that screen is tapped.")
+
+                #if RS_OBSERVE_DEV_SIGNER
+                NavigationLink("Development software signature") {
+                    DevelopmentCompanionSignView()
+                }
+                .accessibilityHint("Development app only. A software signature is not biometric completion.")
+                #endif
             }
             .padding(20)
             .rsReadableWidth(720)

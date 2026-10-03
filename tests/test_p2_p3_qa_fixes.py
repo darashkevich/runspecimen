@@ -92,6 +92,35 @@ class ConfigSecretStripTests(RunSpecimenTestCase):
         self.assertEqual(doc["settings"]["theme"], "dark")
         self.assertEqual(doc["env"]["RUNSPECIMEN_FOO"], "keep-me")
 
+    def test_nested_secret_names_are_removed_and_paths_are_reported(self) -> None:
+        from runspecimen.configsync import ConfigSyncError, build_bundle, sanitize_bundle
+
+        bundle = build_bundle(
+            bundle_id="nested-secrets",
+            settings={
+                "theme": "dark",
+                "service": {"name": "local", "api_key": "nested-secret"},
+                "items": [{"name": "one", "password": "nested-pass"}],
+                "note": "api_key=still-in-the-note",
+            },
+            note="key-name heuristic only",
+        )
+        settings = bundle["settings"]
+        self.assertEqual(settings["service"], {"name": "local"})
+        self.assertEqual(settings["items"], [{"name": "one"}])
+        self.assertEqual(settings["note"], "api_key=still-in-the-note")
+        self.assertIn("service.api_key", bundle["secret_keys_excluded"])
+        self.assertIn("items[0].password", bundle["secret_keys_excluded"])
+        self.assertNotIn("nested-secret", json.dumps(bundle["settings"]))
+        self.assertNotIn("nested-pass", json.dumps(bundle["settings"]))
+
+        again = sanitize_bundle(bundle)
+        self.assertEqual(again["settings"], settings)
+        self.assertIn("service.api_key", again["secret_keys_excluded"])
+
+        with self.assertRaises(ConfigSyncError):
+            build_bundle(bundle_id="bad-shape", settings={"theme": ("not", "a", "list")})
+
 
 class FreshnessAuthenticityTests(RunSpecimenTestCase):
     def test_p2_evaluate_freshness_raw_missing_authenticity_not_applicable(self) -> None:

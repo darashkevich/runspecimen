@@ -267,7 +267,7 @@ struct RootView: View {
                 .environmentObject(model)
                 .frame(minWidth: 420, minHeight: 360)
         }
-        .sheet(isPresented: $model.showWorkflows) {
+        .sheet(isPresented: $model.showWorkflows, onDismiss: { model.cancelWorkflow() }) {
             WorkflowSheet()
                 .environmentObject(model)
         }

@@ -3,6 +3,10 @@
 Python/plugin cut currently public: **`0.2.0rc14`** / **`v0.2.0-rc.14`**.
 This file records what shipped; it does not authorize App Store Connect changes.
 
+Candidate source on this branch identifies as **`0.2.0rc15`** / **`0.2.0-rc.15`**. That cut is not published. Its bytes are not the rc14 wheel, sdist, or plugin zip. The Homebrew formula in this tree still installs the published rc14 sdist.
+
+App Store Connect macOS **0.1.4 (9)** was queried on 2026-09-28 as `READY_FOR_SALE` and `downloadable=true` (build `51a18894-02e3-4846-86f5-29cc345567f0`, review item `APPROVED`). That release is unchanged. A later **0.1.6 (1)** store update is a proposal, not an agreed scope.
+
 ## What is live today
 
 | Channel | Identity | Evidence |

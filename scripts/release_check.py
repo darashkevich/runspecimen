@@ -27,8 +27,8 @@ from pathlib import Path, PurePosixPath
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_PYTHON_VERSION = "0.2.0rc14"
-EXPECTED_PLUGIN_VERSION = "0.2.0-rc.14"
+EXPECTED_PYTHON_VERSION = "0.2.0rc15"
+EXPECTED_PLUGIN_VERSION = "0.2.0-rc.15"
 # Fixed metadata clock for release archives. Wall-clock gzip, tar, and zip
 # timestamps otherwise change the archive bytes on every build. 2020-01-01 UTC
 # matches the plugin zip and is representable in zip (dates before 1980 are not).
@@ -296,6 +296,11 @@ def inspect_sdist(path: Path, destination: Path) -> Path:
         )}
         if not required.issubset(names):
             raise SystemExit(f"source archive is missing required files: {sorted(required - names)}")
+        carried = [name for name in names if _is_platform_verifier_member(name)]
+        if carried:
+            raise SystemExit(
+                "source archive must not carry the darwin arm64 verifier: " + ", ".join(carried)
+            )
         for member in members:
             if PurePosixPath(member.name).parts[0] != top or not (member.isfile() or member.isdir()):
                 raise SystemExit(f"unsupported source archive member: {member.name}")
@@ -360,6 +365,12 @@ def validate_requires_dist_metadata(metadata: str) -> None:
             )
 
 
+def _is_platform_verifier_member(name: str) -> bool:
+    return name.endswith("runspecimen/platform/darwin_arm64/native_p256_verify") or (
+        name.rsplit("/", 1)[-1] == "native_p256_verify"
+    )
+
+
 def inspect_wheel(path: Path) -> None:
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
@@ -373,6 +384,13 @@ def inspect_wheel(path: Path) -> None:
         }
         if not required.issubset(names):
             raise SystemExit(f"wheel is missing required files: {sorted(required - set(names))}")
+        if path.name.endswith("py3-none-any.whl"):
+            carried = [name for name in names if _is_platform_verifier_member(name)]
+            if carried:
+                raise SystemExit(
+                    "py3-none-any wheel must not carry the darwin arm64 verifier: "
+                    + ", ".join(carried)
+                )
         metadata = archive.read(f"{dist_info}/METADATA").decode("utf-8")
         if f"\nVersion: {EXPECTED_PYTHON_VERSION}\n" not in metadata:
             raise SystemExit("wheel metadata has the wrong version")

@@ -45,6 +45,97 @@ final class WorkflowConfirmationGateTests: XCTestCase {
         XCTAssertEqual(gate.completedExecutions, 1)
     }
 
+    func testStaleIdentifierDoesNotClaimTheCurrentRequest() {
+        var gate = WorkflowConfirmationGate()
+        let first = WorkflowRequest(
+            title: "Retain incident pack",
+            detail: "Copies into /private/tmp/rs-dest-a. Cancel copies nothing.",
+            arguments: ["retain", "--out", "/private/tmp/rs-dest-a"],
+            workspacePath: "/ws",
+            contractPath: "/ws/contract.json"
+        )
+        let replacement = WorkflowRequest(
+            title: "Retain incident pack",
+            detail: "Copies into /private/tmp/rs-dest-b. Cancel copies nothing.",
+            arguments: ["retain", "--out", "/private/tmp/rs-dest-b"],
+            workspacePath: "/ws",
+            contractPath: "/ws/contract.json"
+        )
+        gate.present(first)
+        gate.present(replacement)
+        XCTAssertNil(gate.confirm(matching: first.id))
+        XCTAssertEqual(gate.pending?.id, replacement.id)
+        XCTAssertEqual(gate.pending?.arguments, replacement.arguments)
+        let claimed = gate.confirm(matching: replacement.id)
+        XCTAssertEqual(claimed?.arguments, ["retain", "--out", "/private/tmp/rs-dest-b"])
+        XCTAssertNil(gate.confirm(matching: replacement.id))
+        XCTAssertTrue(gate.beginExecution(of: claimed!))
+        XCTAssertFalse(gate.beginExecution(of: claimed!))
+        gate.finishExecution()
+        XCTAssertEqual(gate.completedExecutions, 1)
+    }
+
+    func testContextChangeDropsThePendingRequestAndKeepsAClaimedDestination() {
+        var gate = WorkflowConfirmationGate()
+        let request = WorkflowRequest(
+            title: "Retain incident pack",
+            detail: "Copies into /private/tmp/rs-dest-a. Cancel copies nothing.",
+            arguments: ["retain", "--out", "/private/tmp/rs-dest-a"],
+            workspacePath: "/ws",
+            contractPath: "/ws/contract.json"
+        )
+        gate.present(request)
+        gate.dropPendingIfContextDiffers(workspace: "/ws", contract: "/ws/contract.json")
+        XCTAssertEqual(gate.pending?.arguments, request.arguments)
+        gate.dropPendingIfContextDiffers(workspace: "/other", contract: "/ws/contract.json")
+        XCTAssertNil(gate.pending)
+        XCTAssertNil(gate.confirm(matching: request.id))
+
+        gate.present(request)
+        let claimed = gate.confirm(matching: request.id)
+        gate.dropPendingIfContextDiffers(workspace: "/other", contract: "/other/contract.json")
+        gate.cancel()
+        XCTAssertEqual(claimed?.arguments, request.arguments)
+        XCTAssertTrue(gate.beginExecution(of: claimed!))
+        gate.finishExecution()
+        XCTAssertEqual(gate.completedExecutions, 1)
+    }
+
+    func testContextChangeDropsAnUnstartedClaimBeforeExecution() {
+        var gate = WorkflowConfirmationGate()
+        let request = WorkflowRequest(
+            title: "Retain incident pack",
+            detail: "Copies into /private/tmp/rs-dest-a. Cancel copies nothing.",
+            arguments: ["retain", "--out", "/private/tmp/rs-dest-a"],
+            workspacePath: "/ws",
+            contractPath: "/ws/contract.json"
+        )
+        gate.present(request)
+        let claimed = gate.confirm(matching: request.id)
+        gate.dropUnstartedWorkForContextChange()
+        XCTAssertNil(gate.pending)
+        XCTAssertFalse(gate.beginExecution(of: claimed!))
+        XCTAssertEqual(gate.completedExecutions, 0)
+    }
+
+    func testCancelAndCloseLeaveTheDestinationUnrun() {
+        var gate = WorkflowConfirmationGate()
+        let request = WorkflowRequest(
+            title: "Retain incident pack",
+            detail: "Copies into /private/tmp/rs-dest-a. Cancel copies nothing.",
+            arguments: ["retain", "--out", "/private/tmp/rs-dest-a"],
+            workspacePath: "/ws",
+            contractPath: "/ws/contract.json"
+        )
+        gate.present(request)
+        gate.cancel()
+        XCTAssertNil(gate.pending)
+        XCTAssertNil(gate.confirm(matching: request.id))
+        XCTAssertFalse(gate.beginExecution(of: request))
+        gate.finishExecution()
+        XCTAssertEqual(gate.completedExecutions, 0)
+    }
+
     func testBusyConfirmDoesNotStartAnotherExecution() {
         var gate = WorkflowConfirmationGate()
         let first = sample()

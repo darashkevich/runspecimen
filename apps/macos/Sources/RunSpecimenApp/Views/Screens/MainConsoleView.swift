@@ -83,7 +83,7 @@ struct TopBar: View {
 
             CapsuleLabel(text: model.cliIdentity?.version ?? "CLI missing", tone: model.hasCLI ? .signal : .amber)
                 .accessibilityLabel(model.hasCLI ? "CLI version \(model.cliIdentity?.version ?? "")" : "CLI missing")
-                .help(model.cliSourceLabel.map { "Source: \($0)" } ?? (DistributionChannel.current.requiresBundledHelper ? "Bundled engine missing" : "Select or install runspecimen 0.2.0rc14+"))
+                .help(model.cliSourceLabel.map { "Source: \($0)" } ?? (DistributionChannel.current.requiresBundledHelper ? "Bundled engine missing" : "Select a runspecimen binary. This build's engine is unpublished 0.2.0rc15."))
                 .layoutPriority(1)
 
             if let source = model.cliSourceLabel ?? model.cliIdentity?.source.label {

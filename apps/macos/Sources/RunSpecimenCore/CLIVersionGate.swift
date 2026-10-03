@@ -128,6 +128,31 @@ public enum CLIVersionGate {
             """
         }
     }
+
+    /// What `CLIService.version()` accepts. Capture failures are rejected even when
+    /// the child printed a parseable version before the pipe failed.
+    public static func acceptedVersion(from output: BoundedProcessCapture.Output) throws -> String {
+        let reported = EngineReportDecoder.plainText(from: output)
+        if reported.exitCode != 0 {
+            let detail = reported.stderr.isEmpty ? reported.stdout : reported.stderr
+            throw EngineReportError(message: detail.isEmpty ? "The engine version could not be read." : detail)
+        }
+        let version = (reported.stdout + "\n" + reported.stderr)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if version.lowercased().contains("need python") {
+            throw EngineReportError(message: failureMessage(for: .unparseable(raw: version)) ?? version)
+        }
+        guard version.lowercased().contains("runspecimen") || version.contains(".") else {
+            throw EngineReportError(
+                message: "Selected binary did not report a RunSpecimen version:\n\(version)\n(exit \(reported.exitCode))"
+            )
+        }
+        let evaluation = evaluate(versionOutput: version)
+        if let message = failureMessage(for: evaluation) {
+            throw EngineReportError(message: message)
+        }
+        return version
+    }
 }
 
 /// Where the active CLI binary came from (discovery order in ADR-002).

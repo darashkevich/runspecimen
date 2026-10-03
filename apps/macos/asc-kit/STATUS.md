@@ -1,6 +1,26 @@
 # ASC kit status (honest)
 
-## Current: 0.1.4 (9) WAITING_FOR_REVIEW (submitted 2026-09-24)
+## Current: 0.1.4 (9) READY_FOR_SALE (queried 2026-09-28)
+
+App Store Connect, app `6813492506`:
+
+| Connect field | Value |
+| --- | --- |
+| Version | **0.1.4** id `6cfe298b-92c1-460d-b83b-5687a67f2cff` |
+| State | `appStoreState=READY_FOR_SALE`, `appVersionState=READY_FOR_DISTRIBUTION`, `downloadable=true` |
+| Release | `AFTER_APPROVAL` (released when Apple approved; not held for a later developer release) |
+| Build | **9** id `51a18894-02e3-4846-86f5-29cc345567f0` `VALID` `expired=false` uploaded 2026-09-24T05:32:21-07:00 |
+| Review item | submission `f0bb3ab1-c283-4463-8c27-e5702a35ac6a` item state `APPROVED` |
+| Source | `0f50a2c` plus the rejection fixes. Excludes PR #34 and this integrated branch |
+| Package SHA-256 | `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` |
+
+Ready for Sale is public availability in Connect, not merely an approval waiting on a release button. The iTunes lookup API returned no Mac listing for this bundle in the US or GB at query time, so this file does not claim an apps.apple.com URL. Do not withdraw, replace, or edit version 0.1.4. No newer build is attached.
+
+A symbol scan of the archived approved app, not a new package, is [evidence/scan-0.1.4-9.json](evidence/scan-0.1.4-9.json): 48 Mach-O files, each `arm64`, 0 violations. That scan does not replace the recorded package hash above, and it is not an identity attestation of the installer.
+
+The historical note below recorded this same version as `WAITING_FOR_REVIEW` on 2026-09-24. That was the state then.
+
+## Historical: 0.1.4 (9) WAITING_FOR_REVIEW (submitted 2026-09-24)
 
 Confirmed rejection of **0.1.3 (8)** (submission `9c19e1cd-…`, review 2026-09-23):
 **2.5.1** private/deprecated API refs in Apple Python 3.9 (`TrustEvaluationAgent`,
@@ -21,6 +41,8 @@ plus macOS rejection fixes only — **does not include PR #34**.
 
 ASC URL: https://appstoreconnect.apple.com/apps/6813492506/distribution/macos/version/inflight
 
+In-flight note: that `/inflight` URL is historical (saved while **0.1.4 (9)** was waiting). The current Connect state in this file is `READY_FOR_SALE` for **0.1.4 (9)** — see the top section. This integrated branch is unpublished **0.1.5 (13)** / engine **0.2.0rc15** and is not that Store package. Do not withdraw, replace, or claim a new Store submission from this note.
+
 These identities are different artifacts. Do not treat them as the same package because an older local build reused the text **0.1.4 (9)**.
 
 | Artifact | Version | Source | Engine features | Package SHA-256 | Apple build |
@@ -30,6 +52,7 @@ These identities are different artifacts. Do not treat them as the same package 
 | Earlier local signed app | **0.1.5 (10)** | `b467c63` | rc14 plus evidence expansion and read-only native pane | zip `705ced0fa79ca98f951455f68e6fa4a8d08624b686c6579b60678b43e6aac8b0` | not submitted |
 | Local Store package, not uploaded | **0.1.5 (11)** | `3a0f48351b5717fb68168be6c56ac3038f2ea11e` | rc14 plus native workflows. No confirmation-claim or pipe-drain fix | pkg `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309` | not uploaded |
 | Next local candidate | **0.1.5 (12)** | `c400f2d0ca82b21f2663df92f3f0c262a1ba09af` | rc14 plus native workflows, confirmation claim, and concurrent pipe drain. Receipt digest, diff, and retain stay CLI-only | pkg `6b3e9b3e1db219aafd834dd894b4ce04a8269cedb34dc116a4a154c22bb09a38` | not uploaded |
+| Unpublished integrated candidate | **0.1.5 (13)** | `cursor/integrated-release-candidate` | engine **0.2.0rc15**. Packaged CryptoKit P-256 verifier is ad-hoc and hash-pinned, not a Secure Enclave. Development GUI remains the build of `27bb0c7` app sources | not a Store package | not uploaded |
 
 App Store Connect was not queried on 2026-09-25: the local API key file is present, and the issuer ID is not stored beside it, so no request was sent. Do not upload **0.1.5 (11)** while the recorded submission is still **0.1.4 (9)**.
 

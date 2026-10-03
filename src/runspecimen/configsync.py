@@ -97,6 +97,9 @@ def inspect_environment(*, workspace: Path, contract_path: Path | None = None) -
         "active_lease": lease_meta.to_dict() if lease_meta else None,
         "docs": dict(DOCS_URLS),
         "isolation": host_capabilities(),
+        "platform_verifier": __import__(
+            "runspecimen.native_bridge", fromlist=["platform_verifier_report"]
+        ).platform_verifier_report(),
         "adapters": {
             "cli": True,
             "dashboard": "read_only_loopback",
@@ -164,24 +167,61 @@ def _hook_registration_hints() -> dict[str, Any]:
     }
 
 
+def _sanitize_settings(value: Any, path: str, excluded: list[str]) -> Any:
+    """Drop secret-like names inside objects and lists.
+
+    Supported values are JSON scalars, objects, and lists. Other Python
+    containers are rejected. A secret stored under an ordinary key, or inside
+    a note string, is not detected.
+    """
+    if isinstance(value, dict):
+        cleaned: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ConfigSyncError(f"unsupported settings key at {path or '<root>'}")
+            child = f"{path}.{key}" if path else key
+            if _looks_secret(key):
+                excluded.append(child)
+                continue
+            cleaned[key] = _sanitize_settings(item, child, excluded)
+        return cleaned
+    if isinstance(value, list):
+        return [
+            _sanitize_settings(item, f"{path}[{index}]", excluded)
+            for index, item in enumerate(value)
+        ]
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    raise ConfigSyncError(
+        f"unsupported settings value at {path or '<root>'}: {type(value).__name__}"
+    )
+
+
+def _sanitize_env(env: dict[str, Any], excluded: list[str]) -> dict[str, str]:
+    clean: dict[str, str] = {}
+    for key, value in env.items():
+        if not isinstance(key, str):
+            raise ConfigSyncError("env keys must be strings")
+        if _looks_secret(key):
+            excluded.append(key)
+            continue
+        if not key.startswith("RUNSPECIMEN_"):
+            continue
+        if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            raise ConfigSyncError(f"unsupported env value at {key}")
+        clean[key] = str(value)
+    return clean
+
+
 def _strip_secret_maps(
     settings: dict[str, Any] | None,
     env: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], dict[str, str], list[str]]:
     """Drop secret-like keys from settings/env; preserve non-secret values."""
-    settings = settings or {}
-    env = env or {}
-    clean_settings = {k: v for k, v in settings.items() if not _looks_secret(k)}
-    clean_env = {
-        k: str(v)
-        for k, v in env.items()
-        if not _looks_secret(k) and k.startswith("RUNSPECIMEN_")
-    }
-    excluded = sorted(
-        {k for k in settings if _looks_secret(k)}
-        | {k for k in env if _looks_secret(k)}
-    )
-    return clean_settings, clean_env, excluded
+    excluded: list[str] = []
+    clean_settings = _sanitize_settings(settings or {}, "", excluded)
+    clean_env = _sanitize_env(env or {}, excluded)
+    return clean_settings, clean_env, sorted(set(excluded))
 
 
 def sanitize_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
@@ -328,6 +368,8 @@ def export_bundle(workspace: Path, out_path: Path) -> dict[str, Any]:
         "secret_keys_excluded": cleaned.get("secret_keys_excluded", []),
         "install_hint": (
             "On the target host: runspecimen config apply --workspace <ws> --bundle <file>. "
-            "Do not paste secrets into bundles."
+            "Do not paste secrets into bundles. Key names such as api_key are stripped, "
+            "including inside nested objects and lists. Values under ordinary names, "
+            "and secrets written inside notes, are not detected."
         ),
     }

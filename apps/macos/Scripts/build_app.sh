@@ -10,6 +10,14 @@
 #   ./Scripts/build_app.sh --mas            # MAS-first: frozen helper REQUIRED (fail closed)
 set -euo pipefail
 
+# Release qualification freezes only inside archive_mas.sh, after the reviewed
+# commit is isolated. This script builds the live tree and must not run then.
+if [[ "${RS_RELEASE_GATE:-}" == "1" ]]; then
+  echo "ERROR: RS_RELEASE_GATE=1 refuses build_app.sh before any compilation." >&2
+  echo "ERROR: use archive_mas.sh so helper freeze starts from the isolated candidate." >&2
+  exit 1
+fi
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD="$ROOT/build"
 APP="$BUILD/RunSpecimen.app"

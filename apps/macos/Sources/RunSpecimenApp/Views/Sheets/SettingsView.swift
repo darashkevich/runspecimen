@@ -5,6 +5,7 @@ import RunSpecimenCore
 #endif
 
 struct SettingsView: View {
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
@@ -86,7 +87,7 @@ struct SettingsView: View {
 
             if !DistributionChannel.current.requiresBundledHelper {
                 Section("Install guidance") {
-                    Text("python3 -m pip install 'runspecimen==0.2.0rc14'")
+                    Text("Published pin remains python3 -m pip install 'runspecimen==0.2.0rc14'. This build's engine is unpublished 0.2.0rc15.")
                         .font(RSTheme.monoSmall)
                         .textSelection(.enabled)
                     Text("Or stage a helper: ./Scripts/stage_helper.sh --from-src && ./Scripts/build_app.sh")
@@ -100,5 +101,48 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+        .safeAreaInset(edge: .bottom) {
+            HStack {
+                Spacer()
+                CloseSettingsControl {
+                    dismiss()
+                }
+            }
+            .padding([.horizontal, .bottom])
+        }
+    }
+}
+
+/// AppKit button so Accessibility sees the title. A SwiftUI toolbar button in this
+/// sheet did not publish its name to the accessibility tree.
+private struct CloseSettingsControl: NSViewRepresentable {
+    var action: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(
+            title: "Close Settings",
+            target: context.coordinator,
+            action: #selector(Coordinator.press)
+        )
+        button.bezelStyle = .rounded
+        button.setAccessibilityLabel("Close Settings")
+        button.setAccessibilityIdentifier("Close Settings")
+        button.keyEquivalent = "\u{1b}"
+        return button
+    }
+
+    func updateNSView(_ button: NSButton, context: Context) {
+        context.coordinator.action = action
+        button.title = "Close Settings"
+    }
+
+    final class Coordinator: NSObject {
+        var action: () -> Void
+        init(action: @escaping () -> Void) { self.action = action }
+        @objc func press() { action() }
     }
 }

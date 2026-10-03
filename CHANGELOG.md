@@ -26,6 +26,10 @@ evidence still applies. See `docs/ADR-005-evidence-expansion.md`.
 - Native Workflows cover snapshot, coordination, evaluation, scenes, configuration apply/export/rollback, decision capture, and usage import. Writes require confirmation. The Store build still has no browser dashboard.
 - A confirmed workflow is claimed before its dialog dismisses, so cancellation cannot drop that claim, and a second confirm does not run it again. Engine output is read while the process is still running.
 
+## 0.2.0rc15 - not published
+
+Candidate identity for the integrated branch. Not tagged, not uploaded to PyPI, and not a replacement for the published `0.2.0rc14` bytes. Homebrew in this tree still pins the published sdist.
+
 ## 0.2.0rc14 - 2026-09-23
 
 GitHub pre-release `v0.2.0-rc.14` and PyPI `0.2.0rc14` (identical bytes, checksum-only, not SLSA-attested). Do not publish draft `v0.2.0-rc.11`. Do not move `v0.2.0-rc.12` or `v0.2.0-rc.13`. Stable `0.2.0` gate remains not met.
