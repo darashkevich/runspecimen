@@ -39,6 +39,24 @@ struct StatusObserveView: View {
                         .foregroundStyle(RSTheme.muted)
                 }
 
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Phone peer")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(RSTheme.muted)
+                    Text(session.phonePeerNote)
+                        .font(.footnote)
+                        .foregroundStyle(RSTheme.muted)
+                    actionButton("Sign phone peer challenge", tint: RSTheme.cyan) {
+                        await session.signPhonePeerChallenge()
+                    }
+                    actionButton("Cancel phone peer challenge", tint: RSTheme.danger) {
+                        await session.cancelPhonePeerChallenge()
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RSTheme.panel)
+
                 VStack(spacing: 10) {
                     actionButton("Refresh status", tint: RSTheme.cyan) {
                         await session.refresh()

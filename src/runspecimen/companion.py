@@ -304,6 +304,8 @@ def make_handler(
                                 "generation": current["generation"],
                                 "holder_id": current["holder_id"],
                                 "challenge": current["challenge"],
+                                "expiry": current.get("expiry"),
+                                "role": current.get("role", "phone"),
                                 "ios_bundle_id": CAPABILITIES["ios_bundle_id"],
                             },
                             sort_keys=True,
@@ -410,12 +412,22 @@ def make_handler(
                 if not raw_challenge or not isinstance(generation, int) or not isinstance(holder_id, str):
                     self._error(400, "phone peer challenge bytes are missing")
                     return
+                expiry = payload.get("expiry")
+                if "expiry" in payload and not isinstance(expiry, int):
+                    self._error(400, "phone peer challenge bytes are missing")
+                    return
+                role = payload.get("role", "phone")
+                if role != "phone":
+                    self._error(400, "phone peer challenge bytes are missing")
+                    return
                 with phone_lock:
                     phone_mailbox["challenge"] = {
                         "challenge_id": challenge_id,
                         "generation": generation,
                         "holder_id": holder_id,
                         "challenge": challenge_b64,
+                        "expiry": expiry,
+                        "role": role,
                     }
                     phone_mailbox["signature"] = None
                 self._respond(
@@ -742,17 +754,19 @@ class ObservePhoneTransport:
         generation: int,
         challenge: bytes,
         holder_id: str,
+        expiry: int | None = None,
+        role: str = "phone",
     ) -> None:
-        self._request(
-            "POST",
-            "/v1/phone-peer-challenge",
-            {
-                "challenge_id": challenge_id,
-                "generation": generation,
-                "holder_id": holder_id,
-                "challenge": base64.b64encode(challenge).decode("ascii"),
-            },
-        )
+        payload: dict[str, Any] = {
+            "challenge_id": challenge_id,
+            "generation": generation,
+            "holder_id": holder_id,
+            "challenge": base64.b64encode(challenge).decode("ascii"),
+            "role": role,
+        }
+        if expiry is not None:
+            payload["expiry"] = expiry
+        self._request("POST", "/v1/phone-peer-challenge", payload)
 
     def fetch_challenge(self) -> dict[str, Any]:
         return self._request("GET", "/v1/phone-peer-challenge", None)

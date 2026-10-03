@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Role, backend, and provenance shared by the Mac store and the iOS companion.
@@ -98,6 +99,57 @@ public enum ProductionEnrollmentError: Error, Equatable {
     case biometricPromptNotInvoked
     case callerHardwareLabelRefused
     case signerIncomplete
+    case signatureRejected
+    case replayedChallenge
+    case staleChallenge
+    case tamperedChallenge
+}
+
+public struct BoundDeviceChallenge: Equatable, Sendable {
+    public var holderId: String
+    public var generation: Int
+    public var role: String
+    public var expiry: Int
+    public var nonce: String
+    public var challenge: Data
+
+    public init(holderId: String, generation: Int, role: String, expiry: Int, nonce: String, challenge: Data) {
+        self.holderId = holderId
+        self.generation = generation
+        self.role = role
+        self.expiry = expiry
+        self.nonce = nonce
+        self.challenge = challenge
+    }
+
+    /// Same bytes as Python ``bound_device_message``. Not a signature check.
+    public func canonicalBytes() -> Data {
+        let object = """
+        {"challenge":"\(challenge.base64EncodedString())","domain":"holder-device-p256-v1","expiry":\(expiry),"generation":\(generation),"holder_id":"\(holderId)","nonce":"\(nonce)","role":"\(role)"}
+        """
+        return Data(object.utf8)
+    }
+}
+
+public final class MemoryChallengeNonceStore: @unchecked Sendable {
+    private var spent: Set<String> = []
+    private var cancelled: Set<String> = []
+
+    public init() {}
+
+    public func cancel(_ nonce: String) {
+        cancelled.insert(nonce)
+    }
+
+    public func consume(_ nonce: String) throws {
+        if cancelled.contains(nonce) {
+            throw ProductionEnrollmentError.staleChallenge
+        }
+        if spent.contains(nonce) {
+            throw ProductionEnrollmentError.replayedChallenge
+        }
+        spent.insert(nonce)
+    }
 }
 
 /// In-process native signer. Not hardware. Wire JSON cannot become this type.
@@ -167,7 +219,7 @@ public enum ProductionNativeBridgeGate {
 
     public static func status(signers: [IsolatedNativeSigner] = []) -> String {
         let connected = IsolatedNativeEnrollment.connected(signers)
-        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. This Store app does not carry the Developer ID verifier pin and stays guarantee (1). A display name is not a pin. A verifier pin does not authorize a software key. An origin string is not production trust. An injected native signer is not hardware. A software signer is not the native adapter. E2 is not closed. A biometric press does not finish missing implementation. The Observe companion carries the phone challenge. Still unbuilt: a root-owned installed holder. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
+        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. This Store app does not carry the Developer ID verifier pin and stays guarantee (1). A display name is not a pin. A verifier pin does not authorize a software key. An origin string is not production trust. An injected native signer is not hardware. A software signer is not the native adapter. E2 is not closed. A biometric press does not finish missing implementation. The local control sends the bound challenge over authenticated holder IPC. The Observe screen returns the phone signature. The holder verifies P-256 and consumes the nonce. Still unbuilt: a root-owned installed holder. A person has not pressed the control. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
     }
 
     /// Wire and file labels never select the human step.
@@ -209,22 +261,32 @@ public enum ProductionNativeBridgeGate {
         return key
     }
 
-    /// Compares a phone peer with the local key. A matching local key is refused.
+    /// Verifies P-256 over the bound challenge, then consumes the nonce.
+    ///
+    /// A nonempty signature is not enough. Verification is not hardware
+    /// provenance and not a biometric press. A matching local key is refused.
     public static func enrollPairedPhone(
-        challenge: Data,
+        challenge: BoundDeviceChallenge,
         peer: PhonePeerComparing,
-        localPublicKey: Data?
+        localPublicKey: Data?,
+        nonces: MemoryChallengeNonceStore
     ) throws -> Data {
-        if challenge.isEmpty {
-            throw ProductionEnrollmentError.signerIncomplete
+        if challenge.challenge.isEmpty || challenge.nonce.isEmpty || challenge.holderId.isEmpty {
+            throw ProductionEnrollmentError.tamperedChallenge
         }
         if let localPublicKey, localPublicKey == peer.publicKey {
             throw ProductionEnrollmentError.signerIncomplete
         }
-        let signature = try peer.sign(challenge: challenge)
-        if signature.isEmpty {
-            throw ProductionEnrollmentError.signerIncomplete
+        let message = challenge.canonicalBytes()
+        let signature = try peer.sign(challenge: message)
+        guard
+            let key = try? P256.Signing.PublicKey(x963Representation: peer.publicKey),
+            let parsed = try? P256.Signing.ECDSASignature(rawRepresentation: signature),
+            key.isValidSignature(parsed, for: message)
+        else {
+            throw ProductionEnrollmentError.signatureRejected
         }
+        try nonces.consume(challenge.nonce)
         return peer.publicKey
     }
 

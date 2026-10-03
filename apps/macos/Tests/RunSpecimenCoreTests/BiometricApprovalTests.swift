@@ -1477,9 +1477,10 @@ final class PolicyBoundApprovalTests: XCTestCase {
                 )
             }
         }
-        struct MockPhone: PhonePeerComparing {
+        struct FixedPhone: PhonePeerComparing {
             var publicKey: Data
-            func sign(challenge: Data) throws -> Data { Data(challenge) }
+            var signed: Data
+            func sign(challenge: Data) throws -> Data { signed }
         }
         let local = try ProductionNativeBridgeGate.enrollFromUserInvokedControl(
             policy: "local",
@@ -1492,17 +1493,86 @@ final class PolicyBoundApprovalTests: XCTestCase {
                 maker: MockOsBoundary()
             )
         )
-        let compared = try ProductionNativeBridgeGate.enrollPairedPhone(
-            challenge: Data([1, 2, 3]),
-            peer: MockPhone(publicKey: Data([4, 5, 6])),
-            localPublicKey: local.publicKey
+        let privateKey = P256.Signing.PrivateKey()
+        let otherKey = P256.Signing.PrivateKey()
+        let challenge = BoundDeviceChallenge(
+            holderId: "holder",
+            generation: 1,
+            role: "phone",
+            expiry: 10,
+            nonce: "nonce",
+            challenge: Data([1, 2, 3, 4])
         )
-        XCTAssertEqual(compared, Data([4, 5, 6]))
+        let message = challenge.canonicalBytes()
+        let signature = try privateKey.signature(for: message).rawRepresentation
+        let nonces = MemoryChallengeNonceStore()
+        let compared = try ProductionNativeBridgeGate.enrollPairedPhone(
+            challenge: challenge,
+            peer: FixedPhone(publicKey: privateKey.publicKey.x963Representation, signed: signature),
+            localPublicKey: local.publicKey,
+            nonces: nonces
+        )
+        XCTAssertEqual(compared, privateKey.publicKey.x963Representation)
         XCTAssertThrowsError(
             try ProductionNativeBridgeGate.enrollPairedPhone(
-                challenge: Data([1, 2, 3]),
-                peer: MockPhone(publicKey: local.publicKey),
-                localPublicKey: local.publicKey
+                challenge: challenge,
+                peer: FixedPhone(publicKey: privateKey.publicKey.x963Representation, signed: signature),
+                localPublicKey: local.publicKey,
+                nonces: nonces
+            )
+        ) { error in
+            XCTAssertEqual(error as? ProductionEnrollmentError, .replayedChallenge)
+        }
+        XCTAssertThrowsError(
+            try ProductionNativeBridgeGate.enrollPairedPhone(
+                challenge: challenge,
+                peer: FixedPhone(publicKey: privateKey.publicKey.x963Representation, signed: Data([1, 2, 3])),
+                localPublicKey: nil,
+                nonces: MemoryChallengeNonceStore()
+            )
+        ) { error in
+            XCTAssertEqual(error as? ProductionEnrollmentError, .signatureRejected)
+        }
+        XCTAssertThrowsError(
+            try ProductionNativeBridgeGate.enrollPairedPhone(
+                challenge: challenge,
+                peer: FixedPhone(publicKey: otherKey.publicKey.x963Representation, signed: signature),
+                localPublicKey: nil,
+                nonces: MemoryChallengeNonceStore()
+            )
+        ) { error in
+            XCTAssertEqual(error as? ProductionEnrollmentError, .signatureRejected)
+        }
+        var tampered = challenge
+        tampered.challenge = Data([9, 9, 9, 9])
+        XCTAssertThrowsError(
+            try ProductionNativeBridgeGate.enrollPairedPhone(
+                challenge: tampered,
+                peer: FixedPhone(publicKey: privateKey.publicKey.x963Representation, signed: signature),
+                localPublicKey: nil,
+                nonces: MemoryChallengeNonceStore()
+            )
+        ) { error in
+            XCTAssertEqual(error as? ProductionEnrollmentError, .signatureRejected)
+        }
+        let cancelled = MemoryChallengeNonceStore()
+        cancelled.cancel(challenge.nonce)
+        XCTAssertThrowsError(
+            try ProductionNativeBridgeGate.enrollPairedPhone(
+                challenge: challenge,
+                peer: FixedPhone(publicKey: privateKey.publicKey.x963Representation, signed: signature),
+                localPublicKey: nil,
+                nonces: cancelled
+            )
+        ) { error in
+            XCTAssertEqual(error as? ProductionEnrollmentError, .staleChallenge)
+        }
+        XCTAssertThrowsError(
+            try ProductionNativeBridgeGate.enrollPairedPhone(
+                challenge: challenge,
+                peer: FixedPhone(publicKey: local.publicKey, signed: signature),
+                localPublicKey: local.publicKey,
+                nonces: MemoryChallengeNonceStore()
             )
         )
         let holderSource = try String(

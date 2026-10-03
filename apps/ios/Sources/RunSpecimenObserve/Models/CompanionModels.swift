@@ -5,9 +5,11 @@ struct PhonePeerChallengeMessage: Codable, Equatable {
     var challenge: String
     var generation: Int
     var holderId: String
+    var expiry: Int?
+    var role: String?
 
     enum CodingKeys: String, CodingKey {
-        case challenge, generation
+        case challenge, generation, expiry, role
         case challengeId = "challenge_id"
         case holderId = "holder_id"
     }

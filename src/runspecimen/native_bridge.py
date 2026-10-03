@@ -201,6 +201,91 @@ def os_secure_enclave_create_key(role: str) -> OsBoundaryKey:
     )
 
 
+def os_secure_enclave_reload_key(role: str, handle: str, public_key: str) -> OsBoundaryKey:
+    """Reload a key the OS retained after the app process exited.
+
+    The holder app reloads the Secure Enclave key from its keychain
+    representation inside the sign control. This function does not call that
+    API and does not prompt. Tests replace it. The unpatched function fails
+    closed, so an unattended Python call is not the path a press hits.
+    """
+
+    del role, handle, public_key
+    raise OsBoundaryNotInvoked(
+        "Secure Enclave enrollment is the human step and was not invoked"
+    )
+
+
+def write_session_handle(directory: Path, role: str, handle: str, public_key: str) -> None:
+    """Record the OS handle id. The private key is not in this file."""
+
+    from runspecimen.atomic import atomic_write_json
+
+    if role not in {"mac", "phone"}:
+        raise ValueError("session custody role is not mac or phone")
+    directory.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(
+        directory / f"{role}.json",
+        {
+            "role": role,
+            "handle": handle,
+            "public_key": public_key,
+            "access_policy": BIOMETRIC_ACCESS_POLICY,
+            "hardware": False,
+            "not_hardware": True,
+        },
+    )
+
+
+def reload_session_key(directory: Path, role: str, custody: UserSessionKeyCustody) -> OsBoundaryKey:
+    """Load the handle file and ask the OS boundary for the signing key."""
+
+    import json
+
+    record = json.loads((directory / f"{role}.json").read_text(encoding="utf-8"))
+    key = os_secure_enclave_reload_key(role, str(record["handle"]), str(record["public_key"]))
+    custody.keep(role, key)
+    return key
+
+
+def enroll_over_authenticated_ipc(client: object, *, role: str, custody: UserSessionKeyCustody, store: Path) -> dict:
+    """Create a key at the OS call, then enroll it over the holder socket.
+
+    Tests replace ``os_secure_enclave_create_key``. They do not replace this
+    function with a string. The signature covers the holder-issued bound
+    challenge. The holder verifies and consumes that challenge.
+    """
+
+    import base64
+    import secrets
+
+    from runspecimen.execution_holder import HolderRefusal
+
+    key = os_secure_enclave_create_key(role)
+    custody.keep(role, key)
+    write_session_handle(store, role, secrets.token_hex(16), key.public_key)
+    issued = client.call({"op": "issue-device-challenge", "role": role})
+    if not isinstance(issued, dict) or issued.get("enrolled") is not False:
+        raise HolderRefusal("device challenge was not issued")
+    signature = custody.sign(role, base64.b64decode(str(issued["bound"])))
+    submitted = client.call(
+        {
+            "op": "submit-device-signature",
+            "role": role,
+            "public_key": key.public_key,
+            "signature": signature,
+            "holder_id": issued["holder_id"],
+            "generation": issued["generation"],
+            "expiry": issued["expiry"],
+            "nonce": issued["nonce"],
+            "challenge": issued["challenge"],
+        }
+    )
+    if not isinstance(submitted, dict):
+        raise HolderRefusal("device signature verification failed")
+    return submitted
+
+
 class VerifierPin:
     """Exact team identifier and designated requirement. Not a display name."""
 

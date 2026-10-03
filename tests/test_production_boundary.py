@@ -2065,3 +2065,342 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
         self.assertIn("does not authorize a software key", str(refused.exception))
         self.assertNotIn("team identifier does not match", str(refused.exception))
         self.assertFalse((holder.root / "os-boundary.json").exists())
+
+    def _ipc_client(self, root: Path):
+        from runspecimen.holder_adapter import AdapterServer, HolderClient
+        from tests.test_execution_holder import _human
+
+        secret = "ab" * 32
+        server = AdapterServer(root, bootstrap_secret=secret)
+        server.start()
+        self.addCleanup(server.stop)
+
+        def human_for(purpose: str, subject: str) -> dict:
+            policy = subject if purpose == "set-policy" else "local"
+            return _human(purpose, subject, policy=policy)
+
+        boot = HolderClient(server.socket_path, "bootstrap", secret, human_for)
+        enrolled = boot.call({"op": "enroll", "new_caller_id": "app", "human": human_for("enroll", "app")})
+        client = HolderClient(server.socket_path, "app", enrolled["caller_secret"], human_for)
+        return server, client
+
+    def test_unpatched_os_call_is_not_the_ipc_enrollment_path(self) -> None:
+        from runspecimen.native_bridge import UserSessionKeyCustody, enroll_over_authenticated_ipc
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-ipc-unpatched-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        _server, client = self._ipc_client(root)
+        with self.assertRaises(Exception) as ctx:
+            enroll_over_authenticated_ipc(
+                client,
+                role="mac",
+                custody=UserSessionKeyCustody(),
+                store=root / "handles",
+            )
+        self.assertIn("was not invoked", str(ctx.exception))
+        with self.assertRaises(HolderRefusal) as wire:
+            client.call({"op": "native-enroll", "policy": "local"})
+        self.assertIn("cannot be selected from wire input", str(wire.exception))
+        source = Path("apps/holder/Sources/RunSpecimenHolderApp/main.swift").read_text(encoding="utf-8")
+        self.assertNotIn('return "enrolled mac-human"', source)
+        self.assertIn("issue-device-challenge", source)
+        self.assertIn("AF_UNIX", source)
+        session = Path(
+            "apps/ios/Sources/RunSpecimenObserve/Services/CompanionSession.swift"
+        ).read_text(encoding="utf-8")
+        self.assertIn("fetchPhonePeerChallenge()", session)
+        self.assertIn("submitPhonePeerSignature(", session)
+        view = Path("apps/ios/Sources/RunSpecimenObserve/Views/StatusObserveView.swift").read_text(encoding="utf-8")
+        self.assertIn("Sign phone peer challenge", view)
+        self.assertIn("signPhonePeerChallenge()", view)
+
+    def test_local_ipc_enrollment_reloads_and_runs(self) -> None:
+        import base64
+
+        from runspecimen.native_bridge import (
+            OsBoundaryKey,
+            UserSessionKeyCustody,
+            enroll_over_authenticated_ipc,
+            reload_session_key,
+        )
+        from tests.test_native_bridge_policies import _sign, _signer
+
+        if sys.platform != "darwin":
+            self.skipTest("P-256 verification uses the Darwin verifier")
+        binary, public, private = _signer(self)
+        created: dict[str, OsBoundaryKey] = {}
+
+        def create(role: str) -> OsBoundaryKey:
+            key = OsBoundaryKey(public, lambda message: _sign(binary, private, message))
+            created[role] = key
+            return key
+
+        def reload(role: str, handle: str, public_key: str) -> OsBoundaryKey:
+            self.assertTrue(handle)
+            self.assertEqual(public_key, public)
+            return created[role]
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-ipc-local-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        server, client = self._ipc_client(root)
+        store = root / "handles"
+        with (
+            mock.patch("runspecimen.native_bridge.os_secure_enclave_create_key", side_effect=create),
+            mock.patch("runspecimen.native_bridge.os_secure_enclave_reload_key", side_effect=reload),
+        ):
+            enrolled = enroll_over_authenticated_ipc(
+                client,
+                role="mac",
+                custody=UserSessionKeyCustody(),
+                store=store,
+            )
+            self.assertTrue(enrolled["verified"])
+            self.assertTrue(enrolled["consumed"])
+            self.assertFalse(enrolled["hardware"])
+            self.assertTrue(enrolled["not_hardware"])
+            restarted = UserSessionKeyCustody()
+            reload_session_key(store, "mac", restarted)
+            signed = server.holder.sign_from_session(restarted, "set-policy", "local", "local")
+        self.assertIn("mac-human", signed["signatures"])
+        spent_nonce = json.loads((server.holder.root / "device-nonces.json").read_text(encoding="utf-8"))["nonces"][0]
+        with self.assertRaises(HolderRefusal) as replay:
+            client.call(
+                {
+                    "op": "submit-device-signature",
+                    "role": "mac",
+                    "public_key": public,
+                    "signature": "AAAA",
+                    "holder_id": "x",
+                    "generation": 1,
+                    "expiry": 1,
+                    "nonce": spent_nonce,
+                    "challenge": base64.b64encode(b"replay").decode("ascii"),
+                }
+            )
+        self.assertIn("replayed device challenge", str(replay.exception))
+        ws, script = self._workspace(root / "ws")
+        binding = self._binding(ws, script, "local")
+        files = [(str(script.resolve()), sha256_file(script))]
+        server.holder.set_policy(signed)
+        human = server.holder.sign_from_session(
+            restarted,
+            "consume",
+            "ipc-run",
+            "local",
+            self._consume_authorization(server.holder, "ipc-run", ws, script, binding),
+        )
+        server.holder.consume(
+            nonce="ipc-run",
+            policy="local",
+            human=human,
+            workspace=ws,
+            files=files,
+            binding=binding,
+        )
+        spent = json.loads((server.holder.root / "spent.json").read_text(encoding="utf-8"))["nonces"][0]
+        server.holder.execute(
+            token="ipc-run",
+            human=server.holder.sign_from_session(
+                restarted,
+                "execute",
+                "ipc-run",
+                "local",
+                {
+                    "payload_digest": spent["payload_digest"],
+                    "launch_argv": list(binding["launch_argv"]),
+                    "bounds": binding["bounds"],
+                    "mutation_digest": spent["binding"]["mutation_digest"],
+                    "attestation_class": "device-p256-not-hardware",
+                },
+            ),
+        )
+        self.assertEqual((ws.parent / "ran").read_text(encoding="utf-8"), "ran")
+
+    def test_device_challenge_rejects_garbage_tamper_cancel_and_restart(self) -> None:
+        import base64
+
+        from runspecimen.holder_adapter import AdapterServer, HolderClient
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-ipc-refuse-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        server, client = self._ipc_client(root)
+        issued = client.call({"op": "issue-device-challenge", "role": "phone"})
+        self.assertFalse(issued["enrolled"])
+        self.assertFalse(issued["verified"])
+        garbage = {
+            "op": "submit-device-signature",
+            "role": "phone",
+            "public_key": "AAAA",
+            "signature": "BBBB",
+            "holder_id": issued["holder_id"],
+            "generation": issued["generation"],
+            "expiry": issued["expiry"],
+            "nonce": issued["nonce"],
+            "challenge": issued["challenge"],
+        }
+        with self.assertRaises(HolderRefusal) as bad:
+            client.call(garbage)
+        self.assertIn("device signature verification failed", str(bad.exception))
+        tampered = dict(garbage)
+        tampered["challenge"] = base64.b64encode(b"tampered-challenge-bytes-32b!!!!").decode("ascii")
+        with self.assertRaises(HolderRefusal) as changed:
+            client.call(tampered)
+        self.assertIn("device challenge bytes do not match", str(changed.exception))
+        client.call({"op": "cancel-device-challenge", "role": "phone"})
+        with self.assertRaises(HolderRefusal) as cancelled:
+            client.call(garbage)
+        self.assertIn("stale device challenge", str(cancelled.exception))
+        fresh = client.call({"op": "issue-device-challenge", "role": "phone"})
+        secret = client.caller_secret
+        human_for = client.human_for
+        server.stop()
+        restarted = AdapterServer(root, bootstrap_secret="ab" * 32)
+        restarted.start()
+        self.addCleanup(restarted.stop)
+        again = HolderClient(restarted.socket_path, "app", secret, human_for)
+        stale = {
+            "op": "submit-device-signature",
+            "role": "phone",
+            "public_key": "AAAA",
+            "signature": "BBBB",
+            "holder_id": fresh["holder_id"],
+            "generation": fresh["generation"],
+            "expiry": fresh["expiry"],
+            "nonce": fresh["nonce"],
+            "challenge": fresh["challenge"],
+        }
+        with self.assertRaises(HolderRefusal) as after_restart:
+            again.call(stale)
+        self.assertIn("stale device challenge", str(after_restart.exception))
+
+    def test_phone_ipc_rejects_wrong_key_and_installed_software_double(self) -> None:
+        import base64
+
+        from tests.test_native_bridge_policies import _boot, _sign, _signer
+
+        if sys.platform != "darwin":
+            self.skipTest("P-256 verification uses the Darwin verifier")
+        binary, public, private = _signer(self)
+        other = subprocess.run([str(binary), "key"], check=True, capture_output=True, text=True, timeout=10)
+        other_public = other.stdout.splitlines()[0]
+        td = tempfile.TemporaryDirectory(prefix="rsh-ipc-phone-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        _server, client = self._ipc_client(root)
+        issued = client.call({"op": "issue-device-challenge", "role": "phone"})
+        signature = _sign(binary, private, base64.b64decode(issued["bound"]))
+        with self.assertRaises(HolderRefusal) as mismatch:
+            client.call(
+                {
+                    "op": "submit-device-signature",
+                    "role": "phone",
+                    "public_key": other_public,
+                    "signature": signature,
+                    "holder_id": issued["holder_id"],
+                    "generation": issued["generation"],
+                    "expiry": issued["expiry"],
+                    "nonce": issued["nonce"],
+                    "challenge": issued["challenge"],
+                }
+            )
+        self.assertIn("device signature verification failed", str(mismatch.exception))
+        holder = ExecutionHolder(
+            root / "installed",
+            allow_test_double=False,
+            installed_protection=True,
+            bootstrap_secret="cd" * 32,
+            snapshot_base=root / "installed-snaps",
+            verifier_pin=_pin(),
+        )
+        holder.enroll("app", _boot("cd" * 32, "enroll", "app", "local"))
+        issued_direct = holder.issue_device_challenge("phone", peer_uid=os.getuid())
+        good = _sign(binary, private, base64.b64decode(issued_direct["bound"]))
+        body = {
+            "role": "phone",
+            "public_key": public,
+            "signature": good,
+            "holder_id": issued_direct["holder_id"],
+            "generation": issued_direct["generation"],
+            "expiry": issued_direct["expiry"],
+            "nonce": issued_direct["nonce"],
+            "challenge": issued_direct["challenge"],
+        }
+        with (
+            mock.patch("runspecimen.native_bridge.read_verifier_identity", return_value=_parsed()),
+            mock.patch("runspecimen.native_bridge.verifier_signature_strict", return_value=True),
+        ):
+            with self.assertRaises(HolderRefusal) as refused:
+                holder.submit_device_signature(body, peer_uid=os.getuid())
+        self.assertIn("does not authorize a software key", str(refused.exception))
+        self.assertFalse((holder.root / "os-boundary.json").exists())
+        self.assertNotIn("phone-human", holder._devices())
+
+    def test_published_mailbox_signature_is_verified_and_consumed(self) -> None:
+        import base64
+
+        from runspecimen.companion import ObservePhoneTransport
+        from tests.test_native_bridge_policies import _sign, _signer
+
+        if sys.platform != "darwin":
+            self.skipTest("P-256 verification uses the Darwin verifier")
+        binary, public, private = _signer(self)
+        td = tempfile.TemporaryDirectory(prefix="rsh-ipc-mail-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        _server, client = self._ipc_client(root)
+        transport, _companion, _token = self._observe_transport()
+        issued = client.call({"op": "issue-device-challenge", "role": "phone"})
+        transport.publish_challenge(
+            challenge_id=issued["nonce"],
+            generation=issued["generation"],
+            challenge=base64.b64decode(issued["challenge"]),
+            holder_id=issued["holder_id"],
+            expiry=issued["expiry"],
+        )
+        fetched = transport.fetch_challenge()
+        self.assertEqual(base64.b64decode(fetched["challenge"]), base64.b64decode(issued["challenge"]))
+        self.assertEqual(fetched["expiry"], issued["expiry"])
+        signature = _sign(binary, private, base64.b64decode(issued["bound"]))
+        transport.submit_signature(
+            challenge_id=issued["nonce"],
+            challenge=base64.b64decode(issued["challenge"]),
+            public_key=public,
+            signature=signature,
+        )
+        collected = transport.collect_signature()
+        self.assertEqual(collected["challenge_bytes"], base64.b64decode(issued["challenge"]))
+        self.assertFalse(collected["verified"])
+        enrolled = client.call(
+            {
+                "op": "submit-device-signature",
+                "role": "phone",
+                "public_key": collected["public_key"],
+                "signature": collected["signature"],
+                "holder_id": issued["holder_id"],
+                "generation": issued["generation"],
+                "expiry": issued["expiry"],
+                "nonce": issued["nonce"],
+                "challenge": issued["challenge"],
+            }
+        )
+        self.assertTrue(enrolled["verified"])
+        self.assertTrue(enrolled["consumed"])
+        self.assertFalse(enrolled["hardware"])
+        with self.assertRaises(HolderRefusal) as replay:
+            client.call(
+                {
+                    "op": "submit-device-signature",
+                    "role": "phone",
+                    "public_key": public,
+                    "signature": signature,
+                    "holder_id": issued["holder_id"],
+                    "generation": issued["generation"],
+                    "expiry": issued["expiry"],
+                    "nonce": issued["nonce"],
+                    "challenge": issued["challenge"],
+                }
+            )
+        self.assertIn("replayed device challenge", str(replay.exception))

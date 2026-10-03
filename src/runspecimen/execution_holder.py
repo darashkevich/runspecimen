@@ -38,6 +38,35 @@ except ImportError:  # pragma: no cover
     fcntl = None  # type: ignore[assignment]
 
 PROTOCOL = 1
+DEVICE_CHALLENGE_DOMAIN = "holder-device-p256-v1"
+
+
+def bound_device_message(
+    *,
+    holder_id: str,
+    generation: int,
+    role: str,
+    expiry: int,
+    nonce: str,
+    challenge: bytes,
+) -> bytes:
+    """Canonical bytes a device signature must cover.
+
+    Comparison of these bytes is not signature verification and not hardware
+    provenance. ``verify_native_p256`` is the verification step.
+    """
+
+    return canonical_json_bytes(
+        {
+            "challenge": base64.b64encode(challenge).decode("ascii"),
+            "domain": DEVICE_CHALLENGE_DOMAIN,
+            "expiry": int(expiry),
+            "generation": int(generation),
+            "holder_id": holder_id,
+            "nonce": nonce,
+            "role": role,
+        }
+    )
 POLICIES = frozenset({"local", "companion", "dual"})
 _PHRASE = "APPROVE"
 _DEVICES = {
@@ -606,6 +635,217 @@ class ExecutionHolder:
                 raise HolderRefusal("session custody has no key for this role")
             keys[role] = key
         return self.sign_with_os_boundary(keys, purpose, subject, policy, authorized, expires_at)
+
+    def issue_device_challenge(self, role: str, *, peer_uid: int, now: float | None = None) -> dict[str, Any]:
+        """Issue one bound challenge. The signature is not accepted here."""
+
+        if role not in {"mac", "phone"}:
+            raise HolderRefusal("device challenge role is not accepted")
+        if not isinstance(peer_uid, int):
+            raise HolderRefusal("ipc peer is missing")
+        moment = time.time() if now is None else float(now)
+        with self._transaction():
+            self._load()
+            challenge = secrets.token_bytes(32)
+            nonce = secrets.token_hex(16)
+            expiry = int(moment) + 120
+            pending = {
+                "role": role,
+                "nonce": nonce,
+                "expiry": expiry,
+                "generation": self.generation,
+                "holder_id": self.holder_id,
+                "challenge": challenge,
+                "peer_uid": peer_uid,
+            }
+            challenges = getattr(self, "_pending_device_challenges", None)
+            if not isinstance(challenges, dict):
+                challenges = {}
+                self._pending_device_challenges = challenges
+            challenges[role] = pending
+            message = bound_device_message(
+                holder_id=self.holder_id,
+                generation=self.generation,
+                role=role,
+                expiry=expiry,
+                nonce=nonce,
+                challenge=challenge,
+            )
+        return {
+            "ok": True,
+            "enrolled": False,
+            "verified": False,
+            "hardware": False,
+            "not_hardware": True,
+            "role": role,
+            "nonce": nonce,
+            "expiry": expiry,
+            "generation": self.generation,
+            "holder_id": self.holder_id,
+            "challenge": base64.b64encode(challenge).decode("ascii"),
+            "bound": base64.b64encode(message).decode("ascii"),
+        }
+
+    def cancel_device_challenge(self, role: str, *, peer_uid: int) -> dict[str, Any]:
+        if role not in {"mac", "phone"}:
+            raise HolderRefusal("device challenge role is not accepted")
+        if not isinstance(peer_uid, int):
+            raise HolderRefusal("ipc peer is missing")
+        with self._transaction():
+            self._load()
+            challenges = getattr(self, "_pending_device_challenges", None)
+            pending = challenges.get(role) if isinstance(challenges, dict) else None
+            if not isinstance(pending, dict) or pending.get("peer_uid") != peer_uid:
+                raise HolderRefusal("stale device challenge")
+            challenges.pop(role, None)
+        return {"ok": True, "enrolled": False, "verified": False, "cancelled": True, "hardware": False}
+
+    def submit_device_signature(
+        self,
+        body: dict[str, Any],
+        *,
+        peer_uid: int,
+        now: float | None = None,
+    ) -> dict[str, Any]:
+        """Verify P-256 over the bound challenge, then consume it.
+
+        Byte comparison, signature verification, and hardware provenance are
+        separate. A nonempty signature string is not accepted. Installed
+        protection still refuses the software double after a valid signature.
+        """
+
+        from runspecimen.holder_asymmetric import public_key_fingerprint, verify_native_p256
+        from runspecimen.native_bridge import production_enrollment_refusal
+
+        if not isinstance(peer_uid, int):
+            raise HolderRefusal("ipc peer is missing")
+        role = body.get("role")
+        if role not in {"mac", "phone"}:
+            raise HolderRefusal("device challenge role is not accepted")
+        public_key = body.get("public_key")
+        signature = body.get("signature")
+        if not isinstance(public_key, str) or not public_key:
+            raise HolderRefusal("device signature verification failed")
+        if not isinstance(signature, str) or not signature:
+            raise HolderRefusal("device signature verification failed")
+        try:
+            submitted_challenge = base64.b64decode(str(body.get("challenge")), validate=True)
+        except (ValueError, TypeError) as exc:
+            raise HolderRefusal("tampered device challenge") from exc
+        nonce = body.get("nonce")
+        if not isinstance(nonce, str) or not nonce:
+            raise HolderRefusal("tampered device challenge")
+        moment = time.time() if now is None else float(now)
+        with self._transaction():
+            self._load()
+            if nonce in self._spent_device_nonces():
+                raise HolderRefusal("replayed device challenge")
+            challenges = getattr(self, "_pending_device_challenges", None)
+            pending = challenges.get(role) if isinstance(challenges, dict) else None
+            if not isinstance(pending, dict):
+                raise HolderRefusal("stale device challenge")
+            if pending.get("peer_uid") != peer_uid:
+                raise HolderRefusal("ipc binding does not match the socket peer")
+            if int(moment) > int(pending["expiry"]):
+                raise HolderRefusal("stale device challenge")
+            if submitted_challenge != pending.get("challenge"):
+                raise HolderRefusal("device challenge bytes do not match")
+            try:
+                submitted = bound_device_message(
+                    holder_id=str(body.get("holder_id")),
+                    generation=int(body.get("generation")),
+                    role=role,
+                    expiry=int(body.get("expiry")),
+                    nonce=nonce,
+                    challenge=submitted_challenge,
+                )
+                stored = bound_device_message(
+                    holder_id=str(pending["holder_id"]),
+                    generation=int(pending["generation"]),
+                    role=str(pending["role"]),
+                    expiry=int(pending["expiry"]),
+                    nonce=str(pending["nonce"]),
+                    challenge=pending["challenge"],
+                )
+            except (TypeError, ValueError) as exc:
+                raise HolderRefusal("tampered device challenge") from exc
+            if submitted != stored or self.generation != pending["generation"]:
+                raise HolderRefusal("tampered device challenge")
+            if not verify_native_p256(public_key, signature, stored, binary=self._verifier_binary()):
+                raise HolderRefusal("device signature verification failed")
+            challenges.pop(role, None)
+            self._spend_device_nonce(nonce)
+            devices = self._devices()
+            other = "phone" if role == "mac" else "mac"
+            other_device = devices.get(f"{other}-human")
+            other_public = other_device.get("public_key") if isinstance(other_device, dict) else None
+            if public_key == other_public:
+                raise HolderRefusal("a local key is not a phone peer")
+            if self.installed_protection:
+                raise HolderRefusal(production_enrollment_refusal())
+            device_id = f"{role}-human"
+            compared = public_key_fingerprint(public_key)
+            started = int(pending["generation"])
+            proof_id = secrets.token_hex(16)
+            devices[device_id] = {
+                "role": role,
+                "fingerprint": compared,
+                "revoked": False,
+                "attestation": "device-p256-not-hardware",
+                "algorithm": "p256",
+                "public_key": public_key,
+                "generation": started,
+                "hardware": False,
+                "provenance": {
+                    "bridge": "os-secure-enclave-boundary",
+                    "role": role,
+                    "policy": "local" if role == "mac" else "companion",
+                    "generation": started,
+                    "fingerprint": compared,
+                    "not_hardware": True,
+                    "boundary_double": False,
+                    "origin": "os-secure-enclave-boundary",
+                    "os_boundary_id": proof_id,
+                    "biometric_invoked": False,
+                    "e2_closed": False,
+                    "access_policy": "biometry-current-set-on-each-signature",
+                },
+            }
+            self._write("devices.json", devices)
+            proof_path = self.root / "os-boundary.json"
+            proof = read_json(proof_path) if proof_path.exists() else {"keys": {}, "generation": started}
+            if not isinstance(proof, dict):
+                proof = {"keys": {}, "generation": started}
+            keys = proof.get("keys")
+            if not isinstance(keys, dict):
+                keys = {}
+            keys[device_id] = {"id": proof_id, "public_key": public_key, "generation": started}
+            atomic_write_json(proof_path, {"keys": keys, "generation": started})
+        return {
+            "ok": True,
+            "enrolled": True,
+            "verified": True,
+            "hardware": False,
+            "not_hardware": True,
+            "consumed": True,
+            "device": device_id,
+            "e2_closed": False,
+            "biometric_invoked": False,
+        }
+
+    def _spent_device_nonces(self) -> set[str]:
+        path = self.root / "device-nonces.json"
+        if not path.exists():
+            return set()
+        raw = read_json(path)
+        values = raw.get("nonces") if isinstance(raw, dict) else None
+        if not isinstance(values, list):
+            return set()
+        return {item for item in values if isinstance(item, str)}
+
+    def _spend_device_nonce(self, nonce: str) -> None:
+        spent = sorted(self._spent_device_nonces() | {nonce})
+        atomic_write_json(self.root / "device-nonces.json", {"nonces": spent})
 
     def accept_native_ipc(
         self,
@@ -2996,6 +3236,21 @@ def dispatch(holder: ExecutionHolder, body: dict[str, Any], *, caller_id: str) -
     clock = None
     if op == "native-enroll":
         raise HolderRefusal("native enrollment cannot be selected from wire input")
+    if op == "issue-device-challenge":
+        peer = body.get("_peer_uid")
+        if not isinstance(peer, int):
+            raise HolderRefusal("ipc peer is missing")
+        return holder.issue_device_challenge(str(body.get("role")), peer_uid=peer)
+    if op == "cancel-device-challenge":
+        peer = body.get("_peer_uid")
+        if not isinstance(peer, int):
+            raise HolderRefusal("ipc peer is missing")
+        return holder.cancel_device_challenge(str(body.get("role")), peer_uid=peer)
+    if op == "submit-device-signature":
+        peer = body.get("_peer_uid")
+        if not isinstance(peer, int):
+            raise HolderRefusal("ipc peer is missing")
+        return holder.submit_device_signature(body, peer_uid=peer)
     if op == "enroll":
         if caller_id != "bootstrap":
             raise HolderRefusal("only the bootstrap caller can enroll")
