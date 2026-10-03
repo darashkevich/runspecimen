@@ -1421,6 +1421,8 @@ final class PolicyBoundApprovalTests: XCTestCase {
         XCTAssertFalse(receipt.signatures["mac"]?.isEmpty ?? true)
         XCTAssertFalse(receipt.signatures["phone"]?.isEmpty ?? true)
         XCTAssertTrue(ProductionNativeBridgeGate.status().contains("injected native signer is not hardware"))
+        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("A software signer is not the native adapter"))
+        XCTAssertTrue(ProductionNativeBridgeGate.status().contains("E2 is not closed"))
         XCTAssertThrowsError(
             try ProductionNativeBridgeGate.beginHumanSecureEnclaveEnrollment(
                 signer: Optional<FixtureNativeSigner>.none,
@@ -1437,6 +1439,35 @@ final class PolicyBoundApprovalTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? ProductionEnrollmentError, .callerHardwareLabelRefused)
         }
+    }
+
+    func testHumanOperatedAdapterEnrollsWithoutABiometricPrompt() throws {
+        struct FixtureAdapter: HumanOperatedNativeAdapting {
+            func publicKey(role: String) -> Data {
+                Data([0x04, UInt8(role.utf8.first ?? 0)])
+            }
+
+            func sign(role: String, message: Data) -> Data {
+                message + Data(role.utf8)
+            }
+        }
+
+        let receipt = try HumanOperatedNativeAdapterGate.begin(adapter: FixtureAdapter(), policy: "dual")
+        XCTAssertFalse(receipt.biometricInvoked)
+        XCTAssertFalse(receipt.e2Closed)
+        XCTAssertEqual(receipt.roles, ["mac", "phone"])
+        XCTAssertThrowsError(try HumanOperatedNativeAdapterGate.begin(adapter: Optional<FixtureAdapter>.none)) { error in
+            XCTAssertEqual(error as? ProductionEnrollmentError, .biometricPromptNotInvoked)
+        }
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/RunSpecimenCore/RSBA2Package.swift"),
+            encoding: .utf8
+        )
+        XCTAssertFalse(source.contains("SecureEnclave.P256.Signing.PrivateKey("))
     }
 
     private func submit(

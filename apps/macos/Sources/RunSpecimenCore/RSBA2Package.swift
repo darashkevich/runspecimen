@@ -146,7 +146,7 @@ public enum ProductionNativeBridgeGate {
 
     public static func status(signers: [IsolatedNativeSigner] = []) -> String {
         let connected = IsolatedNativeEnrollment.connected(signers)
-        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. This Store app does not carry the Developer ID verifier pin and stays guarantee (1). A display name is not a pin. A verifier pin does not authorize a software key. An injected native signer is not hardware. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
+        return "Source integration of native enrollment remains open. A caller boundary flag is not production enrollment. This Store app does not carry the Developer ID verifier pin and stays guarantee (1). A display name is not a pin. A verifier pin does not authorize a software key. An injected native signer is not hardware. A software signer is not the native adapter. E2 is not closed. The Secure Enclave prompt is the human step and was not invoked. Isolated double local=\(connected.local) companion=\(connected.companion)."
     }
 
     /// Wire and file labels never select the human step.
@@ -219,6 +219,87 @@ public enum ProductionNativeBridgeGate {
         return HumanEnrollmentReceipt(
             hardware: false,
             biometricInvoked: false,
+            policy: policy,
+            roles: roles,
+            publicKeys: publicKeys,
+            signatures: signatures
+        )
+    }
+}
+
+/// Human-operated native adapter. Not `HumanNativeSigning` and not a software signer.
+///
+/// The type has no hardware flag a caller can set. A conforming fixture must not
+/// call `SecureEnclave.P256.Signing.PrivateKey`. Automation does not prompt.
+/// `e2Closed` stays false because the biometric press is still a human step.
+public protocol HumanOperatedNativeAdapting: Sendable {
+    func publicKey(role: String) -> Data
+    func sign(role: String, message: Data) -> Data
+}
+
+public struct HumanOperatedAdapterReceipt: Equatable, Sendable {
+    public var biometricInvoked: Bool
+    public var e2Closed: Bool
+    public var policy: String
+    public var roles: [String]
+    public var publicKeys: [String: Data]
+    public var signatures: [String: Data]
+
+    public init(
+        biometricInvoked: Bool,
+        e2Closed: Bool,
+        policy: String,
+        roles: [String],
+        publicKeys: [String: Data],
+        signatures: [String: Data]
+    ) {
+        self.biometricInvoked = biometricInvoked
+        self.e2Closed = e2Closed
+        self.policy = policy
+        self.roles = roles
+        self.publicKeys = publicKeys
+        self.signatures = signatures
+    }
+}
+
+public enum HumanOperatedNativeAdapterGate {
+    /// Enroll, pair, and sign through the adapter. A nil adapter throws before any key API.
+    ///
+    /// This function does not call `SecureEnclave.P256.Signing.PrivateKey` and does not prompt.
+    /// The receipt does not close E2.
+    public static func begin<A: HumanOperatedNativeAdapting>(
+        adapter: A?,
+        policy: String = "local"
+    ) throws -> HumanOperatedAdapterReceipt {
+        guard let adapter else {
+            throw ProductionEnrollmentError.biometricPromptNotInvoked
+        }
+        let roles: [String]
+        switch policy {
+        case "local":
+            roles = ["mac"]
+        case "companion":
+            roles = ["phone"]
+        case "dual":
+            roles = ["mac", "phone"]
+        default:
+            throw ProductionEnrollmentError.signerIncomplete
+        }
+        let message = Data("holder-device-p256-v1:\(policy)".utf8)
+        var publicKeys: [String: Data] = [:]
+        var signatures: [String: Data] = [:]
+        for role in roles {
+            let publicKey = adapter.publicKey(role: role)
+            let signature = adapter.sign(role: role, message: message)
+            if publicKey.isEmpty || signature.isEmpty {
+                throw ProductionEnrollmentError.signerIncomplete
+            }
+            publicKeys[role] = publicKey
+            signatures[role] = signature
+        }
+        return HumanOperatedAdapterReceipt(
+            biometricInvoked: false,
+            e2Closed: false,
             policy: policy,
             roles: roles,
             publicKeys: publicKeys,

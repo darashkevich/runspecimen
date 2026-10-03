@@ -197,6 +197,20 @@ class HolderSocketIsolationTests(RunSpecimenTestCase):
         )
         self.assertFalse((ws / "outputs" / "out.json").exists())
 
+    def test_socket_peer_ignores_a_claimed_foreign_uid(self) -> None:
+        import socket
+
+        from runspecimen.holder_daemon import authenticated_peer
+
+        left, right = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.addCleanup(left.close)
+        self.addCleanup(right.close)
+        claimed = os.getuid() + 1
+        uid, _gid = authenticated_peer(right, claimed_uid=claimed)
+        self.assertEqual(uid, os.getuid())
+        self.assertNotEqual(uid, claimed)
+        self.assertNotEqual(authenticated_peer(left, claimed_uid=0)[0], claimed)
+
 
 if __name__ == "__main__":
     unittest.main()

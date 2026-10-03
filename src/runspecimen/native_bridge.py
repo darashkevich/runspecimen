@@ -54,14 +54,39 @@ class TrustedNativeBoundary:
 
 
 class HumanNativeSigner:
-    """In-process native signer. Not hardware and not a wire-selectable double.
+    """Software signer. Not the human-operated native adapter.
 
-    Subclasses implement ``public_key`` and ``sign``. A dict, environment
-    variable, or config file cannot become this object. The production
-    unattended call does not construct a Secure Enclave key and does not prompt.
+    Subclasses implement ``public_key`` and ``sign``. ``hardware`` is false
+    because this object is a software key. A dict, environment variable, or
+    config file cannot become this object. Installed protection refuses it.
+    The production unattended call does not construct a Secure Enclave key
+    and does not prompt.
     """
 
     hardware = False
+
+    def public_key(self, role: str) -> str:
+        raise NotImplementedError(role)
+
+    def sign(self, role: str, message: bytes) -> str:
+        raise NotImplementedError(role)
+
+
+class HumanOperatedNativeAdapter:
+    """Human-operated native adapter. Tests inject a subclass here.
+
+    This is not ``HumanNativeSigner`` and it does not use ``hardware = False``
+    as its identity. Wire JSON, an environment variable, and a config dict
+    cannot construct it. A subclass implements ``public_key`` and ``sign``.
+    This class does not call ``SecureEnclave.P256.Signing.PrivateKey`` and
+    does not prompt. Pressing the biometric is still a human step. Constructing
+    this object does not close E2.
+    """
+
+    origin = "human-operated-native-adapter"
+    bridge = "human-operated-native-adapter"
+    biometric_invoked = False
+    e2_closed = False
 
     def public_key(self, role: str) -> str:
         raise NotImplementedError(role)

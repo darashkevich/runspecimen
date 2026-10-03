@@ -131,8 +131,44 @@ if [[ -z "${RS_HOLDER_RUNTIME_SOURCE:-}" || ! -f "$RS_HOLDER_RUNTIME_SOURCE" || 
   echo "REFUSING: RS_HOLDER_RUNTIME_SOURCE must be a regular interpreter file. /usr/bin/python3 is not a fallback." >&2
   exit 2
 fi
+layout_runnable() {
+  local bin="$1"
+  local dep rel dir target tdir line
+  [[ -e "$bin" ]] || return 1
+  dir="$(cd "$(dirname "$bin")" && pwd -P)"
+  target="$(/usr/bin/realpath "$bin" 2>/dev/null || printf '%s' "$bin")"
+  tdir="$(cd "$(dirname "$target")" && pwd -P)"
+  while IFS= read -r line; do
+    dep="${line%% (*}"
+    dep="${dep#"${dep%%[![:space:]]*}"}"
+    dep="${dep%"${dep##*[![:space:]]}"}"
+    [[ -z "$dep" || "$dep" == *: ]] && continue
+    case "$dep" in
+      @executable_path/*)
+        rel="${dep#@executable_path/}"
+        if [[ ! -e "$dir/$rel" && ! -e "$tdir/$rel" ]]; then
+          return 1
+        fi
+        ;;
+      /usr/lib/*|/System/*) ;;
+      /*)
+        [[ -e "$dep" ]] || return 1
+        ;;
+    esac
+  done < <(/usr/bin/otool -L "$bin" 2>/dev/null | /usr/bin/tail -n +2)
+}
+
 if [[ "$(/usr/bin/file -b "$RS_HOLDER_RUNTIME_SOURCE" 2>/dev/null || true)" == *"Mach-O"* ]]; then
-  "$RS_HOLDER_RUNTIME_SOURCE" "$ROOT/apps/holder/Scripts/bundle_runtime.py" \
+  runner="${RS_HOLDER_BUNDLE_RUNNER:-}"
+  if [[ -z "$runner" || ! -e "$runner" ]]; then
+    echo "REFUSING: the source interpreter was not executed. Set RS_HOLDER_BUNDLE_RUNNER to the intact interpreter before bundle_runtime.py runs." >&2
+    exit 2
+  fi
+  if ! layout_runnable "$runner"; then
+    echo "REFUSING: the bundle runner layout is not runnable and the source interpreter was not executed." >&2
+    exit 2
+  fi
+  "$runner" "$ROOT/apps/holder/Scripts/bundle_runtime.py" \
     --source "$RS_HOLDER_RUNTIME_SOURCE" \
     --dest "$APP/Contents/Resources/Runtime"
 else

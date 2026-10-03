@@ -59,6 +59,15 @@ def _accept_connection(sock: socket.socket) -> socket.socket | None:
     return conn
 
 
+def authenticated_peer(conn: socket.socket, claimed_uid: int | None = None) -> tuple[int, int]:
+    """Kernel peer credentials. A client-supplied uid is not the peer."""
+
+    uid, gid = _peer_ids(conn)
+    if claimed_uid is not None and int(claimed_uid) != uid:
+        return uid, gid
+    return uid, gid
+
+
 def _peer_ids(conn: socket.socket) -> tuple[int, int]:
     """Authenticated peer credentials from the connected AF_UNIX socket."""
     try:

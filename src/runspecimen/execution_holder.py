@@ -243,6 +243,175 @@ class ExecutionHolder:
             "origin": "injected-human-native-signer",
         }
 
+    def begin_human_operated_native_adapter(
+        self,
+        adapter: object | None = None,
+        *,
+        policy: str = "local",
+    ) -> dict[str, Any]:
+        """Enroll through the human-operated native adapter.
+
+        ``adapter`` must be a ``HumanOperatedNativeAdapter``. A software
+        ``HumanNativeSigner``, a boundary double, a dict, an environment
+        variable, and a config file are not that object. Installed protection
+        does not take the software-key refusal for this adapter. A caller
+        hardware label is refused. This method does not call
+        ``SecureEnclave.P256.Signing.PrivateKey`` and does not prompt.
+        The biometric press remains a human step, so E2 stays open.
+        """
+
+        from runspecimen.holder_asymmetric import public_key_fingerprint
+        from runspecimen.native_bridge import (
+            HumanNativeSigner,
+            HumanOperatedNativeAdapter,
+            TrustedNativeBoundary,
+            production_enrollment_refusal,
+        )
+
+        if isinstance(adapter, (HumanNativeSigner, TrustedNativeBoundary)):
+            raise HolderRefusal(production_enrollment_refusal())
+        if not isinstance(adapter, HumanOperatedNativeAdapter):
+            raise HolderRefusal("human-operated native adapter was not invoked")
+        if getattr(adapter, "hardware", None) is True or adapter.e2_closed is not False:
+            raise HolderRefusal("a caller hardware label is not human approval")
+        if adapter.biometric_invoked is not False:
+            raise HolderRefusal("a caller hardware label is not human approval")
+        if policy not in {"local", "companion", "dual"}:
+            raise HolderRefusal("human native enrollment policy is not accepted")
+        roles = {"local": ("mac",), "companion": ("phone",), "dual": ("mac", "phone")}[policy]
+        devices = self._devices()
+        paired: list[str] = []
+        for role in roles:
+            public = adapter.public_key(role)
+            if not isinstance(public, str) or not public:
+                raise HolderRefusal("human-operated native adapter did not provide a public key")
+            device_id = f"{role}-human"
+            compared = public_key_fingerprint(public)
+            devices[device_id] = {
+                "role": role,
+                "fingerprint": compared,
+                "revoked": False,
+                "attestation": "device-p256-not-hardware",
+                "algorithm": "p256",
+                "public_key": public,
+                "generation": self.generation,
+                "hardware": False,
+                "provenance": {
+                    "bridge": HumanOperatedNativeAdapter.bridge,
+                    "role": role,
+                    "policy": policy,
+                    "generation": self.generation,
+                    "fingerprint": compared,
+                    "not_hardware": True,
+                    "boundary_double": False,
+                    "origin": HumanOperatedNativeAdapter.origin,
+                    "biometric_invoked": False,
+                    "e2_closed": False,
+                },
+            }
+            paired.append(device_id)
+        self._write("devices.json", devices)
+        return {
+            "ok": True,
+            "hardware": False,
+            "biometric_invoked": False,
+            "e2_closed": False,
+            "policy": policy,
+            "devices": paired,
+            "origin": HumanOperatedNativeAdapter.origin,
+            "installed_protection": self.installed_protection,
+        }
+
+    def sign_with_human_operated_adapter(
+        self,
+        adapter: object,
+        purpose: str,
+        subject: str,
+        policy: str,
+        authorized: dict[str, Any] | None = None,
+        expires_at: int | None = None,
+    ) -> dict[str, Any]:
+        """Sign a holder challenge with the human-operated native adapter."""
+
+        import time
+
+        from runspecimen.holder_asymmetric import digest_challenge
+        from runspecimen.native_bridge import (
+            HumanNativeSigner,
+            HumanOperatedNativeAdapter,
+            TrustedNativeBoundary,
+            production_enrollment_refusal,
+        )
+
+        if isinstance(adapter, (HumanNativeSigner, TrustedNativeBoundary, dict)):
+            raise HolderRefusal(production_enrollment_refusal())
+        if not isinstance(adapter, HumanOperatedNativeAdapter):
+            raise TypeError("human-operated native adapter cannot be selected from wire input or config")
+        if getattr(adapter, "hardware", None) is True:
+            raise HolderRefusal("a caller hardware label is not human approval")
+        names = {"local": ["mac"], "companion": ["phone"], "dual": ["mac", "phone"]}[policy]
+        devices = self._devices()
+        paired = []
+        signatures: dict[str, str] = {}
+        for device_id, record in sorted(devices.items()):
+            if not isinstance(record, dict):
+                continue
+            provenance = record.get("provenance")
+            if not isinstance(provenance, dict):
+                continue
+            if provenance.get("origin") != HumanOperatedNativeAdapter.origin:
+                continue
+            if provenance.get("bridge") != HumanOperatedNativeAdapter.bridge:
+                continue
+            if provenance.get("boundary_double") is True or record.get("hardware") is True:
+                raise HolderRefusal(production_enrollment_refusal())
+            paired.append(
+                {
+                    "device_id": device_id,
+                    "fingerprint": record.get("fingerprint"),
+                    "generation": record.get("generation"),
+                    "policy": provenance.get("policy"),
+                    "role": record.get("role"),
+                }
+            )
+        if not paired:
+            raise HolderRefusal("human-operated native adapter has not enrolled a device")
+        when = int(time.time()) + 60 if expires_at is None else expires_at
+        challenge = {
+            "purpose": purpose,
+            "subject": subject,
+            "policy": policy,
+            "devices": sorted(names),
+            "expires_at": when,
+            "holder_id": self.holder_id,
+            "generation": self.generation,
+            "domain": "holder-device-p256-v1",
+            "attestation_class": "device-p256-not-hardware",
+            "authorized": authorized or {},
+            "paired": paired,
+        }
+        message = digest_challenge(challenge)
+        for item in paired:
+            role = str(item["role"])
+            signature = adapter.sign(role, message)
+            if not isinstance(signature, str) or not signature:
+                raise HolderRefusal("human-operated native adapter did not sign")
+            signatures[str(item["device_id"])] = signature
+        return {
+            "method": policy,
+            "purpose": purpose,
+            "policy": policy,
+            "subject": subject,
+            "devices": sorted(names),
+            "expires_at": when,
+            "hardware": False,
+            "biometric_invoked": False,
+            "e2_closed": False,
+            "attestation_class": "device-p256-not-hardware",
+            "signatures": signatures,
+            "origin": HumanOperatedNativeAdapter.origin,
+        }
+
     def sign_with_human_native_signer(
         self,
         signer: object,
@@ -1680,11 +1849,26 @@ class ExecutionHolder:
             provenance = record.get("provenance") if isinstance(record, dict) else None
             if not isinstance(provenance, dict):
                 raise HolderRefusal(production_enrollment_refusal())
-            # A matching verifier pin is not biometric key origin.
+            origin = provenance.get("origin")
+            # A matching verifier pin is not biometric key origin or human approval.
             if (
                 provenance.get("boundary_double") is True
-                or provenance.get("not_hardware") is True
-                or provenance.get("origin") != "secure-enclave-human-prompt"
+                or origin
+                in {
+                    "injected-human-native-signer",
+                    "injected-trusted-native-boundary",
+                }
+            ):
+                raise HolderRefusal(production_enrollment_refusal())
+            if origin == "human-operated-native-adapter":
+                if provenance.get("bridge") != "human-operated-native-adapter":
+                    raise HolderRefusal(production_enrollment_refusal())
+                if provenance.get("hardware") is True or human.get("hardware") is True:
+                    raise HolderRefusal("a caller hardware label is not human approval")
+                continue
+            if (
+                provenance.get("not_hardware") is True
+                or origin != "secure-enclave-human-prompt"
             ):
                 raise HolderRefusal(production_enrollment_refusal())
         self._require_production_boundary_identity()

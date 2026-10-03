@@ -26,6 +26,7 @@ from runspecimen.native_bridge import (
     BOUNDARY_DOUBLE,
     PRODUCTION_BRIDGE,
     HumanNativeSigner,
+    HumanOperatedNativeAdapter,
     TrustedNativeBoundary,
     VerifierPin,
     production_enrollment_refusal,
@@ -867,7 +868,14 @@ class HumanNativeSignerTests(unittest.TestCase):
         }
 
     def test_handler_source_does_not_call_secure_enclave(self) -> None:
-        source = inspect.getsource(ExecutionHolder.begin_human_secure_enclave_enrollment)
+        source = "\n".join(
+            inspect.getsource(method)
+            for method in (
+                ExecutionHolder.begin_human_secure_enclave_enrollment,
+                ExecutionHolder.begin_human_operated_native_adapter,
+                ExecutionHolder.sign_with_human_operated_adapter,
+            )
+        )
         self.assertNotIn("SecureEnclave.P256.Signing.PrivateKey(", source)
         swift = (
             Path(__file__).resolve().parents[1]
@@ -1123,3 +1131,229 @@ class HumanNativeSignerTests(unittest.TestCase):
         )
         self.assertEqual((ws.parent / "ran").read_text(encoding="utf-8"), "ran")
         self.assertNotEqual(result.get("hardware"), True)
+
+
+class _AdapterSigner(HumanOperatedNativeAdapter):
+    """Injected at the human-operated adapter. Not a software signer and not a prompt."""
+
+    def __init__(self, binary: Path, keys: dict[str, tuple[str, str]]) -> None:
+        self.binary = binary
+        self.keys = keys
+
+    def public_key(self, role: str) -> str:
+        return self.keys[role][0]
+
+    def sign(self, role: str, message: bytes) -> str:
+        from tests.test_native_bridge_policies import _sign
+
+        return _sign(self.binary, self.keys[role][1], message)
+
+
+class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
+    def test_software_signer_is_not_the_native_adapter(self) -> None:
+        self.assertFalse(issubclass(HumanNativeSigner, HumanOperatedNativeAdapter))
+        self.assertFalse(HumanNativeSigner.hardware)
+        binary, keys = self._keys()
+        software = _KitSigner(binary, keys)
+        td = tempfile.TemporaryDirectory(prefix="rsh-adapter-software-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=True)
+        self.assertEqual(holder.verifier_pin.team_identifier, production_verifier_pin().team_identifier)
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.begin_human_operated_native_adapter(software, policy="dual")
+        self.assertIn("does not authorize a software key", str(ctx.exception))
+        with self.assertRaises(HolderRefusal) as boundary:
+            holder.begin_human_operated_native_adapter(TrustedNativeBoundary(), policy="local")
+        self.assertIn("does not authorize a software key", str(boundary.exception))
+
+    def test_wire_env_and_config_cannot_select_the_adapter(self) -> None:
+        td = tempfile.TemporaryDirectory(prefix="rsh-adapter-wire-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+        config = Path(td.name) / "adapter.json"
+        config.write_text('{"hardware": true, "origin": "human-operated-native-adapter"}\n', encoding="utf-8")
+        with mock.patch.dict(
+            os.environ,
+            {"RS_HOLDER_NATIVE_ADAPTER": "human-operated-native-adapter", "RS_HOLDER_SIGNER_CONFIG": str(config)},
+        ):
+            with self.assertRaises(HolderRefusal) as missing:
+                holder.begin_human_operated_native_adapter()
+            self.assertIn("was not invoked", str(missing.exception))
+            with self.assertRaises(HolderRefusal) as selected:
+                holder.begin_human_operated_native_adapter({"hardware": True, "origin": "human-operated-native-adapter"})
+            self.assertIn("was not invoked", str(selected.exception))
+
+    def test_caller_hardware_label_cannot_select_the_adapter(self) -> None:
+        class Labeled(HumanOperatedNativeAdapter):
+            hardware = True
+
+            def public_key(self, role: str) -> str:
+                return "labeled"
+
+            def sign(self, role: str, message: bytes) -> str:
+                return "labeled"
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-adapter-label-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=False)
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.begin_human_operated_native_adapter(Labeled(), policy="local")
+        self.assertIn("caller hardware label", str(ctx.exception))
+
+    def test_installed_protection_does_not_use_the_software_refusal_for_the_adapter(self) -> None:
+        binary, keys = self._keys()
+        adapter = _AdapterSigner(binary, keys)
+        td = tempfile.TemporaryDirectory(prefix="rsh-adapter-installed-")
+        self.addCleanup(td.cleanup)
+        holder = self._holder(Path(td.name), installed=True)
+        enrolled = holder.begin_human_operated_native_adapter(adapter, policy="dual")
+        self.assertEqual(enrolled["origin"], "human-operated-native-adapter")
+        self.assertFalse(enrolled["biometric_invoked"])
+        self.assertFalse(enrolled["e2_closed"])
+        self.assertFalse(enrolled["hardware"])
+        with self.assertRaises(HolderRefusal) as ctx:
+            holder.set_policy(holder.sign_with_human_operated_adapter(adapter, "set-policy", "dual", "dual"))
+        message = str(ctx.exception)
+        self.assertIn("verifier team identifier does not match the pin", message)
+        self.assertNotIn("does not authorize a software key", message)
+
+    def test_adapter_enrolls_pairs_and_executes_for_local_companion_and_dual(self) -> None:
+        binary, keys = self._keys()
+        adapter = _AdapterSigner(binary, keys)
+        for policy in ("local", "companion", "dual"):
+            with self.subTest(policy=policy):
+                self._execute_adapter(adapter, policy)
+
+    def test_adapter_cancel_revoke_rotate_restart_downgrade_and_race(self) -> None:
+        binary, keys = self._keys()
+        adapter = _AdapterSigner(binary, keys)
+        td = tempfile.TemporaryDirectory(prefix="rsh-adapter-flow-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        holder = self._holder(root, installed=False)
+        enrolled = holder.begin_human_operated_native_adapter(adapter, policy="local")
+        self.assertFalse(enrolled["biometric_invoked"])
+        self.assertFalse(enrolled["e2_closed"])
+        self.assertEqual(enrolled["origin"], "human-operated-native-adapter")
+        holder.set_policy(holder.sign_with_human_operated_adapter(adapter, "set-policy", "local", "local"))
+        ws, script = self._workspace(root / "ws")
+        binding = self._binding(ws, script, "local")
+        files = [(str(script.resolve()), sha256_file(script))]
+        human = holder.sign_with_human_operated_adapter(
+            adapter,
+            "consume",
+            "once",
+            "local",
+            self._consume_authorization(holder, "once", ws, script, binding),
+        )
+        holder.consume(nonce="once", policy="local", human=human, workspace=ws, files=files, binding=binding)
+        restarted = ExecutionHolder(
+            root / "state",
+            allow_test_double=False,
+            installed_protection=False,
+            bootstrap_secret="ab" * 32,
+            snapshot_base=root / "snaps",
+            verifier_pin=production_verifier_pin(),
+        )
+        self.assertEqual(restarted.holder_id, holder.holder_id)
+        cancelled = restarted.cancel_uncertain(
+            "once", restarted.sign_with_human_operated_adapter(adapter, "cancel", "once", "local")
+        )
+        self.assertTrue(cancelled["cancelled"])
+        race = restarted.sign_with_human_operated_adapter(
+            adapter,
+            "consume",
+            "race",
+            "local",
+            self._consume_authorization(restarted, "race", ws, script, binding),
+        )
+        errors: list[BaseException] = []
+        ok: list[bool] = []
+
+        def _once() -> None:
+            try:
+                restarted.consume(
+                    nonce="race", policy="local", human=race, workspace=ws, files=files, binding=binding
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+            else:
+                ok.append(True)
+
+        threads = [threading.Thread(target=_once) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(len(ok), 1)
+        self.assertEqual(len(errors), 1)
+        restarted.cancel_uncertain(
+            "race", restarted.sign_with_human_operated_adapter(adapter, "cancel", "race", "local")
+        )
+        rotated = restarted.rotate_caller(
+            restarted.sign_with_human_operated_adapter(adapter, "rotate", "app", "local")
+        )
+        self.assertEqual(rotated["key_generation"], 2)
+        restarted.revoke_device(
+            "mac-human",
+            restarted.sign_with_human_operated_adapter(adapter, "revoke", "mac-human", "local"),
+        )
+        with self.assertRaises(HolderRefusal) as revoked:
+            restarted.consume(
+                nonce="after-revoke",
+                policy="local",
+                human=restarted.sign_with_human_operated_adapter(adapter, "consume", "after-revoke", "local"),
+                workspace=ws,
+                files=files,
+                binding=binding,
+            )
+        self.assertIn("revoked", str(revoked.exception))
+        covered = {"protocol": 0, "caller_id": "bootstrap", "body": {"op": "enroll"}}
+        with self.assertRaises(HolderRefusal) as downgraded:
+            handle_message(restarted, {**covered, "mac": "00"}, bootstrap_secret="ab" * 32)
+        self.assertIn("downgrade", str(downgraded.exception))
+
+    def _execute_adapter(self, adapter: _AdapterSigner, policy: str) -> None:
+        td = tempfile.TemporaryDirectory(prefix=f"rsh-adapter-{policy}-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        holder = self._holder(root, installed=False)
+        enrolled = holder.begin_human_operated_native_adapter(adapter, policy=policy)
+        self.assertFalse(enrolled["biometric_invoked"])
+        self.assertFalse(enrolled["e2_closed"])
+        self.assertEqual(enrolled["origin"], "human-operated-native-adapter")
+        for device_id in enrolled["devices"]:
+            record = holder._devices()[device_id]
+            self.assertEqual(record["provenance"]["origin"], "human-operated-native-adapter")
+            self.assertFalse(record["provenance"]["boundary_double"])
+            self.assertFalse(record["provenance"]["e2_closed"])
+        holder.set_policy(holder.sign_with_human_operated_adapter(adapter, "set-policy", policy, policy))
+        ws, script = self._workspace(root / "ws")
+        binding = self._binding(ws, script, policy)
+        files = [(str(script.resolve()), sha256_file(script))]
+        human = holder.sign_with_human_operated_adapter(
+            adapter,
+            "consume",
+            policy,
+            policy,
+            self._consume_authorization(holder, policy, ws, script, binding),
+        )
+        holder.consume(nonce=policy, policy=policy, human=human, workspace=ws, files=files, binding=binding)
+        spent = json.loads((root / "state" / "spent.json").read_text(encoding="utf-8"))["nonces"][0]
+        holder.execute(
+            token=policy,
+            human=holder.sign_with_human_operated_adapter(
+                adapter,
+                "execute",
+                policy,
+                policy,
+                {
+                    "payload_digest": spent["payload_digest"],
+                    "launch_argv": list(binding["launch_argv"]),
+                    "bounds": binding["bounds"],
+                    "mutation_digest": spent["binding"]["mutation_digest"],
+                    "attestation_class": "device-p256-not-hardware",
+                },
+            ),
+        )
+        self.assertEqual((ws.parent / "ran").read_text(encoding="utf-8"), "ran")

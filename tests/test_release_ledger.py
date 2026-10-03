@@ -292,6 +292,7 @@ exit $fail
             env.pop("PYTHONPATH", None)
             env["RS_HOLDER_STAGE_COMPILE"] = "1"
             env["RS_HOLDER_RUNTIME_SOURCE"] = str(source)
+            env["RS_HOLDER_BUNDLE_RUNNER"] = sys.executable
             env.pop("HOLDER_BUILD_DIR", None)
             staged = self._stage(env, timeout=180)
             self.assertEqual(staged.returncode, 0, staged.stderr)
@@ -342,6 +343,87 @@ exit $fail
             self.assertNotIn('"-I"', daemon_text)
             self.assertNotIn('"/usr/bin/python3"', daemon_text)
         self.assertEqual(self._live_mtimes(), before)
+
+    def test_detached_interpreter_is_not_executed(self) -> None:
+        if sys.platform != "darwin" or not Path("/usr/bin/otool").is_file():
+            self.skipTest("relocatable Mach-O staging is macOS-only")
+        source_exec = Path(sys.executable).resolve()
+        if source_exec == Path("/usr/bin/python3"):
+            self.skipTest("refusing /usr/bin/python3 as the payload interpreter")
+        kind = subprocess.run(["/usr/bin/file", "-b", str(source_exec)], capture_output=True, text=True, timeout=10)
+        if "Mach-O" not in kind.stdout:
+            self.skipTest("the test interpreter is not a Mach-O payload")
+        with tempfile.TemporaryDirectory(prefix="rs-runtime-detached-") as td:
+            source = Path(td) / "python3"
+            subprocess.run(["/bin/cp", "-p", str(source_exec), str(source)], check=True, timeout=20)
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+            env.pop("RS_HOLDER_BUNDLE_RUNNER", None)
+            env["RS_HOLDER_STAGE_FIXTURES"] = "1"
+            env["RS_HOLDER_RUNTIME_SOURCE"] = str(source)
+            env.pop("HOLDER_BUILD_DIR", None)
+            staged = self._stage(env, timeout=30)
+            self.assertEqual(staged.returncode, 2, staged.stderr)
+            self.assertNotEqual(staged.returncode, 134)
+            self.assertIn("was not executed", staged.stderr)
+
+    def test_dependency_cycles_and_collisions_are_bounded(self) -> None:
+        import importlib.util
+
+        path = ROOT / "apps/holder/Scripts/bundle_runtime.py"
+        spec = importlib.util.spec_from_file_location("bundle_runtime_under_test", path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        cycle = module.plan_external_copies(
+            ["root"],
+            lambda node: {"root": ["a"], "a": ["b"], "b": ["a", "b"]}.get(node, []),
+            inside_dest=lambda _node: False,
+            max_nodes=8,
+        )
+        self.assertEqual(sorted(cycle), ["a", "b"])
+        collided = module.plan_external_copies(
+            ["root"],
+            lambda node: {
+                "root": ["/lib/foo.dylib", "/other/foo.dylib"],
+                "/lib/foo.dylib": ["/other/foo.dylib"],
+                "/other/foo.dylib": ["/lib/foo.dylib"],
+            }.get(node, []),
+            inside_dest=lambda node: node.startswith("/staged"),
+            max_nodes=8,
+        )
+        self.assertEqual(len(collided), 2)
+        self.assertIn("foo.dylib", collided)
+        self.assertTrue(any(name != "foo.dylib" and "-" in name for name in collided))
+        self.assertFalse(any(name.startswith("lib-lib") for name in collided))
+        self.assertTrue(all(len(name) < 80 for name in collided))
+        staged = module.plan_external_copies(
+            ["root"],
+            lambda node: {
+                "root": ["root", "/staged/lib/already.so", "ext.so"],
+                "ext.so": ["/staged/lib/already.so", "ext.so"],
+            }.get(node, []),
+            inside_dest=lambda node: str(node).startswith("/staged"),
+            max_nodes=8,
+        )
+        self.assertEqual(staged, ["ext.so"])
+        chain = {f"n{index}": [f"n{index + 1}"] for index in range(20)}
+        chain["root"] = ["n0"]
+        from contextlib import redirect_stderr
+        from io import StringIO
+
+        buffer = StringIO()
+        with redirect_stderr(buffer):
+            with self.assertRaises(SystemExit) as bounded:
+                module.plan_external_copies(
+                    ["root"],
+                    lambda node: chain.get(node, []),
+                    inside_dest=lambda _node: False,
+                    max_nodes=4,
+                )
+        self.assertEqual(bounded.exception.code, 2)
+        self.assertIn("exceeded the staged library bound", buffer.getvalue())
 
 
 class TrustOrderTests(unittest.TestCase):

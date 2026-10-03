@@ -3,12 +3,14 @@
 
 The payload interpreter is the copy under dest/bin. This script does not use
 /usr/bin/python3 as that payload, does not read PYTHONPATH, and does not
-install anything.
+install anything. It never starts ``--source``. The process that launched
+this file is the intact interpreter.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import shutil
 import subprocess
@@ -17,6 +19,7 @@ from pathlib import Path
 
 SYSTEM_PREFIXES = ("/usr/lib/", "/System/")
 HOSTILE_MARKERS = ("/opt/homebrew", "/usr/local", "/Users/")
+MAX_STAGED_LIBRARIES = 512
 MACHO_MAGICS = {
     b"\xfe\xed\xfa\xce",
     b"\xfe\xed\xfa\xcf",
@@ -58,6 +61,84 @@ def _ignore_stdlib(directory: str, names: list[str]) -> set[str]:
     }
 
 
+def _inside(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def _inode(path: Path) -> tuple[int, int]:
+    stat = path.stat()
+    return stat.st_dev, stat.st_ino
+
+
+def assign_staged_name(canonical: Path, used: dict[str, Path]) -> str:
+    """One stable destination name.
+
+    A second file with the same basename gets a single short hash suffix.
+    Names are never built by stacking a parent directory onto itself.
+    """
+
+    base = canonical.name
+    if not base or len(base) > 120 or base.startswith("lib-lib-"):
+        _fail("staged library name is not canonical")
+    owner = used.get(base)
+    if owner is None or owner == canonical:
+        used[base] = canonical
+        return base
+    digest = hashlib.sha256(os.fsencode(str(canonical))).hexdigest()[:12]
+    stem = canonical.stem[:48]
+    suffix = canonical.suffix[:8]
+    name = f"{stem}-{digest}{suffix}"
+    if len(name) > 80 or name.startswith("lib-lib-"):
+        _fail("staged library name collision is bounded")
+    other = used.get(name)
+    if other is not None and other != canonical:
+        _fail("staged library name collision is bounded")
+    used[name] = canonical
+    return name
+
+
+def plan_external_copies(
+    roots: list[str],
+    dependencies,
+    *,
+    inside_dest,
+    max_nodes: int = 8,
+) -> list[str]:
+    """Copy each external dependency once. Cycles and self-edges stop.
+
+    ``dependencies(node)`` returns the nodes that node links. ``inside_dest``
+    is true for files that are already in the staged tree and must not be
+    copied again under a longer name.
+    """
+
+    used: dict[str, Path] = {}
+    staged: dict[str, str] = {}
+    seen: set[str] = set()
+    pending = list(roots)
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        if len(seen) >= max_nodes:
+            _fail("runtime dependency graph exceeded the staged library bound")
+        seen.add(current)
+        for dep in dependencies(current):
+            if dep == current or inside_dest(dep):
+                continue
+            if dep in staged:
+                continue
+            if len(staged) >= max_nodes:
+                _fail("runtime dependency graph exceeded the staged library bound")
+            name = assign_staged_name(Path(dep), used)
+            staged[dep] = name
+            pending.append(dep)
+    return list(staged.values())
+
+
 def _load_prefix(macho: Path, lib_dir: Path) -> str:
     relative = os.path.relpath(lib_dir, macho.parent)
     if relative == ".":
@@ -84,14 +165,11 @@ def bundle(source: Path, dest: Path) -> None:
     python = bin_dir / "python3"
     shutil.copy2(source, python)
     python.chmod(0o755)
-    version = subprocess.check_output(
-        [str(source), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
-        text=True,
-    ).strip()
-    prefix = subprocess.check_output(
-        [str(source), "-c", "import sys; print(sys.base_prefix)"],
-        text=True,
-    ).strip()
+    runner = Path(sys.executable).resolve()
+    if source.resolve() != runner and source.stat().st_size != runner.stat().st_size:
+        _fail("bundle runner does not match the source image and the source was not executed")
+    version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    prefix = Path(sys.base_prefix)
     stdlib = Path(prefix) / "lib" / f"python{version}"
     if not stdlib.is_dir():
         _fail(f"stdlib missing at {stdlib}")
@@ -103,7 +181,8 @@ def bundle(source: Path, dest: Path) -> None:
         shutil.copy2(app_src, app_dest)
         app_dest.chmod(0o755)
 
-    copied: dict[Path, Path] = {}
+    copied: dict[tuple[int, int], Path] = {}
+    used_names: dict[str, Path] = {}
     dep_names: dict[str, str] = {}
     pending = [python]
     if app_dest.is_file():
@@ -113,29 +192,43 @@ def bundle(source: Path, dest: Path) -> None:
         for path in (lib_dir / f"python{version}").rglob("*")
         if path.is_file() and path.suffix != ".a" and _is_macho(path)
     )
+    seen: set[tuple[int, int]] = set()
     seen_machos: set[Path] = set()
     while pending:
         macho = pending.pop()
-        if macho in seen_machos or not macho.is_file():
+        if not macho.is_file():
             continue
-        seen_machos.add(macho)
+        macho_id = _inode(macho)
+        if macho_id in seen:
+            continue
+        if len(seen) >= MAX_STAGED_LIBRARIES:
+            _fail("runtime dependency graph exceeded the staged library bound")
+        seen.add(macho_id)
+        if _inside(macho, dest):
+            seen_machos.add(macho)
         for dep in _otool(macho):
             if dep.startswith(SYSTEM_PREFIXES) or dep.startswith("@"):
                 continue
             resolved = Path(dep).resolve()
             if not resolved.is_file():
                 _fail(f"missing runtime dependency {dep}")
-            if resolved not in copied:
-                name = resolved.name
+            dep_id = _inode(resolved)
+            if dep_id == macho_id or _inside(resolved, dest):
+                continue
+            target = copied.get(dep_id)
+            if target is None:
+                if len(copied) >= MAX_STAGED_LIBRARIES:
+                    _fail("runtime dependency graph exceeded the staged library bound")
+                name = assign_staged_name(resolved, used_names)
                 target = lib_dir / name
-                if target.exists():
-                    name = f"{resolved.parent.name}-{name}"
-                    target = lib_dir / name
+                if target.exists() and _inode(target) != dep_id:
+                    _fail("staged library destination already belongs to another file")
                 shutil.copy2(resolved, target)
-                copied[resolved] = target
-                pending.append(target)
-            dep_names[dep] = copied[resolved].name
-            dep_names[str(resolved)] = copied[resolved].name
+                copied[dep_id] = target
+                seen_machos.add(target)
+                pending.append(resolved)
+            dep_names[dep] = target.name
+            dep_names[str(resolved)] = target.name
 
     for macho in list(seen_machos):
         prefix_token = _load_prefix(macho, lib_dir)
