@@ -39,6 +39,7 @@ except ImportError:  # pragma: no cover
 
 PROTOCOL = 1
 DEVICE_CHALLENGE_DOMAIN = "holder-device-p256-v1"
+EXACT_RUN_DOMAIN = "holder-exact-run-v1"
 
 
 def bound_device_message(
@@ -67,6 +68,28 @@ def bound_device_message(
             "role": role,
         }
     )
+
+
+def bound_exact_run(
+    *,
+    holder_id: str,
+    payload_digest: str,
+    launch_argv: list[str],
+    nonce: str,
+) -> bytes:
+    """Canonical bytes for one bounded run. This is not an enrollment challenge."""
+
+    return canonical_json_bytes(
+        {
+            "domain": EXACT_RUN_DOMAIN,
+            "holder_id": holder_id,
+            "launch_argv": list(launch_argv),
+            "nonce": nonce,
+            "payload_digest": payload_digest,
+        }
+    )
+
+
 POLICIES = frozenset({"local", "companion", "dual"})
 _PHRASE = "APPROVE"
 _DEVICES = {
@@ -832,6 +855,173 @@ class ExecutionHolder:
             "e2_closed": False,
             "biometric_invoked": False,
         }
+
+    def issue_exact_run(self, body: dict[str, Any], *, peer_uid: int) -> dict[str, Any]:
+        """Bind one run. The signature is checked by authorize_exact_run, not here."""
+
+        self._refuse_exact_run_labels(body)
+        if not isinstance(peer_uid, int):
+            raise HolderRefusal("ipc peer is missing")
+        payload = body.get("payload_digest")
+        launch = body.get("launch_argv")
+        if not isinstance(payload, str) or len(payload) != 64 or any(ch not in "0123456789abcdef" for ch in payload):
+            raise HolderRefusal("exact run payload is not bound")
+        if not isinstance(launch, list) or not launch or any(not isinstance(item, str) or not item for item in launch):
+            raise HolderRefusal("exact run launch is not bound")
+        with self._transaction():
+            self._load()
+            nonce = secrets.token_hex(16)
+            message = bound_exact_run(
+                holder_id=self.holder_id,
+                payload_digest=payload,
+                launch_argv=list(launch),
+                nonce=nonce,
+            )
+            self._pending_exact_run = {
+                "peer_uid": peer_uid,
+                "nonce": nonce,
+                "payload_digest": payload,
+                "launch_argv": list(launch),
+                "bound": message,
+                "holder_id": self.holder_id,
+            }
+        return {
+            "ok": True,
+            "authorized": False,
+            "enrolled": False,
+            "verified": False,
+            "hardware": False,
+            "nonce": nonce,
+            "bound": base64.b64encode(message).decode("ascii"),
+            "payload_digest": payload,
+            "launch_argv": list(launch),
+        }
+
+    def authorize_exact_run(
+        self,
+        body: dict[str, Any],
+        *,
+        peer_uid: int,
+    ) -> dict[str, Any]:
+        """One session signature authorizes one payload, launch, and nonce.
+
+        Installed protection still refuses a software double, a caller hardware
+        label, an origin string, and a pin match. It does not run before the
+        signature check. Admitting a real Secure Enclave key under installed
+        protection is a separate decision and is not implied by this path.
+        """
+
+        from runspecimen.holder_asymmetric import verify_native_p256
+        from runspecimen.native_bridge import production_enrollment_refusal
+
+        self._refuse_exact_run_labels(body)
+        if not isinstance(peer_uid, int):
+            raise HolderRefusal("ipc peer is missing")
+        payload = body.get("payload_digest")
+        launch = body.get("launch_argv")
+        nonce = body.get("nonce")
+        public_key = body.get("public_key")
+        signature = body.get("signature")
+        if not isinstance(payload, str) or not isinstance(nonce, str) or not nonce:
+            raise HolderRefusal("exact run payload is not bound")
+        if not isinstance(launch, list):
+            raise HolderRefusal("exact run launch is not bound")
+        if not isinstance(public_key, str) or not public_key:
+            raise HolderRefusal("device signature verification failed")
+        if not isinstance(signature, str) or not signature:
+            raise HolderRefusal("device signature verification failed")
+        with self._transaction():
+            self._load()
+            pending = getattr(self, "_pending_exact_run", None)
+            if not isinstance(pending, dict) or pending.get("peer_uid") != peer_uid:
+                raise HolderRefusal("stale exact run")
+            if pending.get("nonce") != nonce or pending.get("payload_digest") != payload:
+                raise HolderRefusal("tampered exact run")
+            if list(pending.get("launch_argv") or []) != list(launch):
+                raise HolderRefusal("tampered exact run")
+            spent = self._spent()
+            if any(isinstance(item, dict) and item.get("nonce") == nonce for item in spent):
+                raise HolderRefusal("nonce was already consumed")
+            try:
+                message = bound_exact_run(
+                    holder_id=str(pending["holder_id"]),
+                    payload_digest=payload,
+                    launch_argv=list(launch),
+                    nonce=nonce,
+                )
+            except (TypeError, ValueError) as exc:
+                raise HolderRefusal("tampered exact run") from exc
+            if message != pending.get("bound"):
+                raise HolderRefusal("tampered exact run")
+            if not verify_native_p256(public_key, signature, message, binary=self._verifier_binary()):
+                raise HolderRefusal("device signature verification failed")
+            device = self._enrolled_session_device(public_key)
+            if device is None:
+                raise HolderRefusal("exact run has no enrolled session key")
+            if device.get("revoked") is True:
+                raise HolderRefusal("exact run device was revoked")
+            software = self._session_key_is_software(device)
+            if self.installed_protection and software:
+                self._pending_exact_run = None
+                raise HolderRefusal(production_enrollment_refusal())
+            if self.installed_protection and not software:
+                self._pending_exact_run = None
+                raise HolderRefusal(
+                    "Secure Enclave admission under installed protection is undecided"
+                )
+            self._pending_exact_run = None
+            spent.append(
+                {
+                    "nonce": nonce,
+                    "payload_digest": payload,
+                    "launch_argv": list(launch),
+                    "policy": "local",
+                    "generation": self.generation,
+                    "holder_id": self.holder_id,
+                    "key_generation": self.key_generation,
+                    "exact_run": True,
+                    "hardware": False,
+                    "not_hardware": True,
+                }
+            )
+            self._write("spent.json", {"nonces": spent})
+        return {
+            "ok": True,
+            "authorized": True,
+            "enrolled": False,
+            "verified": True,
+            "consumed": True,
+            "hardware": False,
+            "not_hardware": True,
+            "e2_closed": False,
+            "nonce": nonce,
+            "payload_digest": payload,
+            "launch_argv": list(launch),
+        }
+
+    def _refuse_exact_run_labels(self, body: dict[str, Any]) -> None:
+        if any(name in body for name in ("origin", "config", "signer", "hardware")):
+            raise HolderRefusal("exact run refuses caller authority labels")
+
+    def _enrolled_session_device(self, public_key: str) -> dict[str, Any] | None:
+        devices = self._devices()
+        for device_id in ("mac-human", "phone-human"):
+            device = devices.get(device_id)
+            if isinstance(device, dict) and device.get("public_key") == public_key:
+                return device
+        return None
+
+    def _session_key_is_software(self, device: dict[str, Any]) -> bool:
+        provenance = device.get("provenance")
+        if not isinstance(provenance, dict):
+            return True
+        if device.get("hardware") is not False:
+            return True
+        if provenance.get("not_hardware") is not False:
+            return True
+        if provenance.get("boundary_double") is True:
+            return True
+        return False
 
     def _spent_device_nonces(self) -> set[str]:
         path = self.root / "device-nonces.json"
@@ -3251,6 +3441,16 @@ def dispatch(holder: ExecutionHolder, body: dict[str, Any], *, caller_id: str) -
         if not isinstance(peer, int):
             raise HolderRefusal("ipc peer is missing")
         return holder.submit_device_signature(body, peer_uid=peer)
+    if op == "issue-exact-run":
+        peer = body.get("_peer_uid")
+        if not isinstance(peer, int):
+            raise HolderRefusal("ipc peer is missing")
+        return holder.issue_exact_run(body, peer_uid=peer)
+    if op == "authorize-exact-run":
+        peer = body.get("_peer_uid")
+        if not isinstance(peer, int):
+            raise HolderRefusal("ipc peer is missing")
+        return holder.authorize_exact_run(body, peer_uid=peer)
     if op == "enroll":
         if caller_id != "bootstrap":
             raise HolderRefusal("only the bootstrap caller can enroll")
@@ -3334,6 +3534,9 @@ def handle_message(
         if peer_gid is not None:
             body["_peer_gid"] = int(peer_gid)
     result = dispatch(holder, body, caller_id=caller_id)
+    if isinstance(result, dict) and isinstance(body.get("request_id"), str):
+        result = dict(result)
+        result["request_id"] = body["request_id"]
     return seal(secret, caller_id="holder", body=result)
 
 

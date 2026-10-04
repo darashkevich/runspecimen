@@ -2103,9 +2103,11 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
             client.call({"op": "native-enroll", "policy": "local"})
         self.assertIn("cannot be selected from wire input", str(wire.exception))
         source = Path("apps/holder/Sources/RunSpecimenHolderApp/main.swift").read_text(encoding="utf-8")
+        client_source = Path("apps/holder/Sources/HolderSocket/HolderSocketClient.swift").read_text(encoding="utf-8")
         self.assertNotIn('return "enrolled mac-human"', source)
-        self.assertIn("issue-device-challenge", source)
-        self.assertIn("AF_UNIX", source)
+        self.assertIn("issue-device-challenge", client_source)
+        self.assertIn("AF_UNIX", client_source)
+        self.assertIn("caller_id", client_source)
         session = Path(
             "apps/ios/Sources/RunSpecimenObserve/Services/CompanionSession.swift"
         ).read_text(encoding="utf-8")
@@ -2404,3 +2406,139 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
                 }
             )
         self.assertIn("replayed device challenge", str(replay.exception))
+
+    def test_exact_run_signature_authorizes_one_nonce_and_refuses_software(self) -> None:
+        import base64
+
+        from runspecimen.execution_holder import HolderRefusal
+        from runspecimen.native_bridge import (
+            OsBoundaryKey,
+            UserSessionKeyCustody,
+            enroll_over_authenticated_ipc,
+            reload_session_key,
+        )
+        from tests.test_native_bridge_policies import _sign, _signer
+
+        if sys.platform != "darwin":
+            self.skipTest("P-256 verification uses the Darwin verifier")
+        binary, public, private = _signer(self)
+
+        def create(role: str) -> OsBoundaryKey:
+            return OsBoundaryKey(public, lambda message: _sign(binary, private, message))
+
+        td = tempfile.TemporaryDirectory(prefix="rsh-exact-run-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        server, client = self._ipc_client(root)
+        with mock.patch("runspecimen.native_bridge.os_secure_enclave_create_key", side_effect=create):
+            enrolled = enroll_over_authenticated_ipc(
+                client,
+                role="mac",
+                custody=UserSessionKeyCustody(),
+                store=root / "handles",
+            )
+        self.assertTrue(enrolled["verified"])
+        self.assertFalse(enrolled["hardware"])
+        payload = "ab" * 32
+        launch = ["/usr/bin/true"]
+        issued = client.call(
+            {
+                "op": "issue-exact-run",
+                "payload_digest": payload,
+                "launch_argv": launch,
+                "request_id": "req-exact-1",
+            }
+        )
+        self.assertEqual(issued["request_id"], "req-exact-1")
+        self.assertFalse(issued["authorized"])
+        signature = _sign(binary, private, base64.b64decode(issued["bound"]))
+        with self.assertRaises(HolderRefusal) as labeled:
+            client.call(
+                {
+                    "op": "authorize-exact-run",
+                    "payload_digest": payload,
+                    "launch_argv": launch,
+                    "nonce": issued["nonce"],
+                    "public_key": public,
+                    "signature": signature,
+                    "hardware": True,
+                    "origin": "os-secure-enclave-boundary",
+                }
+            )
+        self.assertIn("caller authority labels", str(labeled.exception))
+        authorized = client.call(
+            {
+                "op": "authorize-exact-run",
+                "payload_digest": payload,
+                "launch_argv": launch,
+                "nonce": issued["nonce"],
+                "public_key": public,
+                "signature": signature,
+            }
+        )
+        self.assertTrue(authorized["authorized"])
+        self.assertTrue(authorized["consumed"])
+        self.assertFalse(authorized["hardware"])
+        self.assertTrue(authorized["not_hardware"])
+        self.assertFalse(authorized["e2_closed"])
+        ws, script = self._workspace(root / "ws")
+        binding = self._binding(ws, script, "local")
+        custody = UserSessionKeyCustody()
+        with mock.patch(
+            "runspecimen.native_bridge.os_secure_enclave_reload_key",
+            return_value=OsBoundaryKey(public, lambda message: _sign(binary, private, message)),
+        ):
+            reload_session_key(root / "handles", "mac", custody)
+        server.holder.set_policy(server.holder.sign_from_session(custody, "set-policy", "local", "local"))
+        with self.assertRaises(HolderRefusal) as second:
+            server.holder.consume(
+                nonce=issued["nonce"],
+                policy="local",
+                human={"method": "not-a-signature"},
+                workspace=ws,
+                files=[(str(script.resolve()), "00")],
+                binding=binding,
+            )
+        self.assertIn("nonce was already consumed", str(second.exception))
+        installed_root = root / "installed-state"
+        for dirpath, _dirnames, filenames in os.walk(server.holder.root):
+            os.chmod(dirpath, 0o700)
+            for name in filenames:
+                os.chmod(Path(dirpath) / name, 0o600)
+        shutil.copytree(server.holder.root, installed_root)
+        meta_path = installed_root / "meta.json"
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta["installed_protection"] = True
+        meta_path.write_text(json.dumps(meta), encoding="utf-8")
+        from runspecimen.execution_holder import ExecutionHolder
+
+        installed = ExecutionHolder(
+            installed_root,
+            allow_test_double=False,
+            installed_protection=True,
+            bootstrap_secret="ab" * 32,
+            snapshot_base=root / "installed-snaps",
+            verifier_pin=_pin(),
+        )
+        again = installed.issue_exact_run(
+            {"payload_digest": payload, "launch_argv": launch},
+            peer_uid=os.getuid(),
+        )
+        again_signature = _sign(binary, private, base64.b64decode(again["bound"]))
+        with (
+            mock.patch("runspecimen.native_bridge.read_verifier_identity", return_value=_parsed()),
+            mock.patch("runspecimen.native_bridge.verifier_signature_strict", return_value=True),
+        ):
+            with self.assertRaises(HolderRefusal) as software:
+                installed.authorize_exact_run(
+                    {
+                        "payload_digest": payload,
+                        "launch_argv": launch,
+                        "nonce": again["nonce"],
+                        "public_key": public,
+                        "signature": again_signature,
+                    },
+                    peer_uid=os.getuid(),
+                )
+        self.assertIn("does not authorize a software key", str(software.exception))
+        self.assertNotIn("team identifier does not match", str(software.exception))

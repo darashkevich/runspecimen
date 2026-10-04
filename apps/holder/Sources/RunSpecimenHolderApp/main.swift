@@ -16,11 +16,13 @@ struct RunSpecimenHolderApp: App {
 
     private let daemonPlist = "com.darashkevich.runspecimen.holder.daemon.plist"
     private let custody = UserSessionKeyCustody()
-    private let holderClient = HolderSessionClient()
+    private let holderClient = HolderSocketClient()
     @State private var callerId = ""
     @State private var callerSecret = ""
     @State private var companionURL = ""
     @State private var pairingToken = ""
+    @State private var exactPayload = ""
+    @State private var exactLaunch = ""
     @State private var pendingPhone: IssuedDeviceChallenge?
 
     var body: some Scene {
@@ -40,20 +42,22 @@ struct RunSpecimenHolderApp: App {
                 TextField("Holder caller secret", text: $callerSecret)
                 TextField("Observe companion URL", text: $companionURL)
                 TextField("Observe pairing token", text: $pairingToken)
+                TextField("Exact-run payload digest", text: $exactPayload)
+                TextField("Exact-run launch argv", text: $exactLaunch)
                 Button("Enroll with Secure Enclave") {
-                    enrollLocalFromPerson()
+                    Task { await enrollLocalFromPerson() }
                 }
                 Button("Sign with session key") {
-                    signReloadedFromPerson()
+                    Task { await signReloadedFromPerson() }
                 }
                 Button("Enroll paired phone") {
-                    enrollPhoneFromPerson()
+                    Task { await enrollPhoneFromPerson() }
                 }
                 Button("Accept phone signature") {
-                    acceptPhoneFromPerson()
+                    Task { await acceptPhoneFromPerson() }
                 }
                 Button("Cancel phone challenge") {
-                    cancelPhoneFromPerson()
+                    Task { await cancelPhoneFromPerson() }
                 }
             }
             .padding(24)
@@ -64,40 +68,45 @@ struct RunSpecimenHolderApp: App {
 
     /// The local control creates the OS key and enrolls it over authenticated IPC.
     /// The Secure Enclave constructor runs only inside this button action.
-    private func enrollLocalFromPerson() {
+    private func enrollLocalFromPerson() async {
+        let maker = LiveSecureEnclaveKeyMaker()
         do {
-            let held = try LiveSecureEnclaveKeyMaker().makeSessionKey()
-            custody.keep(held)
+            let held = try maker.stageSessionKey()
             let client = try authenticatedClient()
-            let issued = try client.issueChallenge(role: "mac")
+            let issued = try await client.issueChallenge(role: "mac")
             let signature = try held.sign(issued.bound)
-            let receipt = try client.enrollLocal(
+            let receipt = try await client.enrollLocal(
                 publicKey: held.publicKey,
                 accessPolicy: held.accessPolicy,
                 issued: issued,
                 signature: signature
             )
+            try maker.commitStagedSession()
+            custody.keep(held)
             statusText = "Holder verified the local key over IPC. E2 is not closed."
             detail = "\(receipt). access=\(held.accessPolicy). A biometric press does not finish missing implementation. A root-owned install is still unbuilt."
         } catch {
+            maker.discardStagedSession()
             statusText = "Secure Enclave enrollment was not completed"
             detail = "\(error)"
         }
     }
 
-    /// Later signature after restart. Reloads the keychain handle, then signs the new challenge.
-    private func signReloadedFromPerson() {
+    /// Signs one exact run. This is not another enrollment challenge.
+    private func signReloadedFromPerson() async {
         do {
+            let digest = exactPayload.trimmingCharacters(in: .whitespacesAndNewlines)
+            let launch = exactLaunch.split(separator: " ").map(String.init)
+            guard digest.count == 64, !launch.isEmpty else { throw HolderSocketError.missingExactRun }
             let client = try authenticatedClient()
-            let issued = try client.issueChallenge(role: "mac")
+            let issued = try await client.issueExactRun(payloadDigest: digest, launchArgv: launch)
             let signature = try LiveSecureEnclaveKeyMaker().reloadAndSign(issued.bound)
-            let receipt = try client.submit(
-                role: "mac",
-                publicKey: try LiveSecureEnclaveKeyMaker().reloadPublicKey(),
+            let receipt = try await client.authorizeExactRun(
                 issued: issued,
-                signature: signature
+                publicKeyBase64: try LiveSecureEnclaveKeyMaker().reloadPublicKey().base64EncodedString(),
+                signatureBase64: signature.base64EncodedString()
             )
-            statusText = "Holder verified the reloaded session key. E2 is not closed."
+            statusText = "Holder accepted one exact run for the reloaded session key. E2 is not closed."
             detail = receipt
         } catch {
             statusText = "Reloaded session signature was not completed"
@@ -106,11 +115,11 @@ struct RunSpecimenHolderApp: App {
     }
 
     /// Publishes a holder-issued challenge to RunSpecimenObserve. It does not enroll.
-    private func enrollPhoneFromPerson() {
+    private func enrollPhoneFromPerson() async {
         do {
             let client = try authenticatedClient()
-            let issued = try client.issuePhoneChallenge()
-            try ObserveMailbox.publish(
+            let issued = try await client.issuePhoneChallenge()
+            try await ObserveMailbox.publish(
                 issued: issued,
                 baseURL: companionURL,
                 pairingToken: pairingToken
@@ -124,14 +133,14 @@ struct RunSpecimenHolderApp: App {
         }
     }
 
-    private func acceptPhoneFromPerson() {
+    private func acceptPhoneFromPerson() async {
         do {
             guard let issued = pendingPhone else { throw HolderEnrollmentError.staleChallenge }
-            let submission = try ObserveMailbox.collect(baseURL: companionURL, pairingToken: pairingToken)
+            let submission = try await ObserveMailbox.collect(baseURL: companionURL, pairingToken: pairingToken)
             guard submission.challenge == issued.challengeBase64 else {
                 throw HolderEnrollmentError.tamperedChallenge
             }
-            let receipt = try authenticatedClient().submit(
+            let receipt = try await authenticatedClient().submit(
                 role: "phone",
                 publicKeyBase64: submission.publicKey,
                 issued: issued,
@@ -146,10 +155,10 @@ struct RunSpecimenHolderApp: App {
         }
     }
 
-    private func cancelPhoneFromPerson() {
+    private func cancelPhoneFromPerson() async {
         do {
             guard let issued = pendingPhone else { throw HolderEnrollmentError.staleChallenge }
-            try authenticatedClient().cancel(role: "phone")
+            try await authenticatedClient().cancel(role: "phone")
             pendingPhone = nil
             statusText = "Phone challenge was cancelled. It was not enrolled."
             detail = "nonce=\(issued.nonce)"
@@ -159,7 +168,7 @@ struct RunSpecimenHolderApp: App {
         }
     }
 
-    private func authenticatedClient() throws -> HolderSessionClient {
+    private func authenticatedClient() throws -> HolderSocketClient {
         try holderClient.authenticate(callerId: callerId, callerSecret: callerSecret)
         return holderClient
     }
@@ -236,7 +245,23 @@ protocol HolderSecureEnclaveKeyMaking {
 }
 
 struct LiveSecureEnclaveKeyMaker: HolderSecureEnclaveKeyMaking {
+    /// Stages a sealed representation under Application Support. That file is not
+    /// the Keychain and not the Secure Enclave. Commit happens only after the
+    /// holder accepts the enrollment.
+    func stageSessionKey() throws -> SessionHeldKey {
+        let created = try createSessionKey()
+        try StagedCustodyFiles(directory: Self.support).stage(
+            handle: created.representation,
+            publicKey: created.held.publicKey
+        )
+        return created.held
+    }
+
     func makeSessionKey() throws -> SessionHeldKey {
+        try createSessionKey().held
+    }
+
+    private func createSessionKey() throws -> (held: SessionHeldKey, representation: Data) {
         var error: Unmanaged<CFError>?
         guard let access = SecAccessControlCreateWithFlags(
             kCFAllocatorDefault,
@@ -251,9 +276,7 @@ struct LiveSecureEnclaveKeyMaker: HolderSecureEnclaveKeyMaking {
             authenticationContext: LAContext()
         )
         let publicKey = key.publicKey.x963Representation
-        try key.dataRepresentation.write(to: Self.handleURL, options: .atomic)
-        try publicKey.write(to: Self.publicURL, options: .atomic)
-        return SessionHeldKey(
+        let held = SessionHeldKey(
             role: "mac",
             publicKey: publicKey,
             accessPolicy: BiometricAccessPolicy.eachSignature,
@@ -261,28 +284,27 @@ struct LiveSecureEnclaveKeyMaker: HolderSecureEnclaveKeyMaking {
                 try key.signature(for: message).rawRepresentation
             }
         )
+        return (held, key.dataRepresentation)
+    }
+
+    func commitStagedSession() throws {
+        try StagedCustodyFiles(directory: Self.support).commit()
+    }
+
+    func discardStagedSession() {
+        StagedCustodyFiles(directory: Self.support).discard()
     }
 
     func reloadPublicKey() throws -> Data {
-        guard FileManager.default.fileExists(atPath: Self.publicURL.path) else {
-            throw HolderEnrollmentError.missingCustody
-        }
-        return try Data(contentsOf: Self.publicURL)
+        try StagedCustodyFiles(directory: Self.support).committedPublicKey()
     }
 
-    /// Loads the keychain representation and signs. The prompt is on this call, not on enrollment.
+    /// Loads the sealed Application Support representation and signs. The prompt
+    /// is on this call. The file is not the Keychain store.
     func reloadAndSign(_ message: Data) throws -> Data {
-        let token = try Data(contentsOf: Self.handleURL)
+        let token = try StagedCustodyFiles(directory: Self.support).committedHandle()
         let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: token)
         return try key.signature(for: message).rawRepresentation
-    }
-
-    private static var handleURL: URL {
-        support.appendingPathComponent("mac-session-handle")
-    }
-
-    private static var publicURL: URL {
-        support.appendingPathComponent("mac-session-public")
     }
 
     private static var support: URL {
@@ -305,182 +327,9 @@ enum HolderEnrollmentError: Error {
     case observeUnavailable
 }
 
-struct IssuedDeviceChallenge {
-    var role: String
-    var nonce: String
-    var expiry: Int
-    var generation: Int
-    var holderId: String
-    var challenge: Data
-    var challengeBase64: String
-    var bound: Data
-}
-
-protocol HolderSessionEnrolling {
-    func enrollLocal(publicKey: Data, accessPolicy: String, issued: IssuedDeviceChallenge, signature: Data) throws -> String
-    func issuePhoneChallenge() throws -> IssuedDeviceChallenge
-}
-
-final class HolderSessionClient: HolderSessionEnrolling {
-    private let socketPath = "/Library/Application Support/com.darashkevich.runspecimen.holder/holder.sock"
-    private var callerId = ""
-    private var callerSecret = ""
-
-    func authenticate(callerId: String, callerSecret: String) throws {
-        let id = callerId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let secret = callerSecret.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !id.isEmpty, secret.count >= 32 else { throw HolderEnrollmentError.missingCaller }
-        self.callerId = id
-        self.callerSecret = secret
-    }
-
-    func issueChallenge(role: String) throws -> IssuedDeviceChallenge {
-        let body = try transact(["op": "issue-device-challenge", "role": role])
-        guard
-            let nonce = body["nonce"] as? String,
-            let expiry = jsonInt(body["expiry"]),
-            let generation = jsonInt(body["generation"]),
-            let holderId = body["holder_id"] as? String,
-            let challengeB64 = body["challenge"] as? String,
-            let boundB64 = body["bound"] as? String,
-            let challenge = Data(base64Encoded: challengeB64),
-            let bound = Data(base64Encoded: boundB64),
-            body["enrolled"] as? Bool == false
-        else { throw HolderEnrollmentError.ipcFailed }
-        return IssuedDeviceChallenge(
-            role: role,
-            nonce: nonce,
-            expiry: expiry,
-            generation: generation,
-            holderId: holderId,
-            challenge: challenge,
-            challengeBase64: challengeB64,
-            bound: bound
-        )
-    }
-
-    func enrollLocal(
-        publicKey: Data,
-        accessPolicy: String,
-        issued: IssuedDeviceChallenge,
-        signature: Data
-    ) throws -> String {
-        guard accessPolicy == BiometricAccessPolicy.eachSignature, !publicKey.isEmpty else {
-            throw HolderEnrollmentError.policyRefused
-        }
-        return try submit(role: "mac", publicKey: publicKey, issued: issued, signature: signature)
-    }
-
-    func issuePhoneChallenge() throws -> IssuedDeviceChallenge {
-        try issueChallenge(role: "phone")
-    }
-
-    func submit(role: String, publicKey: Data, issued: IssuedDeviceChallenge, signature: Data) throws -> String {
-        try submit(
-            role: role,
-            publicKeyBase64: publicKey.base64EncodedString(),
-            issued: issued,
-            signatureBase64: signature.base64EncodedString()
-        )
-    }
-
-    func submit(
-        role: String,
-        publicKeyBase64: String,
-        issued: IssuedDeviceChallenge,
-        signatureBase64: String
-    ) throws -> String {
-        let body = try transact([
-            "op": "submit-device-signature",
-            "role": role,
-            "public_key": publicKeyBase64,
-            "signature": signatureBase64,
-            "holder_id": issued.holderId,
-            "generation": issued.generation,
-            "expiry": issued.expiry,
-            "nonce": issued.nonce,
-            "challenge": issued.challengeBase64,
-        ])
-        guard body["verified"] as? Bool == true, body["consumed"] as? Bool == true else {
-            throw HolderEnrollmentError.ipcFailed
-        }
-        guard body["hardware"] as? Bool == false else { throw HolderEnrollmentError.policyRefused }
-        return "verified \(role) consumed \(issued.nonce)"
-    }
-
-    func cancel(role: String) throws {
-        let body = try transact(["op": "cancel-device-challenge", "role": role])
-        guard body["cancelled"] as? Bool == true, body["enrolled"] as? Bool == false else {
-            throw HolderEnrollmentError.staleChallenge
-        }
-    }
-
-    private func transact(_ body: [String: Any]) throws -> [String: Any] {
-        guard !callerId.isEmpty, !callerSecret.isEmpty else { throw HolderEnrollmentError.missingCaller }
-        let sealed = try seal(body)
-        let frame = Data((canonicalJSON(sealed) + "\n").utf8)
-        let response = try socketExchange(frame)
-        guard let object = try JSONSerialization.jsonObject(with: response) as? [String: Any] else {
-            throw HolderEnrollmentError.ipcFailed
-        }
-        if object["ok"] as? Bool == false {
-            throw HolderEnrollmentError.ipcFailed
-        }
-        guard let inner = object["body"] as? [String: Any] else { throw HolderEnrollmentError.ipcFailed }
-        return inner
-    }
-
-    private func seal(_ body: [String: Any]) throws -> [String: Any] {
-        let covered: [String: Any] = ["body": body, "caller_id": callerId, "protocol": 1]
-        let mac = try hmacHex(canonicalJSON(covered))
-        return ["body": body, "caller_id": callerId, "mac": mac, "protocol": 1]
-    }
-
-    private func hmacHex(_ text: String) throws -> String {
-        guard let key = dataFromHex(callerSecret) else { throw HolderEnrollmentError.missingCaller }
-        let code = HMAC<SHA256>.authenticationCode(for: Data(text.utf8), using: SymmetricKey(data: key))
-        return code.map { String(format: "%02x", $0) }.joined()
-    }
-
-    private func socketExchange(_ frame: Data) throws -> Data {
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        if fd < 0 { throw HolderEnrollmentError.ipcFailed }
-        defer { close(fd) }
-        var address = sockaddr_un()
-        address.sun_family = sa_family_t(AF_UNIX)
-        let path = socketPath
-        guard path.utf8.count < 104 else { throw HolderEnrollmentError.ipcFailed }
-        let connected: Int32 = path.withCString { cString in
-            withUnsafeMutablePointer(to: &address) { pointer in
-                let raw = UnsafeMutableRawPointer(pointer)
-                let offset = MemoryLayout.offset(of: \sockaddr_un.sun_path) ?? 0
-                strncpy(raw.advanced(by: offset).assumingMemoryBound(to: CChar.self), cString, 103)
-                return pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
-                }
-            }
-        }
-        if connected != 0 { throw HolderEnrollmentError.ipcFailed }
-        let sent = frame.withUnsafeBytes { raw -> Int in
-            guard let base = raw.baseAddress else { return -1 }
-            return send(fd, base, frame.count, 0)
-        }
-        if sent != frame.count { throw HolderEnrollmentError.ipcFailed }
-        var buffer = Data()
-        var chunk = [UInt8](repeating: 0, count: 4096)
-        while true {
-            let count = recv(fd, &chunk, chunk.count, 0)
-            if count <= 0 { break }
-            buffer.append(contentsOf: chunk.prefix(count))
-            if buffer.contains(10) { break }
-        }
-        guard let end = buffer.firstIndex(of: 10), end > 0 else { throw HolderEnrollmentError.ipcFailed }
-        return buffer.prefix(end)
-    }
-}
 
 enum ObserveMailbox {
-    static func publish(issued: IssuedDeviceChallenge, baseURL: String, pairingToken: String) throws {
+    static func publish(issued: IssuedDeviceChallenge, baseURL: String, pairingToken: String) async throws {
         let payload: [String: Any] = [
             "challenge_id": issued.nonce,
             "generation": issued.generation,
@@ -489,11 +338,11 @@ enum ObserveMailbox {
             "expiry": issued.expiry,
             "role": "phone",
         ]
-        _ = try request(baseURL: baseURL, pairingToken: pairingToken, path: "/v1/phone-peer-challenge", method: "POST", payload: payload)
+        _ = try await request(baseURL: baseURL, pairingToken: pairingToken, path: "/v1/phone-peer-challenge", method: "POST", payload: payload)
     }
 
-    static func collect(baseURL: String, pairingToken: String) throws -> (challenge: String, publicKey: String, signature: String) {
-        let body = try request(baseURL: baseURL, pairingToken: pairingToken, path: "/v1/phone-peer-signature", method: "GET", payload: nil)
+    static func collect(baseURL: String, pairingToken: String) async throws -> (challenge: String, publicKey: String, signature: String) {
+        let body = try await request(baseURL: baseURL, pairingToken: pairingToken, path: "/v1/phone-peer-signature", method: "GET", payload: nil)
         guard
             let challenge = body["challenge"] as? String,
             let publicKey = body["public_key"] as? String,
@@ -509,7 +358,7 @@ enum ObserveMailbox {
         path: String,
         method: String,
         payload: [String: Any]?
-    ) throws -> [String: Any] {
+    ) async throws -> [String: Any] {
         let root = baseURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard pairingToken.count >= 16, let url = URL(string: root + path) else {
             throw HolderEnrollmentError.observeUnavailable
@@ -522,78 +371,16 @@ enum ObserveMailbox {
             request.httpBody = try JSONSerialization.data(withJSONObject: payload)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        let semaphore = DispatchSemaphore(value: 0)
-        var result: Result<[String: Any], Error>?
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            defer { semaphore.signal() }
-            if let error {
-                result = .failure(error)
-                return
-            }
-            guard let http = response as? HTTPURLResponse, let data else {
-                result = .failure(HolderEnrollmentError.observeUnavailable)
-                return
-            }
-            if http.statusCode == 409 {
-                result = .failure(HolderEnrollmentError.staleChallenge)
-                return
-            }
-            guard (200 ..< 300).contains(http.statusCode),
-                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else {
-                result = .failure(HolderEnrollmentError.observeUnavailable)
-                return
-            }
-            result = .success(object)
-        }.resume()
-        semaphore.wait()
-        switch result {
-        case let .success(body):
-            return body
-        case let .failure(error):
-            throw error
-        case .none:
+        request.timeoutInterval = 5
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
             throw HolderEnrollmentError.observeUnavailable
         }
+        if http.statusCode == 409 { throw HolderEnrollmentError.staleChallenge }
+        guard (200 ..< 300).contains(http.statusCode),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { throw HolderEnrollmentError.observeUnavailable }
+        return object
     }
 }
 
-func canonicalJSON(_ value: Any) -> String {
-    switch value {
-    case let object as [String: Any]:
-        let parts = object.keys.sorted().map { key in
-            "\"\(key)\":\(canonicalJSON(object[key]!))"
-        }
-        return "{\(parts.joined(separator: ","))}"
-    case let text as String:
-        let escaped = text
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        return "\"\(escaped)\""
-    case let number as Int:
-        return String(number)
-    case let number as NSNumber:
-        return number.stringValue
-    default:
-        return "null"
-    }
-}
-
-func jsonInt(_ value: Any?) -> Int? {
-    if let number = value as? Int { return number }
-    if let number = value as? NSNumber { return number.intValue }
-    return nil
-}
-
-func dataFromHex(_ hex: String) -> Data? {
-    guard hex.count.isMultiple(of: 2) else { return nil }
-    var data = Data()
-    var index = hex.startIndex
-    while index < hex.endIndex {
-        let next = hex.index(index, offsetBy: 2)
-        guard let byte = UInt8(hex[index..<next], radix: 16) else { return nil }
-        data.append(byte)
-        index = next
-    }
-    return data
-}
