@@ -172,7 +172,12 @@ def make_handler(
     rate_max_attempts = 20
     rate_events: list[float] = []
     phone_lock = threading.Lock()
-    phone_mailbox: dict[str, Any] = {"challenge": None, "signature": None}
+    phone_mailbox: dict[str, Any] = {
+        "challenge": None,
+        "signature": None,
+        "verification": None,
+        "invalidated": None,
+    }
 
     def current_status() -> dict[str, Any]:
         live = load_contract(contract_path)
@@ -312,8 +317,45 @@ def make_handler(
                         ).encode("utf-8"),
                     )
                     return
+                if route == "/v1/phone-peer-verification":
+                    with phone_lock:
+                        invalidated = bool(phone_mailbox.get("invalidated"))
+                        record = phone_mailbox.get("verification")
+                    if invalidated or not isinstance(record, dict):
+                        self._respond(
+                            200,
+                            json.dumps(
+                                {
+                                    "ok": True,
+                                    "verified": False,
+                                    "consumed": False,
+                                    "enrolled": False,
+                                    "invalidated": invalidated,
+                                },
+                                sort_keys=True,
+                            ).encode("utf-8"),
+                        )
+                        return
+                    self._respond(
+                        200,
+                        json.dumps(
+                            {
+                                "ok": True,
+                                "verified": record.get("verified") is True,
+                                "consumed": record.get("consumed") is True,
+                                "enrolled": False,
+                                "invalidated": False,
+                                "challenge_id": record.get("challenge_id"),
+                            },
+                            sort_keys=True,
+                        ).encode("utf-8"),
+                    )
+                    return
                 if route == "/v1/phone-peer-signature":
                     with phone_lock:
+                        if phone_mailbox.get("invalidated"):
+                            self._error(409, "stale phone challenge")
+                            return
                         current = phone_mailbox.get("challenge")
                         signed = phone_mailbox.get("signature")
                     if not isinstance(current, dict) or not isinstance(signed, dict):
@@ -430,6 +472,8 @@ def make_handler(
                         "role": role,
                     }
                     phone_mailbox["signature"] = None
+                    phone_mailbox["verification"] = None
+                    phone_mailbox["invalidated"] = None
                 self._respond(
                     202,
                     json.dumps(
@@ -441,6 +485,60 @@ def make_handler(
                             "mutates_lifecycle": False,
                             "challenge_id": challenge_id,
                             "ios_bundle_id": CAPABILITIES["ios_bundle_id"],
+                        },
+                        sort_keys=True,
+                    ).encode("utf-8"),
+                )
+                return
+            if route == "/v1/phone-peer-invalidate":
+                challenge_id = payload.get("challenge_id")
+                with phone_lock:
+                    phone_mailbox["challenge"] = None
+                    phone_mailbox["signature"] = None
+                    phone_mailbox["verification"] = None
+                    phone_mailbox["invalidated"] = challenge_id if isinstance(challenge_id, str) else True
+                self._respond(
+                    202,
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "invalidated": True,
+                            "enrolled": False,
+                            "verified": False,
+                            "consumed": False,
+                            "can_approve": False,
+                        },
+                        sort_keys=True,
+                    ).encode("utf-8"),
+                )
+                return
+            if route == "/v1/phone-peer-verification":
+                if payload.get("verified") is not True or payload.get("consumed") is not True:
+                    self._error(409, "holder verification is missing")
+                    return
+                with phone_lock:
+                    if phone_mailbox.get("invalidated"):
+                        self._error(409, "stale phone challenge")
+                        return
+                    current = phone_mailbox.get("challenge")
+                    if not isinstance(current, dict) or payload.get("challenge_id") != current.get("challenge_id"):
+                        self._error(409, "stale phone challenge")
+                        return
+                    phone_mailbox["verification"] = {
+                        "challenge_id": current["challenge_id"],
+                        "verified": True,
+                        "consumed": True,
+                        "enrolled": False,
+                    }
+                self._respond(
+                    202,
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "verified": True,
+                            "consumed": True,
+                            "enrolled": False,
+                            "can_approve": False,
                         },
                         sort_keys=True,
                     ).encode("utf-8"),

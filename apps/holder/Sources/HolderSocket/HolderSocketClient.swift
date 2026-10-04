@@ -16,6 +16,7 @@ public enum HolderSocketError: Error, Equatable {
     case deadlineExceeded
     case frameTooLarge
     case cancelled
+    case peerClosed
     case missingExactRun
 }
 
@@ -80,12 +81,31 @@ public struct StagedCustodyFiles {
         try publicKey.write(to: pendingPublic, options: .atomic)
     }
 
-    public func commit() throws {
+    /// One record. A failure after the next-file write leaves the previous generation.
+    public func commit(failAfterFirstWrite: Bool = false) throws {
         guard FileManager.default.fileExists(atPath: pendingHandle.path),
               FileManager.default.fileExists(atPath: pendingPublic.path)
         else { throw HolderSocketError.missingExactRun }
-        try replace(pendingHandle, with: handleURL)
-        try replace(pendingPublic, with: publicURL)
+        let handle = try Data(contentsOf: pendingHandle)
+        let publicKey = try Data(contentsOf: pendingPublic)
+        let generation = (try? committedGeneration()).map { $0 + 1 } ?? 1
+        let record: [String: Any] = [
+            "generation": generation,
+            "handle": handle.base64EncodedString(),
+            "publicKey": publicKey.base64EncodedString(),
+        ]
+        let encoded = try JSONSerialization.data(withJSONObject: record)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try encoded.write(to: nextRecordURL, options: .atomic)
+        if failAfterFirstWrite {
+            throw HolderSocketError.ipcFailed
+        }
+        if FileManager.default.fileExists(atPath: recordURL.path) {
+            _ = try FileManager.default.replaceItemAt(recordURL, withItemAt: nextRecordURL)
+        } else {
+            try FileManager.default.moveItem(at: nextRecordURL, to: recordURL)
+        }
+        discard()
     }
 
     public func discard() {
@@ -93,18 +113,19 @@ public struct StagedCustodyFiles {
         try? FileManager.default.removeItem(at: pendingPublic)
     }
 
-    public func committedHandle() throws -> Data {
-        guard FileManager.default.fileExists(atPath: handleURL.path) else {
+    public func committedGeneration() throws -> Int {
+        guard let generation = holderJSONInt(try readRecord()["generation"]) else {
             throw HolderSocketError.ipcFailed
         }
-        return try Data(contentsOf: handleURL)
+        return generation
+    }
+
+    public func committedHandle() throws -> Data {
+        try decodedRecordField("handle")
     }
 
     public func committedPublicKey() throws -> Data {
-        guard FileManager.default.fileExists(atPath: publicURL.path) else {
-            throw HolderSocketError.ipcFailed
-        }
-        return try Data(contentsOf: publicURL)
+        try decodedRecordField("publicKey")
     }
 
     /// Stage a replacement. The previous committed files stay until commit.
@@ -114,24 +135,31 @@ public struct StagedCustodyFiles {
 
     public func revoke() throws {
         discard()
-        try? FileManager.default.removeItem(at: handleURL)
-        try? FileManager.default.removeItem(at: publicURL)
-        if FileManager.default.fileExists(atPath: handleURL.path) {
+        try? FileManager.default.removeItem(at: recordURL)
+        try? FileManager.default.removeItem(at: nextRecordURL)
+        if FileManager.default.fileExists(atPath: recordURL.path) {
             throw HolderSocketError.ipcFailed
         }
     }
 
     private var pendingHandle: URL { directory.appendingPathComponent("mac-session-handle.pending") }
     private var pendingPublic: URL { directory.appendingPathComponent("mac-session-public.pending") }
-    private var handleURL: URL { directory.appendingPathComponent("mac-session-handle") }
-    private var publicURL: URL { directory.appendingPathComponent("mac-session-public") }
+    private var recordURL: URL { directory.appendingPathComponent("custody.json") }
+    private var nextRecordURL: URL { directory.appendingPathComponent("custody-next.json") }
 
-    private func replace(_ source: URL, with destination: URL) throws {
-        if FileManager.default.fileExists(atPath: destination.path) {
-            _ = try FileManager.default.replaceItemAt(destination, withItemAt: source)
-        } else {
-            try FileManager.default.moveItem(at: source, to: destination)
+    private func readRecord() throws -> [String: Any] {
+        let data = try Data(contentsOf: recordURL)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw HolderSocketError.ipcFailed
         }
+        return object
+    }
+
+    private func decodedRecordField(_ name: String) throws -> Data {
+        guard let text = try readRecord()[name] as? String, let data = Data(base64Encoded: text) else {
+            throw HolderSocketError.ipcFailed
+        }
+        return data
     }
 }
 
@@ -390,6 +418,12 @@ func socketExchange(
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
     if fd < 0 { throw HolderSocketError.ipcFailed }
     defer { close(fd) }
+    let flags = fcntl(fd, F_GETFL)
+    if flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0 { throw HolderSocketError.ipcFailed }
+    var noSignal: Int32 = 1
+    if setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size)) != 0 {
+        throw HolderSocketError.ipcFailed
+    }
     var address = sockaddr_un()
     address.sun_family = sa_family_t(AF_UNIX)
     guard path.utf8.count < 104 else { throw HolderSocketError.endpointRefused }
@@ -403,10 +437,39 @@ func socketExchange(
             }
         }
     }
-    if connected != 0 { throw HolderSocketError.ipcFailed }
+    if connected != 0 && errno != EINPROGRESS && errno != EINTR {
+        throw HolderSocketError.ipcFailed
+    }
+    try waitUntilWritable(fd: fd, deadline: deadline, cancelled: cancelled)
     try requireLocalPeer(fd)
     try writeAll(fd: fd, bytes: frame, deadline: deadline, cancelled: cancelled)
     return try readFrame(fd: fd, deadline: deadline, cancelled: cancelled)
+}
+
+func waitUntilWritable(fd: Int32, deadline: Date, cancelled: () -> Bool) throws {
+    while true {
+        if cancelled() { throw HolderSocketError.cancelled }
+        if Date() >= deadline { throw HolderSocketError.deadlineExceeded }
+        var item = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+        let remain = Int(deadline.timeIntervalSinceNow * 1000)
+        let slice = Int32(min(50, max(1, remain)))
+        let ready = poll(&item, 1, slice)
+        if ready == 0 { continue }
+        if ready < 0 {
+            if errno == EINTR { continue }
+            throw HolderSocketError.ipcFailed
+        }
+        var soerr: Int32 = 0
+        var length = socklen_t(MemoryLayout<Int32>.size)
+        if getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &length) != 0 {
+            throw HolderSocketError.ipcFailed
+        }
+        if soerr == 0 { return }
+        if soerr == EPIPE || soerr == ECONNRESET || soerr == ECONNABORTED {
+            throw HolderSocketError.peerClosed
+        }
+        throw HolderSocketError.ipcFailed
+    }
 }
 
 func refuseUnsafeEndpoint(_ path: String) throws {
@@ -436,10 +499,16 @@ func writeAll(fd: Int32, bytes: Data, deadline: Date, cancelled: () -> Bool) thr
                 sent += count
                 continue
             }
+            if count < 0 && (errno == EPIPE || errno == ECONNRESET) {
+                throw HolderSocketError.peerClosed
+            }
             if count < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
                 var pollItem = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
                 let ready = poll(&pollItem, 1, 50)
                 if ready < 0 && errno != EINTR { throw HolderSocketError.ipcFailed }
+                if pollItem.revents & Int16(POLLHUP | POLLERR) != 0 {
+                    throw HolderSocketError.peerClosed
+                }
                 continue
             }
             throw HolderSocketError.ipcFailed
@@ -465,7 +534,7 @@ func readFrame(fd: Int32, deadline: Date, cancelled: () -> Bool) throws -> Data 
             if errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK { continue }
             throw HolderSocketError.ipcFailed
         }
-        if count == 0 { throw HolderSocketError.ipcFailed }
+        if count == 0 { throw HolderSocketError.peerClosed }
         buffer.append(contentsOf: chunk.prefix(count))
         if buffer.count > holderSocketMaxFrameBytes { throw HolderSocketError.frameTooLarge }
         if let end = buffer.firstIndex(of: 10), end > 0 {

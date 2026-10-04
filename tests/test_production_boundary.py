@@ -2407,99 +2407,166 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
             )
         self.assertIn("replayed device challenge", str(replay.exception))
 
-    def test_exact_run_signature_authorizes_one_nonce_and_refuses_software(self) -> None:
+    def _enroll_exact_roles(self, root: Path, roles: tuple[str, ...]):
         import base64
 
-        from runspecimen.execution_holder import HolderRefusal
         from runspecimen.native_bridge import (
             OsBoundaryKey,
             UserSessionKeyCustody,
             enroll_over_authenticated_ipc,
-            reload_session_key,
         )
         from tests.test_native_bridge_policies import _sign, _signer
 
-        if sys.platform != "darwin":
-            self.skipTest("P-256 verification uses the Darwin verifier")
-        binary, public, private = _signer(self)
+        material: dict[str, tuple] = {}
 
         def create(role: str) -> OsBoundaryKey:
-            return OsBoundaryKey(public, lambda message: _sign(binary, private, message))
+            binary, public, private = _signer(self)
+            material[role] = (binary, public, private)
+            return OsBoundaryKey(
+                public,
+                lambda message, binary=binary, private=private: _sign(binary, private, message),
+            )
 
+        server, client = self._ipc_client(root)
+        custody = UserSessionKeyCustody()
+        with mock.patch("runspecimen.native_bridge.os_secure_enclave_create_key", side_effect=create):
+            for role in roles:
+                enrolled = enroll_over_authenticated_ipc(
+                    client,
+                    role=role,
+                    custody=custody,
+                    store=root / "handles",
+                )
+                self.assertTrue(enrolled["verified"])
+                self.assertFalse(enrolled["hardware"])
+        return server, client, custody, material
+
+    def _enroll_exact_roles_on(self, client, custody, material: dict, roles: tuple[str, ...], root: Path) -> None:
+        from runspecimen.native_bridge import OsBoundaryKey, enroll_over_authenticated_ipc
+        from tests.test_native_bridge_policies import _sign, _signer
+
+        def create(role: str) -> OsBoundaryKey:
+            binary, public, private = _signer(self)
+            material[role] = (binary, public, private)
+            return OsBoundaryKey(
+                public,
+                lambda message, binary=binary, private=private: _sign(binary, private, message),
+            )
+
+        with mock.patch("runspecimen.native_bridge.os_secure_enclave_create_key", side_effect=create):
+            for role in roles:
+                enrolled = enroll_over_authenticated_ipc(
+                    client,
+                    role=role,
+                    custody=custody,
+                    store=root / "handles",
+                )
+                self.assertTrue(enrolled["verified"])
+                self.assertFalse(enrolled["hardware"])
+
+    def _set_exact_policy(self, server, custody, policy: str) -> None:
+        server.holder.set_policy(server.holder.sign_from_session(custody, "set-policy", policy, policy))
+
+    def _issue_exact(self, server, client, policy: str, *, now: float | None = None, request_id: str = "req-exact-1", direct: bool = False):
+        import base64
+
+        ws, script = self._workspace(server.holder.root.parent / f"ws-{policy}-{request_id}")
+        binding = self._binding(ws, script, policy)
+        binding["key_generation"] = server.holder.key_generation
+        body = {
+            "policy": policy,
+            "workspace": str(ws.resolve()),
+            "files": [[str(script.resolve()), sha256_file(script)]],
+            "binding": binding,
+            "request_id": request_id,
+        }
+        if now is None and not direct:
+            issued = client.call({"op": "issue-exact-run", **body})
+        else:
+            issued = server.holder.issue_exact_run(body, peer_uid=os.getuid(), now=now)
+        self.assertFalse(issued["authorized"])
+        self.assertFalse(issued["run_integration_complete"])
+        self.assertFalse(issued["e2_closed"])
+        return ws, script, binding, issued, base64
+
+    def _sign_exact(self, material: dict, role: str, issued: dict, base64):
+        from tests.test_native_bridge_policies import _sign
+
+        binary, _public, private = material[role]
+        return _sign(binary, private, base64.b64decode(issued["bound"]))
+
+    def _authorize_exact(self, client, issued: dict, signatures: dict, *, policy: str):
+        return client.call(
+            {
+                "op": "authorize-exact-run",
+                "nonce": issued["nonce"],
+                "policy": policy,
+                "signatures": signatures,
+                "request_id": "req-exact-auth",
+            }
+        )
+
+    def _assert_second_consume_fails(self, holder, nonce: str, ws: Path, script: Path, binding: dict, policy: str) -> None:
+        with self.assertRaises(HolderRefusal) as second:
+            holder.consume(
+                nonce=nonce,
+                policy=policy,
+                human={"method": "not-a-signature"},
+                workspace=ws,
+                files=[(str(script.resolve()), sha256_file(script))],
+                binding=binding,
+            )
+        self.assertIn("nonce was already consumed", str(second.exception))
+
+    def test_exact_run_signature_authorizes_one_nonce_and_refuses_software(self) -> None:
+        if sys.platform != "darwin":
+            self.skipTest("P-256 verification uses the Darwin verifier")
         td = tempfile.TemporaryDirectory(prefix="rsh-exact-run-")
         self.addCleanup(td.cleanup)
         root = Path(td.name)
-        server, client = self._ipc_client(root)
-        with mock.patch("runspecimen.native_bridge.os_secure_enclave_create_key", side_effect=create):
-            enrolled = enroll_over_authenticated_ipc(
-                client,
-                role="mac",
-                custody=UserSessionKeyCustody(),
-                store=root / "handles",
-            )
-        self.assertTrue(enrolled["verified"])
-        self.assertFalse(enrolled["hardware"])
-        payload = "ab" * 32
-        launch = ["/usr/bin/true"]
-        issued = client.call(
-            {
-                "op": "issue-exact-run",
-                "payload_digest": payload,
-                "launch_argv": launch,
-                "request_id": "req-exact-1",
-            }
-        )
+        server, client, custody, material = self._enroll_exact_roles(root, ("mac",))
+        self._set_exact_policy(server, custody, "local")
+        self._enroll_exact_roles_on(client, custody, material, ("phone",), root)
+        ws, script, binding, issued, b64 = self._issue_exact(server, client, "local")
         self.assertEqual(issued["request_id"], "req-exact-1")
-        self.assertFalse(issued["authorized"])
-        signature = _sign(binary, private, base64.b64decode(issued["bound"]))
+        self.assertEqual(issued["policy"], "local")
+        phone_signature = self._sign_exact(material, "phone", issued, b64)
+        with self.assertRaises(HolderRefusal) as phone_only:
+            self._authorize_exact(client, issued, {"phone": phone_signature}, policy="local")
+        self.assertIn("local exact run excludes the phone key", str(phone_only.exception))
+        mac_signature = self._sign_exact(material, "mac", issued, b64)
         with self.assertRaises(HolderRefusal) as labeled:
             client.call(
                 {
                     "op": "authorize-exact-run",
-                    "payload_digest": payload,
-                    "launch_argv": launch,
                     "nonce": issued["nonce"],
-                    "public_key": public,
-                    "signature": signature,
+                    "policy": "local",
+                    "signatures": {"mac": mac_signature},
                     "hardware": True,
                     "origin": "os-secure-enclave-boundary",
                 }
             )
         self.assertIn("caller authority labels", str(labeled.exception))
-        authorized = client.call(
-            {
-                "op": "authorize-exact-run",
-                "payload_digest": payload,
-                "launch_argv": launch,
-                "nonce": issued["nonce"],
-                "public_key": public,
-                "signature": signature,
-            }
-        )
+        authorized = self._authorize_exact(client, issued, {"mac": mac_signature}, policy="local")
         self.assertTrue(authorized["authorized"])
         self.assertTrue(authorized["consumed"])
         self.assertFalse(authorized["hardware"])
         self.assertTrue(authorized["not_hardware"])
         self.assertFalse(authorized["e2_closed"])
-        ws, script = self._workspace(root / "ws")
-        binding = self._binding(ws, script, "local")
-        custody = UserSessionKeyCustody()
-        with mock.patch(
-            "runspecimen.native_bridge.os_secure_enclave_reload_key",
-            return_value=OsBoundaryKey(public, lambda message: _sign(binary, private, message)),
-        ):
-            reload_session_key(root / "handles", "mac", custody)
-        server.holder.set_policy(server.holder.sign_from_session(custody, "set-policy", "local", "local"))
-        with self.assertRaises(HolderRefusal) as second:
-            server.holder.consume(
-                nonce=issued["nonce"],
-                policy="local",
-                human={"method": "not-a-signature"},
-                workspace=ws,
-                files=[(str(script.resolve()), "00")],
-                binding=binding,
-            )
-        self.assertIn("nonce was already consumed", str(second.exception))
+        self.assertFalse(authorized["run_integration_complete"])
+        self.assertEqual(authorized["lease"], "uncertain")
+        lease = json.loads((server.holder.root / "lease.json").read_text(encoding="utf-8"))
+        self.assertTrue(lease["held"])
+        self.assertEqual(lease["child"], "uncertain")
+        self.assertEqual(lease["token"], issued["nonce"])
+        spent = json.loads((server.holder.root / "spent.json").read_text(encoding="utf-8"))["nonces"][-1]
+        self.assertEqual(spent["nonce"], issued["nonce"])
+        self.assertIn("binding", spent)
+        self.assertTrue((Path(authorized["snapshot_root"]) / "authorized_launch.json").is_file())
+        human = server.holder.exact_run_execute_human(issued["nonce"], {"mac": mac_signature})
+        server.holder.execute(token=issued["nonce"], human=human)
+        self.assertEqual((ws.parent / "ran").read_text(encoding="utf-8"), "ran")
+        self._assert_second_consume_fails(server.holder, issued["nonce"], ws, script, binding, "local")
         installed_root = root / "installed-state"
         for dirpath, _dirnames, filenames in os.walk(server.holder.root):
             os.chmod(dirpath, 0o700)
@@ -2520,25 +2587,99 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
             snapshot_base=root / "installed-snaps",
             verifier_pin=_pin(),
         )
-        again = installed.issue_exact_run(
-            {"payload_digest": payload, "launch_argv": launch},
-            peer_uid=os.getuid(),
+        _ws2, _script2, _binding2, again, again_b64 = self._issue_exact(
+            type("S", (), {"holder": installed})(),
+            client,
+            "local",
+            request_id="installed",
+            direct=True,
         )
-        again_signature = _sign(binary, private, base64.b64decode(again["bound"]))
+        again_signature = self._sign_exact(material, "mac", again, again_b64)
         with (
             mock.patch("runspecimen.native_bridge.read_verifier_identity", return_value=_parsed()),
             mock.patch("runspecimen.native_bridge.verifier_signature_strict", return_value=True),
         ):
             with self.assertRaises(HolderRefusal) as software:
                 installed.authorize_exact_run(
-                    {
-                        "payload_digest": payload,
-                        "launch_argv": launch,
-                        "nonce": again["nonce"],
-                        "public_key": public,
-                        "signature": again_signature,
-                    },
+                    {"nonce": again["nonce"], "policy": "local", "signatures": {"mac": again_signature}},
                     peer_uid=os.getuid(),
                 )
         self.assertIn("does not authorize a software key", str(software.exception))
         self.assertNotIn("team identifier does not match", str(software.exception))
+        spent_after = json.loads((installed.root / "spent.json").read_text(encoding="utf-8"))["nonces"]
+        self.assertNotIn(again["nonce"], [item.get("nonce") for item in spent_after])
+
+    def test_exact_run_companion_and_dual_require_the_phone_key(self) -> None:
+        if sys.platform != "darwin":
+            self.skipTest("P-256 verification uses the Darwin verifier")
+        for policy, accepted in (("companion", ("phone",)), ("dual", ("mac", "phone"))):
+            td = tempfile.TemporaryDirectory(prefix=f"rsh-exact-{policy}-")
+            self.addCleanup(td.cleanup)
+            root = Path(td.name)
+            roles = ("phone",) if policy == "companion" else ("mac", "phone")
+            server, client, custody, material = self._enroll_exact_roles(root, roles)
+            self._set_exact_policy(server, custody, policy)
+            ws, script, binding, issued, b64 = self._issue_exact(server, client, policy, request_id=policy)
+            mac_only = (
+                {"mac": "not-the-phone-key"}
+                if policy == "companion"
+                else {"mac": self._sign_exact(material, "mac", issued, b64)}
+            )
+            with self.assertRaises(HolderRefusal) as missing_phone:
+                self._authorize_exact(client, issued, mac_only, policy=policy)
+            self.assertIn("phone key", str(missing_phone.exception))
+            signatures = {role: self._sign_exact(material, role, issued, b64) for role in accepted}
+            authorized = self._authorize_exact(client, issued, signatures, policy=policy)
+            self.assertEqual(authorized["policy"], policy)
+            self.assertFalse(authorized["run_integration_complete"])
+            human = server.holder.exact_run_execute_human(issued["nonce"], signatures)
+            server.holder.execute(token=issued["nonce"], human=human)
+            self.assertEqual((ws.parent / "ran").read_text(encoding="utf-8"), "ran")
+            self._assert_second_consume_fails(server.holder, issued["nonce"], ws, script, binding, policy)
+
+    def test_exact_run_expiry_and_generation_do_not_reach_the_lease(self) -> None:
+        import time
+
+        if sys.platform != "darwin":
+            self.skipTest("P-256 verification uses the Darwin verifier")
+        td = tempfile.TemporaryDirectory(prefix="rsh-exact-stale-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        server, client, custody, material = self._enroll_exact_roles(root, ("mac",))
+        self._set_exact_policy(server, custody, "local")
+        _ws, _script, _binding, expired, expired_b64 = self._issue_exact(
+            server, client, "local", now=time.time() - 500, request_id="expired"
+        )
+        expired_signature = self._sign_exact(material, "mac", expired, expired_b64)
+        with self.assertRaises(HolderRefusal) as stale:
+            server.holder.authorize_exact_run(
+                {"nonce": expired["nonce"], "signatures": {"mac": expired_signature}},
+                peer_uid=os.getuid(),
+            )
+        self.assertIn("expired", str(stale.exception))
+        _ws2, _script2, _binding2, current, current_b64 = self._issue_exact(
+            server, client, "local", request_id="generation"
+        )
+        meta_path = server.holder.root / "meta.json"
+        policy_path = server.holder.root / "policy.json"
+        os.chmod(meta_path, 0o600)
+        os.chmod(policy_path, 0o600)
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        policy_record = json.loads(policy_path.read_text(encoding="utf-8"))
+        meta["generation"] = int(meta["generation"]) + 1
+        policy_record["generation"] = meta["generation"]
+        meta_path.write_text(json.dumps(meta), encoding="utf-8")
+        policy_path.write_text(json.dumps(policy_record), encoding="utf-8")
+        current_signature = self._sign_exact(material, "mac", current, current_b64)
+        with self.assertRaises(HolderRefusal) as changed:
+            server.holder.authorize_exact_run(
+                {"nonce": current["nonce"], "signatures": {"mac": current_signature}},
+                peer_uid=os.getuid(),
+            )
+        self.assertIn("generation changed", str(changed.exception))
+        spent_path = server.holder.root / "spent.json"
+        nonces = []
+        if spent_path.exists():
+            nonces = [item.get("nonce") for item in json.loads(spent_path.read_text(encoding="utf-8"))["nonces"]]
+        self.assertNotIn(expired["nonce"], nonces)
+        self.assertNotIn(current["nonce"], nonces)

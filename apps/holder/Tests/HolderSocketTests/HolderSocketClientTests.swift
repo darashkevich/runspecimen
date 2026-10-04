@@ -126,6 +126,159 @@ final class HolderSocketClientTests: XCTestCase {
         XCTAssertEqual(received.get(), payload.count)
     }
 
+    func testSaturatedBacklogConnectDoesNotBlock() throws {
+        let path = try makeSocket()
+        let listener = try listenSocket(path, backlog: 1)
+        defer { close(listener) }
+        var fillers: [Int32] = []
+        defer { fillers.forEach { close($0) } }
+        var queueFull = false
+        var immediateRefusal = false
+        for _ in 0..<256 {
+            let pending = socket(AF_UNIX, SOCK_STREAM, 0)
+            if pending < 0 { break }
+            let flags = fcntl(pending, F_GETFL)
+            _ = fcntl(pending, F_SETFL, flags | O_NONBLOCK)
+            let connected = connectUnix(pending, path)
+            if connected == 0 {
+                fillers.append(pending)
+                continue
+            }
+            if errno == EINPROGRESS {
+                var item = pollfd(fd: pending, events: Int16(POLLOUT), revents: 0)
+                let ready = poll(&item, 1, 30)
+                fillers.append(pending)
+                if ready == 0 {
+                    queueFull = true
+                    break
+                }
+                continue
+            }
+            close(pending)
+            queueFull = true
+            immediateRefusal = true
+            break
+        }
+        XCTAssertTrue(queueFull, "the listen queue still accepted another connection")
+        XCTAssertFalse(fillers.isEmpty)
+        let started = Date()
+        do {
+            _ = try socketExchange(
+                Data("backlog\n".utf8),
+                path: path,
+                deadline: Date().addingTimeInterval(0.8),
+                cancelled: { false },
+                noteThread: { _ in }
+            )
+            XCTFail("saturated backlog connected")
+        } catch HolderSocketError.deadlineExceeded, HolderSocketError.ipcFailed {
+        }
+        let limit = immediateRefusal ? 0.5 : 1.5
+        XCTAssertLessThan(Date().timeIntervalSince(started), limit)
+    }
+
+    func testNonreadingPeerStopsTheWrite() throws {
+        let path = try makeSocket()
+        let listener = try listenSocket(path, backlog: 1)
+        defer { close(listener) }
+        var receiveBuffer = 1024
+        _ = setsockopt(listener, SOL_SOCKET, SO_RCVBUF, &receiveBuffer, socklen_t(MemoryLayout<Int32>.size))
+        let accepted = LockedFD()
+        let accepter = Thread {
+            var address = sockaddr_un()
+            var length = socklen_t(MemoryLayout<sockaddr_un>.size)
+            let fd = withUnsafeMutablePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    accept(listener, $0, &length)
+                }
+            }
+            if fd >= 0 {
+                var tiny = 1024
+                _ = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &tiny, socklen_t(MemoryLayout<Int32>.size))
+            }
+            accepted.set(fd)
+        }
+        accepter.start()
+        let frame = Data(repeating: 0x61, count: 60_000)
+        let started = Date()
+        do {
+            _ = try socketExchange(
+                frame,
+                path: path,
+                deadline: Date().addingTimeInterval(0.4),
+                cancelled: { false },
+                noteThread: { _ in }
+            )
+            XCTFail("nonreading peer accepted the full write")
+        } catch HolderSocketError.deadlineExceeded {
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.5)
+        let fd = accepted.get()
+        var received = 0
+        if fd >= 0 {
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while true {
+                let count = recv(fd, &buffer, buffer.count, MSG_DONTWAIT)
+                if count > 0 {
+                    received += count
+                } else {
+                    break
+                }
+            }
+            close(fd)
+        }
+        XCTAssertLessThan(received, frame.count)
+    }
+
+    func testPeerCloseDoesNotRaiseSIGPIPE() throws {
+        let path = try makeSocket()
+        let listener = try listenSocket(path, backlog: 1)
+        defer { close(listener) }
+        let outcome = LockedError()
+        let done = DispatchSemaphore(value: 0)
+        let client = Thread {
+            do {
+                _ = try socketExchange(
+                    Data(repeating: 0x62, count: 80_000),
+                    path: path,
+                    deadline: Date().addingTimeInterval(2),
+                    cancelled: { false },
+                    noteThread: { _ in }
+                )
+                outcome.set(HolderSocketError.ipcFailed)
+            } catch let error as HolderSocketError {
+                outcome.set(error)
+            } catch {
+                outcome.set(HolderSocketError.ipcFailed)
+            }
+            done.signal()
+        }
+        client.start()
+        var address = sockaddr_un()
+        var length = socklen_t(MemoryLayout<sockaddr_un>.size)
+        let accepted = withUnsafeMutablePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                accept(listener, $0, &length)
+            }
+        }
+        if accepted >= 0 { close(accepted) }
+        XCTAssertEqual(done.wait(timeout: .now() + 3), .success)
+        XCTAssertEqual(outcome.get(), .peerClosed)
+    }
+
+    func testStagedCustodyCommitFailureKeepsThePreviousGeneration() throws {
+        let directory = URL(fileURLWithPath: "/private/tmp/rs-qa-bind-custody-\(UUID().uuidString)", isDirectory: true)
+        let store = StagedCustodyFiles(directory: directory)
+        try store.stage(handle: Data("generation-one-handle".utf8), publicKey: Data("generation-one-public".utf8))
+        try store.commit()
+        XCTAssertEqual(try store.committedGeneration(), 1)
+        try store.rotate(handle: Data("generation-two-handle".utf8), publicKey: Data("generation-two-public".utf8))
+        XCTAssertThrowsError(try store.commit(failAfterFirstWrite: true))
+        XCTAssertEqual(try store.committedGeneration(), 1)
+        XCTAssertEqual(try store.committedHandle(), Data("generation-one-handle".utf8))
+        XCTAssertEqual(try store.committedPublicKey(), Data("generation-one-public".utf8))
+    }
+
     func testStagedCustodyRollsBackToThePreviousKey() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let store = StagedCustodyFiles(directory: directory)
@@ -156,6 +309,73 @@ final class HolderSocketClientTests: XCTestCase {
 
 private final class FrameBox: @unchecked Sendable {
     var frame: String?
+}
+
+private func listenSocket(_ path: String, backlog: Int32) throws -> Int32 {
+    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    if fd < 0 { throw HolderSocketError.ipcFailed }
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    let bound = path.withCString { cString in
+        withUnsafeMutablePointer(to: &address) { pointer in
+            let raw = UnsafeMutableRawPointer(pointer)
+            let offset = MemoryLayout.offset(of: \sockaddr_un.sun_path) ?? 0
+            strncpy(raw.advanced(by: offset).assumingMemoryBound(to: CChar.self), cString, 103)
+            return pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+    }
+    if bound != 0 || listen(fd, backlog) != 0 {
+        close(fd)
+        throw HolderSocketError.ipcFailed
+    }
+    return fd
+}
+
+private func connectUnix(_ fd: Int32, _ path: String) -> Int32 {
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    return path.withCString { cString in
+        withUnsafeMutablePointer(to: &address) { pointer in
+            let raw = UnsafeMutableRawPointer(pointer)
+            let offset = MemoryLayout.offset(of: \sockaddr_un.sun_path) ?? 0
+            strncpy(raw.advanced(by: offset).assumingMemoryBound(to: CChar.self), cString, 103)
+            return pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+    }
+}
+
+private final class LockedFD: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Int32 = -1
+    func set(_ next: Int32) {
+        lock.lock()
+        value = next
+        lock.unlock()
+    }
+    func get() -> Int32 {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
+private final class LockedError: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: HolderSocketError?
+    func set(_ next: HolderSocketError) {
+        lock.lock()
+        value = next
+        lock.unlock()
+    }
+    func get() -> HolderSocketError? {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
 }
 
 private final class LockedCount: @unchecked Sendable {

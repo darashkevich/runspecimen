@@ -49,6 +49,8 @@ class TestCompanion(RunSpecimenTestCase):
         self.assertFalse(path_is_forbidden("/v1/remote-confirm-refuse"))
         self.assertFalse(path_is_forbidden("/v1/phone-peer-challenge"))
         self.assertFalse(path_is_forbidden("/v1/phone-peer-signature"))
+        self.assertFalse(path_is_forbidden("/v1/phone-peer-invalidate"))
+        self.assertFalse(path_is_forbidden("/v1/phone-peer-verification"))
 
     def test_bind_policy_fail_closed(self) -> None:
         assert_bind_allowed("127.0.0.1", allow_lan=False)
@@ -126,6 +128,81 @@ class TestCompanion(RunSpecimenTestCase):
             conn.request("POST", "/v1/run", body=b"{}", headers=headers)
             self.assertEqual(conn.getresponse().status, 403)
 
+            conn.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_phone_invalidate_clears_signature_and_verification_is_not_enrollment(self) -> None:
+        contract_path = write_contract(self.ws, "contract.json", base_contract())
+        token = generate_pairing_token()
+        server, _url, _meta = start_companion(
+            workspace=self.ws,
+            contract_path=contract_path,
+            pairing_token=token,
+            host="127.0.0.1",
+            port=0,
+            allow_lan=False,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = server.server_address[:2]
+            conn = HTTPConnection(host, port, timeout=5)
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            challenge = {
+                "challenge_id": "nonce-1",
+                "generation": 1,
+                "holder_id": "holder",
+                "challenge": "Y2hhbGxlbmdl",
+                "role": "phone",
+            }
+            conn.request("POST", "/v1/phone-peer-challenge", body=json.dumps(challenge), headers=headers)
+            self.assertEqual(conn.getresponse().status, 202)
+            conn.request(
+                "POST",
+                "/v1/phone-peer-signature",
+                body=json.dumps(
+                    {
+                        "challenge_id": "nonce-1",
+                        "challenge": "Y2hhbGxlbmdl",
+                        "public_key": "cHVibGlj",
+                        "signature": "c2ln",
+                    }
+                ),
+                headers=headers,
+            )
+            posted = json.loads(conn.getresponse().read().decode("utf-8"))
+            self.assertTrue(posted["accepted"])
+            self.assertFalse(posted["enrolled"])
+            self.assertFalse(posted["verified"])
+            conn.request(
+                "POST",
+                "/v1/phone-peer-verification",
+                body=json.dumps({"challenge_id": "nonce-1", "verified": True, "consumed": False}),
+                headers=headers,
+            )
+            incomplete = conn.getresponse()
+            self.assertEqual(incomplete.status, 409)
+            incomplete.read()
+            conn.request(
+                "POST",
+                "/v1/phone-peer-invalidate",
+                body=json.dumps({"challenge_id": "nonce-1"}),
+                headers=headers,
+            )
+            cleared = json.loads(conn.getresponse().read().decode("utf-8"))
+            self.assertTrue(cleared["invalidated"])
+            self.assertFalse(cleared["enrolled"])
+            conn.request("GET", "/v1/phone-peer-signature", headers=headers)
+            stale = conn.getresponse()
+            self.assertEqual(stale.status, 409)
+            stale.read()
+            conn.request("GET", "/v1/phone-peer-verification", headers=headers)
+            withheld = json.loads(conn.getresponse().read().decode("utf-8"))
+            self.assertFalse(withheld["verified"])
+            self.assertFalse(withheld["consumed"])
+            self.assertFalse(withheld["enrolled"])
             conn.close()
         finally:
             server.shutdown()

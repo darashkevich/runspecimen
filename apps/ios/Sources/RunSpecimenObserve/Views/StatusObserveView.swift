@@ -52,6 +52,9 @@ struct StatusObserveView: View {
                     actionButton("Cancel phone peer challenge", tint: RSTheme.danger) {
                         await session.cancelPhonePeerChallenge()
                     }
+                    actionButton("Enroll phone key after holder verification", tint: RSTheme.ink.opacity(0.85)) {
+                        await session.commitPhoneKeyAfterHolderVerification()
+                    }
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)

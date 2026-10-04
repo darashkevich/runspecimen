@@ -132,6 +132,12 @@ final class CompanionSession: ObservableObject {
                 signer.discardStagedEnrollment()
                 throw PhonePeerSignError.cancelled
             }
+            try await transport.willSubmitPhonePeerSignature()
+            try Task.checkCancellation()
+            guard generation == phoneSignGeneration else {
+                signer.discardStagedEnrollment()
+                throw PhonePeerSignError.cancelled
+            }
             try await transport.submitPhonePeerSignature(
                 challengeId: message.challengeId,
                 challenge: message.challenge,
@@ -140,15 +146,17 @@ final class CompanionSession: ObservableObject {
             )
             guard generation == phoneSignGeneration else {
                 signer.discardStagedEnrollment()
-                throw PhonePeerSignError.cancelled
+                try? await transport.invalidatePhonePeerChallenge(challengeId: message.challengeId)
+                throw PhonePeerSignError.cancellationTooLate
             }
-            try signer.commitEnrollment()
-            phoneChallenge = nil
-            phonePeerNote = "Signature returned for challenge \(message.challengeId). The Mac holder still has to verify it. This is not approval."
+            phonePeerNote = "Mailbox accepted challenge \(message.challengeId). That is not holder verification and the key is not enrolled."
         } catch PhonePeerSignError.cancelled {
             phoneChallenge = nil
             signer.discardStagedEnrollment()
             phonePeerNote = "Phone peer challenge cancelled before a signature was returned."
+            lastError = nil
+        } catch PhonePeerSignError.cancellationTooLate {
+            phonePeerNote = "Phone peer challenge cancellation was too late. The signature left the device and must not enroll."
             lastError = nil
         } catch is CancellationError {
             phoneChallenge = nil
@@ -157,6 +165,38 @@ final class CompanionSession: ObservableObject {
             lastError = nil
         } catch {
             signer.discardStagedEnrollment()
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// Enroll only after the mailbox records holder verification and consumption.
+    func commitPhoneKeyAfterHolderVerification(
+        signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
+        peer: (any PhonePeerTransport)? = nil
+    ) async {
+        let transport: any PhonePeerTransport
+        if let peer {
+            transport = peer
+        } else if let client = makeClient() {
+            transport = client
+        } else {
+            lastError = CompanionClientError.notPaired.localizedDescription
+            return
+        }
+        guard let message = phoneChallenge else {
+            phonePeerNote = "Mailbox acceptance is not holder verification."
+            return
+        }
+        do {
+            let record = try await transport.fetchHolderVerification(challengeId: message.challengeId)
+            guard record.verified, record.consumed, !record.invalidated else {
+                phonePeerNote = "Mailbox acceptance is not holder verification."
+                return
+            }
+            try signer.commitEnrollment()
+            phoneChallenge = nil
+            phonePeerNote = "Holder verified and consumed challenge \(message.challengeId). The phone key is enrolled."
+        } catch {
             lastError = error.localizedDescription
         }
     }
@@ -311,20 +351,38 @@ final class CompanionSession: ObservableObject {
     }
 }
 
+struct PhoneHolderVerification: Equatable {
+    var verified: Bool
+    var consumed: Bool
+    var invalidated: Bool
+}
+
 protocol PhonePeerTransport {
     func fetchPhonePeerChallenge() async throws -> PhonePeerChallengeMessage
+    func willSubmitPhonePeerSignature() async throws
     func submitPhonePeerSignature(
         challengeId: String,
         challenge: String,
         publicKey: String,
         signature: String
     ) async throws
+    func invalidatePhonePeerChallenge(challengeId: String) async throws
+    func fetchHolderVerification(challengeId: String) async throws -> PhoneHolderVerification
+}
+
+extension PhonePeerTransport {
+    func willSubmitPhonePeerSignature() async throws {}
+    func invalidatePhonePeerChallenge(challengeId: String) async throws {}
+    func fetchHolderVerification(challengeId: String) async throws -> PhoneHolderVerification {
+        PhoneHolderVerification(verified: false, consumed: false, invalidated: false)
+    }
 }
 
 extension CompanionClient: PhonePeerTransport {}
 
 enum PhonePeerSignError: Error {
     case cancelled
+    case cancellationTooLate
 }
 
 protocol PhoneChallengeSigning {
@@ -349,12 +407,30 @@ struct PhoneKeyStage {
         try publicKey.write(to: pendingPublic, options: .atomic)
     }
 
-    func commit() throws {
-        guard FileManager.default.fileExists(atPath: pendingHandle.path) else {
-            return
+    /// One record. A failure after the next-file write leaves the previous generation.
+    func commit(failAfterFirstWrite: Bool = false) throws {
+        guard FileManager.default.fileExists(atPath: pendingHandle.path),
+              FileManager.default.fileExists(atPath: pendingPublic.path)
+        else { return }
+        let handle = try Data(contentsOf: pendingHandle)
+        let publicKey = try Data(contentsOf: pendingPublic)
+        let generation = ((try? committedGeneration()) ?? 0) + 1
+        let record: [String: Any] = [
+            "generation": generation,
+            "handle": handle.base64EncodedString(),
+            "publicKey": publicKey.base64EncodedString(),
+        ]
+        let encoded = try JSONSerialization.data(withJSONObject: record)
+        try encoded.write(to: nextRecordURL, options: .atomic)
+        if failAfterFirstWrite {
+            throw CompanionClientError.transport("phone custody commit stopped after the first write")
         }
-        try replace(pendingHandle, with: handleURL)
-        try replace(pendingPublic, with: publicURL)
+        if FileManager.default.fileExists(atPath: recordURL.path) {
+            _ = try FileManager.default.replaceItemAt(recordURL, withItemAt: nextRecordURL)
+        } else {
+            try FileManager.default.moveItem(at: nextRecordURL, to: recordURL)
+        }
+        discard()
     }
 
     func discard() {
@@ -362,11 +438,19 @@ struct PhoneKeyStage {
         try? FileManager.default.removeItem(at: pendingPublic)
     }
 
+    func committedGeneration() throws -> Int {
+        let object = try readRecord()
+        if let number = object["generation"] as? Int { return number }
+        if let number = object["generation"] as? NSNumber { return number.intValue }
+        throw CompanionClientError.transport("phone session key is not enrolled")
+    }
+
     func committedHandle() throws -> Data {
-        guard FileManager.default.fileExists(atPath: handleURL.path) else {
-            throw CompanionClientError.transport("phone session key is not enrolled")
-        }
-        return try Data(contentsOf: handleURL)
+        try decodedRecordField("handle")
+    }
+
+    func committedPublicKey() throws -> Data {
+        try decodedRecordField("publicKey")
     }
 
     func rotate(handle: Data, publicKey: Data) throws {
@@ -375,21 +459,28 @@ struct PhoneKeyStage {
 
     func revoke() {
         discard()
-        try? FileManager.default.removeItem(at: handleURL)
-        try? FileManager.default.removeItem(at: publicURL)
+        try? FileManager.default.removeItem(at: recordURL)
+        try? FileManager.default.removeItem(at: nextRecordURL)
     }
 
     private var pendingHandle: URL { directory.appendingPathComponent("phone-session-handle.pending") }
     private var pendingPublic: URL { directory.appendingPathComponent("phone-session-public.pending") }
-    private var handleURL: URL { directory.appendingPathComponent("phone-session-handle") }
-    private var publicURL: URL { directory.appendingPathComponent("phone-session-public") }
+    private var recordURL: URL { directory.appendingPathComponent("custody.json") }
+    private var nextRecordURL: URL { directory.appendingPathComponent("custody-next.json") }
 
-    private func replace(_ source: URL, with destination: URL) throws {
-        if FileManager.default.fileExists(atPath: destination.path) {
-            _ = try FileManager.default.replaceItemAt(destination, withItemAt: source)
-        } else {
-            try FileManager.default.moveItem(at: source, to: destination)
+    private func readRecord() throws -> [String: Any] {
+        let data = try Data(contentsOf: recordURL)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw CompanionClientError.transport("phone session key is not enrolled")
         }
+        return object
+    }
+
+    private func decodedRecordField(_ name: String) throws -> Data {
+        guard let text = try readRecord()[name] as? String, let data = Data(base64Encoded: text) else {
+            throw CompanionClientError.transport("phone session key is not enrolled")
+        }
+        return data
     }
 }
 
@@ -397,8 +488,7 @@ struct LivePhoneSecureEnclaveSigner: PhoneChallengeSigning {
     var stage = PhoneKeyStage(directory: LivePhoneSecureEnclaveSigner.support)
 
     func sign(message: Data) throws -> (publicKey: String, signature: String) {
-        if FileManager.default.fileExists(atPath: stage.directory.appendingPathComponent("phone-session-handle").path) {
-            let token = try stage.committedHandle()
+        if let token = try? stage.committedHandle() {
             let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: token)
             let signature = try key.signature(for: message).rawRepresentation
             return (

@@ -92,26 +92,10 @@ struct RunSpecimenHolderApp: App {
         }
     }
 
-    /// Signs one exact run. This is not another enrollment challenge.
+    /// A digest field is not a snapshot-bound run. This control does not sign.
     private func signReloadedFromPerson() async {
-        do {
-            let digest = exactPayload.trimmingCharacters(in: .whitespacesAndNewlines)
-            let launch = exactLaunch.split(separator: " ").map(String.init)
-            guard digest.count == 64, !launch.isEmpty else { throw HolderSocketError.missingExactRun }
-            let client = try authenticatedClient()
-            let issued = try await client.issueExactRun(payloadDigest: digest, launchArgv: launch)
-            let signature = try LiveSecureEnclaveKeyMaker().reloadAndSign(issued.bound)
-            let receipt = try await client.authorizeExactRun(
-                issued: issued,
-                publicKeyBase64: try LiveSecureEnclaveKeyMaker().reloadPublicKey().base64EncodedString(),
-                signatureBase64: signature.base64EncodedString()
-            )
-            statusText = "Holder accepted one exact run for the reloaded session key. E2 is not closed."
-            detail = receipt
-        } catch {
-            statusText = "Reloaded session signature was not completed"
-            detail = "\(error)"
-        }
+        statusText = "Exact run is not snapshot-bound from this control. E2 is not closed."
+        detail = "A digest and launch string do not reach consume or execute. A biometric press does not finish missing implementation."
     }
 
     /// Publishes a holder-issued challenge to RunSpecimenObserve. It does not enroll.
@@ -146,9 +130,19 @@ struct RunSpecimenHolderApp: App {
                 issued: issued,
                 signatureBase64: submission.signature
             )
+            try await ObserveMailbox.recordHolderVerification(
+                challengeId: issued.nonce,
+                baseURL: companionURL,
+                pairingToken: pairingToken
+            )
             pendingPhone = nil
             statusText = "Holder verified the phone signature and consumed the challenge. E2 is not closed."
             detail = receipt
+        } catch HolderEnrollmentError.staleChallenge {
+            try? await authenticatedClient().cancel(role: "phone")
+            pendingPhone = nil
+            statusText = "Phone challenge was invalidated and was not enrolled."
+            detail = "The mailbox challenge was cleared before holder verification."
         } catch {
             statusText = "Paired phone enrollment was not completed"
             detail = "\(error)"
@@ -350,6 +344,25 @@ enum ObserveMailbox {
             body["verified"] as? Bool == false
         else { throw HolderEnrollmentError.staleChallenge }
         return (challenge, publicKey, signature)
+    }
+
+    static func recordHolderVerification(challengeId: String, baseURL: String, pairingToken: String) async throws {
+        let payload: [String: Any] = [
+            "challenge_id": challengeId,
+            "verified": true,
+            "consumed": true,
+            "enrolled": false,
+        ]
+        let body = try await request(
+            baseURL: baseURL,
+            pairingToken: pairingToken,
+            path: "/v1/phone-peer-verification",
+            method: "POST",
+            payload: payload
+        )
+        guard body["verified"] as? Bool == true, body["consumed"] as? Bool == true, body["enrolled"] as? Bool == false else {
+            throw HolderEnrollmentError.observeUnavailable
+        }
     }
 
     private static func request(

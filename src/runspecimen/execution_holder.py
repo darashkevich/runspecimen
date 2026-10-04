@@ -76,16 +76,29 @@ def bound_exact_run(
     payload_digest: str,
     launch_argv: list[str],
     nonce: str,
+    policy: str,
+    generation: int,
+    key_generation: int,
+    expiry: int,
 ) -> bytes:
-    """Canonical bytes for one bounded run. This is not an enrollment challenge."""
+    """Canonical bytes for one bounded run. This is not an enrollment challenge.
+
+    The signature covers policy, enrollment generation, key generation, and
+    expiry as well as the snapshot payload and launch. Reaching consume and
+    execute from this message is not a completed production run.
+    """
 
     return canonical_json_bytes(
         {
             "domain": EXACT_RUN_DOMAIN,
+            "expiry": int(expiry),
+            "generation": int(generation),
             "holder_id": holder_id,
+            "key_generation": int(key_generation),
             "launch_argv": list(launch_argv),
             "nonce": nonce,
             "payload_digest": payload_digest,
+            "policy": policy,
         }
     )
 
@@ -856,45 +869,93 @@ class ExecutionHolder:
             "biometric_invoked": False,
         }
 
-    def issue_exact_run(self, body: dict[str, Any], *, peer_uid: int) -> dict[str, Any]:
-        """Bind one run. The signature is checked by authorize_exact_run, not here."""
+    def issue_exact_run(self, body: dict[str, Any], *, peer_uid: int, now: float | None = None) -> dict[str, Any]:
+        """Prepare one snapshot-bound run. The signature is not accepted here.
+
+        This writes the payload snapshot the consume path will keep. It does
+        not write spent history or a lease, and it is not a completed run.
+        """
 
         self._refuse_exact_run_labels(body)
         if not isinstance(peer_uid, int):
             raise HolderRefusal("ipc peer is missing")
-        payload = body.get("payload_digest")
-        launch = body.get("launch_argv")
-        if not isinstance(payload, str) or len(payload) != 64 or any(ch not in "0123456789abcdef" for ch in payload):
+        policy = body.get("policy")
+        if policy not in POLICIES:
+            raise HolderRefusal("exact run policy is not accepted")
+        workspace = body.get("workspace")
+        files = body.get("files")
+        binding = body.get("binding")
+        if not isinstance(workspace, str) or not workspace:
             raise HolderRefusal("exact run payload is not bound")
-        if not isinstance(launch, list) or not launch or any(not isinstance(item, str) or not item for item in launch):
-            raise HolderRefusal("exact run launch is not bound")
+        if not isinstance(files, list) or not files:
+            raise HolderRefusal("exact run payload is not bound")
+        pairs: list[tuple[str, str]] = []
+        for item in files:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                raise HolderRefusal("exact run payload is not bound")
+            pairs.append((str(item[0]), str(item[1])))
+        moment = time.time() if now is None else float(now)
         with self._transaction():
             self._load()
+            if not isinstance(binding, dict):
+                raise HolderRefusal("exact run payload is not bound")
+            if binding.get("policy") != policy:
+                raise HolderRefusal("exact run policy is not accepted")
+            envelope = self._binding_envelope(binding)
             nonce = secrets.token_hex(16)
+            path_map, payload_digest, snapshot_root = self._bind(
+                nonce,
+                Path(workspace),
+                pairs,
+                executable=str(envelope["executable"]),
+                argv=[str(item) for item in envelope["argv"]],
+            )
+            expiry = int(moment) + 120
             message = bound_exact_run(
                 holder_id=self.holder_id,
-                payload_digest=payload,
-                launch_argv=list(launch),
+                payload_digest=payload_digest,
+                launch_argv=list(envelope["launch_argv"]),
                 nonce=nonce,
+                policy=str(policy),
+                generation=self.generation,
+                key_generation=self.key_generation,
+                expiry=expiry,
             )
             self._pending_exact_run = {
                 "peer_uid": peer_uid,
                 "nonce": nonce,
-                "payload_digest": payload,
-                "launch_argv": list(launch),
+                "payload_digest": payload_digest,
+                "launch_argv": list(envelope["launch_argv"]),
                 "bound": message,
                 "holder_id": self.holder_id,
+                "policy": str(policy),
+                "generation": self.generation,
+                "key_generation": self.key_generation,
+                "expiry": expiry,
+                "workspace": workspace,
+                "files": pairs,
+                "binding": binding,
+                "path_map": path_map,
+                "snapshot_root": snapshot_root,
             }
         return {
             "ok": True,
             "authorized": False,
             "enrolled": False,
             "verified": False,
+            "consumed": False,
             "hardware": False,
+            "not_hardware": True,
+            "run_integration_complete": False,
+            "e2_closed": False,
             "nonce": nonce,
             "bound": base64.b64encode(message).decode("ascii"),
-            "payload_digest": payload,
-            "launch_argv": list(launch),
+            "payload_digest": payload_digest,
+            "launch_argv": list(envelope["launch_argv"]),
+            "policy": policy,
+            "generation": self.generation,
+            "key_generation": self.key_generation,
+            "expiry": expiry,
         }
 
     def authorize_exact_run(
@@ -902,89 +963,56 @@ class ExecutionHolder:
         body: dict[str, Any],
         *,
         peer_uid: int,
+        now: float | None = None,
     ) -> dict[str, Any]:
-        """One session signature authorizes one payload, launch, and nonce.
+        """Feed one verified session signature into consume.
 
-        Installed protection still refuses a software double, a caller hardware
-        label, an origin string, and a pin match. It does not run before the
-        signature check. Admitting a real Secure Enclave key under installed
-        protection is a separate decision and is not implied by this path.
+        The consume path writes the snapshot binding, spent history, and the
+        uncertain lease that execute recovers. This is not a completed run.
+        Installed protection stays fail-closed. A software double, a caller
+        hardware label, an origin string, and a pin match are not hardware.
         """
-
-        from runspecimen.holder_asymmetric import verify_native_p256
-        from runspecimen.native_bridge import production_enrollment_refusal
 
         self._refuse_exact_run_labels(body)
         if not isinstance(peer_uid, int):
             raise HolderRefusal("ipc peer is missing")
-        payload = body.get("payload_digest")
-        launch = body.get("launch_argv")
-        nonce = body.get("nonce")
-        public_key = body.get("public_key")
-        signature = body.get("signature")
-        if not isinstance(payload, str) or not isinstance(nonce, str) or not nonce:
-            raise HolderRefusal("exact run payload is not bound")
-        if not isinstance(launch, list):
-            raise HolderRefusal("exact run launch is not bound")
-        if not isinstance(public_key, str) or not public_key:
+        signatures = body.get("signatures")
+        if not isinstance(signatures, dict) or not signatures:
             raise HolderRefusal("device signature verification failed")
-        if not isinstance(signature, str) or not signature:
-            raise HolderRefusal("device signature verification failed")
+        moment = time.time() if now is None else float(now)
         with self._transaction():
             self._load()
             pending = getattr(self, "_pending_exact_run", None)
             if not isinstance(pending, dict) or pending.get("peer_uid") != peer_uid:
                 raise HolderRefusal("stale exact run")
-            if pending.get("nonce") != nonce or pending.get("payload_digest") != payload:
+            if body.get("nonce") not in (None, pending.get("nonce")):
                 raise HolderRefusal("tampered exact run")
-            if list(pending.get("launch_argv") or []) != list(launch):
-                raise HolderRefusal("tampered exact run")
-            spent = self._spent()
-            if any(isinstance(item, dict) and item.get("nonce") == nonce for item in spent):
-                raise HolderRefusal("nonce was already consumed")
-            try:
-                message = bound_exact_run(
-                    holder_id=str(pending["holder_id"]),
-                    payload_digest=payload,
-                    launch_argv=list(launch),
-                    nonce=nonce,
-                )
-            except (TypeError, ValueError) as exc:
-                raise HolderRefusal("tampered exact run") from exc
-            if message != pending.get("bound"):
-                raise HolderRefusal("tampered exact run")
-            if not verify_native_p256(public_key, signature, message, binary=self._verifier_binary()):
-                raise HolderRefusal("device signature verification failed")
-            device = self._enrolled_session_device(public_key)
-            if device is None:
-                raise HolderRefusal("exact run has no enrolled session key")
-            if device.get("revoked") is True:
-                raise HolderRefusal("exact run device was revoked")
-            software = self._session_key_is_software(device)
-            if self.installed_protection and software:
+            if body.get("policy") not in (None, pending.get("policy")):
+                raise HolderRefusal("exact run policy is not accepted")
+            if int(moment) > int(pending["expiry"]):
                 self._pending_exact_run = None
-                raise HolderRefusal(production_enrollment_refusal())
-            if self.installed_protection and not software:
+                raise HolderRefusal("exact run has expired")
+            if self.generation != pending["generation"] or self.key_generation != pending["key_generation"]:
                 self._pending_exact_run = None
-                raise HolderRefusal(
-                    "Secure Enclave admission under installed protection is undecided"
-                )
-            self._pending_exact_run = None
-            spent.append(
-                {
-                    "nonce": nonce,
-                    "payload_digest": payload,
-                    "launch_argv": list(launch),
-                    "policy": "local",
-                    "generation": self.generation,
-                    "holder_id": self.holder_id,
-                    "key_generation": self.key_generation,
-                    "exact_run": True,
-                    "hardware": False,
-                    "not_hardware": True,
-                }
+                raise HolderRefusal("exact run generation changed")
+            human = self._exact_run_human(pending, signatures, purpose="consume")
+            self._refuse_untrusted_exact_run(human)
+            prepared = {
+                "path_map": pending["path_map"],
+                "payload_digest": pending["payload_digest"],
+                "snapshot_root": pending["snapshot_root"],
+            }
+            consumed = self._consume_locked(
+                nonce=str(pending["nonce"]),
+                policy=str(pending["policy"]),
+                human=human,
+                workspace=Path(str(pending["workspace"])),
+                files=list(pending["files"]),
+                binding=pending["binding"],
+                now=moment,
+                prepared=prepared,
             )
-            self._write("spent.json", {"nonces": spent})
+            self._pending_exact_run = None
         return {
             "ok": True,
             "authorized": True,
@@ -994,10 +1022,160 @@ class ExecutionHolder:
             "hardware": False,
             "not_hardware": True,
             "e2_closed": False,
-            "nonce": nonce,
-            "payload_digest": payload,
-            "launch_argv": list(launch),
+            "run_integration_complete": False,
+            "nonce": consumed["nonce"],
+            "payload_digest": consumed["payload_digest"],
+            "launch_argv": list(pending["launch_argv"]),
+            "policy": consumed["policy"],
+            "lease": "uncertain",
+            "snapshot_root": consumed["snapshot_root"],
         }
+
+    def exact_run_execute_human(self, nonce: str, signatures: dict[str, str]) -> dict[str, Any]:
+        """The same session signatures, for the execute step of that nonce."""
+
+        spent = self._spent()
+        record = next((item for item in spent if item.get("nonce") == nonce), None)
+        if not isinstance(record, dict) or not record.get("exact_run"):
+            raise HolderRefusal("execute nonce is not in replay history")
+        pending = {
+            "nonce": nonce,
+            "policy": record.get("policy"),
+            "expiry": record.get("exact_expiry"),
+            "generation": record.get("generation"),
+            "key_generation": record.get("key_generation"),
+            "holder_id": record.get("holder_id"),
+            "payload_digest": record.get("payload_digest"),
+            "launch_argv": list(record.get("launch_argv") or []),
+            "bound": record.get("exact_bound"),
+        }
+        return self._exact_run_human(pending, signatures, purpose="execute", bound_override=record.get("exact_bound"))
+
+    def _exact_run_human(
+        self,
+        pending: dict[str, Any],
+        signatures: dict[str, Any],
+        *,
+        purpose: str,
+        bound_override: bytes | None = None,
+    ) -> dict[str, Any]:
+        policy = str(pending["policy"])
+        roles = self._exact_run_roles(policy, signatures)
+        devices = _DEVICES[policy]
+        return {
+            "method": "exact-run-session",
+            "purpose": purpose,
+            "subject": pending["nonce"],
+            "policy": policy,
+            "devices": sorted(devices),
+            "expires_at": int(pending["expiry"]),
+            "hardware": False,
+            "signatures": {role: signatures[role] for role in roles},
+            "generation": int(pending["generation"]),
+            "key_generation": int(pending["key_generation"]),
+            "holder_id": str(pending["holder_id"]),
+            "payload_digest": str(pending["payload_digest"]),
+            "launch_argv": list(pending["launch_argv"]),
+            "bound": bound_override if bound_override is not None else pending.get("bound"),
+        }
+
+    def _exact_run_roles(self, policy: str, signatures: dict[str, Any]) -> tuple[str, ...]:
+        if policy == "local":
+            if "phone" in signatures:
+                raise HolderRefusal("local exact run excludes the phone key")
+            if set(signatures) != {"mac"}:
+                raise HolderRefusal("local exact run excludes the phone key")
+            return ("mac",)
+        if policy == "companion":
+            if set(signatures) != {"phone"}:
+                raise HolderRefusal("companion exact run requires the phone key")
+            return ("phone",)
+        if policy == "dual":
+            if set(signatures) != {"mac", "phone"}:
+                raise HolderRefusal("dual exact run requires the mac and phone keys")
+            return ("mac", "phone")
+        raise HolderRefusal("exact run policy is not accepted")
+
+    def _refuse_untrusted_exact_run(self, human: dict[str, Any]) -> None:
+        from runspecimen.native_bridge import production_enrollment_refusal
+
+        if human.get("hardware") is True:
+            raise HolderRefusal("software P-256 is not a Secure Enclave")
+        for role in human["signatures"]:
+            device = self._devices().get(f"{role}-human")
+            if not isinstance(device, dict):
+                raise HolderRefusal("exact run has no enrolled session key")
+            if self.installed_protection and self._session_key_is_software(device):
+                raise HolderRefusal(production_enrollment_refusal())
+            if self.installed_protection and not self._session_key_is_software(device):
+                raise HolderRefusal(
+                    "Secure Enclave admission under installed protection is undecided"
+                )
+
+    def _verify_exact_run_session(
+        self,
+        human: dict[str, Any],
+        *,
+        purpose: str,
+        policy: str,
+        subject: object,
+        authorized: dict[str, Any] | None,
+    ) -> None:
+        from runspecimen.holder_asymmetric import verify_native_p256
+
+        if human.get("purpose") != purpose or human.get("subject") != subject:
+            raise HolderRefusal("human authorization does not match this operation")
+        if human.get("policy") != policy or policy not in POLICIES:
+            raise HolderRefusal("human authorization policy is not local, companion, or dual")
+        if human.get("hardware") is not False:
+            raise HolderRefusal("software P-256 is not a Secure Enclave")
+        expires = human.get("expires_at")
+        if isinstance(expires, bool) or not isinstance(expires, int) or expires <= time.time():
+            raise HolderRefusal("exact run has expired")
+        if int(human.get("generation")) != self.generation or int(human.get("key_generation")) != self.key_generation:
+            raise HolderRefusal("exact run generation changed")
+        signatures = human.get("signatures")
+        if not isinstance(signatures, dict):
+            raise HolderRefusal("device signature verification failed")
+        self._exact_run_roles(policy, signatures)
+        raw_bound = human.get("bound")
+        if isinstance(raw_bound, str):
+            try:
+                raw_bound = base64.b64decode(raw_bound, validate=True)
+            except (ValueError, TypeError) as exc:
+                raise HolderRefusal("tampered exact run") from exc
+        if not isinstance(raw_bound, bytes) or not raw_bound:
+            raise HolderRefusal("tampered exact run")
+        expected = bound_exact_run(
+            holder_id=str(human.get("holder_id")),
+            payload_digest=str(human.get("payload_digest")),
+            launch_argv=list(human.get("launch_argv") or []),
+            nonce=str(subject),
+            policy=policy,
+            generation=int(human.get("generation")),
+            key_generation=int(human.get("key_generation")),
+            expiry=int(expires),
+        )
+        if raw_bound != expected:
+            raise HolderRefusal("tampered exact run")
+        if authorized is not None:
+            if authorized.get("payload_digest") != human.get("payload_digest"):
+                raise HolderRefusal("tampered exact run")
+            if list(authorized.get("launch_argv") or []) != list(human.get("launch_argv") or []):
+                raise HolderRefusal("tampered exact run")
+        phone = self._devices().get("phone-human")
+        for role, signature in signatures.items():
+            device = self._devices().get(f"{role}-human")
+            if not isinstance(device, dict) or device.get("revoked") is True:
+                raise HolderRefusal("exact run device was revoked")
+            public_key = device.get("public_key")
+            if not isinstance(public_key, str) or not isinstance(signature, str):
+                raise HolderRefusal("device signature verification failed")
+            if policy == "local" and isinstance(phone, dict) and public_key == phone.get("public_key"):
+                raise HolderRefusal("local exact run excludes the phone key")
+            if not verify_native_p256(public_key, signature, raw_bound, binary=self._verifier_binary()):
+                raise HolderRefusal("device signature verification failed")
+        self._refuse_untrusted_exact_run(human)
 
     def _refuse_exact_run_labels(self, body: dict[str, Any]) -> None:
         if any(name in body for name in ("origin", "config", "signer", "hardware")):
@@ -1757,6 +1935,7 @@ class ExecutionHolder:
         files: list[tuple[str, str]],
         binding: dict[str, Any] | None = None,
         now: float | None = None,
+        prepared: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self._load()
         self._refuse_lost_history()
@@ -1790,13 +1969,25 @@ class ExecutionHolder:
             "mutation_digest": mutation_digest,
             "attestation_class": self._paired_attestation_class(),
         }
-        path_map, payload_digest, snapshot_root = self._bind(
-            nonce,
-            workspace,
-            files,
-            executable=str(envelope["executable"]),
-            argv=[str(item) for item in envelope["argv"]],
-        )
+        if prepared is None:
+            path_map, payload_digest, snapshot_root = self._bind(
+                nonce,
+                workspace,
+                files,
+                executable=str(envelope["executable"]),
+                argv=[str(item) for item in envelope["argv"]],
+            )
+        else:
+            path_map = prepared["path_map"]
+            payload_digest = str(prepared["payload_digest"])
+            snapshot_root = str(prepared["snapshot_root"])
+            if not isinstance(path_map, dict) or not snapshot_root:
+                raise HolderRefusal("exact run snapshot is missing")
+        if isinstance(human, dict) and human.get("method") == "exact-run-session":
+            if payload_digest != human.get("payload_digest"):
+                raise HolderRefusal("tampered exact run")
+            if list(envelope["launch_argv"]) != list(human.get("launch_argv") or []):
+                raise HolderRefusal("tampered exact run")
         snapshot_path = Path(snapshot_root)
         os.chmod(snapshot_path, 0o700)
         atomic_write_json(
@@ -1816,17 +2007,26 @@ class ExecutionHolder:
             now=now,
             authorized=authorized,
         )
-        spent.append(
-            {
-                "nonce": nonce,
-                "payload_digest": payload_digest,
-                "policy": policy,
-                "generation": self.generation,
-                "holder_id": self.holder_id,
-                "key_generation": self.key_generation,
-                "binding": envelope,
-            }
-        )
+        spent_record = {
+            "nonce": nonce,
+            "payload_digest": payload_digest,
+            "policy": policy,
+            "generation": self.generation,
+            "holder_id": self.holder_id,
+            "key_generation": self.key_generation,
+            "binding": envelope,
+        }
+        if isinstance(human, dict) and human.get("method") == "exact-run-session":
+            raw_bound = human.get("bound")
+            if isinstance(raw_bound, bytes):
+                raw_bound = base64.b64encode(raw_bound).decode("ascii")
+            spent_record["exact_run"] = True
+            spent_record["exact_bound"] = raw_bound
+            spent_record["exact_expiry"] = human.get("expires_at")
+            spent_record["launch_argv"] = list(human.get("launch_argv") or [])
+            spent_record["hardware"] = False
+            spent_record["not_hardware"] = True
+        spent.append(spent_record)
         self._write("spent.json", {"nonces": spent})
         self._write(
             "lease.json",
@@ -2627,6 +2827,15 @@ class ExecutionHolder:
             raise HolderRefusal("human authorization expiry is invalid")
         if expires <= time.time():
             raise HolderRefusal("human authorization has expired")
+        if method == "exact-run-session":
+            self._verify_exact_run_session(
+                human,
+                purpose=purpose,
+                policy=str(policy),
+                subject=subject,
+                authorized=authorized,
+            )
+            return
         if method == "software-test-double":
             if not self.allow_test_double or human.get("hardware") is not False:
                 raise HolderRefusal("software test double is not a human authorization")
