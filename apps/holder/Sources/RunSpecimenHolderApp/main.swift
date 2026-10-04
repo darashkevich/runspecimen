@@ -21,8 +21,11 @@ struct RunSpecimenHolderApp: App {
     @State private var callerSecret = ""
     @State private var companionURL = ""
     @State private var pairingToken = ""
-    @State private var exactPayload = ""
-    @State private var exactLaunch = ""
+    @State private var exactPolicy = "local"
+    @State private var exactWorkspace = ""
+    @State private var exactScript = ""
+    @State private var exactExecutable = ""
+    @State private var exactPhoneSignature = ""
     @State private var pendingPhone: IssuedDeviceChallenge?
 
     var body: some Scene {
@@ -42,8 +45,11 @@ struct RunSpecimenHolderApp: App {
                 TextField("Holder caller secret", text: $callerSecret)
                 TextField("Observe companion URL", text: $companionURL)
                 TextField("Observe pairing token", text: $pairingToken)
-                TextField("Exact-run payload digest", text: $exactPayload)
-                TextField("Exact-run launch argv", text: $exactLaunch)
+                TextField("Exact-run policy: local, companion, or dual", text: $exactPolicy)
+                TextField("Exact-run workspace", text: $exactWorkspace)
+                TextField("Exact-run script path", text: $exactScript)
+                TextField("Exact-run executable", text: $exactExecutable)
+                TextField("Phone signature for companion or dual", text: $exactPhoneSignature)
                 Button("Enroll with Secure Enclave") {
                     Task { await enrollLocalFromPerson() }
                 }
@@ -92,10 +98,67 @@ struct RunSpecimenHolderApp: App {
         }
     }
 
-    /// A digest field is not a snapshot-bound run. This control does not sign.
+    /// Issue, authorize, and execute one snapshot-bound run. Installed admission stays undecided.
     private func signReloadedFromPerson() async {
-        statusText = "Exact run is not snapshot-bound from this control. E2 is not closed."
-        detail = "A digest and launch string do not reach consume or execute. A biometric press does not finish missing implementation."
+        do {
+            let policy = exactPolicy.trimmingCharacters(in: .whitespacesAndNewlines)
+            let workspace = exactWorkspace.trimmingCharacters(in: .whitespacesAndNewlines)
+            let script = exactScript.trimmingCharacters(in: .whitespacesAndNewlines)
+            let executable = exactExecutable.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard policy == "local" || policy == "companion" || policy == "dual" else {
+                throw HolderEnrollmentError.policyRefused
+            }
+            guard !workspace.isEmpty, !script.isEmpty, !executable.isEmpty else {
+                statusText = "Exact run did not reach snapshot-bound execute."
+                detail = "Workspace, script, and executable are required. A digest field is not a run."
+                return
+            }
+            let scriptData = try Data(contentsOf: URL(fileURLWithPath: script))
+            let digest = SHA256.hash(data: scriptData).map { String(format: "%02x", $0) }.joined()
+            let launch: [Any] = [executable, script]
+            let bounds: [String: Any] = [
+                "wall_timeout_sec": 10,
+                "stdout_max_bytes": 65536,
+                "stderr_max_bytes": 65536,
+            ]
+            let binding: [String: Any] = [
+                "contract_hash": String(repeating: "c", count: 64),
+                "workspace": workspace,
+                "argv": [script] as [Any],
+                "executable": script,
+                "policy": policy,
+                "cwd": workspace,
+                "launch_argv": launch,
+                "bounds": bounds,
+            ]
+            let client = try authenticatedClient()
+            let issued = try await client.issueSnapshotExactRun(
+                policy: policy,
+                workspace: workspace,
+                files: [[script, digest]],
+                binding: binding
+            )
+            var signatures: [String: String] = [:]
+            if policy == "local" || policy == "dual" {
+                signatures["mac"] = try custody.sign(role: "mac", message: issued.bound).base64EncodedString()
+            }
+            if policy == "companion" || policy == "dual" {
+                let phone = exactPhoneSignature.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !phone.isEmpty else {
+                    statusText = "Exact run did not reach snapshot-bound execute."
+                    detail = "Companion and dual require the phone key signature. A local-only signature is not enough."
+                    return
+                }
+                signatures["phone"] = phone
+            }
+            try await client.authorizeSnapshotExactRun(nonce: issued.nonce, policy: policy, signatures: signatures)
+            let executed = try await client.executeSnapshotExactRun(nonce: issued.nonce, signatures: signatures)
+            statusText = "Exact run reached snapshot-bound execute. Installed admission is still undecided."
+            detail = "\(executed). run_integration_complete is false. A press does not admit a Secure Enclave key."
+        } catch {
+            statusText = "Exact run did not reach snapshot-bound execute."
+            detail = "\(error)"
+        }
     }
 
     /// Publishes a holder-issued challenge to RunSpecimenObserve. It does not enroll.
@@ -130,14 +193,20 @@ struct RunSpecimenHolderApp: App {
                 issued: issued,
                 signatureBase64: submission.signature
             )
-            try await ObserveMailbox.recordHolderVerification(
+            let prepared = try await authenticatedClient().preparePhoneReceipt(challengeId: issued.nonce)
+            let macSignature = try custody.sign(role: "mac", message: prepared.receipt)
+            let sealed = try await authenticatedClient().sealPhoneReceipt(
                 challengeId: issued.nonce,
+                signatureBase64: macSignature.base64EncodedString()
+            )
+            try await ObserveMailbox.recordHolderReceipt(
+                sealed,
                 baseURL: companionURL,
                 pairingToken: pairingToken
             )
             pendingPhone = nil
-            statusText = "Holder verified the phone signature and consumed the challenge. E2 is not closed."
-            detail = receipt
+            statusText = "Holder sealed a phone receipt. The mailbox flag is not enrollment. E2 is not closed."
+            detail = "\(receipt). mac_public_key=\(sealed.macPublicKey)"
         } catch HolderEnrollmentError.staleChallenge {
             try? await authenticatedClient().cancel(role: "phone")
             pendingPhone = nil
@@ -346,12 +415,20 @@ enum ObserveMailbox {
         return (challenge, publicKey, signature)
     }
 
-    static func recordHolderVerification(challengeId: String, baseURL: String, pairingToken: String) async throws {
+    static func recordHolderReceipt(
+        _ sealed: SealedPhoneReceipt,
+        baseURL: String,
+        pairingToken: String
+    ) async throws {
         let payload: [String: Any] = [
-            "challenge_id": challengeId,
-            "verified": true,
-            "consumed": true,
-            "enrolled": false,
+            "challenge_id": sealed.challengeId,
+            "receipt": sealed.receipt,
+            "signature": sealed.signature,
+            "mac_public_key": sealed.macPublicKey,
+            "phone_fingerprint": sealed.phoneFingerprint,
+            "holder_id": sealed.holderId,
+            "generation": sealed.generation,
+            "outcome": sealed.outcome,
         ]
         let body = try await request(
             baseURL: baseURL,
@@ -360,7 +437,10 @@ enum ObserveMailbox {
             method: "POST",
             payload: payload
         )
-        guard body["verified"] as? Bool == true, body["consumed"] as? Bool == true, body["enrolled"] as? Bool == false else {
+        guard body["accepted"] as? Bool == true,
+              body["verified"] as? Bool == false,
+              body["enrolled"] as? Bool == false
+        else {
             throw HolderEnrollmentError.observeUnavailable
         }
     }

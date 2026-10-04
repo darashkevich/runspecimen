@@ -2563,8 +2563,16 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
         self.assertEqual(spent["nonce"], issued["nonce"])
         self.assertIn("binding", spent)
         self.assertTrue((Path(authorized["snapshot_root"]) / "authorized_launch.json").is_file())
-        human = server.holder.exact_run_execute_human(issued["nonce"], {"mac": mac_signature})
-        server.holder.execute(token=issued["nonce"], human=human)
+        executed = client.call(
+            {
+                "op": "execute-exact-run",
+                "nonce": issued["nonce"],
+                "signatures": {"mac": mac_signature},
+            }
+        )
+        self.assertEqual(executed["exit_code"], 0)
+        self.assertFalse(executed["run_integration_complete"])
+        self.assertFalse(executed["e2_closed"])
         self.assertEqual((ws.parent / "ran").read_text(encoding="utf-8"), "ran")
         self._assert_second_consume_fails(server.holder, issued["nonce"], ws, script, binding, "local")
         installed_root = root / "installed-state"
@@ -2632,8 +2640,15 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
             authorized = self._authorize_exact(client, issued, signatures, policy=policy)
             self.assertEqual(authorized["policy"], policy)
             self.assertFalse(authorized["run_integration_complete"])
-            human = server.holder.exact_run_execute_human(issued["nonce"], signatures)
-            server.holder.execute(token=issued["nonce"], human=human)
+            executed = client.call(
+                {
+                    "op": "execute-exact-run",
+                    "nonce": issued["nonce"],
+                    "signatures": signatures,
+                }
+            )
+            self.assertEqual(executed["exit_code"], 0)
+            self.assertFalse(executed["run_integration_complete"])
             self.assertEqual((ws.parent / "ran").read_text(encoding="utf-8"), "ran")
             self._assert_second_consume_fails(server.holder, issued["nonce"], ws, script, binding, policy)
 
@@ -2683,3 +2698,99 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
             nonces = [item.get("nonce") for item in json.loads(spent_path.read_text(encoding="utf-8"))["nonces"]]
         self.assertNotIn(expired["nonce"], nonces)
         self.assertNotIn(current["nonce"], nonces)
+
+    def test_phone_receipt_rejects_forged_flags_wrong_key_replay_and_stale(self) -> None:
+        import base64
+
+        from tests.test_native_bridge_policies import _sign
+
+        if sys.platform != "darwin":
+            self.skipTest("P-256 verification uses the Darwin verifier")
+        td = tempfile.TemporaryDirectory(prefix="rsh-phone-receipt-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        server, client, _custody, material = self._enroll_exact_roles(root, ("mac", "phone"))
+        pending = json.loads((server.holder.root / "phone-receipt-pending.json").read_text(encoding="utf-8"))
+        with self.assertRaises(HolderRefusal) as flags:
+            client.call(
+                {
+                    "op": "prepare-phone-receipt",
+                    "challenge_id": pending["challenge_id"],
+                    "verified": True,
+                    "consumed": True,
+                }
+            )
+        self.assertIn("a caller flag is not a holder receipt", str(flags.exception))
+        with self.assertRaises(HolderRefusal) as seal_flags:
+            client.call(
+                {
+                    "op": "seal-phone-receipt",
+                    "challenge_id": pending["challenge_id"],
+                    "verified": True,
+                    "consumed": True,
+                }
+            )
+        self.assertIn("a caller flag is not a holder receipt", str(seal_flags.exception))
+        prepared = client.call({"op": "prepare-phone-receipt", "challenge_id": pending["challenge_id"]})
+        self.assertFalse(prepared["verified"])
+        self.assertFalse(prepared["sealed"])
+        receipt = base64.b64decode(prepared["receipt"])
+        mac_signature = _sign(material["mac"][0], material["mac"][2], receipt)
+        phone_signature = _sign(material["phone"][0], material["phone"][2], receipt)
+        with self.assertRaises(HolderRefusal) as wrong_key:
+            client.call(
+                {
+                    "op": "seal-phone-receipt",
+                    "challenge_id": pending["challenge_id"],
+                    "signature": phone_signature,
+                }
+            )
+        self.assertIn("phone receipt verification failed", str(wrong_key.exception))
+        with self.assertRaises(HolderRefusal) as wrong_challenge:
+            client.call(
+                {
+                    "op": "seal-phone-receipt",
+                    "challenge_id": "other-challenge",
+                    "signature": mac_signature,
+                }
+            )
+        self.assertIn("stale phone receipt", str(wrong_challenge.exception))
+        meta_path = server.holder.root / "meta.json"
+        os.chmod(meta_path, 0o600)
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta["generation"] = int(meta["generation"]) + 1
+        meta_path.write_text(json.dumps(meta), encoding="utf-8")
+        with self.assertRaises(HolderRefusal) as stale:
+            client.call(
+                {
+                    "op": "seal-phone-receipt",
+                    "challenge_id": pending["challenge_id"],
+                    "signature": mac_signature,
+                }
+            )
+        self.assertIn("stale phone receipt", str(stale.exception))
+        meta["generation"] = int(meta["generation"]) - 1
+        meta_path.write_text(json.dumps(meta), encoding="utf-8")
+        sealed = client.call(
+            {
+                "op": "seal-phone-receipt",
+                "challenge_id": pending["challenge_id"],
+                "signature": mac_signature,
+                "verified": True,
+                "consumed": True,
+            }
+        )
+        self.assertTrue(sealed["verified"])
+        self.assertTrue(sealed["consumed"])
+        self.assertTrue(sealed["sealed"])
+        self.assertFalse(sealed["enrolled"])
+        self.assertEqual(sealed["outcome"], "verified-consumed")
+        with self.assertRaises(HolderRefusal) as replay:
+            client.call(
+                {
+                    "op": "seal-phone-receipt",
+                    "challenge_id": pending["challenge_id"],
+                    "signature": mac_signature,
+                }
+            )
+        self.assertIn("replayed phone receipt", str(replay.exception))

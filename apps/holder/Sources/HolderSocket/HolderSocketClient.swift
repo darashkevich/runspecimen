@@ -51,6 +51,49 @@ public struct IssuedDeviceChallenge: Equatable {
     }
 }
 
+public struct PreparedPhoneReceipt: Equatable {
+    public var challengeId: String
+    public var receipt: Data
+    public var macPublicKey: String
+
+    public init(challengeId: String, receipt: Data, macPublicKey: String) {
+        self.challengeId = challengeId
+        self.receipt = receipt
+        self.macPublicKey = macPublicKey
+    }
+}
+
+public struct SealedPhoneReceipt: Equatable {
+    public var challengeId: String
+    public var receipt: String
+    public var signature: String
+    public var macPublicKey: String
+    public var phoneFingerprint: String
+    public var holderId: String
+    public var generation: Int
+    public var outcome: String
+
+    public init(
+        challengeId: String,
+        receipt: String,
+        signature: String,
+        macPublicKey: String,
+        phoneFingerprint: String,
+        holderId: String,
+        generation: Int,
+        outcome: String
+    ) {
+        self.challengeId = challengeId
+        self.receipt = receipt
+        self.signature = signature
+        self.macPublicKey = macPublicKey
+        self.phoneFingerprint = phoneFingerprint
+        self.holderId = holderId
+        self.generation = generation
+        self.outcome = outcome
+    }
+}
+
 public struct IssuedExactRun: Equatable {
     public var nonce: String
     public var bound: Data
@@ -304,6 +347,122 @@ public final class HolderSocketClient: @unchecked Sendable {
         }
         guard body["hardware"] as? Bool == false else { throw HolderSocketError.ipcFailed }
         return "exact run consumed \(issued.nonce)"
+    }
+
+    public func issueSnapshotExactRun(
+        policy: String,
+        workspace: String,
+        files: [[String]],
+        binding: [String: Any],
+        deadline: TimeInterval = 5
+    ) async throws -> IssuedExactRun {
+        let rows: [Any] = files.map { [$0[0], $0[1]] as [Any] }
+        let body = try await transact([
+            "op": "issue-exact-run",
+            "policy": policy,
+            "workspace": workspace,
+            "files": rows,
+            "binding": binding,
+        ], deadline: deadline)
+        guard
+            let nonce = body["nonce"] as? String,
+            let boundB64 = body["bound"] as? String,
+            let bound = Data(base64Encoded: boundB64),
+            body["authorized"] as? Bool == false,
+            body["run_integration_complete"] as? Bool == false
+        else { throw HolderSocketError.missingExactRun }
+        return IssuedExactRun(
+            nonce: nonce,
+            bound: bound,
+            payloadDigest: body["payload_digest"] as? String ?? "",
+            launchArgv: []
+        )
+    }
+
+    public func authorizeSnapshotExactRun(
+        nonce: String,
+        policy: String,
+        signatures: [String: String],
+        deadline: TimeInterval = 5
+    ) async throws {
+        let body = try await transact([
+            "op": "authorize-exact-run",
+            "nonce": nonce,
+            "policy": policy,
+            "signatures": signatures,
+        ], deadline: deadline)
+        guard
+            body["authorized"] as? Bool == true,
+            body["consumed"] as? Bool == true,
+            body["run_integration_complete"] as? Bool == false,
+            body["hardware"] as? Bool == false
+        else { throw HolderSocketError.ipcFailed }
+    }
+
+    public func executeSnapshotExactRun(
+        nonce: String,
+        signatures: [String: String],
+        deadline: TimeInterval = 30
+    ) async throws -> String {
+        let body = try await transact([
+            "op": "execute-exact-run",
+            "nonce": nonce,
+            "signatures": signatures,
+        ], deadline: deadline)
+        guard
+            body["exit_code"] as? Int == 0,
+            body["run_integration_complete"] as? Bool == false,
+            body["e2_closed"] as? Bool == false
+        else { throw HolderSocketError.ipcFailed }
+        return "snapshot execute \(nonce); run_integration_complete false"
+    }
+
+    public func preparePhoneReceipt(challengeId: String, deadline: TimeInterval = 5) async throws -> PreparedPhoneReceipt {
+        let body = try await transact([
+            "op": "prepare-phone-receipt",
+            "challenge_id": challengeId,
+        ], deadline: deadline)
+        guard
+            body["verified"] as? Bool == false,
+            body["sealed"] as? Bool == false,
+            let receiptB64 = body["receipt"] as? String,
+            let receipt = Data(base64Encoded: receiptB64),
+            let macPublicKey = body["mac_public_key"] as? String
+        else { throw HolderSocketError.ipcFailed }
+        return PreparedPhoneReceipt(challengeId: challengeId, receipt: receipt, macPublicKey: macPublicKey)
+    }
+
+    public func sealPhoneReceipt(
+        challengeId: String,
+        signatureBase64: String,
+        deadline: TimeInterval = 5
+    ) async throws -> SealedPhoneReceipt {
+        let body = try await transact([
+            "op": "seal-phone-receipt",
+            "challenge_id": challengeId,
+            "signature": signatureBase64,
+        ], deadline: deadline)
+        guard
+            body["sealed"] as? Bool == true,
+            body["verified"] as? Bool == true,
+            body["enrolled"] as? Bool == false,
+            let receipt = body["receipt"] as? String,
+            let macPublicKey = body["mac_public_key"] as? String,
+            let phoneFingerprint = body["phone_fingerprint"] as? String,
+            let holderId = body["holder_id"] as? String,
+            let generation = holderJSONInt(body["generation"]),
+            let outcome = body["outcome"] as? String
+        else { throw HolderSocketError.ipcFailed }
+        return SealedPhoneReceipt(
+            challengeId: challengeId,
+            receipt: receipt,
+            signature: signatureBase64,
+            macPublicKey: macPublicKey,
+            phoneFingerprint: phoneFingerprint,
+            holderId: holderId,
+            generation: generation,
+            outcome: outcome
+        )
     }
 
     public func transact(_ fields: [String: Any], deadline: TimeInterval = 5) async throws -> [String: Any] {

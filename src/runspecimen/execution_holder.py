@@ -40,6 +40,8 @@ except ImportError:  # pragma: no cover
 PROTOCOL = 1
 DEVICE_CHALLENGE_DOMAIN = "holder-device-p256-v1"
 EXACT_RUN_DOMAIN = "holder-exact-run-v1"
+PHONE_RECEIPT_DOMAIN = "holder-phone-receipt-v1"
+PHONE_RECEIPT_OUTCOME = "verified-consumed"
 
 
 def bound_device_message(
@@ -66,6 +68,31 @@ def bound_device_message(
             "holder_id": holder_id,
             "nonce": nonce,
             "role": role,
+        }
+    )
+
+
+def bound_phone_receipt(
+    *,
+    holder_id: str,
+    generation: int,
+    challenge_id: str,
+    challenge: str,
+    phone_fingerprint: str,
+    mac_public_key: str,
+) -> bytes:
+    """Canonical holder receipt. A caller verified flag is not this message."""
+
+    return canonical_json_bytes(
+        {
+            "challenge": challenge,
+            "challenge_id": challenge_id,
+            "domain": PHONE_RECEIPT_DOMAIN,
+            "generation": int(generation),
+            "holder_id": holder_id,
+            "mac_public_key": mac_public_key,
+            "outcome": PHONE_RECEIPT_OUTCOME,
+            "phone_fingerprint": phone_fingerprint,
         }
     )
 
@@ -857,6 +884,19 @@ class ExecutionHolder:
                 keys = {}
             keys[device_id] = {"id": proof_id, "public_key": public_key, "generation": started}
             atomic_write_json(proof_path, {"keys": keys, "generation": started})
+            if role == "phone":
+                atomic_write_json(
+                    self.root / "phone-receipt-pending.json",
+                    {
+                        "challenge_id": nonce,
+                        "challenge": base64.b64encode(pending["challenge"]).decode("ascii"),
+                        "holder_id": str(pending["holder_id"]),
+                        "generation": int(pending["generation"]),
+                        "phone_fingerprint": compared,
+                        "phone_public_key": public_key,
+                        "sealed": False,
+                    },
+                )
         return {
             "ok": True,
             "enrolled": True,
@@ -867,6 +907,108 @@ class ExecutionHolder:
             "device": device_id,
             "e2_closed": False,
             "biometric_invoked": False,
+        }
+
+    def _phone_receipt_material(self, body: dict[str, Any]) -> tuple[dict[str, Any], str, bytes]:
+        """Rebuild the receipt from holder state. Caller flags are not read."""
+
+        pending_path = self.root / "phone-receipt-pending.json"
+        if not pending_path.exists():
+            raise HolderRefusal("stale phone receipt")
+        pending = read_json(pending_path)
+        if not isinstance(pending, dict):
+            raise HolderRefusal("stale phone receipt")
+        if body.get("challenge_id") != pending.get("challenge_id"):
+            raise HolderRefusal("stale phone receipt")
+        if int(pending.get("generation")) != self.generation:
+            raise HolderRefusal("stale phone receipt")
+        if pending.get("challenge_id") not in self._spent_device_nonces():
+            raise HolderRefusal("stale phone receipt")
+        mac = self._devices().get("mac-human")
+        if not isinstance(mac, dict) or not isinstance(mac.get("public_key"), str):
+            raise HolderRefusal("phone receipt has no enrolled mac key")
+        supplied = body.get("mac_public_key")
+        if supplied not in (None, mac["public_key"]):
+            raise HolderRefusal("phone receipt key does not match")
+        message = bound_phone_receipt(
+            holder_id=str(pending["holder_id"]),
+            generation=int(pending["generation"]),
+            challenge_id=str(pending["challenge_id"]),
+            challenge=str(pending["challenge"]),
+            phone_fingerprint=str(pending["phone_fingerprint"]),
+            mac_public_key=str(mac["public_key"]),
+        )
+        supplied_receipt = body.get("receipt")
+        if supplied_receipt not in (None, base64.b64encode(message).decode("ascii")):
+            raise HolderRefusal("tampered phone receipt")
+        return pending, str(mac["public_key"]), message
+
+    def prepare_phone_receipt(self, body: dict[str, Any], *, peer_uid: int) -> dict[str, Any]:
+        """Return receipt bytes for the enrolled Mac key to sign. This does not enroll."""
+
+        if not isinstance(peer_uid, int):
+            raise HolderRefusal("ipc peer is missing")
+        if body.get("verified") is True or body.get("consumed") is True:
+            raise HolderRefusal("a caller flag is not a holder receipt")
+        with self._transaction():
+            self._load()
+            pending, mac_key, message = self._phone_receipt_material(body)
+        return {
+            "ok": True,
+            "verified": False,
+            "consumed": False,
+            "enrolled": False,
+            "sealed": False,
+            "hardware": False,
+            "receipt": base64.b64encode(message).decode("ascii"),
+            "mac_public_key": mac_key,
+            "phone_fingerprint": pending["phone_fingerprint"],
+            "challenge_id": pending["challenge_id"],
+            "holder_id": pending["holder_id"],
+            "generation": pending["generation"],
+            "outcome": PHONE_RECEIPT_OUTCOME,
+        }
+
+    def seal_phone_receipt(self, body: dict[str, Any], *, peer_uid: int) -> dict[str, Any]:
+        """Accept the receipt only when the enrolled Mac key signed it.
+
+        ``verified`` and ``consumed`` in the caller body are ignored. A paired
+        mailbox token cannot mint this signature.
+        """
+
+        from runspecimen.holder_asymmetric import verify_native_p256
+
+        if not isinstance(peer_uid, int):
+            raise HolderRefusal("ipc peer is missing")
+        signature = body.get("signature")
+        if not isinstance(signature, str) or not signature:
+            raise HolderRefusal("a caller flag is not a holder receipt")
+        with self._transaction():
+            self._load()
+            pending, mac_key, message = self._phone_receipt_material(body)
+            if pending.get("sealed") is True:
+                raise HolderRefusal("replayed phone receipt")
+            if not verify_native_p256(mac_key, signature, message, binary=self._verifier_binary()):
+                raise HolderRefusal("phone receipt verification failed")
+            pending["sealed"] = True
+            atomic_write_json(self.root / "phone-receipt-pending.json", pending)
+        return {
+            "ok": True,
+            "verified": True,
+            "consumed": True,
+            "enrolled": False,
+            "sealed": True,
+            "hardware": False,
+            "not_hardware": True,
+            "receipt": base64.b64encode(message).decode("ascii"),
+            "signature": signature,
+            "mac_public_key": mac_key,
+            "phone_fingerprint": pending["phone_fingerprint"],
+            "challenge_id": pending["challenge_id"],
+            "holder_id": pending["holder_id"],
+            "generation": pending["generation"],
+            "outcome": PHONE_RECEIPT_OUTCOME,
+            "e2_closed": False,
         }
 
     def issue_exact_run(self, body: dict[str, Any], *, peer_uid: int, now: float | None = None) -> dict[str, Any]:
@@ -899,6 +1041,9 @@ class ExecutionHolder:
             self._load()
             if not isinstance(binding, dict):
                 raise HolderRefusal("exact run payload is not bound")
+            if "key_generation" not in binding:
+                binding = dict(binding)
+                binding["key_generation"] = self.key_generation
             if binding.get("policy") != policy:
                 raise HolderRefusal("exact run policy is not accepted")
             envelope = self._binding_envelope(binding)
@@ -3650,6 +3795,16 @@ def dispatch(holder: ExecutionHolder, body: dict[str, Any], *, caller_id: str) -
         if not isinstance(peer, int):
             raise HolderRefusal("ipc peer is missing")
         return holder.submit_device_signature(body, peer_uid=peer)
+    if op == "prepare-phone-receipt":
+        peer = body.get("_peer_uid")
+        if not isinstance(peer, int):
+            raise HolderRefusal("ipc peer is missing")
+        return holder.prepare_phone_receipt(body, peer_uid=peer)
+    if op == "seal-phone-receipt":
+        peer = body.get("_peer_uid")
+        if not isinstance(peer, int):
+            raise HolderRefusal("ipc peer is missing")
+        return holder.seal_phone_receipt(body, peer_uid=peer)
     if op == "issue-exact-run":
         peer = body.get("_peer_uid")
         if not isinstance(peer, int):
@@ -3660,6 +3815,23 @@ def dispatch(holder: ExecutionHolder, body: dict[str, Any], *, caller_id: str) -
         if not isinstance(peer, int):
             raise HolderRefusal("ipc peer is missing")
         return holder.authorize_exact_run(body, peer_uid=peer)
+    if op == "execute-exact-run":
+        signatures = body.get("signatures")
+        if not isinstance(signatures, dict):
+            raise HolderRefusal("device signature verification failed")
+        peer_uid = body.get("_peer_uid")
+        peer_gid = body.get("_peer_gid")
+        human = holder.exact_run_execute_human(str(body.get("nonce")), signatures)
+        result = holder.execute(
+            token=str(body.get("nonce")),
+            human=human,
+            peer_uid=int(peer_uid) if isinstance(peer_uid, int) else None,
+            peer_gid=int(peer_gid) if isinstance(peer_gid, int) else None,
+        )
+        result = dict(result)
+        result["run_integration_complete"] = False
+        result["e2_closed"] = False
+        return result
     if op == "enroll":
         if caller_id != "bootstrap":
             raise HolderRefusal("only the bootstrap caller can enroll")

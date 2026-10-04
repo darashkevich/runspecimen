@@ -79,6 +79,26 @@ final class HolderSocketClientTests: XCTestCase {
         XCTAssertTrue(client.ioOffMainThread)
     }
 
+    func testRestartAndConcurrentExchangesBothComplete() async throws {
+        let firstPath = try makeSocket()
+        let first = try await client(firstPath)
+        let firstServer = FrameServer(path: firstPath)
+        firstServer.start { request, sealer in try sealer(request) }
+        let opened = try await first.transact(["op": "ping"], deadline: 2)
+        XCTAssertEqual(opened["ok"] as? Bool, true)
+        firstServer.stop()
+        let restarted = try makeSocket()
+        let second = try await client(restarted)
+        let secondServer = FrameServer(path: restarted)
+        secondServer.start { request, sealer in try sealer(request) }
+        defer { secondServer.stop() }
+        async let left = second.transact(["op": "left"], deadline: 2)
+        async let right = second.transact(["op": "right"], deadline: 2)
+        let pair = try await (left, right)
+        XCTAssertEqual(pair.0["ok"] as? Bool, true)
+        XCTAssertEqual(pair.1["ok"] as? Bool, true)
+    }
+
     func testSymlinkEndpointIsRefused() async throws {
         let path = try makeSocket()
         let link = path + ".link"
@@ -261,7 +281,9 @@ final class HolderSocketClientTests: XCTestCase {
                 accept(listener, $0, &length)
             }
         }
-        if accepted >= 0 { close(accepted) }
+        XCTAssertGreaterThanOrEqual(accepted, 0)
+        Thread.sleep(forTimeInterval: 0.05)
+        close(accepted)
         XCTAssertEqual(done.wait(timeout: .now() + 3), .success)
         XCTAssertEqual(outcome.get(), .peerClosed)
     }
@@ -299,7 +321,7 @@ final class HolderSocketClientTests: XCTestCase {
     }
 
     private func makeSocket() throws -> String {
-        let path = "/private/tmp/rs-qa-reply-\(UUID().uuidString).sock"
+        let path = "/private/tmp/rs-qa-receipt-\(UUID().uuidString).sock"
         if FileManager.default.fileExists(atPath: path) {
             try FileManager.default.removeItem(atPath: path)
         }

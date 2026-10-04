@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 @MainActor
@@ -97,7 +98,7 @@ struct PhonePeerCancellationTests {
             try await testDelayedFetchThenCancelDoesNotSignOrPost()
             try await testCancelBeforePostDoesNotPublish()
             try await testPostThatAlreadyLeftIsCancellationTooLate()
-            try await testPhoneKeyCommitsOnlyAfterHolderVerification()
+            try await testForgedFlagsWrongKeyChallengeReplayCancelAndStaleDoNotCommit()
             try testPhoneKeyStageRollsBackAndRevokes()
             try testPhoneKeyCommitFailureKeepsThePreviousGeneration()
             print("PhonePeerCancellationTests passed")
@@ -173,28 +174,79 @@ func testPostThatAlreadyLeftIsCancellationTooLate() async throws {
     }
 }
 
+func signedPhoneReceipt(
+    key: P256.Signing.PrivateKey,
+    challenge: PhonePeerChallengeMessage,
+    phonePublic: String,
+    generation: Int? = nil,
+    challengeId: String? = nil
+) throws -> PhoneHolderVerification {
+    let mac = key.publicKey.x963Representation.base64EncodedString()
+    let canonical = phoneReceiptCanonical(
+        challenge: challenge.challenge,
+        challengeId: challengeId ?? challenge.challengeId,
+        generation: generation ?? challenge.generation,
+        holderId: challenge.holderId,
+        macPublicKey: mac,
+        phoneFingerprint: phoneKeyFingerprint(phonePublic)
+    )
+    let signature = try key.signature(for: Data(canonical.utf8)).rawRepresentation.base64EncodedString()
+    return PhoneHolderVerification(
+        verified: true,
+        consumed: true,
+        invalidated: false,
+        challengeId: challengeId ?? challenge.challengeId,
+        receipt: Data(canonical.utf8).base64EncodedString(),
+        signature: signature,
+        macPublicKey: mac,
+        phoneFingerprint: phoneKeyFingerprint(phonePublic),
+        holderId: challenge.holderId,
+        generation: generation ?? challenge.generation,
+        outcome: "verified-consumed"
+    )
+}
+
 @MainActor
-func testPhoneKeyCommitsOnlyAfterHolderVerification() async throws {
+func testForgedFlagsWrongKeyChallengeReplayCancelAndStaleDoNotCommit() async throws {
     let peer = HoldingPeer(hold: FetchHold())
     peer.holdFetch = false
     let signer = CountingSigner()
     let session = CompanionSession()
     let task = Task { await session.signPhonePeerChallenge(signer: signer, peer: peer) }
     await task.value
-    await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
-    if signer.commits != 0 {
-        throw TestFailure.mailboxAcceptanceEnrolled
-    }
-    peer.verification = PhoneHolderVerification(verified: true, consumed: false, invalidated: false)
-    await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
-    if signer.commits != 0 {
-        throw TestFailure.mailboxAcceptanceEnrolled
-    }
+    guard let challenge = session.phoneChallenge else { throw TestFailure.holderVerificationDidNotEnroll }
+    let mac = P256.Signing.PrivateKey()
+    session.macSessionPublicKey = mac.publicKey.x963Representation.base64EncodedString()
     peer.verification = PhoneHolderVerification(verified: true, consumed: true, invalidated: false)
     await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
-    if signer.commits != 1 {
-        throw TestFailure.holderVerificationDidNotEnroll
-    }
+    if signer.commits != 0 { throw TestFailure.mailboxAcceptanceEnrolled }
+    let wrong = P256.Signing.PrivateKey()
+    peer.verification = try signedPhoneReceipt(key: wrong, challenge: challenge, phonePublic: "cHVibGlj")
+    await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
+    if signer.commits != 0 { throw TestFailure.mailboxAcceptanceEnrolled }
+    peer.verification = try signedPhoneReceipt(
+        key: mac, challenge: challenge, phonePublic: "cHVibGlj", challengeId: "other-challenge"
+    )
+    await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
+    if signer.commits != 0 { throw TestFailure.mailboxAcceptanceEnrolled }
+    peer.verification = try signedPhoneReceipt(
+        key: mac, challenge: challenge, phonePublic: "cHVibGlj", generation: 99
+    )
+    await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
+    if signer.commits != 0 { throw TestFailure.mailboxAcceptanceEnrolled }
+    var cancelled = try signedPhoneReceipt(key: mac, challenge: challenge, phonePublic: "cHVibGlj")
+    cancelled.invalidated = true
+    peer.verification = cancelled
+    await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
+    if signer.commits != 0 { throw TestFailure.mailboxAcceptanceEnrolled }
+    let good = try signedPhoneReceipt(key: mac, challenge: challenge, phonePublic: "cHVibGlj")
+    peer.verification = good
+    await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
+    if signer.commits != 1 { throw TestFailure.holderVerificationDidNotEnroll }
+    session.phoneChallenge = challenge
+    peer.verification = good
+    await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
+    if signer.commits != 1 { throw TestFailure.mailboxAcceptanceEnrolled }
 }
 
 func testPhoneKeyCommitFailureKeepsThePreviousGeneration() throws {

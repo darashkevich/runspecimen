@@ -177,6 +177,7 @@ def make_handler(
         "signature": None,
         "verification": None,
         "invalidated": None,
+        "receipts": [],
     }
 
     def current_status() -> dict[str, Any]:
@@ -331,6 +332,8 @@ def make_handler(
                                     "consumed": False,
                                     "enrolled": False,
                                     "invalidated": invalidated,
+                                    "receipt": None,
+                                    "caller_flags_are_not_a_receipt": True,
                                 },
                                 sort_keys=True,
                             ).encode("utf-8"),
@@ -341,11 +344,19 @@ def make_handler(
                         json.dumps(
                             {
                                 "ok": True,
-                                "verified": record.get("verified") is True,
-                                "consumed": record.get("consumed") is True,
+                                "verified": False,
+                                "consumed": False,
                                 "enrolled": False,
                                 "invalidated": False,
+                                "caller_flags_are_not_a_receipt": True,
                                 "challenge_id": record.get("challenge_id"),
+                                "receipt": record.get("receipt"),
+                                "signature": record.get("signature"),
+                                "mac_public_key": record.get("mac_public_key"),
+                                "phone_fingerprint": record.get("phone_fingerprint"),
+                                "holder_id": record.get("holder_id"),
+                                "generation": record.get("generation"),
+                                "outcome": record.get("outcome"),
                             },
                             sort_keys=True,
                         ).encode("utf-8"),
@@ -474,6 +485,7 @@ def make_handler(
                     phone_mailbox["signature"] = None
                     phone_mailbox["verification"] = None
                     phone_mailbox["invalidated"] = None
+                    phone_mailbox["receipts"] = []
                 self._respond(
                     202,
                     json.dumps(
@@ -496,6 +508,7 @@ def make_handler(
                     phone_mailbox["challenge"] = None
                     phone_mailbox["signature"] = None
                     phone_mailbox["verification"] = None
+                    phone_mailbox["receipts"] = []
                     phone_mailbox["invalidated"] = challenge_id if isinstance(challenge_id, str) else True
                 self._respond(
                     202,
@@ -513,8 +526,18 @@ def make_handler(
                 )
                 return
             if route == "/v1/phone-peer-verification":
-                if payload.get("verified") is not True or payload.get("consumed") is not True:
-                    self._error(409, "holder verification is missing")
+                receipt = payload.get("receipt")
+                signature = payload.get("signature")
+                mac_public_key = payload.get("mac_public_key")
+                if (
+                    not isinstance(receipt, str)
+                    or not receipt
+                    or not isinstance(signature, str)
+                    or not signature
+                    or not isinstance(mac_public_key, str)
+                    or not mac_public_key
+                ):
+                    self._error(409, "a caller flag is not a holder receipt")
                     return
                 with phone_lock:
                     if phone_mailbox.get("invalidated"):
@@ -524,10 +547,23 @@ def make_handler(
                     if not isinstance(current, dict) or payload.get("challenge_id") != current.get("challenge_id"):
                         self._error(409, "stale phone challenge")
                         return
+                    seen = phone_mailbox.setdefault("receipts", [])
+                    if not isinstance(seen, list):
+                        seen = []
+                        phone_mailbox["receipts"] = seen
+                    if signature in seen:
+                        self._error(409, "replayed holder receipt")
+                        return
+                    seen.append(signature)
                     phone_mailbox["verification"] = {
                         "challenge_id": current["challenge_id"],
-                        "verified": True,
-                        "consumed": True,
+                        "receipt": receipt,
+                        "signature": signature,
+                        "mac_public_key": mac_public_key,
+                        "phone_fingerprint": payload.get("phone_fingerprint"),
+                        "holder_id": payload.get("holder_id"),
+                        "generation": payload.get("generation"),
+                        "outcome": payload.get("outcome"),
                         "enrolled": False,
                     }
                 self._respond(
@@ -535,10 +571,12 @@ def make_handler(
                     json.dumps(
                         {
                             "ok": True,
-                            "verified": True,
-                            "consumed": True,
+                            "accepted": True,
+                            "verified": False,
+                            "consumed": False,
                             "enrolled": False,
                             "can_approve": False,
+                            "caller_flags_are_not_a_receipt": True,
                         },
                         sort_keys=True,
                     ).encode("utf-8"),

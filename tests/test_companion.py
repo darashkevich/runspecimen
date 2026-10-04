@@ -184,7 +184,39 @@ class TestCompanion(RunSpecimenTestCase):
             )
             incomplete = conn.getresponse()
             self.assertEqual(incomplete.status, 409)
-            incomplete.read()
+            self.assertIn("not a holder receipt", incomplete.read().decode("utf-8"))
+            conn.request(
+                "POST",
+                "/v1/phone-peer-verification",
+                body=json.dumps({"challenge_id": "nonce-1", "verified": True, "consumed": True}),
+                headers=headers,
+            )
+            forged = conn.getresponse()
+            self.assertEqual(forged.status, 409)
+            self.assertIn("a caller flag is not a holder receipt", forged.read().decode("utf-8"))
+            blob = {
+                "challenge_id": "nonce-1",
+                "receipt": "YQ==",
+                "signature": "c2lnbmF0dXJl",
+                "mac_public_key": "bWFj",
+                "verified": True,
+                "consumed": True,
+            }
+            conn.request("POST", "/v1/phone-peer-verification", body=json.dumps(blob), headers=headers)
+            stored = json.loads(conn.getresponse().read().decode("utf-8"))
+            self.assertTrue(stored["accepted"])
+            self.assertFalse(stored["verified"])
+            self.assertFalse(stored["consumed"])
+            conn.request("GET", "/v1/phone-peer-verification", headers=headers)
+            fetched = json.loads(conn.getresponse().read().decode("utf-8"))
+            self.assertFalse(fetched["verified"])
+            self.assertFalse(fetched["consumed"])
+            self.assertEqual(fetched["receipt"], "YQ==")
+            self.assertTrue(fetched["caller_flags_are_not_a_receipt"])
+            conn.request("POST", "/v1/phone-peer-verification", body=json.dumps(blob), headers=headers)
+            replayed = conn.getresponse()
+            self.assertEqual(replayed.status, 409)
+            self.assertIn("replayed holder receipt", replayed.read().decode("utf-8"))
             conn.request(
                 "POST",
                 "/v1/phone-peer-invalidate",

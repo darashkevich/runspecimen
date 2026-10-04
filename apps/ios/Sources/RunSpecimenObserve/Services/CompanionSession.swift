@@ -19,8 +19,11 @@ final class CompanionSession: ObservableObject {
     @Published var refuseReasonInput: String = ""
     @Published var lastRemoteConfirmNote: String?
     @Published var phonePeerNote: String = "No phone-peer signature has been returned. Signing uses the published challenge. It does not approve a run."
-    private var phoneChallenge: PhonePeerChallengeMessage?
+    @Published var macSessionPublicKey: String = ""
+    var phoneChallenge: PhonePeerChallengeMessage?
+    var signedPhonePublicKey: String?
     private var phoneSignGeneration = 0
+    private var acceptedReceiptSignatures: Set<String> = []
 
     private let defaultsKey = "rs.observe.pairing"
 
@@ -149,17 +152,21 @@ final class CompanionSession: ObservableObject {
                 try? await transport.invalidatePhonePeerChallenge(challengeId: message.challengeId)
                 throw PhonePeerSignError.cancellationTooLate
             }
+            signedPhonePublicKey = signed.publicKey
             phonePeerNote = "Mailbox accepted challenge \(message.challengeId). That is not holder verification and the key is not enrolled."
         } catch PhonePeerSignError.cancelled {
             phoneChallenge = nil
+            signedPhonePublicKey = nil
             signer.discardStagedEnrollment()
             phonePeerNote = "Phone peer challenge cancelled before a signature was returned."
             lastError = nil
         } catch PhonePeerSignError.cancellationTooLate {
+            signedPhonePublicKey = nil
             phonePeerNote = "Phone peer challenge cancellation was too late. The signature left the device and must not enroll."
             lastError = nil
         } catch is CancellationError {
             phoneChallenge = nil
+            signedPhonePublicKey = nil
             signer.discardStagedEnrollment()
             phonePeerNote = "Phone peer challenge cancelled before a signature was returned."
             lastError = nil
@@ -169,7 +176,7 @@ final class CompanionSession: ObservableObject {
         }
     }
 
-    /// Enroll only after the mailbox records holder verification and consumption.
+    /// Enroll only after the phone verifies a holder receipt. Caller flags are ignored.
     func commitPhoneKeyAfterHolderVerification(
         signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
         peer: (any PhonePeerTransport)? = nil
@@ -183,19 +190,27 @@ final class CompanionSession: ObservableObject {
             lastError = CompanionClientError.notPaired.localizedDescription
             return
         }
-        guard let message = phoneChallenge else {
+        guard let message = phoneChallenge, let phonePublicKey = signedPhonePublicKey else {
             phonePeerNote = "Mailbox acceptance is not holder verification."
             return
         }
         do {
             let record = try await transport.fetchHolderVerification(challengeId: message.challengeId)
-            guard record.verified, record.consumed, !record.invalidated else {
-                phonePeerNote = "Mailbox acceptance is not holder verification."
+            let decision = phoneReceiptAuthentic(
+                record: record,
+                challenge: message,
+                phonePublicKey: phonePublicKey,
+                pinnedMacPublicKey: macSessionPublicKey,
+                seenSignatures: acceptedReceiptSignatures
+            )
+            guard decision == .accept, let signature = record.signature else {
+                phonePeerNote = "A caller flag is not a holder receipt."
                 return
             }
+            acceptedReceiptSignatures.insert(signature)
             try signer.commitEnrollment()
             phoneChallenge = nil
-            phonePeerNote = "Holder verified and consumed challenge \(message.challengeId). The phone key is enrolled."
+            phonePeerNote = "Holder receipt verified for challenge \(message.challengeId). The phone key is enrolled."
         } catch {
             lastError = error.localizedDescription
         }
@@ -355,6 +370,72 @@ struct PhoneHolderVerification: Equatable {
     var verified: Bool
     var consumed: Bool
     var invalidated: Bool
+    var challengeId: String? = nil
+    var receipt: String? = nil
+    var signature: String? = nil
+    var macPublicKey: String? = nil
+    var phoneFingerprint: String? = nil
+    var holderId: String? = nil
+    var generation: Int? = nil
+    var outcome: String? = nil
+}
+
+enum PhoneReceiptDecision: Equatable {
+    case accept
+    case reject
+}
+
+func phoneKeyFingerprint(_ publicKey: String) -> String {
+    SHA256.hash(data: Data(publicKey.utf8)).map { String(format: "%02x", $0) }.joined()
+}
+
+func phoneReceiptCanonical(
+    challenge: String,
+    challengeId: String,
+    generation: Int,
+    holderId: String,
+    macPublicKey: String,
+    phoneFingerprint: String
+) -> String {
+    let domain = "holder-phone-receipt-v1"
+    let outcome = "verified-consumed"
+    return "{\"challenge\":\"\(challenge)\",\"challenge_id\":\"\(challengeId)\",\"domain\":\"\(domain)\",\"generation\":\(generation),\"holder_id\":\"\(holderId)\",\"mac_public_key\":\"\(macPublicKey)\",\"outcome\":\"\(outcome)\",\"phone_fingerprint\":\"\(phoneFingerprint)\"}"
+}
+
+/// A caller `verified` or `consumed` flag is not read. The pinned Mac key must sign the receipt.
+func phoneReceiptAuthentic(
+    record: PhoneHolderVerification,
+    challenge: PhonePeerChallengeMessage,
+    phonePublicKey: String,
+    pinnedMacPublicKey: String,
+    seenSignatures: Set<String>
+) -> PhoneReceiptDecision {
+    if record.invalidated || pinnedMacPublicKey.isEmpty || phonePublicKey.isEmpty {
+        return .reject
+    }
+    guard let signatureText = record.signature, !signatureText.isEmpty, !seenSignatures.contains(signatureText) else {
+        return .reject
+    }
+    let expected = phoneReceiptCanonical(
+        challenge: challenge.challenge,
+        challengeId: challenge.challengeId,
+        generation: challenge.generation,
+        holderId: challenge.holderId,
+        macPublicKey: pinnedMacPublicKey,
+        phoneFingerprint: phoneKeyFingerprint(phonePublicKey)
+    )
+    guard
+        let receiptData = Data(base64Encoded: record.receipt ?? ""),
+        String(data: receiptData, encoding: .utf8) == expected,
+        let macKeyData = Data(base64Encoded: pinnedMacPublicKey),
+        let signatureData = Data(base64Encoded: signatureText),
+        let macKey = try? P256.Signing.PublicKey(x963Representation: macKeyData),
+        let signature = try? P256.Signing.ECDSASignature(rawRepresentation: signatureData),
+        macKey.isValidSignature(signature, for: Data(expected.utf8))
+    else {
+        return .reject
+    }
+    return .accept
 }
 
 protocol PhonePeerTransport {

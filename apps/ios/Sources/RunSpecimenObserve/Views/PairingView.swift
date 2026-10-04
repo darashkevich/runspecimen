@@ -48,6 +48,18 @@ struct PairingView: View {
                         .foregroundStyle(RSTheme.ink)
                         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
 
+                    fieldLabel("Mac session public key")
+                    TextField("From the holder after local enrollment", text: $session.macSessionPublicKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .padding(12)
+                        .background(RSTheme.elevated)
+                        .foregroundStyle(RSTheme.ink)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    Text("The phone checks the holder receipt against this key. A mailbox verified flag is not a receipt.")
+                        .font(.caption2)
+                        .foregroundStyle(RSTheme.muted)
+
                     fieldLabel("TLS fingerprint (HTTPS / LAN)")
                     TextField("tls_fingerprint_sha256 from Mac", text: $session.tlsFingerprint)
                         .textInputAutocapitalization(.never)

@@ -154,14 +154,25 @@ struct CompanionClient {
     func fetchHolderVerification(challengeId: String) async throws -> PhoneHolderVerification {
         let data = try await request(path: "/v1/phone-peer-verification")
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let verified = object?["verified"] as? Bool == true
-        let consumed = object?["consumed"] as? Bool == true
         let invalidated = object?["invalidated"] as? Bool == true
-        let same = object?["challenge_id"] as? String == challengeId || object?["challenge_id"] == nil
+        let returnedChallenge = object?["challenge_id"] as? String
+        let same = returnedChallenge == nil || returnedChallenge == challengeId
         guard same else {
             return PhoneHolderVerification(verified: false, consumed: false, invalidated: true)
         }
-        return PhoneHolderVerification(verified: verified, consumed: consumed, invalidated: invalidated)
+        return PhoneHolderVerification(
+            verified: false,
+            consumed: false,
+            invalidated: invalidated,
+            challengeId: returnedChallenge,
+            receipt: object?["receipt"] as? String,
+            signature: object?["signature"] as? String,
+            macPublicKey: object?["mac_public_key"] as? String,
+            phoneFingerprint: object?["phone_fingerprint"] as? String,
+            holderId: object?["holder_id"] as? String,
+            generation: object?["generation"] as? Int,
+            outcome: object?["outcome"] as? String
+        )
     }
 
     /// Consume a Mac-armed pending without writing approval. Requires typed challenge + reason.
