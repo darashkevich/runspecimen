@@ -697,8 +697,11 @@ out_path = Path(sys.argv[4])
 # argv[5] is a temp copy of start_dir. Discovery never writes into the live tree.
 suite_copy = Path(sys.argv[5]).resolve()
 top_level = suite_copy.parent
-sys.path.insert(0, str(top_level))
+# Live workspace stays importable for application code (import app.core).
+# Sandbox top_level must win so a packaged suite (tests/__init__.py) is
+# imported from the copy, not from a live start_dir of the same name.
 sys.path.insert(0, str(workspace))
+sys.path.insert(0, str(top_level))
 
 class _Result(unittest.TextTestResult):
     def __init__(self, *args, **kwargs):
@@ -730,6 +733,20 @@ class _Result(unittest.TextTestResult):
         self.ordered.append({"name": str(test), "outcome": "unexpected_success"})
 
 try:
+    pkg_name = suite_copy.name
+    if pkg_name.isidentifier():
+        import importlib.util
+        spec = importlib.util.find_spec(pkg_name)
+        origin = getattr(spec, "origin", None) if spec is not None else None
+        if origin:
+            origin_path = Path(origin).resolve()
+            try:
+                origin_path.relative_to(top_level)
+            except ValueError:
+                raise RuntimeError(
+                    "module incorrectly imported from %s. Expected under %s"
+                    % (origin_path, top_level)
+                )
     loader = unittest.defaultTestLoader
     suite = loader.discover(
         start_dir=str(suite_copy), pattern=pattern, top_level_dir=str(top_level)

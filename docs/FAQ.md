@@ -23,7 +23,7 @@ the workspace evidence with matching host runtime expectations.
 
 ## Which build is public, in review, or only on this branch?
 
-Published CLI and plugin: **0.2.0rc14**. That release does not include evidence-expansion commands.
+Published CLI and plugin: **0.2.0rc14**. That release does not include evidence-expansion commands (ADR-005). This branch's engine is unpublished **0.2.0rc15** and is not the PyPI or GitHub cut.
 
 The Mac App Store package recorded in Connect on 2026-09-28 as **0.1.4 (9)** `READY_FOR_SALE` freezes **0.2.0rc14**. That record is not a public `apps.apple.com` URL, and it is not this unpublished candidate.
 
