@@ -1,7 +1,10 @@
 # RunSpecimen Holder (Developer ID)
 
 Separate product from the Mac App Store app. Bundle id
-`com.darashkevich.runspecimen.holder`. The Store app is guarantee (1), a typed
+`com.darashkevich.runspecimen.holder` is the accepted Developer ID holder
+identity. Developer ID packaging pins that designated requirement.
+Ad-hoc `codesign --sign -` is local stage smoke, not the product signature.
+That bundle id is not `production_verifier_pin()`. The Store app is guarantee (1), a typed
 `APPROVE` phrase. This holder is guarantee (2) and is not part of that app.
 Nothing in this candidate installs or notarizes Holder.app. Production device
 verification fails closed unless a vetted verifier is connected. A software

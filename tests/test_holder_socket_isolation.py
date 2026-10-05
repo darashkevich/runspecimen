@@ -139,15 +139,13 @@ class HolderSocketIsolationTests(RunSpecimenTestCase):
             with self.assertRaises(PreflightError) as ctx:
                 run_contract(contract_path=path, workspace=self.ws)
         message = str(ctx.exception)
-        self.assertTrue(
-            "not enrolled" in message or "authentication failed" in message,
-            msg=message,
-        )
+        self.assertIn("will not claim a hardware human", message)
+        self.assertIn("device signature", message)
         self.assertNotEqual(server.socket_path, _LIVE)
         self.assertFalse((self.ws / "outputs" / "out.json").exists())
 
     def test_named_policy_hardware_true_fails_closed(self) -> None:
-        """CLI helper claims hardware:True. A software adapter is not a biometric."""
+        """CLI refuses before it claims hardware or opens the holder."""
         for policy in ("local", "companion", "dual"):
             with self.subTest(policy=policy):
                 self._named_policy_refuses_hardware_claim(policy)
@@ -188,13 +186,9 @@ class HolderSocketIsolationTests(RunSpecimenTestCase):
             with self.assertRaises(PreflightError) as ctx:
                 run_contract(contract_path=path, workspace=ws)
         message = str(ctx.exception)
-        self.assertTrue(
-            "required approval devices" in message
-            or "signatures are missing" in message
-            or "not hardware" in message
-            or "installed holder did not claim" in message,
-            msg=message,
-        )
+        self.assertIn("will not claim a hardware human", message)
+        self.assertIn("device signature", message)
+        self.assertNotIn("hardware\": true", message.lower())
         self.assertFalse((ws / "outputs" / "out.json").exists())
 
     def test_socket_peer_ignores_a_claimed_foreign_uid(self) -> None:

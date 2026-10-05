@@ -1,8 +1,10 @@
 # RunSpecimen user guide
 
-Practical how-to for the local CLI. This guide matches the installed
-`runspecimen` commands and current release-candidate limits
-(`0.2.0rc14`, published on GitHub and PyPI). For a short product overview see
+Practical how-to for the local CLI. The published install is
+`0.2.0rc14` (GitHub and PyPI). This branch's engine is unpublished
+`0.2.0rc15`. Commands under "Requirements, evidence, and freshness" exist
+on this branch and are absent from published rc14. Isolation, `retain`,
+`digest`, and `diff` do ship in published rc14. For a short product overview see
 [ABOUT.md](ABOUT.md); for product intent see
 [PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
 
@@ -35,14 +37,24 @@ enter `APPROVE` for you.
 
 ## Requirements, evidence, and freshness (ADR-005)
 
-Separate from `verify`:
+These commands are on unpublished `0.2.0rc15`. Published `0.2.0rc14` does
+not include them. They are separate from `verify`:
 
 ```bash
 runspecimen requirements validate --manifest task_manifest.json
 runspecimen requirements check --workspace . --contract contract.json --manifest task_manifest.json
 runspecimen requirements report --workspace . --campaign-id CAMP --run-id RUN
 runspecimen freshness check --workspace . --contract contract.json --manifest task_manifest.json
+runspecimen freshness evaluate --workspace . --contract contract.json
 ```
+
+`requirements check` writes an evidence report. Exit 0 means `checks_passed`
+(aggregate passed and `final_state_certifiable`). `receipt_bound` stays false
+until postflight binds the digest. Exit 1 means the checks did not pass.
+Exit 2 means the check was refused. The report's `authenticity` field is
+unchanged by that exit code. `freshness check` writes `freshness_report.json`.
+`freshness evaluate` and the MCP `freshness_check` tool compute applicability
+and do not write that file.
 
 Outcomes are provider-collected (`unittest`, optional `pytest`, `command_status`).
 Skipped, collection errors, and manual/unverifiable requirements are **not**

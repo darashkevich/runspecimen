@@ -79,7 +79,9 @@ Approve-safety layers in this package:
 `.mcp.json` (and Gemini/Junie/Antigravity/Muse mirrors) starts a local stdio
 MCP server (`scripts/runspecimen_mcp.py`) that exposes: `about`, `doctor`,
 `validate`, `status`, `preflight`, `run`, `postflight`, `verify`, `dashboard`,
-plus read-only `decisions_search`, `requirements_report`, and `freshness_check`.
+plus read-only `decisions_search`, `requirements_report`, and `freshness_check`
+(`freshness evaluate`, which does not write `freshness_report.json`;
+`freshness check` remains the writing CLI).
 There is still **no** `approve` / settle tool.
 No network phone-home. For hosts outside a plugin install, point an MCP server
 entry at the same script with an absolute path.

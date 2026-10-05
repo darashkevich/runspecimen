@@ -69,7 +69,7 @@ def main() -> int:
         command = [
             executable,
             "freshness",
-            "check",
+            "evaluate",
             "--workspace",
             ws,
             "--contract",

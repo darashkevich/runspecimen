@@ -178,7 +178,10 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "freshness_check",
-        "description": "Evaluate evidence applicability for a contract (not verify).",
+        "description": (
+            "Evaluate evidence applicability without writing freshness_report.json "
+            "(not verify). The writing command is freshness check."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -256,7 +259,7 @@ def _run_cli(action: str, arguments: dict[str, Any]) -> dict[str, Any]:
             command = [
                 executable,
                 "freshness",
-                "check",
+                "evaluate",
                 "--workspace",
                 str(workspace),
                 "--contract",

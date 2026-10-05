@@ -1,11 +1,11 @@
 # Candidate manifest
 
-This file is not a Store submission plan. The September 30 hash table below is historical. It is not the artifact set for the commit that adds the production-boundary refusal. That commit's `release_check` hashes are recorded in `apps/macos/asc-kit/evidence/2026-10-02-codex-release-ledger.md` after the sdist is built, so this copy inside the sdist does not contain those new hashes. A version string does not identify the binary.
+This file is not a Store submission plan and it is not packed into the sdist. A version string does not identify the binary. The table below is the canonical package record for this pass. Earlier tables in previous commits of this file are historical. Do not overwrite prior `artifacts/rc15-*` directories.
 
 | Item | Identity |
 | --- | --- |
 | Branch | `cursor/integrated-release-candidate` |
-| Base this pass continues | `38b8613b959a628e33486b12da25dad15652052c` |
+| Base this pass continues | PR #39 head `fa8664338faa1dc137ade9f30e73d9ffffa6a752` before this follow-up. PR base `d54c803c9b6dfe82cb91f55c5a21923c822041d9` |
 | Engine / package | unpublished `0.2.0rc15` |
 | Plugin | unpublished `0.2.0-rc.15` |
 | App marketing version in the project | **0.1.5 (13)**. That label also appears on a different tree: source `ea21a7fa17140dc15dab74493d384b2a8b7a150c`, engine rc14, package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa`, report `runspecimen-candidates/0.1.5-13/QA-2026-09-29.md`. That report is not this candidate |
@@ -16,15 +16,15 @@ This file is not a Store submission plan. The September 30 hash table below is h
 | Published wheel / sdist / plugin zip | `d720bf5163a2b250699c30e804f89708e71c1c0d22682fbb43a4644b59c45948` / `6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3` / `0073e04e21bd225da328de06ef840ead6956a8cced4510a0025fb1e2ddc7fc16` |
 | Homebrew | still pinned to published rc14 |
 
-The exact commit of this candidate is the commit that contains this file. Unpublished rc15 archives of this tree, built by `release_check.py` on Python 3.12.14 (487 tests, 35 skipped):
+Canonical unpublished rc15 archives for this pass, built by `release_check.py` on Homebrew Python 3.12.14 at `/tmp/rs-py312-rel-holder` (640 tests, 0 failures, 35 skipped). Copies are in `artifacts/rc15-2026-10-05-qa-py312-protocol/`. The sdist does not contain this manifest or its own hash. These are not the published rc14 bytes.
 
 | File | SHA-256 |
 | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | `6d2652be38281cf0b9e90bec7c293e48a7913c6966ad57d5626284b187e0b4b7` |
-| `runspecimen-0.2.0rc15.tar.gz` | `8c734243c71f449f2219d4ae21a32f34da656baa9a87d1dc7170f84bc6d77c60` |
-| `runspecimen-plugin-0.2.0-rc.15.zip` | `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d` |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | `eb0a42cc87ffc2700ab35550b4ed5515d156f4681e31ffc84021dfac3397b191` |
+| `runspecimen-0.2.0rc15.tar.gz` | `92f03e69ab55a0246ec6cfdd918031d70d05617ee8e20ca617fa1f252dfc5038` |
+| `runspecimen-plugin-0.2.0-rc.15.zip` | `a3c194600d70c77a74fc9cce00442ba716cdb2596760b766b93a45a52c7b5db2` |
 
-Copies are in `artifacts/rc15-2026-09-30-holder-smappservice/`. The wheel and sdist changed with installed-holder support. The plugin zip is unchanged. Prior `artifacts/rc15-2026-09-30-holder-failclosed/` was not overwritten. These are not the published rc14 bytes. The sdist does not contain this manifest. `artifacts/rc15-2026-09-30-dev-id-holder/` and earlier unpublished dirs remain historical records and were not overwritten. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist.
+Wheel, sdist, and plugin bytes changed. There is no new holder stage tar. The prior sealed stage `5200682fec6d5cdeee72c81ea8a419b0b2d80022f648f77a75a783b4eee9cdc9` in `artifacts/rc15-2026-10-05-qa-py312-seal/` was not overwritten. That seal's wheel `1646b7a17d99fb20612014cca44c958ab3a7c059d8339de7402f4f498f51117e`, sdist `8c20599d1a26384781c150dfc3ab4491cf34de02d252eee189ec5233cd416212`, and plugin `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d` stay the record of that pass. `artifacts/rc15-2026-09-30-holder-smappservice/` and earlier unpublished dirs remain historical and were not overwritten. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist.
 
 ## Status
 
@@ -35,7 +35,7 @@ Copies are in `artifacts/rc15-2026-09-30-holder-smappservice/`. The wheel and sd
 | iOS companion enroll, sign, revoke, rotate | Implemented. Enroll creates a key only for a missing file. Finalize and public revoke share the enrollment lock. Not run on a device by a person |
 | macOS confirmation | Claim matches the displayed request id. A workspace or contract change drops pending work and an unstarted claim. `performClaimedWorkflow` refuses when the live paths differ. A command that has already started is not stopped. AppModel tests cover the handlers. A development GUI of source `91081f5` (main hash `cfb41bcc…`) finished Compare, Diff, Retain cancel, and Retain copy on the synthetic fixture; that GUI binary does not contain the holder. Evidence is in `apps/macos/asc-kit/evidence/2026-09-28-rc15-acceptance.md`. The version string 0.1.5 (13) does not identify it |
 | Runtime identity | `record-identity` writes an integrity record of artifact bytes and caller-supplied git metadata. It is not a cryptographic source attestation. `RS_RELEASE_GATE=1` isolates the reviewed commit before helper freeze and project generation. Export still requires that SHA and a clean source. A development archive may be dirty and cannot pass export |
-| Executor guarantees | Yahor authorized a separate Developer ID holder. (3) is excluded. The Store app stays guarantee (1). Unprivileged adapter tests remain non-installed. A separate product `/Applications/RunSpecimen Holder.app` (`com.darashkevich.runspecimen.holder`) embeds `SMAppService.daemon` with empty entitlements and Developer ID signing; Background Items were approved; the SMAppService.daemon was observed running as root with a root-owned state directory. Installed daemon path sets `installed_protection` true and `allow_test_double` false. Root/admin can still defeat the holder. Not Store parity. DTS question unsent. |
+| Executor guarantees | Yahor authorized a separate Developer ID holder. (3) is excluded. The Store app stays guarantee (1). Bundle id `com.darashkevich.runspecimen.holder` is accepted for Developer ID packaging and is not `production_verifier_pin()`. Installed Secure Enclave admission stays fail-closed. `run_integration_complete` and `e2_closed` stay false. Unprivileged adapter tests remain non-installed. A separate product `/Applications/RunSpecimen Holder.app` embeds `SMAppService.daemon` with empty entitlements; Background Items were approved; the SMAppService.daemon was observed running as root with a root-owned state directory. Installed daemon path sets `installed_protection` true and `allow_test_double` false. Root/admin can still defeat the holder. Not Store parity. DTS question unsent. |
 | Human biometrics, protected pairing trust, Store archive verification | Not done. Product sources for the diagnostic and the iPhone app are unchanged from `5c3957a3a8ddf9fceacc3096b2208ee7757e6b72` through `1873f42`, and the kit hashes in `docs/HUMAN_DEVICE_KIT.md` were re-read. `preview` exits 0. `enroll` without `--human-invoked` exits 2. They are not installed. A person still has to complete the hardware prompts |
 | Privileged helper, relay, `network.server` | Not added |
 

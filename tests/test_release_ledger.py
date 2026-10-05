@@ -6,6 +6,7 @@ E10 is isolated qualification. It is not a claim that a live exploit was reprodu
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -26,6 +27,12 @@ LIB = ROOT / "apps/holder/Scripts/holder_stage_lib.sh"
 
 
 class HolderStageTests(unittest.TestCase):
+    def _require_rsync(self) -> None:
+        if shutil.which("rsync") is None:
+            self.skipTest(
+                "rsync is absent; holder stage was not copied and install assertions were not weakened"
+            )
+
     def test_dangerous_build_directories_are_not_deleted(self) -> None:
         script = f"""
 set -euo pipefail
@@ -65,6 +72,7 @@ exit $fail
         self.assertNotIn("DELETED", proc.stdout)
 
     def test_stage_embeds_an_interpreter_and_refuses_install(self) -> None:
+        self._require_rsync()
         with tempfile.TemporaryDirectory(prefix="rs-runtime-src-") as td:
             source = Path(td) / "python3"
             source.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
@@ -116,6 +124,7 @@ exit $fail
                 self.assertIn("was not run", blocked.stderr)
 
     def test_compiled_stage_is_adhoc_signed_and_not_installed(self) -> None:
+        self._require_rsync()
         if not Path("/usr/bin/xcrun").is_file():
             self.skipTest("swiftc is not on this runner")
         with tempfile.TemporaryDirectory(prefix="rs-runtime-src-") as td:
@@ -150,6 +159,7 @@ exit $fail
                 timeout=10,
             )
             self.assertIn("Signature=adhoc", signed.stderr)
+            self.assertIn("SIGNING=adhoc-not-canonical", staged.stdout)
             sealed = subprocess.run(
                 ["/usr/bin/codesign", "--verify", "--strict", app],
                 capture_output=True,
@@ -197,7 +207,22 @@ exit $fail
         self.fail(f"missing {name} in {completed.stdout}")
         return ""
 
+    def test_holder_bundle_requirement_is_not_the_verifier_pin(self) -> None:
+        script = STAGE.read_text(encoding="utf-8")
+        self.assertIn('identifier "com.darashkevich.runspecimen.holder"', script)
+        self.assertIn("RS_HOLDER_SIGN_IDENTITY", script)
+        self.assertIn("adhoc-not-canonical", script)
+        from runspecimen.native_bridge import production_verifier_pin
+
+        pin = production_verifier_pin()
+        self.assertIsNotNone(pin)
+        assert pin is not None
+        self.assertIn("native-p256-verify", pin.designated_requirement)
+        self.assertNotIn("runspecimen.holder", pin.designated_requirement)
+        self.assertEqual(pin.team_identifier, "UN6KF8636A")
+
     def test_fixture_lifecycle_stays_in_a_temp_root(self) -> None:
+        self._require_rsync()
         before = self._live_mtimes()
         with tempfile.TemporaryDirectory(prefix="rs-runtime-src-") as td:
             source = Path(td) / "python3"
@@ -291,6 +316,7 @@ exit $fail
         self.assertEqual(self._live_mtimes(), before)
 
     def test_compiled_package_relocates_runtime_without_a_developer_interpreter(self) -> None:
+        self._require_rsync()
         if sys.platform != "darwin" or not Path("/usr/bin/otool").is_file() or not Path("/usr/bin/xcrun").is_file():
             self.skipTest("relocatable Mach-O staging is macOS-only")
         source_exec = Path(sys.executable).resolve()
@@ -360,6 +386,7 @@ exit $fail
         self.assertEqual(self._live_mtimes(), before)
 
     def test_detached_interpreter_is_not_executed(self) -> None:
+        self._require_rsync()
         if sys.platform != "darwin" or not Path("/usr/bin/otool").is_file():
             self.skipTest("relocatable Mach-O staging is macOS-only")
         source_exec = Path(sys.executable).resolve()

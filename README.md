@@ -18,7 +18,7 @@ Exactly **one** approved, bounded run at a time, with:
 
 No watchers, no recurring scheduler, no parallel workers.
 
-`0.2.0rc14` includes opt-in `isolation` (`none` by default), a workspace `policy` file, `retain`, `digest`, and `diff`. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md). `none` does not confine the process. `sandbox-exec` and `bwrap` are not an OS sandbox. Published `0.2.0rc12` rejects `isolation` and `policy`.
+`0.2.0rc14` includes opt-in `isolation` (`none` by default), a workspace `policy` file, `retain`, `digest`, and `diff`. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md). `none` does not confine the process. `sandbox-exec` and `bwrap` are not an OS sandbox. Published `0.2.0rc12` rejects `isolation` and `policy`. Evidence-expansion commands (`requirements`, `freshness`, `scenes`, and the rest of ADR-005) are on this unpublished `0.2.0rc15` branch. Published rc14 does not include them.
 
 ## Requirements
 

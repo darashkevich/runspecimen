@@ -439,6 +439,78 @@ class PluginApproveBoundaryExtras(unittest.TestCase):
         instructions = json.dumps(doc).lower()
         self.assertTrue("tty" in instructions or "approve" in instructions)
 
+    def test_freshness_check_evaluates_without_writing(self) -> None:
+        import os
+        import tempfile
+
+        antigravity = PLUGIN / "antigravity" / "scripts" / "runspecimen_mcp.py"
+        for source in (MCP, antigravity, ADAPTER):
+            text = source.read_text(encoding="utf-8")
+            self.assertIn('"evaluate"', text)
+            self.assertNotIn('"freshness",\n                "check"', text)
+        with tempfile.TemporaryDirectory(prefix="rs-mcp-fresh-") as td:
+            root = Path(td)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            log = root / "argv.txt"
+            stub = bin_dir / "runspecimen"
+            stub.write_text(
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$RS_ARGV_LOG\"\nexit 0\n",
+                encoding="utf-8",
+            )
+            stub.chmod(0o755)
+            ws = root / "ws"
+            ws.mkdir()
+            contract = ws / "contract.json"
+            contract.write_text("{}\n", encoding="utf-8")
+            env = os.environ.copy()
+            env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+            env["RS_ARGV_LOG"] = str(log)
+            adapter = subprocess.run(
+                [
+                    sys.executable,
+                    str(ADAPTER),
+                    "freshness_check",
+                    "--workspace",
+                    str(ws),
+                    "--contract",
+                    str(contract),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(adapter.returncode, 0, adapter.stderr)
+            recorded = log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(recorded[:2], ["freshness", "evaluate"])
+            self.assertNotIn("check", recorded)
+            self.assertFalse(list(ws.rglob("freshness_report.json")))
+            log.write_text("", encoding="utf-8")
+            mcp = subprocess.run(
+                [sys.executable, str(MCP)],
+                input=json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 9,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "freshness_check",
+                        "arguments": {
+                            "workspace": str(ws),
+                            "contract": str(contract),
+                        },
+                    },
+                }) + "\n",
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(mcp.returncode, 0, mcp.stderr)
+            recorded = log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(recorded[:2], ["freshness", "evaluate"])
+            self.assertFalse(list(ws.rglob("freshness_report.json")))
+
     def _gate(self, payload: dict, extra: list[str] | None = None) -> dict | None:
         completed = subprocess.run(
             [sys.executable, str(GATE), *(extra or [])],

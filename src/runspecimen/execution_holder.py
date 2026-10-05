@@ -2759,13 +2759,27 @@ class ExecutionHolder:
                             proc, abort_payload, token, run_uid, run_gid
                         )
                     else:
+                        # No child exists yet. That is not a confirmed death
+                        # and not a clean release. Keep the pre-spawn uncertain
+                        # lease. A spawned child that is then confirmed dead
+                        # still records spawn-failed inside _reap_unreleased_child.
                         self._write(
                             "lease.json",
-                            {"held": False, "token": token, "child": "spawn-failed"},
+                            {
+                                "held": True,
+                                "token": token,
+                                "child": "uncertain",
+                                "pid": None,
+                                "launch_started": False,
+                            },
                         )
                 finally:
                     if proc is not None:
                         self._close_child_streams(proc)
+                if proc is None:
+                    raise HolderRefusal(
+                        "holder spawn failed before a child existed; uncertain lease retained"
+                    ) from exc
                 raise HolderRefusal(f"holder spawn failed: {exc}") from exc
             observed_pids: set[int] = {int(proc.pid)}
             observed_uncertain = False
@@ -3404,6 +3418,9 @@ class ExecutionHolder:
             raise HolderRefusal(
                 "holder spawn failed and the child is still alive; lease retained"
             )
+        # Definite non-start: the child was spawned and then confirmed dead
+        # before the payload was released. This release is not the pre-spawn
+        # uncertain lease, which execute keeps when no child exists.
         self._write("lease.json", {"held": False, "token": token, "child": "spawn-failed"})
 
     def _spawn_dropped(

@@ -201,11 +201,34 @@ cp "$ROOT/apps/holder/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/apps/holder/Resources/LaunchDaemons/com.darashkevich.runspecimen.holder.daemon.plist" \
   "$APP/Contents/Library/LaunchDaemons/com.darashkevich.runspecimen.holder.daemon.plist"
 
+# Accepted Developer ID holder identity. Not production_verifier_pin().
+# The verifier pin stays com.darashkevich.runspecimen.native-p256-verify.
+HOLDER_BUNDLE_ID="com.darashkevich.runspecimen.holder"
+HOLDER_DESIGNATED_REQUIREMENT='identifier "com.darashkevich.runspecimen.holder" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = UN6KF8636A'
+
+sign_staged_holder() {
+  local identity="${RS_HOLDER_SIGN_IDENTITY:-}"
+  if [[ -z "$identity" || "$identity" == "-" ]]; then
+    # Local smoke only. Ad-hoc is not the Developer ID product signature.
+    echo "AD-HOC STAGE SIGNATURE is not the Developer ID holder product." >&2
+    /usr/bin/codesign --force --sign - "$APP/Contents/MacOS/RunSpecimenHolderDaemon"
+    /usr/bin/codesign --force --sign - "$APP"
+    echo "SIGNING=adhoc-not-canonical"
+    return 0
+  fi
+  /usr/bin/codesign --force --sign "$identity" \
+    "$APP/Contents/MacOS/RunSpecimenHolderDaemon"
+  /usr/bin/codesign --force --sign "$identity" \
+    --identifier "$HOLDER_BUNDLE_ID" \
+    --requirements "=designated => ${HOLDER_DESIGNATED_REQUIREMENT}" \
+    "$APP"
+  echo "SIGNING=developer-id"
+}
+
 if [[ "${RS_HOLDER_STAGE_COMPILE:-}" == "1" ]]; then
   # Sign the nested daemon, then the bundle, after Info.plist is present.
   # Signing the main executable before that seals an empty bundle.
-  /usr/bin/codesign --force --sign - "$APP/Contents/MacOS/RunSpecimenHolderDaemon"
-  /usr/bin/codesign --force --sign - "$APP"
+  sign_staged_holder
 fi
 
 cat > "$BUILD/ownership-plan.txt" <<'EOF'

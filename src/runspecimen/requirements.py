@@ -1300,6 +1300,35 @@ def _update_evidence_pointer(
     atomic_write_json(pointer, bind_artifact_digest(meta))
 
 
+def _confined_evidence_capture(captures: Path, capture_name: Any) -> Path:
+    """Accept only a regular basename file inside evidence_captures.
+
+    A same-user writer can re-digest the pointer. ``..``, an absolute path,
+    or a symlink must not retarget that digest.
+    """
+    if not isinstance(capture_name, str) or not capture_name or capture_name in {".", ".."}:
+        raise EvidenceError("evidence capture path must be a basename under evidence_captures")
+    if capture_name != Path(capture_name).name or "\x00" in capture_name:
+        raise EvidenceError(
+            "evidence capture path must be a basename under evidence_captures"
+        )
+    if captures.is_symlink():
+        raise EvidenceError("evidence captures directory is a symlink")
+    capture = captures / capture_name
+    if capture.is_symlink():
+        raise EvidenceError("evidence capture path is a symlink")
+    try:
+        resolved = capture.resolve()
+        resolved.relative_to(captures.resolve())
+    except (OSError, ValueError) as exc:
+        raise EvidenceError("evidence capture path escapes evidence_captures") from exc
+    if resolved.parent != captures.resolve():
+        raise EvidenceError("evidence capture path escapes evidence_captures")
+    if not capture.is_file():
+        raise EvidenceError(f"evidence capture missing: {capture}")
+    return capture
+
+
 def load_evidence_report(workspace: Path, campaign_id: str, run_id: str) -> dict[str, Any]:
     path = evidence_report_path(workspace, campaign_id, run_id)
     if not path.is_file():
@@ -1311,11 +1340,10 @@ def load_evidence_report(workspace: Path, campaign_id: str, run_id: str) -> dict
     if doc.get("schema_kind") == "evidence_report_pointer":
         assert_artifact_version(doc.get("schema_version"))
         verify_artifact_digest(doc)
-        capture = evidence_captures_dir(workspace, campaign_id, run_id) / str(
-            doc.get("capture_path")
+        capture = _confined_evidence_capture(
+            evidence_captures_dir(workspace, campaign_id, run_id),
+            doc.get("capture_path"),
         )
-        if not capture.is_file():
-            raise EvidenceError(f"evidence capture missing: {capture}")
         report = read_json(capture)
     else:
         report = doc

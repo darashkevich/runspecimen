@@ -412,6 +412,59 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
         with self.assertRaises(Exception):
             load_evidence_report(self.ws, contract.campaign_id, contract.run_id)
 
+    def test_scenes_pass_manifest_uses_unittest_evidence(self) -> None:
+        from runspecimen.scenes import _seed_mini_workspace
+
+        paths = _seed_mini_workspace(self.ws / "scene-seed")
+        manifest = load_task_manifest(paths["manifest_pass"])
+        requirement = manifest.requirements[0]
+        self.assertEqual(requirement.check.provider, "unittest")
+        self.assertEqual(requirement.required_evidence, ("unittest_stream_sha256",))
+        text = paths["manifest_pass"].read_text(encoding="utf-8").lower()
+        self.assertNotIn("pytest", text)
+        fail_text = paths["manifest_fail"].read_text(encoding="utf-8").lower()
+        self.assertNotIn("pytest", fail_text)
+
+    def test_requirements_check_splits_receipt_binding_from_checks(self) -> None:
+        import contextlib
+        import io
+
+        mpath = self.ws / "m.json"
+        atomic_write_json(
+            mpath,
+            _manifest(
+                "r1",
+                {
+                    "provider": "command_status",
+                    "id": "c",
+                    "config": {"argv": [PYTHON, "-c", "pass"]},
+                },
+                mid="m-split",
+            ),
+        )
+        cpath, _contract = _approved_contract(self.ws, mpath, run_id="run-split", mid="m-split")
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = main(
+                [
+                    "requirements",
+                    "check",
+                    "--workspace",
+                    str(self.ws),
+                    "--contract",
+                    str(cpath),
+                    "--manifest",
+                    str(mpath),
+                ]
+            )
+        self.assertEqual(code, 0, stderr.getvalue() + stdout.getvalue())
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["checks_passed"])
+        self.assertFalse(payload["receipt_bound"])
+        self.assertEqual(payload["ok"], payload["checks_passed"])
+        self.assertEqual(payload["report"]["authenticity"], "unauthenticated")
+        self.assertFalse(payload["ci"]["ok"])
+
     def test_scenes_demo_runs(self) -> None:
         result = run_scenes(workspace=self.ws, prepare_only=False)
         self.assertTrue(result["ok"], msg=json.dumps(result, indent=2, default=str))

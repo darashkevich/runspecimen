@@ -206,8 +206,20 @@ def _postflight_under_lease(*, contract, workspace: Path) -> dict:
     att_file = attestation_path(workspace, contract.campaign_id, contract.run_id)
     if att_file.is_file():
         try:
-            evidence_attestation = _read_json(att_file)
-            _verify_att(evidence_attestation)
+            loaded_att = _read_json(att_file)
+            _verify_att(loaded_att)
+            from runspecimen.requirements import load_evidence_report
+
+            current = load_evidence_report(
+                workspace, contract.campaign_id, contract.run_id
+            )
+            # A digest-valid sidecar is not the current capture. Omit it
+            # rather than bind a stale evidence_report_digest.
+            if (
+                isinstance(loaded_att, dict)
+                and loaded_att.get("evidence_report_digest") == current.get("artifact_digest")
+            ):
+                evidence_attestation = loaded_att
         except Exception:  # noqa: BLE001
             evidence_attestation = None
     cert = build_certificate(

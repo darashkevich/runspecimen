@@ -338,17 +338,23 @@ def enforce_required_verification(
                     )
                     + f" detail={exc}"
                 ) from exc
-            if report.get("aggregate_outcome") != "passed":
+            passed = report.get("aggregate_outcome") == "passed"
+            receipt_bound = report.get("authenticity") == "receipt_bound"
+            certifiable = report.get("final_state_certifiable") is True
+            if not (passed and receipt_bound and certifiable):
                 raise CertificateError(
                     format_refusal(
                         violated_constraint="required_verification:requirements_check",
                         contract_policy=obj.get("id"),
                         observed_op=(
-                            f"aggregate_outcome={report.get('aggregate_outcome')!r}"
+                            f"aggregate_outcome={report.get('aggregate_outcome')!r} "
+                            f"authenticity={report.get('authenticity')!r} "
+                            f"final_state_certifiable={report.get('final_state_certifiable')!r}"
                         ),
                         next_step=(
-                            "Capture a passed evidence report for this run, then verify. "
-                            "Do not auto-weaken the policy."
+                            "Capture a receipt-bound evidence report whose final state "
+                            "is certifiable, then verify. A digest-valid passed outcome "
+                            "is not enough. Do not auto-weaken the policy."
                         ),
                     )
                 )

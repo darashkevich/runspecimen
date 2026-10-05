@@ -98,7 +98,7 @@ def _seed_mini_workspace(root: Path) -> dict[str, Path]:
         "schema_kind": "task_manifest",
         "schema_version": 1,
         "id": "scenes-pass",
-        "description": "Passing pytest check",
+        "description": "Passing unittest check",
         "requirements": [
             {
                 "id": "req-pass",
@@ -110,7 +110,7 @@ def _seed_mini_workspace(root: Path) -> dict[str, Path]:
                 },
                 "inputs": ["work/app.py"],
                 "source_scope": ["work"],
-                "required_evidence": ["junit"],
+                "required_evidence": ["unittest_stream_sha256"],
                 "expected": {"minimum_tests": 1},
             }
         ],
@@ -123,7 +123,7 @@ def _seed_mini_workspace(root: Path) -> dict[str, Path]:
         "schema_kind": "task_manifest",
         "schema_version": 1,
         "id": "scenes-fail",
-        "description": "Failing pytest check",
+        "description": "Failing unittest check",
         "requirements": [
             {
                 "id": "req-fail",

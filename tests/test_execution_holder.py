@@ -1738,6 +1738,63 @@ class HolderForgedSignatureAndSupervisionTests(unittest.TestCase):
         self.assertFalse(marker.exists())
         self.assertTrue(holder._lease_held())
 
+    def test_execute_failure_before_spawn_keeps_the_uncertain_lease(self) -> None:
+        """Mirror Swift testExecuteFailureKeepsTheUncertainLease for a pre-spawn failure."""
+        td = tempfile.TemporaryDirectory(prefix="rsh-nospawn-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name) / "state"
+        ws = Path(td.name) / "ws"
+        ws.mkdir()
+        marker = Path(td.name) / "ran"
+        holder = ExecutionHolder(
+            root,
+            allow_test_double=True,
+            snapshot_base=Path(td.name) / "run-snapshots",
+        )
+        holder.enroll("app", _human("enroll", "app"))
+        holder.set_policy(_human("set-policy", "local"))
+        script = ws / "job.py"
+        script.write_text(
+            "import pathlib, sys\npathlib.Path(sys.argv[1]).write_text('ran')\n",
+            encoding="utf-8",
+        )
+        digest = sha256_file(script)
+        binding = _binding(ws, script, digest)
+        launch = [sys.executable, str(script.resolve()), str(marker)]
+        binding["launch_argv"] = launch
+        binding["argv"] = [str(script.resolve()), str(marker)]
+        holder.consume(
+            nonce="nospawn",
+            policy="local",
+            human=_human("consume", "nospawn"),
+            workspace=ws,
+            files=[(str(script.resolve()), digest)],
+            binding=binding,
+        )
+
+        def _refuse_spawn(*_args, **_kwargs):
+            raise OSError("spawn refused")
+
+        with mock.patch("subprocess.Popen", _refuse_spawn):
+            with self.assertRaises(HolderRefusal) as ctx:
+                holder.execute(token="nospawn", human=_human("execute", "nospawn"))
+        self.assertIn("uncertain lease retained", str(ctx.exception))
+        self.assertFalse(marker.exists())
+        lease = json.loads((root / "lease.json").read_text(encoding="utf-8"))
+        self.assertTrue(lease["held"])
+        self.assertEqual(lease["child"], "uncertain")
+        self.assertIsNone(lease.get("pid"))
+        with self.assertRaises(HolderRefusal) as replay:
+            holder.consume(
+                nonce="nospawn",
+                policy="local",
+                human=_human("consume", "nospawn"),
+                workspace=ws,
+                files=[(str(script.resolve()), digest)],
+                binding=binding,
+            )
+        self.assertIn("holds the lease", str(replay.exception))
+
     def test_unarmed_spawn_reaps_without_running_and_keeps_a_living_child(self) -> None:
         td = tempfile.TemporaryDirectory(prefix="rsh-arm-")
         self.addCleanup(td.cleanup)

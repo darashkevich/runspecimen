@@ -4,7 +4,9 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
-- Exact-run approval checks expiry and the pinned holder id before signing, and an authorize that loses its request keeps the uncertain lease. Root-daemon Secure Enclave creation is unsupported on current Apple guidance. Installed admission stays closed.
+- Exact-run approval checks expiry and the pinned holder id before signing, and an authorize that loses its request keeps the uncertain lease. A holder execute that fails before any child exists keeps that uncertain lease. Root-daemon Secure Enclave creation is unsupported on current Apple guidance. Installed admission stays closed. `run_integration_complete` and `e2_closed` stay false.
+- `requirements_check` refuses a digest-valid passed report unless authenticity is receipt-bound and the final state is certifiable. Evidence pointers accept only a basename under `evidence_captures`. Postflight omits an attestation whose digest is not the current capture. The CLI does not claim a hardware human when it cannot collect a device signature. MCP `freshness_check` evaluates without writing `freshness_report.json`.
+- Developer ID packaging accepts bundle id `com.darashkevich.runspecimen.holder` and pins that designated requirement when a Developer ID identity is supplied. Ad-hoc `codesign --sign -` is local stage smoke, not the product signature. That bundle id is not `production_verifier_pin()`.
 
 ### Evidence expansion (ADR-005) — review branch, not released
 

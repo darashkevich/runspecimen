@@ -302,9 +302,11 @@ class VerifierIdentityError(Exception):
     """The verifier binary did not match the pinned team and requirement."""
 
 
-# Yahor confirmed this pair for the Developer ID holder. Do not weaken it.
+# Yahor confirmed this pair for the Developer ID verifier. Do not weaken it.
 # A match authenticates verifier code. It is not biometric origin and not
 # the Store app's guarantee.
+# The holder bundle id com.darashkevich.runspecimen.holder is accepted for
+# Developer ID packaging only. It is not this pin. Do not add it here.
 _CONFIRMED_TEAM_ID = "UN6KF8636A"
 _CONFIRMED_DESIGNATED_REQUIREMENT = (
     'identifier "com.darashkevich.runspecimen.native-p256-verify" '

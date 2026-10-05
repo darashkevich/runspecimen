@@ -38,6 +38,11 @@ final class CLIServiceCaptureFailureTests: XCTestCase {
                 jsonOutput(cleanupFailed: true),
                 "The engine stopped, but an owned descendant was still running."
             ),
+            (
+                "stdoutTruncated",
+                jsonOutput(stdoutTruncated: true),
+                "Output was truncated. The report is incomplete."
+            ),
         ]
         var failures: [String] = []
         for (name, captured, expected) in axes {
@@ -77,6 +82,7 @@ final class CLIServiceCaptureFailureTests: XCTestCase {
             ("cancelled", output(cancelled: true), "cancelled"),
             ("streamReadError", output(streamReadError: EIO), "could not be read"),
             ("cleanupFailed", output(cleanupFailed: true), "descendant"),
+            ("stdoutTruncated", output(stdoutTruncated: true), "truncated"),
         ]
         var failures: [String] = []
         for (name, captured, needle) in axes {
@@ -100,13 +106,14 @@ final class CLIServiceCaptureFailureTests: XCTestCase {
         timedOut: Bool = false,
         cancelled: Bool = false,
         cleanupFailed: Bool = false,
-        streamReadError: Int32? = nil
+        streamReadError: Int32? = nil,
+        stdoutTruncated: Bool = false
     ) -> BoundedProcessCapture.Output {
         var captured = BoundedProcessCapture.Output(
             exitCode: 0,
             stdout: Data("runspecimen 0.2.0rc15\n".utf8),
             stderr: Data("kept-stderr\n".utf8),
-            stdoutTruncated: false,
+            stdoutTruncated: stdoutTruncated,
             stderrTruncated: false,
             timedOut: timedOut,
             cancelled: cancelled
@@ -120,13 +127,14 @@ final class CLIServiceCaptureFailureTests: XCTestCase {
         timedOut: Bool = false,
         cancelled: Bool = false,
         cleanupFailed: Bool = false,
-        streamReadError: Int32? = nil
+        streamReadError: Int32? = nil,
+        stdoutTruncated: Bool = false
     ) -> BoundedProcessCapture.Output {
         var captured = BoundedProcessCapture.Output(
             exitCode: 0,
             stdout: Data("{\"ok\":true}".utf8),
             stderr: Data(),
-            stdoutTruncated: false,
+            stdoutTruncated: stdoutTruncated,
             stderrTruncated: false,
             timedOut: timedOut,
             cancelled: cancelled
