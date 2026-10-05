@@ -60,6 +60,33 @@ struct StatusObserveView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RSTheme.panel)
 
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Exact run")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(RSTheme.muted)
+                    Text(session.exactRunNote)
+                        .font(.footnote)
+                        .foregroundStyle(RSTheme.muted)
+                    ForEach(session.reviewedExactRunLines, id: \.self) { line in
+                        Text(line)
+                            .font(.system(.footnote, design: .monospaced))
+                            .foregroundStyle(RSTheme.ink)
+                            .textSelection(.enabled)
+                    }
+                    actionButton("Review exact run", tint: RSTheme.cyan) {
+                        await session.reviewRetainedExactRun()
+                    }
+                    actionButton("Sign reviewed exact run", tint: RSTheme.ink.opacity(0.85)) {
+                        await session.approveReviewedExactRun()
+                    }
+                    actionButton("Cancel exact run review", tint: RSTheme.danger) {
+                        session.cancelExactRunReview()
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RSTheme.panel)
+
                 VStack(spacing: 10) {
                     actionButton("Refresh status", tint: RSTheme.cyan) {
                         await session.refresh()

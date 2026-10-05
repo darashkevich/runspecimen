@@ -23,7 +23,7 @@ Yahor confirmed the Developer ID holder pin: team `UN6KF8636A` and designated re
 3. Privileged install. Install the holder only through the privileged path. The live `/Applications/RunSpecimen Holder.app` is not repaired from this ledger.
 4. One real bounded run after those enrollments. Do not type APPROVE and do not pass `--human-invoked` from automation.
 
-Trust-boundary proposal, unconfirmed. The evidence that would let installed protection accept an exact-run signature is a holder-sealed receipt of Secure Enclave key creation bound to that key's fingerprint. The receipt is produced by the holder. It is not a caller-supplied origin string and it is not a pin match. A Mac-session signature proves possession of the pinned key. It does not independently prove that protected holder state committed that key. The D1 pin still authenticates verifier code only. The decision for Yahor is yes or no: accept that sealed creation receipt as the admission evidence. This proposal is not authorized and is not implemented. A biometric press does not close this engineering. `run_integration_complete` stays false until that admission exists.
+Trust-boundary decision, unconfirmed. A holder-signed receipt is not enough unless the holder created the Secure Enclave key itself. The candidate component is the root-owned Developer ID holder daemon. The decision for Yahor is yes or no: authorize that daemon alone to create the key and commit its public key. A Mac-session signature proves possession of the pinned key and does not prove protected holder state committed it. This is not authorized. A biometric press does not close this engineering. `run_integration_complete` stays false. See [SECURE_ENCLAVE_ADMISSION.md](SECURE_ENCLAVE_ADMISSION.md).
 
 ## Packaging
 

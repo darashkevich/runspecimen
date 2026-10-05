@@ -19,10 +19,14 @@ final class CompanionSession: ObservableObject {
     @Published var refuseReasonInput: String = ""
     @Published var lastRemoteConfirmNote: String?
     @Published var phonePeerNote: String = "No phone-peer signature has been returned. Signing uses the published challenge. It does not approve a run."
+    @Published var exactRunNote: String = "No exact run is waiting for review. Phone approval is not physical presence at the Mac."
+    @Published var reviewedExactRunLines: [String] = []
     @Published var macSessionPublicKey: String = ""
     var phoneChallenge: PhonePeerChallengeMessage?
     var signedPhonePublicKey: String?
     private var phoneSignGeneration = 0
+    private var exactRunGeneration = 0
+    private var reviewedExactRun: ParsedExactRun?
     private var acceptedReceiptSignatures: Set<String> = []
 
     private let defaultsKey = "rs.observe.pairing"
@@ -234,23 +238,103 @@ final class CompanionSession: ObservableObject {
         }
     }
 
-    /// Sign the published exact-run bytes. The nonce is the one that was fetched.
-    func signRetainedExactRun(
-        signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
-        peer: any ExactRunPhoneSigningTransport
+    /// Fetch one published exact run and show the fields inside its signed bytes. This does not sign.
+    func reviewRetainedExactRun(
+        now: Int = Int(Date().timeIntervalSince1970),
+        peer: (any ExactRunPhoneSigningTransport)? = nil
     ) async {
         lastError = nil
+        exactRunGeneration += 1
+        let generation = exactRunGeneration
+        reviewedExactRun = nil
+        reviewedExactRunLines = []
+        let transport: any ExactRunPhoneSigningTransport
+        if let peer {
+            transport = peer
+        } else if let client = makeClient() {
+            transport = client
+        } else {
+            lastError = CompanionClientError.notPaired.localizedDescription
+            return
+        }
         do {
-            let published = try await peer.fetchRetainedExactRun()
-            guard !published.nonce.isEmpty, !published.bound.isEmpty else {
-                throw PhonePeerSignError.cancelled
+            let fetched = try await transport.fetchRetainedExactRun()
+            try Task.checkCancellation()
+            guard generation == exactRunGeneration else {
+                exactRunNote = "Exact run review was cancelled before a signature was returned."
+                return
             }
-            let signed = try signer.sign(message: published.bound)
-            try await peer.submitRetainedExactRunSignature(challengeId: published.nonce, signature: signed.signature)
-            phonePeerNote = "Exact-run signature returned for challenge \(published.nonce)."
+            let parsed = try parseExactRun(fetched: fetched, now: now)
+            guard generation == exactRunGeneration else {
+                exactRunNote = "Exact run review was replaced before it could be shown."
+                return
+            }
+            reviewedExactRun = parsed
+            reviewedExactRunLines = parsed.lines
+            exactRunNote = "Review these bytes before signing. Signing uses the enrolled phone key and does not create one."
+        } catch {
+            if generation == exactRunGeneration {
+                reviewedExactRun = nil
+                reviewedExactRunLines = []
+                exactRunNote = "Exact run was not shown."
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Sign the reviewed bytes with the committed phone key and return that signature for the same nonce.
+    func approveReviewedExactRun(
+        signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
+        peer: (any ExactRunPhoneSigningTransport)? = nil
+    ) async {
+        lastError = nil
+        guard let reviewed = reviewedExactRun else {
+            exactRunNote = "Review the exact run before signing it."
+            return
+        }
+        let generation = exactRunGeneration
+        let transport: any ExactRunPhoneSigningTransport
+        if let peer {
+            transport = peer
+        } else if let client = makeClient() {
+            transport = client
+        } else {
+            lastError = CompanionClientError.notPaired.localizedDescription
+            return
+        }
+        do {
+            let signed = try signer.signCommitted(message: reviewed.bound)
+            guard generation == exactRunGeneration, reviewedExactRun?.bound == reviewed.bound, reviewedExactRun?.nonce == reviewed.nonce else {
+                exactRunNote = "Exact run changed after review. The signature was not returned."
+                return
+            }
+            let again = try await transport.fetchRetainedExactRun()
+            guard generation == exactRunGeneration, again.challengeId == reviewed.nonce, again.bound == reviewed.bound else {
+                reviewedExactRun = nil
+                reviewedExactRunLines = []
+                exactRunNote = "The Mac replaced the exact run. The signature was not returned."
+                return
+            }
+            try await transport.submitRetainedExactRunSignature(challengeId: reviewed.nonce, signature: signed.signature)
+            guard generation == exactRunGeneration else {
+                exactRunNote = "Exact run was cancelled after the signature left the phone."
+                return
+            }
+            exactRunNote = "Exact-run signature returned for challenge \(reviewed.nonce). This is not physical presence at the Mac."
+        } catch PhonePeerSignError.cancelled {
+            exactRunNote = "Exact run was cancelled before a signature was returned."
+            lastError = nil
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    func cancelExactRunReview() {
+        exactRunGeneration += 1
+        reviewedExactRun = nil
+        reviewedExactRunLines = []
+        exactRunNote = "Exact run review was cancelled before a signature was returned."
+        lastError = nil
     }
 
     func cancelPhonePeerChallenge() async {
@@ -503,22 +587,159 @@ enum PhonePeerSignError: Error {
     case cancellationTooLate
 }
 
+struct FetchedExactRun: Equatable {
+    var challengeId: String
+    var bound: Data
+    var policy: String
+    var generation: Int
+    var keyGeneration: Int
+    var expiry: Int
+}
+
+struct ParsedExactRun: Equatable {
+    var nonce: String
+    var bound: Data
+    var policy: String
+    var holderId: String
+    var payloadDigest: String
+    var launchArgv: [String]
+    var generation: Int
+    var keyGeneration: Int
+    var expiry: Int
+    var lines: [String]
+}
+
 protocol ExactRunPhoneSigningTransport {
-    func fetchRetainedExactRun() async throws -> (nonce: String, bound: Data)
+    func fetchRetainedExactRun() async throws -> FetchedExactRun
     func submitRetainedExactRunSignature(challengeId: String, signature: String) async throws
 }
 
 protocol PhoneChallengeSigning {
     func sign(message: Data) throws -> (publicKey: String, signature: String)
+    func signCommitted(message: Data) throws -> (publicKey: String, signature: String)
     func bindStagedOwnership(challengeId: String, publicKey: String) throws
     func commitEnrollment(ownedBy challengeId: String, publicKey: String) throws
     func discardStagedEnrollment()
 }
 
 extension PhoneChallengeSigning {
+    func signCommitted(message: Data) throws -> (publicKey: String, signature: String) {
+        throw CompanionClientError.transport("phone session key is not enrolled")
+    }
     func bindStagedOwnership(challengeId: String, publicKey: String) throws {}
     func commitEnrollment(ownedBy challengeId: String, publicKey: String) throws {}
     func discardStagedEnrollment() {}
+}
+
+func canonicalExactRunBound(
+    holderId: String,
+    payloadDigest: String,
+    launchArgv: [String],
+    nonce: String,
+    policy: String,
+    generation: Int,
+    keyGeneration: Int,
+    expiry: Int
+) -> Data {
+    let argv = "[" + launchArgv.map(jsonStringLiteral).joined(separator: ",") + "]"
+    let text = "{\"domain\":\"holder-exact-run-v1\",\"expiry\":\(expiry),\"generation\":\(generation),\"holder_id\":\(jsonStringLiteral(holderId)),\"key_generation\":\(keyGeneration),\"launch_argv\":\(argv),\"nonce\":\(jsonStringLiteral(nonce)),\"payload_digest\":\(jsonStringLiteral(payloadDigest)),\"policy\":\(jsonStringLiteral(policy))}"
+    return Data(text.utf8)
+}
+
+func jsonInt(_ value: Any?) -> Int? {
+    if let number = value as? Int { return number }
+    if let number = value as? NSNumber { return number.intValue }
+    return nil
+}
+
+func jsonStringLiteral(_ value: String) -> String {
+    var out = "\""
+    for scalar in value.unicodeScalars {
+        switch scalar.value {
+        case 0x5C:
+            out += "\\\\"
+        case 0x22:
+            out += "\\\""
+        case 0x0A:
+            out += "\\n"
+        case 0x0D:
+            out += "\\r"
+        case 0x09:
+            out += "\\t"
+        case ..<0x20:
+            out += String(format: "\\u%04x", scalar.value)
+        default:
+            out.append(Character(scalar))
+        }
+    }
+    out += "\""
+    return out
+}
+
+func parseExactRun(fetched: FetchedExactRun, now: Int) throws -> ParsedExactRun {
+    guard
+        let object = try JSONSerialization.jsonObject(with: fetched.bound) as? [String: Any],
+        Set(object.keys) == ["domain", "expiry", "generation", "holder_id", "key_generation", "launch_argv", "nonce", "payload_digest", "policy"]
+    else {
+        throw CompanionClientError.transport("exact run bytes are not the canonical request")
+    }
+    guard object["domain"] as? String == "holder-exact-run-v1" else {
+        throw CompanionClientError.transport("exact run domain is not holder-exact-run-v1")
+    }
+    guard
+        let holderId = object["holder_id"] as? String, !holderId.isEmpty,
+        let digest = object["payload_digest"] as? String, digest.count == 64, digest.allSatisfy({ $0.isHexDigit }),
+        let argvValues = object["launch_argv"] as? [Any], argvValues.allSatisfy({ $0 is String }),
+        let nonce = object["nonce"] as? String, !nonce.isEmpty,
+        let policy = object["policy"] as? String, policy == "companion" || policy == "dual",
+        let generation = jsonInt(object["generation"]),
+        let keyGeneration = jsonInt(object["key_generation"]),
+        let expiry = jsonInt(object["expiry"])
+    else {
+        throw CompanionClientError.transport("exact run bytes are not the canonical request")
+    }
+    let launchArgv = argvValues.compactMap { $0 as? String }
+    guard fetched.challengeId == nonce, fetched.policy == policy, fetched.generation == generation, fetched.keyGeneration == keyGeneration, fetched.expiry == expiry else {
+        throw CompanionClientError.transport("exact run envelope does not match the signed bytes")
+    }
+    guard expiry > now else {
+        throw CompanionClientError.transport("exact run has expired")
+    }
+    let rebuilt = canonicalExactRunBound(
+        holderId: holderId,
+        payloadDigest: digest,
+        launchArgv: launchArgv,
+        nonce: nonce,
+        policy: policy,
+        generation: generation,
+        keyGeneration: keyGeneration,
+        expiry: expiry
+    )
+    guard rebuilt == fetched.bound else {
+        throw CompanionClientError.transport("exact run bytes are not the canonical request")
+    }
+    let lines = [
+        "policy \(policy)",
+        "nonce \(nonce)",
+        "holder \(holderId)",
+        "payload \(digest)",
+        "argv \(launchArgv.joined(separator: " "))",
+        "generation \(generation)",
+        "key generation \(keyGeneration)",
+        "expiry \(expiry)",
+    ]
+    return ParsedExactRun(
+        nonce: nonce,
+        bound: fetched.bound,
+        policy: policy,
+        holderId: holderId,
+        payloadDigest: digest,
+        launchArgv: launchArgv,
+        generation: generation,
+        keyGeneration: keyGeneration,
+        expiry: expiry,
+        lines: lines
+    )
 }
 
 /// Sealed key bytes in Application Support. This is not the Keychain and not
@@ -655,6 +876,20 @@ struct PhoneKeyStage {
 
 struct LivePhoneSecureEnclaveSigner: PhoneChallengeSigning {
     var stage = PhoneKeyStage(directory: LivePhoneSecureEnclaveSigner.support)
+
+    func signCommitted(message: Data) throws -> (publicKey: String, signature: String) {
+        let token = try stage.committedHandle()
+        let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: token)
+        let committed = try stage.committedPublicKey()
+        guard key.publicKey.x963Representation == committed else {
+            throw CompanionClientError.transport("phone session key is not enrolled")
+        }
+        let signature = try key.signature(for: message).rawRepresentation
+        return (
+            key.publicKey.x963Representation.base64EncodedString(),
+            signature.base64EncodedString()
+        )
+    }
 
     func sign(message: Data) throws -> (publicKey: String, signature: String) {
         if let token = try? stage.committedHandle() {

@@ -65,11 +65,21 @@ final class HoldingPeer: PhonePeerTransport {
 
 final class CountingSigner: PhoneChallengeSigning {
     var signs = 0
+    var committedSigns = 0
     var commits = 0
     var failCommits = 0
+    var refuseCommitted = false
     var lastMessage = Data()
     func sign(message: Data) throws -> (publicKey: String, signature: String) {
         signs += 1
+        lastMessage = message
+        return ("cHVibGlj", "c2ln")
+    }
+    func signCommitted(message: Data) throws -> (publicKey: String, signature: String) {
+        if refuseCommitted {
+            throw CompanionClientError.transport("phone session key is not enrolled")
+        }
+        committedSigns += 1
         lastMessage = message
         return ("cHVibGlj", "c2ln")
     }
@@ -83,21 +93,54 @@ final class CountingSigner: PhoneChallengeSigning {
 }
 
 final class RecordingExactPeer: ExactRunPhoneSigningTransport {
-    let nonce: String
-    let bound: Data
+    var fetched: FetchedExactRun
+    var replacement: FetchedExactRun?
+    var fetches = 0
     var submittedNonce = ""
     var submittedSignature = ""
-    init(nonce: String, bound: Data) {
-        self.nonce = nonce
-        self.bound = bound
+    var submissions = 0
+    var hold: FetchHold?
+    init(fetched: FetchedExactRun, hold: FetchHold? = nil) {
+        self.fetched = fetched
+        self.hold = hold
     }
-    func fetchRetainedExactRun() async throws -> (nonce: String, bound: Data) {
-        (nonce, bound)
+    func fetchRetainedExactRun() async throws -> FetchedExactRun {
+        fetches += 1
+        if let hold, fetches == 1 {
+            await hold.enter()
+        }
+        if fetches > 1, let replacement {
+            return replacement
+        }
+        return fetched
     }
     func submitRetainedExactRunSignature(challengeId: String, signature: String) async throws {
+        submissions += 1
         submittedNonce = challengeId
         submittedSignature = signature
     }
+}
+
+func sampleFetchedExactRun(policy: String = "companion", nonce: String = "nonce-kept", expiry: Int = 1_800_000_000) -> FetchedExactRun {
+    let digest = String(repeating: "ab", count: 32)
+    let bound = canonicalExactRunBound(
+        holderId: "holder-a",
+        payloadDigest: digest,
+        launchArgv: ["/usr/bin/true", "script"],
+        nonce: nonce,
+        policy: policy,
+        generation: 3,
+        keyGeneration: 1,
+        expiry: expiry
+    )
+    return FetchedExactRun(
+        challengeId: nonce,
+        bound: bound,
+        policy: policy,
+        generation: 3,
+        keyGeneration: 1,
+        expiry: expiry
+    )
 }
 
 actor FetchHold {
@@ -132,6 +175,10 @@ struct PhonePeerCancellationTests {
             try await testDelayedReceiptThenNewChallengeDoesNotCommit()
             try await testFailedCommitThenRetryEnrolls()
             try await testExactRunSignatureUsesTheFetchedNonce()
+            try await testExactRunCancelDuringReviewDoesNotSign()
+            try await testExactRunReplacementDoesNotSubmit()
+            try await testExactRunMalformedBoundDoesNotSign()
+            try await testExactRunMissingKeyDoesNotSubmit()
             try testPhoneKeyOwnershipRejectsADifferentChallenge()
             try testPhoneKeyStageRollsBackAndRevokes()
             try testPhoneKeyCommitFailureKeepsThePreviousGeneration()
@@ -381,13 +428,85 @@ func testFailedCommitThenRetryEnrolls() async throws {
 
 @MainActor
 func testExactRunSignatureUsesTheFetchedNonce() async throws {
-    let bound = Data("exact-bound".utf8)
-    let peer = RecordingExactPeer(nonce: "nonce-kept", bound: bound)
+    let fetched = sampleFetchedExactRun()
+    let peer = RecordingExactPeer(fetched: fetched)
     let signer = CountingSigner()
     let session = CompanionSession()
-    await session.signRetainedExactRun(signer: signer, peer: peer)
-    if peer.submittedNonce != "nonce-kept" || signer.lastMessage != bound || signer.signs != 1 {
+    await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
+    if session.reviewedExactRunLines.contains("policy companion") == false
+        || session.reviewedExactRunLines.contains("holder holder-a") == false
+        || session.reviewedExactRunLines.contains("argv /usr/bin/true script") == false {
         throw TestFailure.holderVerificationDidNotEnroll
+    }
+    await session.approveReviewedExactRun(signer: signer, peer: peer)
+    if peer.submittedNonce != "nonce-kept" || signer.lastMessage != fetched.bound || signer.committedSigns != 1 || signer.signs != 0 {
+        throw TestFailure.holderVerificationDidNotEnroll
+    }
+}
+
+@MainActor
+func testExactRunCancelDuringReviewDoesNotSign() async throws {
+    let hold = FetchHold()
+    let peer = RecordingExactPeer(fetched: sampleFetchedExactRun(), hold: hold)
+    let signer = CountingSigner()
+    let session = CompanionSession()
+    let task = Task { await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer) }
+    while await hold.entered == false {
+        await Task.yield()
+    }
+    session.cancelExactRunReview()
+    await hold.release()
+    await task.value
+    await session.approveReviewedExactRun(signer: signer, peer: peer)
+    let lines = session.reviewedExactRunLines
+    if signer.committedSigns != 0 || signer.signs != 0 || peer.submissions != 0 || lines.isEmpty == false {
+        throw TestFailure.lateCancelEnrolled
+    }
+}
+
+@MainActor
+func testExactRunReplacementDoesNotSubmit() async throws {
+    let peer = RecordingExactPeer(fetched: sampleFetchedExactRun())
+    peer.replacement = sampleFetchedExactRun(nonce: "nonce-other")
+    let signer = CountingSigner()
+    let session = CompanionSession()
+    await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
+    await session.approveReviewedExactRun(signer: signer, peer: peer)
+    if peer.submissions != 0 || signer.committedSigns != 1 {
+        throw TestFailure.lateCancelEnrolled
+    }
+}
+
+@MainActor
+func testExactRunMalformedBoundDoesNotSign() async throws {
+    let fetched = FetchedExactRun(
+        challengeId: "nonce-kept",
+        bound: Data("not-canonical".utf8),
+        policy: "companion",
+        generation: 3,
+        keyGeneration: 1,
+        expiry: 1_800_000_000
+    )
+    let peer = RecordingExactPeer(fetched: fetched)
+    let signer = CountingSigner()
+    let session = CompanionSession()
+    await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
+    await session.approveReviewedExactRun(signer: signer, peer: peer)
+    if signer.signs != 0 || signer.committedSigns != 0 || peer.submissions != 0 {
+        throw TestFailure.lateCancelEnrolled
+    }
+}
+
+@MainActor
+func testExactRunMissingKeyDoesNotSubmit() async throws {
+    let peer = RecordingExactPeer(fetched: sampleFetchedExactRun(policy: "dual"))
+    let signer = CountingSigner()
+    signer.refuseCommitted = true
+    let session = CompanionSession()
+    await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
+    await session.approveReviewedExactRun(signer: signer, peer: peer)
+    if signer.committedSigns != 0 || signer.signs != 0 || peer.submissions != 0 {
+        throw TestFailure.lateCancelEnrolled
     }
 }
 

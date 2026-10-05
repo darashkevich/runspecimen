@@ -73,6 +73,22 @@ public protocol ReloadedMacSigner {
     func sign(message: Data, enrolledPublicKey: Data) throws -> Data
 }
 
+public struct ExactRunInputs: Equatable, Sendable {
+    public var policy: String
+    public var workspace: String
+    public var scriptDigest: String
+    public var contractHash: String
+    public var executable: String
+
+    public init(policy: String, workspace: String, scriptDigest: String, contractHash: String, executable: String) {
+        self.policy = policy
+        self.workspace = workspace
+        self.scriptDigest = scriptDigest
+        self.contractHash = contractHash
+        self.executable = executable
+    }
+}
+
 public enum ExactRunCoordinatorError: Error, Equatable {
     case missingPrepare
     case expired
@@ -81,45 +97,85 @@ public enum ExactRunCoordinatorError: Error, Equatable {
     case phoneNotBound
     case missingPhone
     case missingMacKey
+    case busy
+    case inputsChanged
 }
 
 /// Prepare displays and sends one challenge. Continue accepts and executes that same challenge.
-public final class ExactRunCoordinator: @unchecked Sendable {
+/// The actor serializes Prepare and Continue. A changed signed input drops the pending request.
+public actor ExactRunCoordinator {
     public private(set) var issueCount = 0
     public private(set) var displayedBound: Data?
     public private(set) var publishedNonce: String?
     private var retained: RetainedExactRun?
+    private var retainedInputs: ExactRunInputs?
+    private var busy = false
+    private var epoch = 0
 
     public init() {}
+
+    public func invalidate() {
+        epoch += 1
+        retained = nil
+        retainedInputs = nil
+        displayedBound = nil
+        publishedNonce = nil
+    }
 
     public func prepare(
         policy: String,
         workspace: String,
         files: [[String]],
         binding: [String: Any],
+        inputs: ExactRunInputs,
         transport: any ExactRunTransport,
         mailbox: any ExactRunPhoneMailbox
     ) async throws -> RetainedExactRun {
+        guard !busy else { throw ExactRunCoordinatorError.busy }
+        busy = true
+        defer { busy = false }
         let trimmed = policy.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed == "local" || trimmed == "companion" || trimmed == "dual" else {
             throw ExactRunCoordinatorError.policyRefused
         }
+        guard inputs.policy == trimmed else { throw ExactRunCoordinatorError.inputsChanged }
+        let epochAtStart = epoch
         let issued = try await transport.issue(
             policy: trimmed,
             workspace: workspace,
             files: files,
             binding: binding
         )
+        guard epoch == epochAtStart else { throw ExactRunCoordinatorError.inputsChanged }
         guard issued.policy == trimmed, !issued.nonce.isEmpty, !issued.bound.isEmpty else {
             throw ExactRunCoordinatorError.policyRefused
         }
         issueCount += 1
         retained = issued
+        retainedInputs = inputs
         displayedBound = issued.bound
         publishedNonce = nil
         if trimmed == "companion" || trimmed == "dual" {
-            try await mailbox.publish(run: issued)
+            do {
+                try await mailbox.publish(run: issued)
+            } catch {
+                retained = nil
+                retainedInputs = nil
+                displayedBound = nil
+                publishedNonce = nil
+                throw error
+            }
+            guard epoch == epochAtStart, retained?.nonce == issued.nonce, retainedInputs == inputs else {
+                retained = nil
+                retainedInputs = nil
+                displayedBound = nil
+                publishedNonce = nil
+                throw ExactRunCoordinatorError.inputsChanged
+            }
             publishedNonce = issued.nonce
+        }
+        guard epoch == epochAtStart, retained?.nonce == issued.nonce else {
+            throw ExactRunCoordinatorError.inputsChanged
         }
         return issued
     }
@@ -127,15 +183,22 @@ public final class ExactRunCoordinator: @unchecked Sendable {
     /// Authorize and execute the retained challenge. This method does not call issue.
     public func continueRun(
         now: Int,
+        inputs: ExactRunInputs,
         transport: any ExactRunTransport,
         mailbox: any ExactRunPhoneMailbox,
         signer: any ReloadedMacSigner
     ) async throws -> String {
-        let prepared = retained
-        let issuesBefore = issueCount
-        guard let prepared else { throw ExactRunCoordinatorError.missingPrepare }
+        guard !busy else { throw ExactRunCoordinatorError.busy }
+        busy = true
+        defer { busy = false }
+        guard let prepared = retained else { throw ExactRunCoordinatorError.missingPrepare }
+        guard retainedInputs == inputs else { throw ExactRunCoordinatorError.inputsChanged }
+        let epochAtStart = epoch
+        let nonce = prepared.nonce
+        let bound = prepared.bound
         if now > prepared.expiry { throw ExactRunCoordinatorError.expired }
         let live = try await transport.liveSession()
+        try requireSameRequest(epochAtStart: epochAtStart, nonce: nonce, inputs: inputs)
         if live.policy != prepared.policy { throw ExactRunCoordinatorError.policyRefused }
         if live.generation != prepared.generation || live.keyGeneration != prepared.keyGeneration {
             throw ExactRunCoordinatorError.generationChanged
@@ -145,19 +208,28 @@ public final class ExactRunCoordinator: @unchecked Sendable {
             guard !prepared.enrolledMacPublicKey.isEmpty else {
                 throw ExactRunCoordinatorError.missingMacKey
             }
-            let raw = try signer.sign(message: prepared.bound, enrolledPublicKey: prepared.enrolledMacPublicKey)
+            let raw = try signer.sign(message: bound, enrolledPublicKey: prepared.enrolledMacPublicKey)
+            try requireSameRequest(epochAtStart: epochAtStart, nonce: nonce, inputs: inputs)
             signatures["mac"] = raw.base64EncodedString()
         }
         if prepared.policy == "companion" || prepared.policy == "dual" {
-            let response = try await mailbox.collect(nonce: prepared.nonce)
-            guard response.nonce == prepared.nonce else { throw ExactRunCoordinatorError.phoneNotBound }
+            let response = try await mailbox.collect(nonce: nonce)
+            try requireSameRequest(epochAtStart: epochAtStart, nonce: nonce, inputs: inputs)
+            guard response.nonce == nonce else { throw ExactRunCoordinatorError.phoneNotBound }
             let signature = response.signature.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !signature.isEmpty else { throw ExactRunCoordinatorError.missingPhone }
             signatures["phone"] = signature
         }
-        if issueCount != issuesBefore { throw ExactRunCoordinatorError.policyRefused }
-        try await transport.authorize(nonce: prepared.nonce, policy: prepared.policy, signatures: signatures)
-        return try await transport.execute(nonce: prepared.nonce, signatures: signatures)
+        try requireSameRequest(epochAtStart: epochAtStart, nonce: nonce, inputs: inputs)
+        try await transport.authorize(nonce: nonce, policy: prepared.policy, signatures: signatures)
+        try requireSameRequest(epochAtStart: epochAtStart, nonce: nonce, inputs: inputs)
+        return try await transport.execute(nonce: nonce, signatures: signatures)
+    }
+
+    private func requireSameRequest(epochAtStart: Int, nonce: String, inputs: ExactRunInputs) throws {
+        guard epoch == epochAtStart, retained?.nonce == nonce, retained?.bound != nil, retainedInputs == inputs else {
+            throw ExactRunCoordinatorError.inputsChanged
+        }
     }
 }
 
@@ -187,7 +259,7 @@ public enum CustodyReloadError: Error, Equatable {
 }
 
 /// In-memory keys win. After restart the committed record signs, and only when it is the enrolled key.
-public final class ReloadingSessionCustody: @unchecked Sendable {
+public final class ReloadingSessionCustody {
     private var memory: [String: HeldSessionKey] = [:]
     private let source: any CommittedCustodySource
     private let lock = NSLock()

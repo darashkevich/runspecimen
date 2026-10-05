@@ -61,6 +61,10 @@ struct RunSpecimenHolderApp: App {
                 Button("Continue exact run") {
                     Task { await continueExactRunFromPerson() }
                 }
+                .onChange(of: exactPolicy) { _, _ in Task { await exactRuns.invalidate() } }
+                .onChange(of: exactWorkspace) { _, _ in Task { await exactRuns.invalidate() } }
+                .onChange(of: exactScript) { _, _ in Task { await exactRuns.invalidate() } }
+                .onChange(of: exactExecutable) { _, _ in Task { await exactRuns.invalidate() } }
                 Button("Enroll paired phone") {
                     Task { await enrollPhoneFromPerson() }
                 }
@@ -106,11 +110,13 @@ struct RunSpecimenHolderApp: App {
     /// Issue one snapshot challenge, show its bound bytes, and send that same challenge to the phone.
     private func prepareExactRunFromPerson() async {
         do {
+            let inputs = try exactRunInputs()
             let prepared = try await exactRuns.prepare(
-                policy: exactPolicy,
-                workspace: exactWorkspace.trimmingCharacters(in: .whitespacesAndNewlines),
+                policy: inputs.policy,
+                workspace: inputs.workspace,
                 files: try exactRunFiles(),
                 binding: try exactRunBinding(),
+                inputs: inputs,
                 transport: try appExactTransport(),
                 mailbox: appExactMailbox()
             )
@@ -127,6 +133,7 @@ struct RunSpecimenHolderApp: App {
         do {
             let executed = try await exactRuns.continueRun(
                 now: Int(Date().timeIntervalSince1970),
+                inputs: try exactRunInputs(),
                 transport: try appExactTransport(),
                 mailbox: appExactMailbox(),
                 signer: custody
@@ -137,6 +144,20 @@ struct RunSpecimenHolderApp: App {
             statusText = "Exact run did not reach snapshot-bound execute."
             detail = "\(error)"
         }
+    }
+
+    private func exactRunInputs() throws -> ExactRunInputs {
+        let files = try exactRunFiles()
+        let binding = try exactRunBinding()
+        let digest = files.first?.last ?? ""
+        let contract = binding["contract_hash"] as? String ?? ""
+        return ExactRunInputs(
+            policy: exactPolicy.trimmingCharacters(in: .whitespacesAndNewlines),
+            workspace: exactWorkspace.trimmingCharacters(in: .whitespacesAndNewlines),
+            scriptDigest: digest,
+            contractHash: contract,
+            executable: exactExecutable.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
     }
 
     private func exactRunFiles() throws -> [[String]] {

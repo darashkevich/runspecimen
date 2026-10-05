@@ -175,6 +175,38 @@ struct CompanionClient {
         )
     }
 
+    func fetchRetainedExactRun() async throws -> FetchedExactRun {
+        let data = try await request(path: "/v1/exact-peer-challenge")
+        guard
+            let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let challengeId = object["challenge_id"] as? String,
+            let boundText = object["bound"] as? String,
+            let bound = Data(base64Encoded: boundText),
+            let policy = object["policy"] as? String,
+            let generation = jsonInt(object["generation"]),
+            let keyGeneration = jsonInt(object["key_generation"]),
+            let expiry = jsonInt(object["expiry"])
+        else {
+            throw CompanionClientError.decoding
+        }
+        return FetchedExactRun(
+            challengeId: challengeId,
+            bound: bound,
+            policy: policy,
+            generation: generation,
+            keyGeneration: keyGeneration,
+            expiry: expiry
+        )
+    }
+
+    func submitRetainedExactRunSignature(challengeId: String, signature: String) async throws {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "challenge_id": challengeId,
+            "signature": signature,
+        ])
+        _ = try await request(path: "/v1/exact-peer-signature", method: "POST", body: payload)
+    }
+
     /// Consume a Mac-armed pending without writing approval. Requires typed challenge + reason.
     func submitRemoteRefuse(challenge: String, reason: String) async throws -> RemoteConfirmResult {
         let payload = try JSONSerialization.data(withJSONObject: [
@@ -185,6 +217,8 @@ struct CompanionClient {
         return try JSONDecoder().decode(RemoteConfirmResult.self, from: data)
     }
 }
+
+extension CompanionClient: ExactRunPhoneSigningTransport {}
 
 final class CompanionTLSPinningDelegate: NSObject, URLSessionDelegate {
     let expectedFingerprint: String

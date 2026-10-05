@@ -320,25 +320,31 @@ final class HolderSocketClientTests: XCTestCase {
         let mailbox = RecordingExactMailbox()
         let signer = RecordingMacSigner()
         let coordinator = ExactRunCoordinator()
+        let inputs = sampleInputs(policy: "dual")
         let prepared = try await coordinator.prepare(
             policy: "dual",
             workspace: "/tmp/ws",
             files: [["script", String(repeating: "a", count: 64)]],
             binding: ["policy": "dual"],
+            inputs: inputs,
             transport: transport,
             mailbox: mailbox
         )
-        XCTAssertEqual(coordinator.issueCount, 1)
-        XCTAssertEqual(coordinator.displayedBound, Data("bound-once".utf8))
+        let issuesAfterPrepare = await coordinator.issueCount
+        let shown = await coordinator.displayedBound
+        XCTAssertEqual(issuesAfterPrepare, 1)
+        XCTAssertEqual(shown, Data("bound-once".utf8))
         XCTAssertEqual(mailbox.publishedNonce, prepared.nonce)
         mailbox.response = BoundPhoneExactSignature(nonce: prepared.nonce, signature: "cGhvbmU")
         let executed = try await coordinator.continueRun(
             now: prepared.expiry,
+            inputs: inputs,
             transport: transport,
             mailbox: mailbox,
             signer: signer
         )
-        XCTAssertEqual(coordinator.issueCount, 1)
+        let issuesAfterContinue = await coordinator.issueCount
+        XCTAssertEqual(issuesAfterContinue, 1)
         XCTAssertEqual(transport.authorizedNonce, prepared.nonce)
         XCTAssertEqual(transport.executedNonce, prepared.nonce)
         XCTAssertEqual(executed, "executed \(prepared.nonce)")
@@ -350,42 +356,160 @@ final class HolderSocketClientTests: XCTestCase {
         let transport = RecordingExactTransport()
         let mailbox = RecordingExactMailbox()
         let coordinator = ExactRunCoordinator()
+        let inputs = sampleInputs(policy: "companion")
         let prepared = try await coordinator.prepare(
             policy: "companion",
             workspace: "/tmp/ws",
             files: [["script", String(repeating: "a", count: 64)]],
             binding: [:],
+            inputs: inputs,
             transport: transport,
             mailbox: mailbox
         )
-        let issues = coordinator.issueCount
+        let issues = await coordinator.issueCount
         mailbox.response = BoundPhoneExactSignature(nonce: "other-nonce", signature: "cGhvbmU")
         do {
-            _ = try await coordinator.continueRun(now: prepared.expiry, transport: transport, mailbox: mailbox, signer: RecordingMacSigner())
+            _ = try await coordinator.continueRun(now: prepared.expiry, inputs: inputs, transport: transport, mailbox: mailbox, signer: RecordingMacSigner())
             XCTFail("a different phone nonce was accepted")
         } catch ExactRunCoordinatorError.phoneNotBound {
         }
-        XCTAssertEqual(coordinator.issueCount, issues)
+        let issuesAfterWrongNonce = await coordinator.issueCount
+        XCTAssertEqual(issuesAfterWrongNonce, issues)
         XCTAssertNil(transport.authorizedNonce)
         mailbox.response = BoundPhoneExactSignature(nonce: prepared.nonce, signature: "cGhvbmU")
         do {
-            _ = try await coordinator.continueRun(now: prepared.expiry + 1, transport: transport, mailbox: mailbox, signer: RecordingMacSigner())
+            _ = try await coordinator.continueRun(now: prepared.expiry + 1, inputs: inputs, transport: transport, mailbox: mailbox, signer: RecordingMacSigner())
             XCTFail("an expired challenge continued")
         } catch ExactRunCoordinatorError.expired {
         }
         transport.live = ExactRunLiveSession(policy: prepared.policy, generation: prepared.generation + 1, keyGeneration: prepared.keyGeneration)
         do {
-            _ = try await coordinator.continueRun(now: prepared.expiry, transport: transport, mailbox: mailbox, signer: RecordingMacSigner())
+            _ = try await coordinator.continueRun(now: prepared.expiry, inputs: inputs, transport: transport, mailbox: mailbox, signer: RecordingMacSigner())
             XCTFail("a changed generation continued")
         } catch ExactRunCoordinatorError.generationChanged {
         }
         transport.live = ExactRunLiveSession(policy: "local", generation: prepared.generation, keyGeneration: prepared.keyGeneration)
         do {
-            _ = try await coordinator.continueRun(now: prepared.expiry, transport: transport, mailbox: mailbox, signer: RecordingMacSigner())
+            _ = try await coordinator.continueRun(now: prepared.expiry, inputs: inputs, transport: transport, mailbox: mailbox, signer: RecordingMacSigner())
             XCTFail("a changed policy continued")
         } catch ExactRunCoordinatorError.policyRefused {
         }
-        XCTAssertEqual(coordinator.issueCount, issues)
+        let issuesAtEnd = await coordinator.issueCount
+        XCTAssertEqual(issuesAtEnd, issues)
+    }
+
+    func testChangedInputsAndOverlapDoNotAuthorize() async throws {
+        let transport = RecordingExactTransport()
+        let mailbox = RecordingExactMailbox()
+        let coordinator = ExactRunCoordinator()
+        let inputs = sampleInputs(policy: "dual")
+        let prepared = try await coordinator.prepare(
+            policy: "dual",
+            workspace: "/tmp/ws",
+            files: [["script", String(repeating: "a", count: 64)]],
+            binding: [:],
+            inputs: inputs,
+            transport: transport,
+            mailbox: mailbox
+        )
+        mailbox.response = BoundPhoneExactSignature(nonce: prepared.nonce, signature: "cGhvbmU")
+        var changed = inputs
+        changed.scriptDigest = String(repeating: "b", count: 64)
+        do {
+            _ = try await coordinator.continueRun(now: prepared.expiry, inputs: changed, transport: transport, mailbox: mailbox, signer: RecordingMacSigner())
+            XCTFail("changed script continued")
+        } catch ExactRunCoordinatorError.inputsChanged {
+        }
+        XCTAssertNil(transport.authorizedNonce)
+        await coordinator.invalidate()
+        do {
+            _ = try await coordinator.continueRun(now: prepared.expiry, inputs: inputs, transport: transport, mailbox: mailbox, signer: RecordingMacSigner())
+            XCTFail("an invalidated challenge continued")
+        } catch ExactRunCoordinatorError.missingPrepare {
+        }
+        XCTAssertNil(transport.executedNonce)
+        let gate = PrepareGate()
+        let holding = HoldingExactTransport(gate: gate, inner: transport)
+        let first = Task {
+            try await coordinator.prepare(
+                policy: "dual",
+                workspace: "/tmp/ws",
+                files: [["script", String(repeating: "a", count: 64)]],
+                binding: [:],
+                inputs: inputs,
+                transport: holding,
+                mailbox: mailbox
+            )
+        }
+        while await gate.entered == false {
+            await Task.yield()
+        }
+        do {
+            _ = try await coordinator.prepare(
+                policy: "dual",
+                workspace: "/tmp/ws",
+                files: [["script", String(repeating: "a", count: 64)]],
+                binding: [:],
+                inputs: inputs,
+                transport: transport,
+                mailbox: mailbox
+            )
+            XCTFail("a second prepare overlapped the first")
+        } catch ExactRunCoordinatorError.busy {
+        }
+        await gate.release()
+        _ = try await first.value
+        let issuesAfterOverlap = await coordinator.issueCount
+        XCTAssertEqual(issuesAfterOverlap, 2)
+    }
+
+    func testInvalidateDuringCollectDoesNotExecute() async throws {
+        let transport = RecordingExactTransport()
+        let gate = PrepareGate()
+        let mailbox = HoldingExactMailbox(gate: gate)
+        let coordinator = ExactRunCoordinator()
+        let inputs = sampleInputs(policy: "companion")
+        let prepared = try await coordinator.prepare(
+            policy: "companion",
+            workspace: "/tmp/ws",
+            files: [["script", String(repeating: "a", count: 64)]],
+            binding: [:],
+            inputs: inputs,
+            transport: transport,
+            mailbox: mailbox
+        )
+        mailbox.response = BoundPhoneExactSignature(nonce: prepared.nonce, signature: "cGhvbmU")
+        let running = Task {
+            try await coordinator.continueRun(
+                now: prepared.expiry,
+                inputs: inputs,
+                transport: transport,
+                mailbox: mailbox,
+                signer: RecordingMacSigner()
+            )
+        }
+        while await gate.entered == false {
+            await Task.yield()
+        }
+        await coordinator.invalidate()
+        await gate.release()
+        do {
+            _ = try await running.value
+            XCTFail("collect after invalidation executed")
+        } catch ExactRunCoordinatorError.inputsChanged {
+        }
+        XCTAssertNil(transport.authorizedNonce)
+        XCTAssertNil(transport.executedNonce)
+    }
+
+    private func sampleInputs(policy: String) -> ExactRunInputs {
+        ExactRunInputs(
+            policy: policy,
+            workspace: "/tmp/ws",
+            scriptDigest: String(repeating: "a", count: 64),
+            contractHash: String(repeating: "c", count: 64),
+            executable: "/tmp/python"
+        )
     }
 
     func testRestartWithoutReenrollmentSignsTheCommittedKey() throws {
@@ -636,6 +760,57 @@ final class RecordingExactMailbox: ExactRunPhoneMailbox {
 
     func collect(nonce: String) async throws -> BoundPhoneExactSignature {
         response
+    }
+}
+
+actor PrepareGate {
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var entered = false
+
+    func enter() async {
+        entered = true
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        let pending = waiters
+        waiters = []
+        for continuation in pending {
+            continuation.resume()
+        }
+    }
+}
+
+final class HoldingExactTransport: ExactRunTransport {
+    let gate: PrepareGate
+    let inner: RecordingExactTransport
+    init(gate: PrepareGate, inner: RecordingExactTransport) {
+        self.gate = gate
+        self.inner = inner
+    }
+    func issue(policy: String, workspace: String, files: [[String]], binding: [String: Any]) async throws -> RetainedExactRun {
+        await gate.enter()
+        return try await inner.issue(policy: policy, workspace: workspace, files: files, binding: binding)
+    }
+    func liveSession() async throws -> ExactRunLiveSession { try await inner.liveSession() }
+    func authorize(nonce: String, policy: String, signatures: [String: String]) async throws {
+        try await inner.authorize(nonce: nonce, policy: policy, signatures: signatures)
+    }
+    func execute(nonce: String, signatures: [String: String]) async throws -> String {
+        try await inner.execute(nonce: nonce, signatures: signatures)
+    }
+}
+
+final class HoldingExactMailbox: ExactRunPhoneMailbox {
+    let gate: PrepareGate
+    var response = BoundPhoneExactSignature(nonce: "", signature: "")
+    init(gate: PrepareGate) { self.gate = gate }
+    func publish(run: RetainedExactRun) async throws {}
+    func collect(nonce: String) async throws -> BoundPhoneExactSignature {
+        await gate.enter()
+        return response
     }
 }
 
