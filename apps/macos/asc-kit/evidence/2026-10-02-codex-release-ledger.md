@@ -2,7 +2,7 @@
 
 QA instruction: finish the unblocked engineering in `RELEASE-BLOCKER-LEDGER-2026-10-02.md`. The frozen baseline was tip `4a6b97fba97729b658a40ffc99d48c505978e4ba` (code `4b9755b66c5e60968cf3e432dd5e907f027d8393`). That baseline is not this candidate. A pin match authenticates verifier code. It does not authenticate biometric key origin or human approval.
 
-Code commits: `15fc8e2867da3105ac878d2e6989b72b9386d055` and `b6a206a548abe77600937b0e8d6c5847bf366478`. The candidate tip is the commit that adds this sentence. Its parent is `f7bb5cfa56107d589e0be73b9a6eab9ad37bd916`. The code SHA is `f7bb5cfa56107d589e0be73b9a6eab9ad37bd916`. On a Mac without that Developer ID identity, the extracted-verifier test signs ad-hoc and still refuses the repository fallback. The compile-stage test skips when `swiftc` is absent and does not read a machine-local interpreter path.
+Code commits: `15fc8e2867da3105ac878d2e6989b72b9386d055`, `b6a206a548abe77600937b0e8d6c5847bf366478`, and `6fa6c8deba0f380fc6b9f01ff5afefbd2fd2122b`. The candidate tip is the commit that adds this sentence. Its parent is `6fa6c8deba0f380fc6b9f01ff5afefbd2fd2122b`. The code SHA is `6fa6c8deba0f380fc6b9f01ff5afefbd2fd2122b`. On a Mac without that Developer ID identity, the extracted-verifier test signs ad-hoc and still refuses the repository fallback. The compile-stage test skips when `swiftc` is absent and does not read a machine-local interpreter path.
 
 This note is not production sign-off. Nothing here was installed, published, merged, notarized, or submitted. No biometric prompt was run. `SecureEnclave.P256.Signing.PrivateKey` was not called. The live `/Applications` apps and holder daemon pid 42554 were not repaired, signaled, or replaced. CI green is not readiness.
 
@@ -260,3 +260,12 @@ Trust-boundary proposal, unconfirmed. The evidence that would let installed prot
 - Plugin zip SHA-256, unchanged: `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d`
 - Staged holder package tar SHA-256, not installed: `d322839991f1ef164eaf9566be9bd83e37df2e302179537dd92d152b61d16db6`
 - Mac QA executable SHA-256, not holder acceptance: `a2e8ebffbd1920ab78df40f85d20ba0cef2797cd68fbbe00af444dbb36930b5e`
+
+`6fa6c8deba0f380fc6b9f01ff5afefbd2fd2122b` records that a root launchd daemon cannot create or reload a Secure Enclave key in the correct user session. Apple's guidance was read on 2026-10-05. The isolated harness compiles the real calls behind an acknowledgement that tests do not pass, and `testUnattendedPathDoesNotReachTheHardwareCallsite` left the callsite counter at 0. Exact-run approval rechecks expiry and the pinned holder id before signing. An authorize that loses its request keeps the uncertain lease, and a second consume of that nonce stays refused. `run_integration_complete` stays false. The daemon plist id stays out of `production_verifier_pin()`. The GUI at `/private/tmp/rs-qa-gui-f7bb5cf` is not acceptance of this SHA.
+
+`release_check` wrote `artifacts/rc15-2026-10-05-qa-py312-feasibility/` and did not replace the readiness directory. Homebrew Python 3.12.14. 630 tests, 35 skipped, then 4 tests, exit 0. Swift `HolderSocketClientTests`: 18 passed. `DaemonKeyFeasibilityTests`: 1 passed. Phone tests passed without hardware. The stage printed `NOT_INSTALLED=1` and was removed. No hardware key was created. This is not a production sign-off.
+
+- Wheel SHA-256: `1646b7a17d99fb20612014cca44c958ab3a7c059d8339de7402f4f498f51117e`
+- Sdist SHA-256: `ef924ffa86460ed3691a70559973b0845f56f05ab36d6ce14f7604ee3cb09cc8`
+- Plugin zip SHA-256, unchanged: `692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d`
+- Staged holder package tar SHA-256, not installed: `d1392b9a2b88f82299792f8b661a1bb3dcb1a8f83ffe6d1aeef14e6707730e9a`
