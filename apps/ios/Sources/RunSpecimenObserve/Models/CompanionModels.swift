@@ -1,5 +1,20 @@
 import Foundation
 
+struct PhonePeerChallengeMessage: Codable, Equatable {
+    var challengeId: String
+    var challenge: String
+    var generation: Int
+    var holderId: String
+    var expiry: Int?
+    var role: String?
+
+    enum CodingKeys: String, CodingKey {
+        case challenge, generation, expiry, role
+        case challengeId = "challenge_id"
+        case holderId = "holder_id"
+    }
+}
+
 struct CompanionCapabilities: Codable, Equatable {
     var product: String
     var mode: String

@@ -16,7 +16,7 @@ from typing import Any
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "runspecimen"
-SERVER_VERSION = "0.2.0-rc.14"
+SERVER_VERSION = "0.2.0-rc.15"
 
 ALLOWED = frozenset({
     "about",
@@ -178,7 +178,10 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "freshness_check",
-        "description": "Evaluate evidence applicability for a contract (not verify).",
+        "description": (
+            "Evaluate evidence applicability without writing freshness_report.json "
+            "(not verify). The writing command is freshness check."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -256,7 +259,7 @@ def _run_cli(action: str, arguments: dict[str, Any]) -> dict[str, Any]:
             command = [
                 executable,
                 "freshness",
-                "check",
+                "evaluate",
                 "--workspace",
                 str(workspace),
                 "--contract",

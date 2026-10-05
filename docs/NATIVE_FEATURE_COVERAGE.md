@@ -4,7 +4,7 @@ This matrix describes the Mac candidate on this branch. It is not the Mac App St
 
 Published engine **`0.2.0rc14`** does not include the evidence-expansion commands. The submitted package **0.1.4 (9)** (SHA-256 `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d`, Apple build `51a18894-02e3-4846-86f5-29cc345567f0`) excludes this work.
 
-Local **0.1.5 (10)** zip `705ced0fa79ca98f951455f68e6fa4a8d08624b686c6579b60678b43e6aac8b0` is an earlier signed app from `b467c63`. Local **0.1.5 (11)** package `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309` is source `3a0f483` and does not include the confirmation or pipe fixes. The next candidate is marketing **0.1.5**, build **12**, source `c400f2d0ca82b21f2663df92f3f0c262a1ba09af`, Store pkg SHA-256 `6b3e9b3e1db219aafd834dd894b4ce04a8269cedb34dc116a4a154c22bb09a38`. It is not uploaded. Digest, diff, and retain stay CLI-only on this candidate; native receipt controls live only on `cursor/native-receipt-parity`.
+Local **0.1.5 (10)** zip `705ced0fa79ca98f951455f68e6fa4a8d08624b686c6579b60678b43e6aac8b0` is an earlier signed app from `b467c63`. Local **0.1.5 (11)** package `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309` is source `3a0f483`. Local **0.1.5 (12)** from `c400f2d0ca82b21f2663df92f3f0c262a1ba09af` has Store pkg SHA-256 `6b3e9b3e1db219aafd834dd894b4ce04a8269cedb34dc116a4a154c22bb09a38`. Those three are earlier packages. This branch's local label is marketing **0.1.5**, build **13**, and it is not uploaded. Digest, diff, and retain stay CLI-only on this candidate; native receipt controls live only on `cursor/native-receipt-parity`.
 
 Store builds keep the browser dashboard and `com.apple.security.network.server` out. The standalone CLI still has `runspecimen dashboard`. No native control types `APPROVE`.
 
@@ -24,5 +24,9 @@ Store builds keep the browser dashboard and `com.apple.security.network.server` 
 | Coordination | `coordination validate`, `readiness` | expansion tests | Workflows | Plan file only. No network | No auto-merge |
 | Evaluations | `eval compare` read-only; `eval run` writes a result | expansion tests | Workflows. Run asks first | Disposable workspaces | Running a suite does not approve the selected contract |
 | Scenes | `runspecimen scenes` | expansion tests | Workflows → Prepare or Run checks, after confirmation | Writes `.runspecimen/scenes-demo` | Never types `APPROVE` |
+| Receipt digest | `digest` | receipt tests | Workflows → Digest. Compare output bytes adds `--live` | Reads a stored certificate and, with `--live`, current output files | Does not verify the chain or approve |
+| Receipt diff | `diff` | receipt tests | Workflows → Diff receipts | Reads two stored certificates in the selected workspace | A missing certificate is an error. Exit 0 still means differences were printed |
+| Retain pack | `retain` | bundle tests | Workflows → Retain…, after confirmation | Copies to a folder that must be outside the workspace | Cancel copies nothing. No upload |
+| Eval fast path | `eval complete`, suite `fastpath` | `tests/test_fastpath.py` | CLI only | Exact text completion when the task opts in | Does not pass a requirement check or approve |
 
-`requirements check` and `freshness check` stay CLI-only because they execute or rewrite evidence. Digest, diff, and retain also stay CLI-only on this candidate. The browser dashboard stays in the standalone CLI and stays out of the Store build.
+`requirements check` and `freshness check` stay CLI-only because they execute or rewrite evidence. The eval fast path stays CLI-only. The browser dashboard stays in the standalone CLI and stays out of the Store build. Local biometric enrollment and one-time consumption exist as a RunSpecimenCore prototype. No native control calls them, and they are not in the submitted Store binary.

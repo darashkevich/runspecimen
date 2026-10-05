@@ -19,7 +19,7 @@ IDE_ACTIONS = PLUGIN / "jetbrains" / "scripts" / "ide_actions.py"
 
 class PluginManifestTests(unittest.TestCase):
     def test_host_manifests_share_version_and_name(self) -> None:
-        expected = "0.2.0-rc.14"
+        expected = "0.2.0-rc.15"
         manifests = {
             "codex": PLUGIN / ".codex-plugin" / "plugin.json",
             "cursor": PLUGIN / ".cursor-plugin" / "plugin.json",
@@ -38,9 +38,9 @@ class PluginManifestTests(unittest.TestCase):
         junie = json.loads((ROOT / ".junie-extension" / "marketplace.json").read_text(encoding="utf-8"))
         self.assertEqual(cursor["plugins"][0]["source"], "plugins/runspecimen")
         self.assertEqual(claude["plugins"][0]["source"], "./plugins/runspecimen")
-        self.assertEqual(claude["plugins"][0]["version"], "0.2.0-rc.14")
+        self.assertEqual(claude["plugins"][0]["version"], "0.2.0-rc.15")
         self.assertEqual(junie["extensions"][0]["source"], "./plugins/runspecimen")
-        self.assertEqual(junie["extensions"][0]["version"], "0.2.0-rc.14")
+        self.assertEqual(junie["extensions"][0]["version"], "0.2.0-rc.15")
 
     def test_claude_hooks_and_mcp_present(self) -> None:
         hooks = json.loads((PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
@@ -86,10 +86,29 @@ class PluginManifestTests(unittest.TestCase):
         self.assertTrue((PLUGIN / "antigravity" / "skills" / "runspecimen" / "SKILL.md").is_file())
         self.assertTrue((PLUGIN / "antigravity" / "rules" / "runspecimen.md").is_file())
         self.assertTrue((PLUGIN / "antigravity" / "README.md").is_file())
-        for name in ("block_approve_gate.py", "runspecimen_mcp.py"):
-            shared = (PLUGIN / "scripts" / name).read_bytes()
-            staged = (PLUGIN / "antigravity" / "scripts" / name).read_bytes()
-            self.assertEqual(shared, staged, name)
+        shared_gate = (PLUGIN / "scripts" / "block_approve_gate.py").read_bytes()
+        staged_gate = (PLUGIN / "antigravity" / "scripts" / "block_approve_gate.py").read_bytes()
+        self.assertEqual(shared_gate, staged_gate)
+        import importlib.util
+
+        def _load(path: Path, name: str):
+            spec = importlib.util.spec_from_file_location(name, path)
+            self.assertIsNotNone(spec and spec.loader)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+
+        canonical = _load(PLUGIN / "scripts" / "runspecimen_mcp.py", "rs_mcp_canonical_test")
+        antigravity_mcp = _load(
+            PLUGIN / "antigravity" / "scripts" / "runspecimen_mcp.py",
+            "rs_mcp_antigravity_test",
+        )
+        self.assertEqual(canonical.ALLOWED, antigravity_mcp.ALLOWED)
+        self.assertNotIn("approve", antigravity_mcp.ALLOWED)
+        self.assertEqual(
+            [tool["name"] for tool in canonical.TOOLS],
+            [tool["name"] for tool in antigravity_mcp.TOOLS],
+        )
         muse_mcp = json.loads(
             (PLUGIN / "muse" / "examples" / "mcp_settings.fragment.json").read_text(encoding="utf-8")
         )
@@ -438,6 +457,104 @@ class PluginApproveBoundaryExtras(unittest.TestCase):
         doc = json.loads(completed.stdout.strip().splitlines()[0])
         instructions = json.dumps(doc).lower()
         self.assertTrue("tty" in instructions or "approve" in instructions)
+
+    def test_freshness_check_evaluates_without_writing(self) -> None:
+        import os
+        import tempfile
+
+        antigravity = PLUGIN / "antigravity" / "scripts" / "runspecimen_mcp.py"
+        for source in (MCP, ADAPTER):
+            text = source.read_text(encoding="utf-8")
+            self.assertIn('"evaluate"', text)
+            self.assertNotIn('"freshness",\n                "check"', text)
+        self.assertIn("runspecimen_mcp.py", antigravity.read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory(prefix="rs-mcp-fresh-") as td:
+            root = Path(td)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            log = root / "argv.txt"
+            stub = bin_dir / "runspecimen"
+            stub.write_text(
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$RS_ARGV_LOG\"\nexit 0\n",
+                encoding="utf-8",
+            )
+            stub.chmod(0o755)
+            ws = root / "ws"
+            ws.mkdir()
+            contract = ws / "contract.json"
+            contract.write_text("{}\n", encoding="utf-8")
+            env = os.environ.copy()
+            env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+            env["RS_ARGV_LOG"] = str(log)
+            adapter = subprocess.run(
+                [
+                    sys.executable,
+                    str(ADAPTER),
+                    "freshness_check",
+                    "--workspace",
+                    str(ws),
+                    "--contract",
+                    str(contract),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(adapter.returncode, 0, adapter.stderr)
+            recorded = log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(recorded[:2], ["freshness", "evaluate"])
+            self.assertNotIn("check", recorded)
+            self.assertFalse(list(ws.rglob("freshness_report.json")))
+            log.write_text("", encoding="utf-8")
+            mcp = subprocess.run(
+                [sys.executable, str(MCP)],
+                input=json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 9,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "freshness_check",
+                        "arguments": {
+                            "workspace": str(ws),
+                            "contract": str(contract),
+                        },
+                    },
+                }) + "\n",
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(mcp.returncode, 0, mcp.stderr)
+            recorded = log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(recorded[:2], ["freshness", "evaluate"])
+            self.assertFalse(list(ws.rglob("freshness_report.json")))
+            log.write_text("", encoding="utf-8")
+            staged = subprocess.run(
+                [sys.executable, str(antigravity)],
+                input=json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 10,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "freshness_check",
+                        "arguments": {
+                            "workspace": str(ws),
+                            "contract": str(contract),
+                        },
+                    },
+                }) + "\n",
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(staged.returncode, 0, staged.stderr)
+            recorded = log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(recorded[:2], ["freshness", "evaluate"])
+            self.assertNotIn("approve", recorded)
+            self.assertFalse(list(ws.rglob("freshness_report.json")))
 
     def _gate(self, payload: dict, extra: list[str] | None = None) -> dict | None:
         completed = subprocess.run(

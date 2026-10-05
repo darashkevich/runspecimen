@@ -48,6 +48,33 @@ struct PairingView: View {
                         .foregroundStyle(RSTheme.ink)
                         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
 
+                    fieldLabel("Mac session public key")
+                    TextField("From the holder after local enrollment", text: $session.macSessionPublicKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .padding(12)
+                        .background(RSTheme.elevated)
+                        .foregroundStyle(RSTheme.ink)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    Text("The phone checks the holder receipt against this key. A mailbox verified flag is not a receipt.")
+                        .font(.caption2)
+                        .foregroundStyle(RSTheme.muted)
+
+                    fieldLabel("Pinned holder id")
+                    TextField("From the Mac holder, not from the request", text: $session.pinnedHolderId)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .padding(12)
+                        .background(RSTheme.elevated)
+                        .foregroundStyle(RSTheme.ink)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .onChange(of: session.pinnedHolderId) { _, _ in
+                            session.rememberPinnedHolderId()
+                        }
+                    Text("An exact-run holder id is signed only when it matches this pin. The mailbox value alone is not trusted.")
+                        .font(.caption2)
+                        .foregroundStyle(RSTheme.muted)
+
                     fieldLabel("TLS fingerprint (HTTPS / LAN)")
                     TextField("tls_fingerprint_sha256 from Mac", text: $session.tlsFingerprint)
                         .textInputAutocapitalization(.never)
@@ -107,6 +134,23 @@ struct PairingView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(RSTheme.elevated)
                 }
+
+                NavigationLink("Review a carried approval") {
+                    CompanionApprovalPreviewView()
+                }
+                .accessibilityHint("Shows a package a person carried. Does not call Face ID.")
+
+                NavigationLink("Sign on this iPhone") {
+                    CompanionHardwareApprovalView()
+                }
+                .accessibilityHint("Opens Face ID enrollment. Nothing runs until a button on that screen is tapped.")
+
+                #if RS_OBSERVE_DEV_SIGNER
+                NavigationLink("Development software signature") {
+                    DevelopmentCompanionSignView()
+                }
+                .accessibilityHint("Development app only. A software signature is not biometric completion.")
+                #endif
             }
             .padding(20)
             .rsReadableWidth(720)

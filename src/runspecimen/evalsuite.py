@@ -33,6 +33,12 @@ from runspecimen.errors import RunSpecimenError
 from runspecimen.events import utc_now_iso
 from runspecimen.hashutil import sha256_file, sha256_bytes, canonical_json_bytes
 from runspecimen.paths import ensure_dir, resolve_workspace, validate_id, workspace_state_root
+from runspecimen.fastpath import (
+    complete_fastpath_request,
+    parse_fastpath_config,
+    provider_telemetry,
+    summarize_fastpath_tasks,
+)
 from runspecimen.requirements import (
     OUTCOME_FAILED,
     OUTCOME_PASSED,
@@ -127,6 +133,17 @@ _PROVIDERS: dict[str, EvalProvider] = {
 }
 
 
+def register_eval_provider(provider: EvalProvider) -> None:
+    """Install a process-local eval provider. Tests use this as a dispatch spy."""
+    if not getattr(provider, "name", None):
+        raise EvalError("eval provider must have a name")
+    _PROVIDERS[provider.name] = provider
+
+
+def unregister_eval_provider(name: str) -> None:
+    _PROVIDERS.pop(name, None)
+
+
 def get_eval_provider(name: str) -> EvalProvider:
     provider = _PROVIDERS.get(name)
     if provider is None:
@@ -140,6 +157,7 @@ _SUITE_FIELDS = {
     "id",
     "description",
     "tasks",
+    "fastpath",
     "artifact_digest",
 }
 
@@ -155,6 +173,15 @@ _TASK_FIELDS = {
     "policy_hash",
     "expected_outcome",
     "judgment",  # deterministic | model — model never conclusive alone
+    "input",  # optional text considered by an opt-in fast path
+    "capability",  # text_completion opts into fast-path interception
+    "action",
+    "tool",
+    "tools",
+    "confirm",
+    "approval",
+    "pending",
+    "requires_human",
 }
 
 
@@ -177,8 +204,21 @@ def parse_eval_suite(data: dict[str, Any]) -> dict[str, Any]:
         judgment = obj.get("judgment", "deterministic")
         if judgment not in {"deterministic", "model"}:
             raise EvalError(f"{label}.judgment must be deterministic|model")
+        if "input" in obj:
+            _require_str(obj.get("input"), f"{label}.input")
+        if "requires_human" in obj and not isinstance(obj.get("requires_human"), bool):
+            raise EvalError(f"{label}.requires_human must be a JSON boolean")
+        if "capability" in obj:
+            _require_str(obj.get("capability"), f"{label}.capability")
     if "artifact_digest" in data:
         verify_artifact_digest(data)
+    if "fastpath" in data:
+        try:
+            # Validate only. Do not replace the serialized object with the
+            # compiled index; a second parse and digest checks need the original.
+            parse_fastpath_config(data["fastpath"], require_kind=False)
+        except Exception as exc:
+            raise EvalError(str(exc)) from exc
     return data
 
 
@@ -191,15 +231,75 @@ def load_eval_suite(path: Path) -> dict[str, Any]:
     return parse_eval_suite(data)
 
 
+def _run_task_with_fastpath(
+    *,
+    workspace: Path,
+    task: dict[str, Any],
+    config: dict[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, Any], bool]:
+    """Try the opt-in exact-match path before any eval provider dispatch."""
+    text = task.get("input")
+    compiled = None
+    if config is not None:
+        compiled = parse_fastpath_config(config, require_kind=False)
+    text_completion = (
+        task.get("capability") == "text_completion"
+        and task.get("provider") != "local_deterministic"
+    )
+    considered = isinstance(text, str) and bool(compiled and compiled.get("enabled")) and text_completion
+    if considered:
+        decision = complete_fastpath_request(
+            workspace=workspace,
+            text=text,
+            config=compiled,
+            task=task,
+            model_fallback=task.get("judgment") == "model",
+        )
+        if decision.get("fastpath_hit"):
+            raw = {
+                "outcome": "text_completed",
+                "deterministic": True,
+                "fastpath": True,
+                "requirement_check": False,
+                "outcome_type": decision.get("outcome_type"),
+                "text": decision.get("text"),
+                "rule_id": decision.get("rule_id"),
+                "note": "fast-path text completion; requirement checks were not run",
+            }
+            return decision, raw, True
+    provider = get_eval_provider(task["provider"])
+    raw = provider.run_task(workspace=workspace, task=task)
+    if "llm_inference_cost" in raw:
+        supplied_cost = raw.get("llm_inference_cost")
+    elif "actual_llm_cost" in raw:
+        supplied_cost = raw.get("actual_llm_cost")
+    else:
+        supplied_cost = None
+    telemetry = provider_telemetry(
+        called=True,
+        input_tokens=raw.get("llm_input_tokens") if "llm_input_tokens" in raw else None,
+        output_tokens=raw.get("llm_output_tokens") if "llm_output_tokens" in raw else None,
+        inference_cost=supplied_cost,
+    )
+    if considered:
+        telemetry["routing_elapsed_sec"] = decision.get("routing_elapsed_sec")
+        telemetry["reason"] = decision.get("reason")
+    return telemetry, raw, considered
+
+
 def run_eval_suite(*, workspace: Path, suite: dict[str, Any]) -> dict[str, Any]:
     workspace = resolve_workspace(workspace)
     suite = parse_eval_suite(suite)
     started = time.time()
     task_results: list[dict[str, Any]] = []
+    fastpath_config = suite.get("fastpath")
     for task in suite["tasks"]:
-        provider = get_eval_provider(task["provider"])
         t0 = time.time()
-        raw = provider.run_task(workspace=workspace, task=task)
+        telemetry, raw, considered = _run_task_with_fastpath(
+            workspace=workspace,
+            task=task,
+            config=fastpath_config,
+        )
         elapsed = time.time() - t0
         expected = task.get("expected_outcome")
         matched = expected is None or raw.get("outcome") == expected
@@ -216,19 +316,53 @@ def run_eval_suite(*, workspace: Path, suite: dict[str, Any]) -> dict[str, Any]:
                 "expected_outcome": expected,
                 "actual_outcome": raw.get("outcome"),
                 "matched_expected": matched,
-                "deterministic": bool(raw.get("deterministic")),
+                "deterministic": bool(raw.get("deterministic", telemetry.get("fastpath_hit"))),
                 "elapsed_sec": round(elapsed, 3),
+                "routing_elapsed_sec": telemetry.get("routing_elapsed_sec"),
                 "provider_result": raw,
-                "conclusive": judgment == "deterministic" and matched,
-                "note": (
-                    None
-                    if judgment == "deterministic"
-                    else "model judgment is not conclusive from a single run"
+                "conclusive": (
+                    not telemetry.get("fastpath_hit")
+                    and judgment == "deterministic"
+                    and matched
                 ),
+                "fastpath_considered": considered,
+                "note": (
+                    telemetry.get("note")
+                    if telemetry.get("fastpath_hit")
+                    else (
+                        None
+                        if judgment == "deterministic"
+                        else "model judgment is not conclusive from a single run"
+                    )
+                ),
+                **{
+                    key: telemetry[key]
+                    for key in (
+                        "route",
+                        "rule_id",
+                        "fastpath_hit",
+                        "provider_called",
+                        "llm_input_tokens",
+                        "llm_output_tokens",
+                        "llm_inference_cost",
+                        "actual_llm_tokens_used",
+                        "actual_llm_cost",
+                        "model_calls_avoided",
+                        "provider_dispatches_avoided",
+                        "deterministic_completions",
+                        "reason",
+                        "estimated_token_savings",
+                        "estimated_cost_savings",
+                    )
+                    if key in telemetry
+                },
             }
         )
 
-    deterministic = [t for t in task_results if t["judgment"] == "deterministic"]
+    deterministic = [
+        t for t in task_results
+        if t["judgment"] == "deterministic" and not t.get("fastpath_hit")
+    ]
     regressions = [
         t["task_id"]
         for t in deterministic
@@ -245,6 +379,7 @@ def run_eval_suite(*, workspace: Path, suite: dict[str, Any]) -> dict[str, Any]:
         "tasks": task_results,
         "regressions": regressions,
         "passed_deterministic": not regressions and bool(deterministic),
+        "fastpath": summarize_fastpath_tasks(task_results),
         "limitations": [
             "One stochastic/model run is never conclusive.",
             "Local suite does not fabricate APPROVE; execution-gated tasks stay unverified without human auth.",

@@ -66,6 +66,7 @@ All new artifacts share:
 | `usage_event` / ledger | Imported usage attribution | Idempotent import keys |
 | `coordination_plan` | Multi-repo readiness | Per-workspace approval preserved |
 | `eval_suite` / `eval_result` | Workflow regression | Fixture/config version binding |
+| `fastpath_config` | Opt-in exact-match skip of eval providers | Suite embed or sidecar; never an approval |
 
 ### Compatibility
 

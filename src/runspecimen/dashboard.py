@@ -303,12 +303,51 @@ def _presentation(status: dict[str, Any], contract: Contract) -> dict[str, Any]:
     }
 
 
+def _fastpath_dashboard_stats(workspace: Path) -> dict[str, Any]:
+    """Read-only summary of the latest eval result's fast-path counters."""
+    empty = {
+        "fastpath_executions": 0,
+        "fastpath_hit_rate": None,
+        "model_calls_avoided": 0,
+        "fastpath_note": "No eval result recorded. Fast path is opt-in and is not inference.",
+    }
+    try:
+        from runspecimen.evalsuite import eval_results_dir
+
+        directory = eval_results_dir(workspace)
+        if not directory.is_dir():
+            return empty
+        latest = max(directory.glob("*.json"), key=lambda p: p.stat().st_mtime, default=None)
+        if latest is None:
+            return empty
+        from runspecimen.atomic import read_json
+
+        doc = read_json(latest)
+        stats = doc.get("fastpath") or {}
+        hits = int(stats.get("fastpath_executions") or 0)
+        rate = stats.get("fastpath_hit_rate")
+        return {
+            "fastpath_executions": hits,
+            "fastpath_hit_rate": rate,
+            "model_calls_avoided": int(stats.get("model_calls_avoided") or 0),
+            "fastpath_note": (
+                f"{hits} deterministic text completion(s) in the latest eval result. "
+                f"Model calls avoided: {int(stats.get('model_calls_avoided') or 0)} "
+                "(only when the skipped fallback was an explicit model task). "
+                "Savings estimates are not invented."
+            ),
+        }
+    except Exception:  # noqa: BLE001
+        return empty
+
+
 def _evidence_panel(*, workspace: Path, contract: Contract) -> dict[str, Any]:
     """Read-only requirements / freshness summary. Never implies live verify."""
     panel: dict[str, Any] = {
         "receipt_authenticity": "see trust ladder / verify in terminal",
         "check_outcome": "none",
         "applicability": "unknown",
+        "load_error": "",
         "note": (
             "Authentic history can contain a failed check or now-stale evidence. "
             "This panel is read-only and is not verify."
@@ -336,8 +375,9 @@ def _evidence_panel(*, workspace: Path, contract: Contract) -> dict[str, Any]:
         )
         panel["applicability"] = fresh.get("applicability")
         panel["freshness_changes"] = fresh.get("changes")
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — read-only panel; a load failure is data, not a crash
+        panel["load_error"] = f"evidence panel could not be read: {exc}"
+    panel.update(_fastpath_dashboard_stats(workspace))
     return panel
 
 
@@ -507,7 +547,11 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
       <dl class="facts">
         <div class="fact"><dt>Check / requirement outcome</dt><dd id="ev-outcome">{_escape((view.get('evidence') or {}).get('check_outcome'))}</dd></div>
         <div class="fact"><dt>Evidence applicability</dt><dd id="ev-appl">{_escape((view.get('evidence') or {}).get('applicability'))}</dd></div>
+        <div class="fact"><dt>Fast-path executions</dt><dd id="ev-fastpath">{_escape((view.get('evidence') or {}).get('fastpath_executions'))}</dd></div>
+        <div class="fact"><dt>Model calls avoided</dt><dd id="ev-avoided">{_escape((view.get('evidence') or {}).get('model_calls_avoided'))}</dd></div>
         <div class="fact wide"><dt>Note</dt><dd id="ev-note">{_escape((view.get('evidence') or {}).get('note'))}</dd></div>
+        <div class="fact wide"><dt>Evidence load</dt><dd id="ev-load-error">{_escape((view.get('evidence') or {}).get('load_error') or '')}</dd></div>
+        <div class="fact wide"><dt>Fast path</dt><dd id="ev-fastpath-note">{_escape((view.get('evidence') or {}).get('fastpath_note'))}</dd></div>
       </dl>
     </div>
   </section>
@@ -632,6 +676,14 @@ function renderStatus(doc){{
   text("happened",view.happened);text("continue-label",view.continue_label);text("continue-detail",view.continue_detail);
   const panel=document.getElementById("continue-panel");if(panel)panel.className=`answer continue ${{view.continue_tone}}`;
   if(view.run_identity)text("run-identity",view.run_identity);
+  const evidenceView=view.evidence||{{}};
+  text("ev-outcome",evidenceView.check_outcome);
+  text("ev-appl",evidenceView.applicability);
+  text("ev-fastpath",evidenceView.fastpath_executions);
+  text("ev-avoided",evidenceView.model_calls_avoided);
+  text("ev-note",evidenceView.note);
+  text("ev-load-error",evidenceView.load_error||"");
+  text("ev-fastpath-note",evidenceView.fastpath_note);
   renderTrust(view.trust_ladder);
   document.querySelectorAll(".step").forEach((step,index)=>{{step.className=`step ${{view.steps[index]}}`;step.querySelector(".step-state").textContent=view.steps[index];}});
   const {{view: _view, ...evidence}}=doc;text("status",JSON.stringify(evidence,null,2));

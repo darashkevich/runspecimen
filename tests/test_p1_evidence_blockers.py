@@ -18,6 +18,7 @@ from runspecimen.contract import load_contract
 from runspecimen.freshness import check_freshness_for_run, evaluate_freshness
 from runspecimen.hashutil import sha256_file
 from runspecimen.requirements import (
+    OUTCOME_ERROR,
     OUTCOME_FAILED,
     OUTCOME_PASSED,
     OUTCOME_UNVERIFIED,
@@ -33,8 +34,17 @@ from runspecimen.requirements import (
     load_evidence_report,
     load_task_manifest,
     run_requirements,
+    build_evidence_attestation,
+    evidence_captures_dir,
+    evidence_report_path,
+    write_evidence_attestation,
     write_evidence_report,
 )
+from runspecimen.certificate import load_certificate
+from runspecimen.paths import run_state_dir
+from runspecimen.postflight import postflight
+from runspecimen.preflight import preflight
+from runspecimen.run import run_contract
 
 
 def _manifest_doc(req: dict, *, mid: str = "m1") -> dict:
@@ -57,6 +67,39 @@ def _bind_manifest(ws: Path, contract_doc: dict, manifest_path: Path, manifest_i
         "sha256": digest,
     }
     return contract_doc
+
+
+def _passed_report(note: str, campaign_id: str = "camp", run_id: str = "run-a") -> dict:
+    return bind_artifact_digest(
+        {
+            "schema_kind": "evidence_report",
+            "schema_version": 1,
+            "campaign_id": campaign_id,
+            "run_id": run_id,
+            "contract_hash": "a" * 64,
+            "manifest_id": "m1",
+            "manifest_hash": "b" * 64,
+            "source_hash_before": "c" * 64,
+            "source_hash_after": "c" * 64,
+            "source_changed_during_checks": False,
+            "final_state_certifiable": True,
+            "runtime_fingerprint": {},
+            "input_fingerprints": {},
+            "requirements": [{"requirement_id": "r1", "outcome": "passed"}],
+            "evidence_digests": {},
+            "summary": {
+                "passed": 1,
+                "failed": 0,
+                "skipped": 0,
+                "error": 0,
+                "unverified": 0,
+                "manual_unverifiable": 0,
+                "total": 1,
+            },
+            "aggregate_outcome": "passed",
+            "aggregate_note": note,
+        }
+    )
 
 
 class P1EvidenceBlockersTests(RunSpecimenTestCase):
@@ -355,6 +398,39 @@ class P1EvidenceBlockersTests(RunSpecimenTestCase):
         self.assertEqual(second["outcome"], OUTCOME_FAILED)
         self.assertTrue((first.get("runtime_provenance") or {}).get("subprocess"))
 
+    def test_unittest_does_not_write_init_into_the_live_tree(self) -> None:
+        tests = self.ws / "ut_live"
+        tests.mkdir()
+        (tests / "test_live.py").write_text(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_ok(self):\n"
+            "        self.assertTrue(True)\n",
+            encoding="utf-8",
+        )
+        self.assertFalse((tests / "__init__.py").exists())
+        provider = UnittestProvider()
+        req = Requirement(
+            id="r",
+            description="d",
+            check=CheckRef(provider="unittest", id="u", config={}),
+            inputs=(),
+            source_scope=(),
+            required_evidence=(),
+            expected={},
+            rationale=None,
+            manual_unverifiable=False,
+        )
+        raw = provider.run(
+            workspace=self.ws,
+            check_id="u",
+            config={"start_dir": "ut_live", "pattern": "test_*.py"},
+            requirement=req,
+        )
+        self.assertEqual(raw["outcome"], OUTCOME_PASSED, raw)
+        self.assertFalse((tests / "__init__.py").exists())
+        self.assertEqual((tests / "test_live.py").read_text(encoding="utf-8").count("assertTrue"), 1)
+
     def test_p1_pytest_nonzero_returncode_not_passed(self) -> None:
         provider = PytestProvider()
         # Unit-test outcome selection with a mocked CompletedProcess-like path by
@@ -412,6 +488,67 @@ class P1EvidenceBlockersTests(RunSpecimenTestCase):
         self.assertNotEqual(raw["outcome"], OUTCOME_PASSED)
         self.assertEqual(raw["exit_code"], 2)
 
+    def test_pytest_node_ids_are_the_only_selection(self) -> None:
+        provider = PytestProvider()
+        tests_dir = self.ws / "pyt"
+        tests_dir.mkdir()
+        (tests_dir / "test_ok.py").write_text(
+            "def test_only():\n    assert True\n\ndef test_other():\n    assert True\n",
+            encoding="utf-8",
+        )
+        req = Requirement(
+            id="r",
+            description="d",
+            check=CheckRef(provider="pytest", id="p", config={}),
+            inputs=(),
+            source_scope=(),
+            required_evidence=(),
+            expected={},
+            rationale=None,
+            manual_unverifiable=False,
+        )
+        captured: list[list[str]] = []
+
+        def fake_run(cmd, **kwargs):
+            captured.append(list(cmd))
+            junit = Path(cmd[cmd.index("--junitxml") + 1])
+            junit.write_text(
+                '<?xml version="1.0"?><testsuite tests="1">'
+                '<testcase classname="t" name="only"></testcase></testsuite>',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+        with unittest.mock.patch.object(subprocess, "run", side_effect=fake_run):
+            raw = provider.run(
+                workspace=self.ws,
+                check_id="p",
+                config={"target": "pyt", "node_ids": ["pyt/test_ok.py::test_only"]},
+                requirement=req,
+            )
+        self.assertEqual(raw["outcome"], OUTCOME_PASSED, raw)
+        cmd = captured[0]
+        self.assertIn("pyt/test_ok.py::test_only", cmd)
+        self.assertNotIn(str(tests_dir.resolve()), cmd)
+        self.assertLess(cmd.index("pyt/test_ok.py::test_only"), cmd.index("--junitxml"))
+
+        refused = provider.run(
+            workspace=self.ws,
+            check_id="p",
+            config={"target": "pyt", "node_ids": ["-k"]},
+            requirement=req,
+        )
+        self.assertEqual(refused["outcome"], OUTCOME_ERROR)
+        self.assertIn("node id", refused["error"])
+        empty = provider.run(
+            workspace=self.ws,
+            check_id="p",
+            config={"target": "pyt", "node_ids": []},
+            requirement=req,
+        )
+        self.assertEqual(empty["outcome"], OUTCOME_ERROR)
+        self.assertIn("empty", empty["error"])
+
     def test_p1_authorized_check_runs_after_approve_helper(self) -> None:
         mpath = self.ws / "manifest.json"
         atomic_write_json(
@@ -448,6 +585,92 @@ class P1EvidenceBlockersTests(RunSpecimenTestCase):
             manifest=load_task_manifest(mpath),
         )
         self.assertEqual(report["aggregate_outcome"], OUTCOME_PASSED)
+
+    def test_p1_evidence_pointer_rejects_escape_and_symlink(self) -> None:
+        report = _passed_report("outside")
+        captures = evidence_captures_dir(self.ws, "camp", "run-a")
+        captures.mkdir(parents=True)
+        outside = captures.parent / "outside.json"
+        atomic_write_json(outside, report)
+
+        def write_pointer(capture_path: str) -> None:
+            pointer = bind_artifact_digest(
+                {
+                    "schema_kind": "evidence_report_pointer",
+                    "schema_version": 1,
+                    "campaign_id": "camp",
+                    "run_id": "run-a",
+                    "capture_path": capture_path,
+                    "evidence_report_digest": report["artifact_digest"],
+                    "aggregate_outcome": "passed",
+                    "note": "Pointer to an immutable capture; historical captures are preserved.",
+                }
+            )
+            atomic_write_json(evidence_report_path(self.ws, "camp", "run-a"), pointer)
+
+        write_pointer("../outside.json")
+        with self.assertRaises(EvidenceError) as escaped:
+            load_evidence_report(self.ws, "camp", "run-a")
+        self.assertIn("basename", str(escaped.exception))
+
+        write_pointer(str(outside))
+        with self.assertRaises(EvidenceError):
+            load_evidence_report(self.ws, "camp", "run-a")
+
+        link = captures / "linked.json"
+        link.symlink_to(outside)
+        write_pointer(link.name)
+        with self.assertRaises(EvidenceError) as linked:
+            load_evidence_report(self.ws, "camp", "run-a")
+        self.assertIn("symlink", str(linked.exception))
+
+    def test_p1_stale_attestation_is_not_bound(self) -> None:
+        cpath = write_contract(self.ws, "c.json", base_contract())
+        approve(self.ws, cpath)
+        preflight(contract_path=cpath, workspace=self.ws)
+        run_contract(contract_path=cpath, workspace=self.ws)
+        contract = load_contract(cpath)
+        stale = _passed_report("stale", contract.campaign_id, contract.run_id)
+        newer = _passed_report("newer", contract.campaign_id, contract.run_id)
+        self.assertNotEqual(stale["artifact_digest"], newer["artifact_digest"])
+        write_evidence_report(self.ws, contract.campaign_id, contract.run_id, stale)
+        write_evidence_report(self.ws, contract.campaign_id, contract.run_id, newer)
+        write_evidence_attestation(
+            self.ws,
+            contract.campaign_id,
+            contract.run_id,
+            build_evidence_attestation(stale),
+        )
+        postflight(contract_path=cpath, workspace=self.ws)
+        cert = load_certificate(run_state_dir(self.ws, contract.campaign_id, contract.run_id))
+        self.assertIsNotNone(cert)
+        assert cert is not None
+        bound = cert.get("evidence_attestation") or {}
+        self.assertNotEqual(bound.get("evidence_report_digest"), stale["artifact_digest"])
+        self.assertIsNone(cert.get("evidence_attestation"))
+
+    def test_p1_current_attestation_still_binds(self) -> None:
+        cpath = write_contract(self.ws, "c.json", base_contract())
+        approve(self.ws, cpath)
+        preflight(contract_path=cpath, workspace=self.ws)
+        run_contract(contract_path=cpath, workspace=self.ws)
+        contract = load_contract(cpath)
+        current = _passed_report("current", contract.campaign_id, contract.run_id)
+        write_evidence_report(self.ws, contract.campaign_id, contract.run_id, current)
+        write_evidence_attestation(
+            self.ws,
+            contract.campaign_id,
+            contract.run_id,
+            build_evidence_attestation(current),
+        )
+        postflight(contract_path=cpath, workspace=self.ws)
+        cert = load_certificate(run_state_dir(self.ws, contract.campaign_id, contract.run_id))
+        self.assertIsNotNone(cert)
+        assert cert is not None
+        bound = cert.get("evidence_attestation")
+        self.assertIsInstance(bound, dict)
+        assert isinstance(bound, dict)
+        self.assertEqual(bound.get("evidence_report_digest"), current["artifact_digest"])
 
 
 # Ensure unittest.mock is available as attribute used above

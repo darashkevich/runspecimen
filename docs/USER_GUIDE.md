@@ -1,8 +1,15 @@
 # RunSpecimen user guide
 
-Practical how-to for the local CLI. This guide matches the installed
-`runspecimen` commands and current release-candidate limits
-(`0.2.0rc14`, published on GitHub and PyPI). For a short product overview see
+Practical how-to for the local CLI. The published install is
+`0.2.0rc14` (GitHub and PyPI). This branch's engine is unpublished
+`0.2.0rc15`. Approved Mac App Store **0.1.4 (9)** freezes that published
+engine. The local successor label on this branch is **0.1.5 (13)** and is
+not uploaded; **0.1.5 (10)**, **(11)**, and **(12)** are earlier packages.
+Commands under "Requirements, evidence, and freshness" exist
+on this branch and are absent from published rc14. Isolation, `retain`,
+`digest`, and `diff` do ship in published rc14. The Mac app sandbox versus
+the payload is [apps/macos/docs/SECURITY_BOUNDARY.md](../apps/macos/docs/SECURITY_BOUNDARY.md).
+For a short product overview see
 [ABOUT.md](ABOUT.md); for product intent see
 [PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
 
@@ -35,14 +42,24 @@ enter `APPROVE` for you.
 
 ## Requirements, evidence, and freshness (ADR-005)
 
-Separate from `verify`:
+These commands are on unpublished `0.2.0rc15`. Published `0.2.0rc14` does
+not include them. They are separate from `verify`:
 
 ```bash
 runspecimen requirements validate --manifest task_manifest.json
 runspecimen requirements check --workspace . --contract contract.json --manifest task_manifest.json
 runspecimen requirements report --workspace . --campaign-id CAMP --run-id RUN
 runspecimen freshness check --workspace . --contract contract.json --manifest task_manifest.json
+runspecimen freshness evaluate --workspace . --contract contract.json
 ```
+
+`requirements check` writes an evidence report. Exit 0 means `checks_passed`
+(aggregate passed and `final_state_certifiable`). `receipt_bound` stays false
+until postflight binds the digest. Exit 1 means the checks did not pass.
+Exit 2 means the check was refused. The report's `authenticity` field is
+unchanged by that exit code. `freshness check` writes `freshness_report.json`.
+`freshness evaluate` and the MCP `freshness_check` tool compute applicability
+and do not write that file.
 
 Outcomes are provider-collected (`unittest`, optional `pytest`, `command_status`).
 Skipped, collection errors, and manual/unverifiable requirements are **not**
@@ -55,7 +72,9 @@ Config sync is explicit: `runspecimen config preview|apply|export|rollback`.
 `doctor` never silently syncs. Snapshots restore to a separate directory by
 default (`runspecimen snapshot …`). Usage imports keep unknown amounts unknown
 (`runspecimen usage import|summarize`). Cross-repo readiness and eval compare
-are bounded (`coordination`, `eval`). Local demo: `runspecimen scenes`.
+are bounded (`coordination`, `eval`). Opt-in exact-match fast path:
+`runspecimen eval complete --config … --input …` (see [FASTPATH.md](FASTPATH.md)).
+Local demo: `runspecimen scenes`.
 
 ## Install
 
@@ -404,6 +423,12 @@ advice in the artifact (`## Grok evaluation`).
 **Hard stop:** Grok (and ChatGPT, Gemini, Cursor agents) must **not** type
 `APPROVE`. RunSpecimen approval stays an interactive TTY action; adapters
 exclude `approve`.
+
+## Store approval and the Developer ID holder
+
+The Mac App Store app is guarantee (1). An ordinary contract is bound when a person types `APPROVE` in a real terminal. That phrase does not authorize a contract whose policy is local, companion, or dual.
+
+Guarantee (2) is a separate Developer ID holder. It is not in the Store app, it is not installed from this guide, and a software test double is not Touch ID or Face ID. Do not describe the approved 0.1.4 (9) app as the protected holder. A biometric press does not close holder engineering. Apple's current guidance says a root launchd daemon cannot create a Secure Enclave key, so installed admission stays closed. A holder signature over a caller-supplied key is not that proof. A Mac-session signature proves possession of the pinned key and does not by itself prove that protected holder state committed that key. Phone review of an exact run is not physical presence at the Mac.
 
 ## Troubleshooting
 

@@ -137,6 +137,11 @@ def _approve_under_lease(
     confirm_phrase: str,
     now: float | None,
 ) -> dict:
+    if contract.execution_approval is not None:
+        raise ApprovalError(
+            "execution policy "
+            f"{contract.execution_approval} has no typed-phrase fallback"
+        )
     state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
     ensure_dir(state_dir)
     state = load_state(state_dir)
@@ -258,6 +263,11 @@ def complete_approval_document(
 
     Caller must already hold the workspace lease. Re-checks phase and provenance.
     """
+    if contract.execution_approval is not None:
+        raise ApprovalError(
+            "execution policy "
+            f"{contract.execution_approval} has no typed-phrase fallback"
+        )
     state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
     ensure_dir(state_dir)
     state = load_state(state_dir)

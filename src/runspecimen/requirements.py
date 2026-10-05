@@ -290,8 +290,34 @@ def attestation_path(workspace: Path, campaign_id: str, run_id: str) -> Path:
 # --- Providers -----------------------------------------------------------------
 
 
+def _pytest_node_id_refusal(workspace: Path, target: Path, node: str) -> str | None:
+    """Return why a pytest node id cannot be the sole selection, or None."""
+    if not node or node.startswith("-") or any(ch in node for ch in "\n\r\x00"):
+        return f"pytest node id must be a workspace-relative path, not {node!r}"
+    file_part = node.split("::", 1)[0]
+    if not file_part or file_part.startswith("-") or Path(file_part).is_absolute():
+        return f"pytest node id must name a file inside config.target: {node!r}"
+    try:
+        file_path = ensure_within(workspace, Path(file_part), label="pytest.node_ids")
+        file_path.relative_to(target)
+    except Exception as exc:  # noqa: BLE001 — confinement failure becomes a check error
+        return f"pytest node id escapes config.target: {node!r} ({exc})"
+    if not file_path.is_file():
+        return f"pytest node id file missing: {file_part}"
+    return None
+
+
 class PytestProvider:
-    """Run pytest and parse JUnit XML. Never trusts a pre-written passed field."""
+    """Run pytest and parse JUnit XML. Never trusts a pre-written passed field.
+
+    ``config.target`` is the collection root when ``config.node_ids`` is omitted.
+    ``config.node_ids``, when present, is the only selection pytest receives:
+    workspace-relative node ids such as ``tests/test_app.py::test_name``. Those
+    ids are not appended to ``target``. Passing both would union the directory
+    with the ids and run tests outside the selection. An empty array is an
+    error. A node id must stay inside ``target``, must not be absolute, and
+    must not start with ``-``.
+    """
 
     name = "pytest"
 
@@ -339,8 +365,9 @@ class PytestProvider:
             }
 
         node_ids = config.get("node_ids")
+        selected_nodes: list[str] | None
         if node_ids is None:
-            node_ids_list: list[str] = []
+            selected_nodes = None
         else:
             if not isinstance(node_ids, list) or not all(isinstance(x, str) for x in node_ids):
                 return {
@@ -351,21 +378,39 @@ class PytestProvider:
                     "tests": [],
                     "artifacts": {},
                 }
-            node_ids_list = list(node_ids)
+            if not node_ids:
+                return {
+                    "outcome": OUTCOME_ERROR,
+                    "provider": self.name,
+                    "check_id": check_id,
+                    "error": (
+                        "pytest config.node_ids is empty; omit it to collect config.target"
+                    ),
+                    "tests": [],
+                    "artifacts": {},
+                }
+            selected_nodes = []
+            for node in node_ids:
+                refusal = _pytest_node_id_refusal(workspace, target_path, node)
+                if refusal is not None:
+                    return {
+                        "outcome": OUTCOME_ERROR,
+                        "provider": self.name,
+                        "check_id": check_id,
+                        "error": refusal,
+                        "tests": [],
+                        "artifacts": {},
+                    }
+                selected_nodes.append(node)
 
         with tempfile.TemporaryDirectory(prefix="rs-pytest-") as tmp:
             junit = Path(tmp) / "junit.xml"
-            cmd = [
-                sys.executable,
-                "-m",
-                "pytest",
-                str(target_path),
-                "--junitxml",
-                str(junit),
-                "-q",
-            ]
-            for node in node_ids_list:
-                cmd.append(node)
+            cmd = [sys.executable, "-m", "pytest"]
+            if selected_nodes is None:
+                cmd.append(str(target_path))
+            else:
+                cmd.extend(selected_nodes)
+            cmd.extend(["--junitxml", str(junit), "-q"])
             try:
                 completed = subprocess.run(
                     cmd,
@@ -555,8 +600,42 @@ class CommandStatusProvider:
         }
 
 
+def _copy_unittest_suite(src: Path, dst: Path) -> None:
+    """Copy a test directory without writing into the live tree.
+
+    Symlinks that leave ``src`` are skipped so the copy cannot follow an
+    escape. ``__pycache__`` and ``.runspecimen`` are omitted.
+    """
+    import shutil
+
+    dst.mkdir(parents=True, exist_ok=True)
+    root = src.resolve()
+    for entry in src.iterdir():
+        if entry.name in {"__pycache__", ".runspecimen"}:
+            continue
+        dest = dst / entry.name
+        if entry.is_symlink():
+            try:
+                resolved = entry.resolve()
+                resolved.relative_to(root)
+            except (OSError, ValueError):
+                continue
+            if resolved.is_file():
+                shutil.copyfile(resolved, dest)
+            continue
+        if entry.is_dir():
+            _copy_unittest_suite(entry, dest)
+        elif entry.is_file():
+            shutil.copyfile(entry, dest)
+
+
 class UnittestProvider:
-    """Run stdlib unittest in a fresh subprocess. No third-party dependency."""
+    """Run stdlib unittest in a fresh subprocess. No third-party dependency.
+
+    Discovery runs against a temporary copy of ``start_dir``. The provider
+    does not create ``__init__.py`` in the live tree, so a source-change
+    check still sees the author's files.
+    """
 
     name = "unittest"
 
@@ -596,6 +675,15 @@ class UnittestProvider:
                 "tests": [],
                 "artifacts": {},
             }
+        if not start.is_dir():
+            return {
+                "outcome": OUTCOME_ERROR,
+                "provider": self.name,
+                "check_id": check_id,
+                "error": "unittest config.start_dir must be a directory",
+                "tests": [],
+                "artifacts": {},
+            }
 
         runner_src = r"""
 import json
@@ -604,27 +692,16 @@ import unittest
 from pathlib import Path
 
 workspace = Path(sys.argv[1]).resolve()
-start_dir = Path(sys.argv[2])
-if not start_dir.is_absolute():
-    start_dir = (workspace / start_dir).resolve()
-else:
-    start_dir = start_dir.resolve()
 pattern = sys.argv[3]
 out_path = Path(sys.argv[4])
-
-# Keep discovery paths under the same resolved workspace root (macOS /var vs /private/var).
-try:
-    start_dir.relative_to(workspace)
-except ValueError:
-    # Fall back to relative path from argv when roots differ only by symlink alias.
-    start_dir = (workspace / start_dir.name).resolve() if start_dir.name else workspace
-
+# argv[5] is a temp copy of start_dir. Discovery never writes into the live tree.
+suite_copy = Path(sys.argv[5]).resolve()
+top_level = suite_copy.parent
+# Live workspace stays importable for application code (import app.core).
+# Sandbox top_level must win so a packaged suite (tests/__init__.py) is
+# imported from the copy, not from a live start_dir of the same name.
 sys.path.insert(0, str(workspace))
-init_py = start_dir / "__init__.py"
-created_init = False
-if start_dir.is_dir() and not init_py.exists():
-    init_py.write_text("", encoding="utf-8")
-    created_init = True
+sys.path.insert(0, str(top_level))
 
 class _Result(unittest.TextTestResult):
     def __init__(self, *args, **kwargs):
@@ -656,9 +733,23 @@ class _Result(unittest.TextTestResult):
         self.ordered.append({"name": str(test), "outcome": "unexpected_success"})
 
 try:
+    pkg_name = suite_copy.name
+    if pkg_name.isidentifier():
+        import importlib.util
+        spec = importlib.util.find_spec(pkg_name)
+        origin = getattr(spec, "origin", None) if spec is not None else None
+        if origin:
+            origin_path = Path(origin).resolve()
+            try:
+                origin_path.relative_to(top_level)
+            except ValueError:
+                raise RuntimeError(
+                    "module incorrectly imported from %s. Expected under %s"
+                    % (origin_path, top_level)
+                )
     loader = unittest.defaultTestLoader
     suite = loader.discover(
-        start_dir=str(start_dir), pattern=pattern, top_level_dir=str(workspace)
+        start_dir=str(suite_copy), pattern=pattern, top_level_dir=str(top_level)
     )
     import io
     stream = io.StringIO()
@@ -687,18 +778,18 @@ except Exception as exc:
         "stream": "",
         "collection_error": str(exc),
     }
-finally:
-    if created_init:
-        try:
-            init_py.unlink()
-        except OSError:
-            pass
 
 out_path.write_text(json.dumps(payload), encoding="utf-8")
 """
         with tempfile.TemporaryDirectory(prefix="rs-unittest-") as tmp:
             runner_path = Path(tmp) / "rs_unittest_runner.py"
             result_path = Path(tmp) / "result.json"
+            sandbox = Path(tmp) / "sandbox"
+            suite_copy = sandbox / (start.name or "suite")
+            _copy_unittest_suite(start, suite_copy)
+            copied_init = suite_copy / "__init__.py"
+            if not copied_init.exists():
+                copied_init.write_text("", encoding="utf-8")
             runner_path.write_text(runner_src, encoding="utf-8")
             cmd = [
                 sys.executable,
@@ -707,6 +798,7 @@ out_path.write_text(json.dumps(payload), encoding="utf-8")
                 str(start.relative_to(workspace)),
                 pattern,
                 str(result_path),
+                str(suite_copy),
             ]
             try:
                 completed = subprocess.run(
@@ -1300,6 +1392,35 @@ def _update_evidence_pointer(
     atomic_write_json(pointer, bind_artifact_digest(meta))
 
 
+def _confined_evidence_capture(captures: Path, capture_name: Any) -> Path:
+    """Accept only a regular basename file inside evidence_captures.
+
+    A same-user writer can re-digest the pointer. ``..``, an absolute path,
+    or a symlink must not retarget that digest.
+    """
+    if not isinstance(capture_name, str) or not capture_name or capture_name in {".", ".."}:
+        raise EvidenceError("evidence capture path must be a basename under evidence_captures")
+    if capture_name != Path(capture_name).name or "\x00" in capture_name:
+        raise EvidenceError(
+            "evidence capture path must be a basename under evidence_captures"
+        )
+    if captures.is_symlink():
+        raise EvidenceError("evidence captures directory is a symlink")
+    capture = captures / capture_name
+    if capture.is_symlink():
+        raise EvidenceError("evidence capture path is a symlink")
+    try:
+        resolved = capture.resolve()
+        resolved.relative_to(captures.resolve())
+    except (OSError, ValueError) as exc:
+        raise EvidenceError("evidence capture path escapes evidence_captures") from exc
+    if resolved.parent != captures.resolve():
+        raise EvidenceError("evidence capture path escapes evidence_captures")
+    if not capture.is_file():
+        raise EvidenceError(f"evidence capture missing: {capture}")
+    return capture
+
+
 def load_evidence_report(workspace: Path, campaign_id: str, run_id: str) -> dict[str, Any]:
     path = evidence_report_path(workspace, campaign_id, run_id)
     if not path.is_file():
@@ -1311,11 +1432,10 @@ def load_evidence_report(workspace: Path, campaign_id: str, run_id: str) -> dict
     if doc.get("schema_kind") == "evidence_report_pointer":
         assert_artifact_version(doc.get("schema_version"))
         verify_artifact_digest(doc)
-        capture = evidence_captures_dir(workspace, campaign_id, run_id) / str(
-            doc.get("capture_path")
+        capture = _confined_evidence_capture(
+            evidence_captures_dir(workspace, campaign_id, run_id),
+            doc.get("capture_path"),
         )
-        if not capture.is_file():
-            raise EvidenceError(f"evidence capture missing: {capture}")
         report = read_json(capture)
     else:
         report = doc

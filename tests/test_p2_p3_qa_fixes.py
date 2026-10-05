@@ -92,6 +92,35 @@ class ConfigSecretStripTests(RunSpecimenTestCase):
         self.assertEqual(doc["settings"]["theme"], "dark")
         self.assertEqual(doc["env"]["RUNSPECIMEN_FOO"], "keep-me")
 
+    def test_nested_secret_names_are_removed_and_paths_are_reported(self) -> None:
+        from runspecimen.configsync import ConfigSyncError, build_bundle, sanitize_bundle
+
+        bundle = build_bundle(
+            bundle_id="nested-secrets",
+            settings={
+                "theme": "dark",
+                "service": {"name": "local", "api_key": "nested-secret"},
+                "items": [{"name": "one", "password": "nested-pass"}],
+                "note": "api_key=still-in-the-note",
+            },
+            note="key-name heuristic only",
+        )
+        settings = bundle["settings"]
+        self.assertEqual(settings["service"], {"name": "local"})
+        self.assertEqual(settings["items"], [{"name": "one"}])
+        self.assertEqual(settings["note"], "api_key=still-in-the-note")
+        self.assertIn("service.api_key", bundle["secret_keys_excluded"])
+        self.assertIn("items[0].password", bundle["secret_keys_excluded"])
+        self.assertNotIn("nested-secret", json.dumps(bundle["settings"]))
+        self.assertNotIn("nested-pass", json.dumps(bundle["settings"]))
+
+        again = sanitize_bundle(bundle)
+        self.assertEqual(again["settings"], settings)
+        self.assertIn("service.api_key", again["secret_keys_excluded"])
+
+        with self.assertRaises(ConfigSyncError):
+            build_bundle(bundle_id="bad-shape", settings={"theme": ("not", "a", "list")})
+
 
 class FreshnessAuthenticityTests(RunSpecimenTestCase):
     def test_p2_evaluate_freshness_raw_missing_authenticity_not_applicable(self) -> None:
@@ -189,6 +218,70 @@ class RequiredVerificationTests(RunSpecimenTestCase):
         msg = str(ctx.exception)
         self.assertIn("required_verification", msg)
         self.assertIn("requirements_check", msg)
+
+    def test_requirements_check_refuses_digest_valid_forged_pass(self) -> None:
+        policy = {
+            "version": 1,
+            "id": "p-forged",
+            "required_verification": ["requirements_check"],
+        }
+        blob, digest = _policy_blob(policy)
+        (self.ws / "policy.json").write_bytes(blob)
+        doc = base_contract(
+            policy={"id": "p-forged", "path": "policy.json", "sha256": digest},
+            argv=[PYTHON, "work/job.py"],
+        )
+        cpath = write_contract(self.ws, "c.json", doc)
+        approve(self.ws, cpath)
+        preflight(contract_path=cpath, workspace=self.ws)
+        run_contract(contract_path=cpath, workspace=self.ws)
+        postflight(contract_path=cpath, workspace=self.ws)
+        contract = load_contract(cpath)
+        forged = bind_artifact_digest(
+            {
+                "schema_kind": "evidence_report",
+                "schema_version": 1,
+                "campaign_id": contract.campaign_id,
+                "run_id": contract.run_id,
+                "contract_hash": contract.contract_hash,
+                "manifest_id": None,
+                "manifest_hash": None,
+                "source_hash_before": "c" * 64,
+                "source_hash_after": "c" * 64,
+                "source_changed_during_checks": False,
+                "final_state_certifiable": True,
+                "runtime_fingerprint": {},
+                "input_fingerprints": {},
+                "requirements": [{"requirement_id": "r1", "outcome": "passed"}],
+                "evidence_digests": {},
+                "summary": {
+                    "passed": 1,
+                    "failed": 0,
+                    "skipped": 0,
+                    "error": 0,
+                    "unverified": 0,
+                    "manual_unverifiable": 0,
+                    "total": 1,
+                },
+                "aggregate_outcome": "passed",
+                "aggregate_note": "forged passed outcome",
+            }
+        )
+        from runspecimen.requirements import write_evidence_report
+
+        write_evidence_report(self.ws, contract.campaign_id, contract.run_id, forged)
+        with self.assertRaises(CertificateError) as ctx:
+            verify_run_receipt(
+                workspace=self.ws,
+                campaign_id=contract.campaign_id,
+                run_id=contract.run_id,
+                contract=contract,
+                require_live_provenance=True,
+            )
+        msg = str(ctx.exception)
+        self.assertIn("requirements_check", msg)
+        self.assertIn("unauthenticated", msg)
+        self.assertIn("final_state_certifiable", msg)
 
 
 class CoordinationArtifactTests(RunSpecimenTestCase):

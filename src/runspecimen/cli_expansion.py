@@ -22,7 +22,12 @@ def register_expansion_parsers(sub: Any) -> None:
     p_req_val.add_argument("--manifest", type=Path, required=True)
     p_req_check = req_sub.add_parser(
         "check",
-        help="Run configured checks; write evidence report (provider-collected only)",
+        help=(
+            "Run configured checks and write an evidence report. "
+            "Exit 0 when checks_passed is true (passed and final_state_certifiable). "
+            "receipt_bound stays false until postflight and does not change authenticity. "
+            "Exit 1 when the checks did not pass. Exit 2 when the check is refused."
+        ),
     )
     _ws(p_req_check)
     p_req_check.add_argument("--contract", type=Path, required=True)
@@ -48,10 +53,20 @@ def register_expansion_parsers(sub: Any) -> None:
         help="Evaluate evidence applicability (separate from verify)",
     )
     fr_sub = p_fr.add_subparsers(dest="freshness_command", required=True)
-    p_fr_check = fr_sub.add_parser("check", help="On-demand freshness / applicability")
+    p_fr_check = fr_sub.add_parser(
+        "check",
+        help="On-demand freshness / applicability; writes freshness_report.json",
+    )
     _ws(p_fr_check)
     p_fr_check.add_argument("--contract", type=Path, required=True)
     p_fr_check.add_argument("--manifest", type=Path, default=None)
+    p_fr_eval = fr_sub.add_parser(
+        "evaluate",
+        help="Compute freshness / applicability without writing a report",
+    )
+    _ws(p_fr_eval)
+    p_fr_eval.add_argument("--contract", type=Path, required=True)
+    p_fr_eval.add_argument("--manifest", type=Path, default=None)
     p_fr_show = fr_sub.add_parser(
         "show",
         help="Show the stored freshness report without recomputing or writing",
@@ -167,6 +182,13 @@ def register_expansion_parsers(sub: Any) -> None:
     p_e_cmp = eval_sub.add_parser("compare", help="Compare baseline vs candidate eval results")
     p_e_cmp.add_argument("--baseline", type=Path, required=True)
     p_e_cmp.add_argument("--candidate", type=Path, required=True)
+    p_e_complete = eval_sub.add_parser(
+        "complete",
+        help="Resolve one text input against an opt-in fastpath config (no model)",
+    )
+    _ws(p_e_complete)
+    p_e_complete.add_argument("--config", type=Path, required=True)
+    p_e_complete.add_argument("--input", required=True)
 
     # scenes (ten-scene local demo harness)
     p_scenes = sub.add_parser(
@@ -293,17 +315,24 @@ def _requirements(args: argparse.Namespace, workspace: Path) -> int:
         annotated = load_evidence_report(
             workspace, contract.campaign_id, contract.run_id
         )
-        out = {
-            "ok": annotated.get("aggregate_outcome") == OUTCOME_PASSED
+        checks_passed = (
+            annotated.get("aggregate_outcome") == OUTCOME_PASSED
             and annotated.get("final_state_certifiable") is True
-            and annotated.get("authenticity") == "receipt_bound",
+        )
+        receipt_bound = annotated.get("authenticity") == "receipt_bound"
+        out = {
+            "ok": checks_passed,
+            "checks_passed": checks_passed,
+            "receipt_bound": receipt_bound,
             "evidence_report": str(path),
             "attestation": str(att_path) if att_path else None,
             "ci": ci_machine_report(annotated),
             "report": annotated,
         }
         print(json.dumps(out, indent=2, sort_keys=True, default=str))
-        return 0 if out["ok"] else 1
+        # Exit 0 is checks_passed, not receipt binding. Exit 1 means the
+        # configured checks failed or the final state is not certifiable.
+        return 0 if checks_passed else 1
     if args.requirements_command == "report":
         report = load_evidence_report(workspace, args.campaign_id, args.run_id)
         print(
@@ -329,7 +358,7 @@ def _freshness(args: argparse.Namespace, workspace: Path) -> int:
         report = load_freshness_report(workspace, args.campaign_id, args.run_id)
         print(json.dumps({"report": report}, indent=2, sort_keys=True, default=str))
         return 0
-    if args.freshness_command != "check":
+    if args.freshness_command not in {"check", "evaluate"}:
         raise RunSpecimenError(f"unknown freshness command: {args.freshness_command}")
     contract = load_contract(args.contract)
     manifest = None
@@ -343,6 +372,16 @@ def _freshness(args: argparse.Namespace, workspace: Path) -> int:
     report = check_freshness_for_run(
         workspace=workspace, contract=contract, manifest=manifest
     )
+    if args.freshness_command == "evaluate":
+        print(
+            json.dumps(
+                {"wrote": False, "report": report},
+                indent=2,
+                sort_keys=True,
+                default=str,
+            )
+        )
+        return 0 if report.get("applicability") == "applicable" else 1
     path = write_freshness_report(
         workspace, contract.campaign_id, contract.run_id, report
     )
@@ -542,6 +581,15 @@ def _eval(args: argparse.Namespace, workspace: Path) -> int:
             )
         )
         return 0 if result.get("passed_deterministic") else 1
+    if args.eval_command == "complete":
+        from runspecimen.fastpath import complete_fastpath_request, load_fastpath_config
+
+        compiled = load_fastpath_config(args.config)
+        result = complete_fastpath_request(
+            workspace=workspace, text=args.input, config=compiled
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
     if args.eval_command == "compare":
         baseline = read_json(args.baseline)
         candidate = read_json(args.candidate)

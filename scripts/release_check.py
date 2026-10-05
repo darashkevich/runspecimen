@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import importlib.util
 import hashlib
 import io
 import json
@@ -27,8 +28,8 @@ from pathlib import Path, PurePosixPath
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_PYTHON_VERSION = "0.2.0rc14"
-EXPECTED_PLUGIN_VERSION = "0.2.0-rc.14"
+EXPECTED_PYTHON_VERSION = "0.2.0rc15"
+EXPECTED_PLUGIN_VERSION = "0.2.0-rc.15"
 # Fixed metadata clock for release archives. Wall-clock gzip, tar, and zip
 # timestamps otherwise change the archive bytes on every build. 2020-01-01 UTC
 # matches the plugin zip and is representable in zip (dates before 1980 are not).
@@ -44,7 +45,6 @@ PLUGIN_COMPONENTS = (
     ".codex-plugin/plugin.json", ".cursor-plugin/plugin.json",
     ".claude-plugin/plugin.json", "gemini-extension.json", "extension.json",
     ".mcp.json", "mcp/.mcp.json", "GEMINI.md", "README.md",
-    "assets/logo.png",
     "assets/logo.png",
     "assets/composer-icon.png",
     "assets/logo.svg",
@@ -79,6 +79,15 @@ def run(*args: str, cwd: Path = ROOT, env: dict[str, str] | None = None,
         args, cwd=cwd, env=env, check=True, text=True,
         stdin=subprocess.DEVNULL, capture_output=capture, timeout=300,
     )
+
+
+def _load_script_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def check_versions() -> None:
@@ -175,13 +184,26 @@ def check_versions() -> None:
     )
     if "runspecimen" not in (muse_mcp.get("mcp_servers") or {}):
         raise SystemExit("muse MCP fragment must declare runspecimen under mcp_servers")
-    for shared_name in ("block_approve_gate.py", "runspecimen_mcp.py"):
-        shared = (plugin_root / "scripts" / shared_name).read_bytes()
-        staged = (plugin_root / "antigravity" / "scripts" / shared_name).read_bytes()
-        if shared != staged:
-            raise SystemExit(
-                f"antigravity/scripts/{shared_name} must match plugins/runspecimen/scripts/{shared_name}"
-            )
+    gate_name = "block_approve_gate.py"
+    shared_gate = (plugin_root / "scripts" / gate_name).read_bytes()
+    staged_gate = (plugin_root / "antigravity" / "scripts" / gate_name).read_bytes()
+    if shared_gate != staged_gate:
+        raise SystemExit(
+            f"antigravity/scripts/{gate_name} must match plugins/runspecimen/scripts/{gate_name}"
+        )
+    canonical_mcp = _load_script_module(
+        plugin_root / "scripts" / "runspecimen_mcp.py", "rs_mcp_canonical_check"
+    )
+    staged_mcp = _load_script_module(
+        plugin_root / "antigravity" / "scripts" / "runspecimen_mcp.py",
+        "rs_mcp_antigravity_check",
+    )
+    if "approve" in canonical_mcp.ALLOWED or canonical_mcp.ALLOWED != staged_mcp.ALLOWED:
+        raise SystemExit("antigravity MCP must re-export the canonical allow-list and omit approve")
+    canonical_tools = [tool["name"] for tool in canonical_mcp.TOOLS]
+    staged_tools = [tool["name"] for tool in staged_mcp.TOOLS]
+    if canonical_tools != staged_tools or "approve" in canonical_tools:
+        raise SystemExit("antigravity MCP tools diverged from the canonical server")
     plugin_xml = (
         plugin_root / "jetbrains/intellij-plugin/src/main/resources/META-INF/plugin.xml"
     ).read_text(encoding="utf-8")
@@ -296,6 +318,11 @@ def inspect_sdist(path: Path, destination: Path) -> Path:
         )}
         if not required.issubset(names):
             raise SystemExit(f"source archive is missing required files: {sorted(required - names)}")
+        carried = [name for name in names if _is_platform_verifier_member(name)]
+        if carried:
+            raise SystemExit(
+                "source archive must not carry the darwin arm64 verifier: " + ", ".join(carried)
+            )
         for member in members:
             if PurePosixPath(member.name).parts[0] != top or not (member.isfile() or member.isdir()):
                 raise SystemExit(f"unsupported source archive member: {member.name}")
@@ -360,6 +387,12 @@ def validate_requires_dist_metadata(metadata: str) -> None:
             )
 
 
+def _is_platform_verifier_member(name: str) -> bool:
+    return name.endswith("runspecimen/platform/darwin_arm64/native_p256_verify") or (
+        name.rsplit("/", 1)[-1] == "native_p256_verify"
+    )
+
+
 def inspect_wheel(path: Path) -> None:
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
@@ -373,6 +406,13 @@ def inspect_wheel(path: Path) -> None:
         }
         if not required.issubset(names):
             raise SystemExit(f"wheel is missing required files: {sorted(required - set(names))}")
+        if path.name.endswith("py3-none-any.whl"):
+            carried = [name for name in names if _is_platform_verifier_member(name)]
+            if carried:
+                raise SystemExit(
+                    "py3-none-any wheel must not carry the darwin arm64 verifier: "
+                    + ", ".join(carried)
+                )
         metadata = archive.read(f"{dist_info}/METADATA").decode("utf-8")
         if f"\nVersion: {EXPECTED_PYTHON_VERSION}\n" not in metadata:
             raise SystemExit("wheel metadata has the wrong version")

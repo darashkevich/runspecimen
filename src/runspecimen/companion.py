@@ -16,6 +16,7 @@ docs/ADR-004-remote-human-confirm.md):
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import ipaddress
@@ -23,6 +24,7 @@ import json
 import secrets
 import threading
 import time
+from http.client import HTTPConnection, HTTPSConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
@@ -169,6 +171,15 @@ def make_handler(
     rate_window_sec = 60.0
     rate_max_attempts = 20
     rate_events: list[float] = []
+    phone_lock = threading.Lock()
+    phone_mailbox: dict[str, Any] = {
+        "challenge": None,
+        "signature": None,
+        "verification": None,
+        "invalidated": None,
+        "receipts": [],
+    }
+    exact_run_mailbox: dict[str, Any] = {"challenge": None, "signature": None}
 
     def current_status() -> dict[str, Any]:
         live = load_contract(contract_path)
@@ -283,6 +294,156 @@ def make_handler(
                 if route == "/v1/capabilities":
                     self._respond(200, json.dumps(capabilities_doc(), sort_keys=True).encode("utf-8"))
                     return
+                if route == "/v1/phone-peer-challenge":
+                    with phone_lock:
+                        current = phone_mailbox.get("challenge")
+                    if not isinstance(current, dict):
+                        self._error(404, "phone peer challenge is not waiting")
+                        return
+                    self._respond(
+                        200,
+                        json.dumps(
+                            {
+                                "ok": True,
+                                "can_approve": False,
+                                "mutates_lifecycle": False,
+                                "challenge_id": current["challenge_id"],
+                                "generation": current["generation"],
+                                "holder_id": current["holder_id"],
+                                "challenge": current["challenge"],
+                                "expiry": current.get("expiry"),
+                                "role": current.get("role", "phone"),
+                                "ios_bundle_id": CAPABILITIES["ios_bundle_id"],
+                            },
+                            sort_keys=True,
+                        ).encode("utf-8"),
+                    )
+                    return
+                if route == "/v1/phone-peer-verification":
+                    with phone_lock:
+                        invalidated = bool(phone_mailbox.get("invalidated"))
+                        record = phone_mailbox.get("verification")
+                    if invalidated or not isinstance(record, dict):
+                        self._respond(
+                            200,
+                            json.dumps(
+                                {
+                                    "ok": True,
+                                    "verified": False,
+                                    "consumed": False,
+                                    "enrolled": False,
+                                    "invalidated": invalidated,
+                                    "receipt": None,
+                                    "caller_flags_are_not_a_receipt": True,
+                                },
+                                sort_keys=True,
+                            ).encode("utf-8"),
+                        )
+                        return
+                    self._respond(
+                        200,
+                        json.dumps(
+                            {
+                                "ok": True,
+                                "verified": False,
+                                "consumed": False,
+                                "enrolled": False,
+                                "invalidated": False,
+                                "caller_flags_are_not_a_receipt": True,
+                                "challenge_id": record.get("challenge_id"),
+                                "receipt": record.get("receipt"),
+                                "signature": record.get("signature"),
+                                "mac_public_key": record.get("mac_public_key"),
+                                "phone_fingerprint": record.get("phone_fingerprint"),
+                                "holder_id": record.get("holder_id"),
+                                "generation": record.get("generation"),
+                                "outcome": record.get("outcome"),
+                            },
+                            sort_keys=True,
+                        ).encode("utf-8"),
+                    )
+                    return
+                if route == "/v1/exact-peer-challenge":
+                    with phone_lock:
+                        current = exact_run_mailbox.get("challenge")
+                    if not isinstance(current, dict):
+                        self._error(404, "exact run challenge is not waiting")
+                        return
+                    self._respond(
+                        200,
+                        json.dumps(
+                            {
+                                "ok": True,
+                                "can_approve": False,
+                                "mutates_lifecycle": False,
+                                "challenge_id": current["challenge_id"],
+                                "bound": current["bound"],
+                                "policy": current["policy"],
+                                "generation": current["generation"],
+                                "key_generation": current["key_generation"],
+                                "expiry": current["expiry"],
+                            },
+                            sort_keys=True,
+                        ).encode("utf-8"),
+                    )
+                    return
+                if route == "/v1/exact-peer-signature":
+                    with phone_lock:
+                        current = exact_run_mailbox.get("challenge")
+                        signed = exact_run_mailbox.get("signature")
+                    if not isinstance(current, dict) or not isinstance(signed, dict):
+                        self._error(404, "exact run signature is not waiting")
+                        return
+                    if signed.get("challenge_id") != current.get("challenge_id"):
+                        self._error(409, "exact run signature is not bound to the prepared challenge")
+                        return
+                    self._respond(
+                        200,
+                        json.dumps(
+                            {
+                                "ok": True,
+                                "can_approve": False,
+                                "enrolled": False,
+                                "verified": False,
+                                "mutates_lifecycle": False,
+                                "challenge_id": signed["challenge_id"],
+                                "signature": signed["signature"],
+                            },
+                            sort_keys=True,
+                        ).encode("utf-8"),
+                    )
+                    return
+                if route == "/v1/phone-peer-signature":
+                    with phone_lock:
+                        if phone_mailbox.get("invalidated"):
+                            self._error(409, "stale phone challenge")
+                            return
+                        current = phone_mailbox.get("challenge")
+                        signed = phone_mailbox.get("signature")
+                    if not isinstance(current, dict) or not isinstance(signed, dict):
+                        self._error(404, "phone peer signature is not waiting")
+                        return
+                    if signed.get("challenge_id") != current.get("challenge_id"):
+                        self._error(409, "stale phone challenge")
+                        return
+                    self._respond(
+                        200,
+                        json.dumps(
+                            {
+                                "ok": True,
+                                "can_approve": False,
+                                "enrolled": False,
+                                "verified": False,
+                                "mutates_lifecycle": False,
+                                "challenge_id": signed["challenge_id"],
+                                "challenge": signed["challenge"],
+                                "public_key": signed["public_key"],
+                                "signature": signed["signature"],
+                            },
+                            sort_keys=True,
+                        ).encode("utf-8"),
+                    )
+                    return
                 if route == "/v1/status":
                     doc = current_status()
                     view = remote_confirm_view()
@@ -332,6 +493,269 @@ def make_handler(
                 return
             if not isinstance(payload, dict):
                 self._error(400, "JSON object required")
+                return
+            if route == "/v1/phone-peer-challenge":
+                if any(key in payload for key in ("origin", "config", "signer", "hardware")):
+                    self._error(403, "a caller hardware label is not a phone peer")
+                    return
+                challenge_id = payload.get("challenge_id")
+                challenge_b64 = payload.get("challenge")
+                generation = payload.get("generation")
+                holder_id = payload.get("holder_id")
+                if not isinstance(challenge_id, str) or not challenge_id:
+                    self._error(400, "phone peer challenge id is missing")
+                    return
+                if not isinstance(challenge_b64, str) or not challenge_b64:
+                    self._error(400, "phone peer challenge bytes are missing")
+                    return
+                try:
+                    raw_challenge = base64.b64decode(challenge_b64, validate=True)
+                except (ValueError, TypeError):
+                    self._error(400, "phone peer challenge bytes are missing")
+                    return
+                if not raw_challenge or not isinstance(generation, int) or not isinstance(holder_id, str):
+                    self._error(400, "phone peer challenge bytes are missing")
+                    return
+                expiry = payload.get("expiry")
+                if "expiry" in payload and not isinstance(expiry, int):
+                    self._error(400, "phone peer challenge bytes are missing")
+                    return
+                role = payload.get("role", "phone")
+                if role != "phone":
+                    self._error(400, "phone peer challenge bytes are missing")
+                    return
+                with phone_lock:
+                    phone_mailbox["challenge"] = {
+                        "challenge_id": challenge_id,
+                        "generation": generation,
+                        "holder_id": holder_id,
+                        "challenge": challenge_b64,
+                        "expiry": expiry,
+                        "role": role,
+                    }
+                    phone_mailbox["signature"] = None
+                    phone_mailbox["verification"] = None
+                    phone_mailbox["invalidated"] = None
+                    phone_mailbox["receipts"] = []
+                self._respond(
+                    202,
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "accepted": True,
+                            "can_approve": False,
+                            "enrolled": False,
+                            "mutates_lifecycle": False,
+                            "challenge_id": challenge_id,
+                            "ios_bundle_id": CAPABILITIES["ios_bundle_id"],
+                        },
+                        sort_keys=True,
+                    ).encode("utf-8"),
+                )
+                return
+            if route == "/v1/exact-peer-challenge":
+                challenge_id = payload.get("challenge_id")
+                bound = payload.get("bound")
+                policy = payload.get("policy")
+                generation = payload.get("generation")
+                key_generation = payload.get("key_generation")
+                expiry = payload.get("expiry")
+                if not isinstance(challenge_id, str) or not challenge_id:
+                    self._error(400, "exact run challenge id is missing")
+                    return
+                if not isinstance(bound, str) or not bound or policy not in {"local", "companion", "dual"}:
+                    self._error(400, "exact run challenge is not bound")
+                    return
+                if not isinstance(generation, int) or not isinstance(key_generation, int) or not isinstance(expiry, int):
+                    self._error(400, "exact run challenge is not bound")
+                    return
+                try:
+                    raw_bound = base64.b64decode(bound, validate=True)
+                except (ValueError, TypeError):
+                    self._error(400, "exact run challenge is not bound")
+                    return
+                if not raw_bound:
+                    self._error(400, "exact run challenge is not bound")
+                    return
+                with phone_lock:
+                    exact_run_mailbox["challenge"] = {
+                        "challenge_id": challenge_id,
+                        "bound": bound,
+                        "policy": policy,
+                        "generation": generation,
+                        "key_generation": key_generation,
+                        "expiry": expiry,
+                    }
+                    exact_run_mailbox["signature"] = None
+                self._respond(
+                    202,
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "accepted": True,
+                            "can_approve": False,
+                            "enrolled": False,
+                            "mutates_lifecycle": False,
+                            "challenge_id": challenge_id,
+                        },
+                        sort_keys=True,
+                    ).encode("utf-8"),
+                )
+                return
+            if route == "/v1/exact-peer-signature":
+                challenge_id = payload.get("challenge_id")
+                signature = payload.get("signature")
+                if not isinstance(challenge_id, str) or not challenge_id or not isinstance(signature, str) or not signature:
+                    self._error(400, "exact run signature is not bound to the prepared challenge")
+                    return
+                with phone_lock:
+                    current = exact_run_mailbox.get("challenge")
+                    if not isinstance(current, dict) or current.get("challenge_id") != challenge_id:
+                        self._error(409, "exact run signature is not bound to the prepared challenge")
+                        return
+                    exact_run_mailbox["signature"] = {
+                        "challenge_id": challenge_id,
+                        "signature": signature,
+                    }
+                self._respond(
+                    202,
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "accepted": True,
+                            "can_approve": False,
+                            "enrolled": False,
+                            "verified": False,
+                            "mutates_lifecycle": False,
+                            "challenge_id": challenge_id,
+                        },
+                        sort_keys=True,
+                    ).encode("utf-8"),
+                )
+                return
+            if route == "/v1/phone-peer-invalidate":
+                challenge_id = payload.get("challenge_id")
+                with phone_lock:
+                    phone_mailbox["challenge"] = None
+                    phone_mailbox["signature"] = None
+                    phone_mailbox["verification"] = None
+                    phone_mailbox["receipts"] = []
+                    phone_mailbox["invalidated"] = challenge_id if isinstance(challenge_id, str) else True
+                self._respond(
+                    202,
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "invalidated": True,
+                            "enrolled": False,
+                            "verified": False,
+                            "consumed": False,
+                            "can_approve": False,
+                        },
+                        sort_keys=True,
+                    ).encode("utf-8"),
+                )
+                return
+            if route == "/v1/phone-peer-verification":
+                receipt = payload.get("receipt")
+                signature = payload.get("signature")
+                mac_public_key = payload.get("mac_public_key")
+                if (
+                    not isinstance(receipt, str)
+                    or not receipt
+                    or not isinstance(signature, str)
+                    or not signature
+                    or not isinstance(mac_public_key, str)
+                    or not mac_public_key
+                ):
+                    self._error(409, "a caller flag is not a holder receipt")
+                    return
+                with phone_lock:
+                    if phone_mailbox.get("invalidated"):
+                        self._error(409, "stale phone challenge")
+                        return
+                    current = phone_mailbox.get("challenge")
+                    if not isinstance(current, dict) or payload.get("challenge_id") != current.get("challenge_id"):
+                        self._error(409, "stale phone challenge")
+                        return
+                    seen = phone_mailbox.setdefault("receipts", [])
+                    if not isinstance(seen, list):
+                        seen = []
+                        phone_mailbox["receipts"] = seen
+                    if signature in seen:
+                        self._error(409, "replayed holder receipt")
+                        return
+                    seen.append(signature)
+                    phone_mailbox["verification"] = {
+                        "challenge_id": current["challenge_id"],
+                        "receipt": receipt,
+                        "signature": signature,
+                        "mac_public_key": mac_public_key,
+                        "phone_fingerprint": payload.get("phone_fingerprint"),
+                        "holder_id": payload.get("holder_id"),
+                        "generation": payload.get("generation"),
+                        "outcome": payload.get("outcome"),
+                        "enrolled": False,
+                    }
+                self._respond(
+                    202,
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "accepted": True,
+                            "verified": False,
+                            "consumed": False,
+                            "enrolled": False,
+                            "can_approve": False,
+                            "caller_flags_are_not_a_receipt": True,
+                        },
+                        sort_keys=True,
+                    ).encode("utf-8"),
+                )
+                return
+            if route == "/v1/phone-peer-signature":
+                if any(key in payload for key in ("origin", "config", "signer", "hardware")):
+                    self._error(403, "a caller hardware label is not a phone peer")
+                    return
+                with phone_lock:
+                    current = phone_mailbox.get("challenge")
+                    if not isinstance(current, dict):
+                        self._error(409, "stale phone challenge")
+                        return
+                    if payload.get("challenge_id") != current.get("challenge_id"):
+                        self._error(409, "stale phone challenge")
+                        return
+                    if payload.get("challenge") != current.get("challenge"):
+                        self._error(409, "stale phone challenge")
+                        return
+                    public_key = payload.get("public_key")
+                    signature = payload.get("signature")
+                    if not isinstance(public_key, str) or not public_key:
+                        self._error(400, "phone peer public key is missing")
+                        return
+                    if not isinstance(signature, str) or not signature:
+                        self._error(400, "phone peer signature is missing")
+                        return
+                    phone_mailbox["signature"] = {
+                        "challenge_id": current["challenge_id"],
+                        "challenge": current["challenge"],
+                        "public_key": public_key,
+                        "signature": signature,
+                    }
+                self._respond(
+                    202,
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "accepted": True,
+                            "can_approve": False,
+                            "enrolled": False,
+                            "verified": False,
+                            "mutates_lifecycle": False,
+                        },
+                        sort_keys=True,
+                    ).encode("utf-8"),
+                )
                 return
             if route == "/v1/attention":
                 entry = {
@@ -569,3 +993,120 @@ def start_companion(
     if tls_material is not None:
         meta.update(tls_material.as_meta())
     return server, url, meta
+
+
+class ObserveTransportError(RunSpecimenError):
+    """The Observe companion rejected a phone-peer message."""
+
+
+class ObservePhoneTransport:
+    """HTTP client for the RunSpecimenObserve phone-peer challenge mailbox.
+
+    Publishing and collecting do not verify a signature and do not enroll a
+    device. The holder compares the returned signature with verify_native_p256.
+    """
+
+    def __init__(self, base_url: str, pairing_token: str) -> None:
+        if not isinstance(base_url, str) or not base_url:
+            raise ObserveTransportError("observe companion url is missing")
+        if not isinstance(pairing_token, str) or len(pairing_token) < 16:
+            raise ObserveTransportError("observe companion pairing token is missing")
+        self.base_url = base_url.rstrip("/")
+        self.pairing_token = pairing_token
+
+    def publish_challenge(
+        self,
+        *,
+        challenge_id: str,
+        generation: int,
+        challenge: bytes,
+        holder_id: str,
+        expiry: int | None = None,
+        role: str = "phone",
+    ) -> None:
+        payload: dict[str, Any] = {
+            "challenge_id": challenge_id,
+            "generation": generation,
+            "holder_id": holder_id,
+            "challenge": base64.b64encode(challenge).decode("ascii"),
+            "role": role,
+        }
+        if expiry is not None:
+            payload["expiry"] = expiry
+        self._request("POST", "/v1/phone-peer-challenge", payload)
+
+    def fetch_challenge(self) -> dict[str, Any]:
+        return self._request("GET", "/v1/phone-peer-challenge", None)
+
+    def submit_signature(self, *, challenge_id: str, challenge: bytes, public_key: str, signature: str) -> None:
+        self._request(
+            "POST",
+            "/v1/phone-peer-signature",
+            {
+                "challenge_id": challenge_id,
+                "challenge": base64.b64encode(challenge).decode("ascii"),
+                "public_key": public_key,
+                "signature": signature,
+            },
+        )
+
+    def collect_signature(self) -> dict[str, Any]:
+        try:
+            body = self._request("GET", "/v1/phone-peer-signature", None)
+        except ObserveTransportError as exc:
+            text = str(exc)
+            if "stale phone challenge" in text or "not waiting" in text:
+                raise ObserveTransportError("stale phone challenge") from exc
+            raise
+        raw = body.get("challenge")
+        if not isinstance(raw, str):
+            raise ObserveTransportError("stale phone challenge")
+        try:
+            challenge_bytes = base64.b64decode(raw, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise ObserveTransportError("stale phone challenge") from exc
+        public_key = body.get("public_key")
+        signature = body.get("signature")
+        challenge_id = body.get("challenge_id")
+        if not isinstance(public_key, str) or not isinstance(signature, str) or not isinstance(challenge_id, str):
+            raise ObserveTransportError("stale phone challenge")
+        return {
+            "challenge_id": challenge_id,
+            "challenge_bytes": challenge_bytes,
+            "public_key": public_key,
+            "signature": signature,
+            "verified": False,
+            "enrolled": False,
+        }
+
+    def _request(self, method: str, path: str, payload: dict[str, Any] | None) -> dict[str, Any]:
+        parsed = urlparse(self.base_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.port is None:
+            raise ObserveTransportError("observe companion url is missing")
+        connection_cls = HTTPSConnection if parsed.scheme == "https" else HTTPConnection
+        connection = connection_cls(parsed.hostname, parsed.port, timeout=5)
+        body = b"" if payload is None else json.dumps(payload).encode("utf-8")
+        headers = {
+            "Authorization": f"Bearer {self.pairing_token}",
+            "Accept": "application/json",
+        }
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+        try:
+            connection.request(method, path, body=body, headers=headers)
+            response = connection.getresponse()
+            raw = response.read()
+        finally:
+            connection.close()
+        try:
+            parsed_body = json.loads(raw.decode("utf-8") or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ObserveTransportError("observe companion response is not json") from exc
+        if response.status == 409:
+            raise ObserveTransportError("stale phone challenge")
+        if response.status >= 400:
+            message = parsed_body.get("error") if isinstance(parsed_body, dict) else None
+            raise ObserveTransportError(str(message or "observe companion request failed"))
+        if not isinstance(parsed_body, dict):
+            raise ObserveTransportError("observe companion response is not json")
+        return parsed_body

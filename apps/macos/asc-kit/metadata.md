@@ -53,8 +53,8 @@ runspecimen,evidence,approval,local,cli,developer,receipt,preflight,control
 
 | Key | Value |
 | --- | --- |
-| Short version | Submitted record **0.1.4 (9)**. Local **0.1.5 (11)** remains the earlier package. This branch's candidate is **0.1.5 (12)** and is not uploaded. |
-| Build | Submitted **9**. Earlier local package **11**. Candidate **12**. |
+| Short version | Submitted record **0.1.4 (9)**. Local **0.1.5 (10)**, **(11)**, and **(12)** are earlier packages. This branch's label is **0.1.5 (13)** and is not uploaded. |
+| Build | Submitted **9**. Earlier local packages **10**, **11**, and **12**. Label on this branch **13**. |
 | Bundled engine | Submitted package: **0.2.0rc14** without evidence expansion. This branch adds that expansion and is not the uploaded binary. |
 | Min macOS | 14.0 |
 

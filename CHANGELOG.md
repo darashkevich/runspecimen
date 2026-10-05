@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+These notes describe source on the unpublished candidate. They are not a public release.
+
+- Exact-run approval checks expiry and the pinned holder id before signing, and an authorize that loses its request keeps the uncertain lease. A holder execute that fails before any child exists keeps that uncertain lease. Root-daemon Secure Enclave creation is unsupported on current Apple guidance. Installed admission stays closed. `run_integration_complete` and `e2_closed` stay false.
+- `requirements_check` refuses a digest-valid passed report unless authenticity is receipt-bound and the final state is certifiable. Evidence pointers accept only a basename under `evidence_captures`. Postflight omits an attestation whose digest is not the current capture. The CLI does not claim a hardware human when it cannot collect a device signature. MCP `freshness_check` evaluates without writing `freshness_report.json`.
+- Developer ID packaging accepts bundle id `com.darashkevich.runspecimen.holder` and pins that designated requirement when a Developer ID identity is supplied. Ad-hoc `codesign --sign -` is local stage smoke, not the product signature. That bundle id is not `production_verifier_pin()`.
+- Usage import holds the workspace lease and refuses to replace a ledger whose digest changed. The dashboard evidence panel records a read-only load error instead of hiding a failed read. Unittest discovery copies the suite so it does not write `__init__.py` into the live tree. Packaged suites (`tests/__init__.py`) are imported from that sandbox copy; the live workspace stays importable for application code. ChatGPT independent re-QA at `6bb64d1`: 644 tests / 6 skip / 0 fail; R-01..R-06 closed. Installed Secure Enclave admission stays fail-closed. `run_integration_complete` and `e2_closed` stay false.
+
 ### Evidence expansion (ADR-005) — review branch, not released
 
 Local-first expansion answering: what was authorized, what ran, which
@@ -25,6 +32,10 @@ evidence still applies. See `docs/ADR-005-evidence-expansion.md`.
 - Session restore keeps the last contract when it is a regular file inside the workspace, and the app stays running after the main window closes.
 - Native Workflows cover snapshot, coordination, evaluation, scenes, configuration apply/export/rollback, decision capture, and usage import. Writes require confirmation. The Store build still has no browser dashboard.
 - A confirmed workflow is claimed before its dialog dismisses, so cancellation cannot drop that claim, and a second confirm does not run it again. Engine output is read while the process is still running.
+
+## 0.2.0rc15 - not published
+
+Candidate identity for the integrated branch. Not tagged, not uploaded to PyPI, and not a replacement for the published `0.2.0rc14` bytes. Homebrew in this tree still pins the published sdist.
 
 ## 0.2.0rc14 - 2026-09-23
 

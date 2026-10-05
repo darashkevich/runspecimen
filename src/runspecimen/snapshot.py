@@ -185,9 +185,7 @@ class LocalTarSnapshotProvider:
     ) -> dict[str, Any]:
         workspace = resolve_workspace(workspace)
         dest = dest.expanduser().resolve()
-        refusal = _restore_dest_refusal_reason(workspace, dest)
-        if refusal is not None:
-            raise SnapshotError(refusal)
+        _assert_safe_restore_dest(workspace, dest)
         archive = self._load_and_verify_archive(workspace, record)
         ensure_dir(dest)
         with tarfile.open(archive, "r:gz") as tar:
