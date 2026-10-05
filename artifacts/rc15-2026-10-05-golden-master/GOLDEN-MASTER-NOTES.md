@@ -4,16 +4,20 @@ Not a production biometric sign-off. Not a Store, PyPI, or notarized publish.
 
 ## SHAs
 
+Packed identity is the package-tree SHA and the pack-recording SHA. Reviewed/merge HEAD on `cursor/integrated-release-candidate` may be a later SHA-label commit and is not a new package identity. Do not treat a peeled parent as the merge tip.
+
 | Field | Value |
 | --- | --- |
 | START_SHA | `6bb64d1c6ee6798b102023652255d15830e51178` |
 | Package-tree SHA | `5f35cfcf401107648d61b84e29da5a2e8b45f708` (NEW-01 + `test_new01_*` + CHANGELOG Unreleased + FAQ identity sentence) |
 | Pack-recording SHA | `0fcfc8f6c39c359a153a81d08cd048280ece5e08` |
-| Final tip SHA | `5b47e5f5bcb5fdaf64f88075d42f35271de149a8` |
+| Reviewed/merge HEAD | `git rev-parse HEAD` after `git fetch` and checkout of `cursor/integrated-release-candidate`. As of this GM-01 correction the merge candidate was `9fde02ad530a792fc180d963012e6a3010b3375d`; this notes commit is a later SHA-label successor. `5b47e5f5bcb5fdaf64f88075d42f35271de149a8` is not the merge tip |
 | PR base | `cursor/evidence-expansion-coherence` @ `d54c803c9b6dfe82cb91f55c5a21923c822041d9` |
 | Pack | `artifacts/rc15-2026-10-05-golden-master/` |
 
 Canonical hashes: `docs/CANDIDATE_MANIFEST.md` (one table). Do not treat this file as a second source of truth.
+
+ChatGPT’s local sdist rebuild mismatch is **unresolved reproducibility evidence**, not a closed claim: local rebuild `6979460d…` ≠ committed sdist `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9`. Packed archives were not rebuilt for this notes correction. Do not claim byte-identical sdist rebuilds.
 
 `git diff --stat 5f35cfcf401107648d61b84e29da5a2e8b45f708..HEAD` after the pack-recording commit touches only non-sdist paths (`docs/CANDIDATE_MANIFEST.md`, `docs/BRANCH_HYGIENE.md`, this pack). `tar tzf` of the sdist has CHANGELOG, FAQ, `tests/test_new01_unittest_packaged_suite.py`, and does not contain `CANDIDATE_MANIFEST.md`, `BRANCH_HYGIENE.md`, or `SECURE_ENCLAVE_ADMISSION.md`.
 

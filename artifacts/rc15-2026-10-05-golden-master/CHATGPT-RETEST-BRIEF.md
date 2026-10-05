@@ -1,6 +1,6 @@
 # ChatGPT retest brief — PR #39 engineering GM
 
-Tip `5b47e5f5bcb5fdaf64f88075d42f35271de149a8` on `cursor/integrated-release-candidate` (`git fetch` then checkout; HEAD may be a later SHA-label commit). Pack-recording `0fcfc8f6c39c359a153a81d08cd048280ece5e08`. Base `d54c803c9b6dfe82cb91f55c5a21923c822041d9`. Pack `artifacts/rc15-2026-10-05-golden-master/`. Package tree `5f35cfcf401107648d61b84e29da5a2e8b45f708`. Canonical hashes: `docs/CANDIDATE_MANIFEST.md`.
+Package-tree SHA `5f35cfcf401107648d61b84e29da5a2e8b45f708`. Pack-recording SHA `0fcfc8f6c39c359a153a81d08cd048280ece5e08`. Reviewed/merge HEAD on `cursor/integrated-release-candidate` may be a later SHA-label commit (as of GM-01, `9fde02ad530a792fc180d963012e6a3010b3375d`; `git fetch` then checkout the branch, not a peeled parent such as `5b47e5f`). Base `d54c803c9b6dfe82cb91f55c5a21923c822041d9`. Pack `artifacts/rc15-2026-10-05-golden-master/`. Canonical hashes: `docs/CANDIDATE_MANIFEST.md`. Do not treat HEAD of a later notes commit as a new package identity.
 
 **Locked.** D1: installed admission fail-closed; E2 open; `run_integration_complete` and `e2_closed` false; no SE invention. D2: holder id `com.darashkevich.runspecimen.holder` accepted; no rename.
 
