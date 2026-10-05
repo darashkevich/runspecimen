@@ -701,7 +701,11 @@ final class BiometricApprovalTests: XCTestCase {
     }
 
     func testInterruptedOrPartialWritesLeaveNoFile() throws {
-        let owned = TouchIDDiagnosticGate.rootPath + "/partial-" + UUID().uuidString
+        // Isolation refuses a missing intermediate. Create the root here so this
+        // test does not depend on testTouchIDDiagnostic / testSymlink running first.
+        let root = TouchIDDiagnosticGate.rootPath
+        try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
+        let owned = root + "/partial-" + UUID().uuidString
         let fd = try TouchIDDiagnosticGate.openOwnedDirectory(owned)
         defer {
             close(fd)
