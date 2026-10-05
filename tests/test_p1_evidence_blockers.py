@@ -18,6 +18,7 @@ from runspecimen.contract import load_contract
 from runspecimen.freshness import check_freshness_for_run, evaluate_freshness
 from runspecimen.hashutil import sha256_file
 from runspecimen.requirements import (
+    OUTCOME_ERROR,
     OUTCOME_FAILED,
     OUTCOME_PASSED,
     OUTCOME_UNVERIFIED,
@@ -397,6 +398,39 @@ class P1EvidenceBlockersTests(RunSpecimenTestCase):
         self.assertEqual(second["outcome"], OUTCOME_FAILED)
         self.assertTrue((first.get("runtime_provenance") or {}).get("subprocess"))
 
+    def test_unittest_does_not_write_init_into_the_live_tree(self) -> None:
+        tests = self.ws / "ut_live"
+        tests.mkdir()
+        (tests / "test_live.py").write_text(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_ok(self):\n"
+            "        self.assertTrue(True)\n",
+            encoding="utf-8",
+        )
+        self.assertFalse((tests / "__init__.py").exists())
+        provider = UnittestProvider()
+        req = Requirement(
+            id="r",
+            description="d",
+            check=CheckRef(provider="unittest", id="u", config={}),
+            inputs=(),
+            source_scope=(),
+            required_evidence=(),
+            expected={},
+            rationale=None,
+            manual_unverifiable=False,
+        )
+        raw = provider.run(
+            workspace=self.ws,
+            check_id="u",
+            config={"start_dir": "ut_live", "pattern": "test_*.py"},
+            requirement=req,
+        )
+        self.assertEqual(raw["outcome"], OUTCOME_PASSED, raw)
+        self.assertFalse((tests / "__init__.py").exists())
+        self.assertEqual((tests / "test_live.py").read_text(encoding="utf-8").count("assertTrue"), 1)
+
     def test_p1_pytest_nonzero_returncode_not_passed(self) -> None:
         provider = PytestProvider()
         # Unit-test outcome selection with a mocked CompletedProcess-like path by
@@ -453,6 +487,67 @@ class P1EvidenceBlockersTests(RunSpecimenTestCase):
             )
         self.assertNotEqual(raw["outcome"], OUTCOME_PASSED)
         self.assertEqual(raw["exit_code"], 2)
+
+    def test_pytest_node_ids_are_the_only_selection(self) -> None:
+        provider = PytestProvider()
+        tests_dir = self.ws / "pyt"
+        tests_dir.mkdir()
+        (tests_dir / "test_ok.py").write_text(
+            "def test_only():\n    assert True\n\ndef test_other():\n    assert True\n",
+            encoding="utf-8",
+        )
+        req = Requirement(
+            id="r",
+            description="d",
+            check=CheckRef(provider="pytest", id="p", config={}),
+            inputs=(),
+            source_scope=(),
+            required_evidence=(),
+            expected={},
+            rationale=None,
+            manual_unverifiable=False,
+        )
+        captured: list[list[str]] = []
+
+        def fake_run(cmd, **kwargs):
+            captured.append(list(cmd))
+            junit = Path(cmd[cmd.index("--junitxml") + 1])
+            junit.write_text(
+                '<?xml version="1.0"?><testsuite tests="1">'
+                '<testcase classname="t" name="only"></testcase></testsuite>',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+        with unittest.mock.patch.object(subprocess, "run", side_effect=fake_run):
+            raw = provider.run(
+                workspace=self.ws,
+                check_id="p",
+                config={"target": "pyt", "node_ids": ["pyt/test_ok.py::test_only"]},
+                requirement=req,
+            )
+        self.assertEqual(raw["outcome"], OUTCOME_PASSED, raw)
+        cmd = captured[0]
+        self.assertIn("pyt/test_ok.py::test_only", cmd)
+        self.assertNotIn(str(tests_dir.resolve()), cmd)
+        self.assertLess(cmd.index("pyt/test_ok.py::test_only"), cmd.index("--junitxml"))
+
+        refused = provider.run(
+            workspace=self.ws,
+            check_id="p",
+            config={"target": "pyt", "node_ids": ["-k"]},
+            requirement=req,
+        )
+        self.assertEqual(refused["outcome"], OUTCOME_ERROR)
+        self.assertIn("node id", refused["error"])
+        empty = provider.run(
+            workspace=self.ws,
+            check_id="p",
+            config={"target": "pyt", "node_ids": []},
+            requirement=req,
+        )
+        self.assertEqual(empty["outcome"], OUTCOME_ERROR)
+        self.assertIn("empty", empty["error"])
 
     def test_p1_authorized_check_runs_after_approve_helper(self) -> None:
         mpath = self.ws / "manifest.json"

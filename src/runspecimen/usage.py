@@ -26,8 +26,9 @@ from runspecimen.contract import (
     _require_list,
     _require_str,
 )
-from runspecimen.errors import RunSpecimenError
+from runspecimen.errors import LeaseError, RunSpecimenError
 from runspecimen.events import utc_now_iso
+from runspecimen.lease import hold_workspace_lease
 from runspecimen.hashutil import sha256_bytes, canonical_json_bytes
 from runspecimen.paths import ensure_dir, resolve_workspace, workspace_state_root
 
@@ -190,7 +191,29 @@ def import_usage(
     provider_name: str,
     export_path: Path,
 ) -> dict[str, Any]:
+    """Import usage events under the workspace lease.
+
+    Concurrent imports fail closed. The writer re-reads the ledger digest
+    before replacing the file and refuses when that digest moved.
+    """
     workspace = resolve_workspace(workspace)
+    try:
+        with hold_workspace_lease(workspace, holder="usage-import"):
+            return _import_usage_under_lease(
+                workspace=workspace,
+                provider_name=provider_name,
+                export_path=export_path,
+            )
+    except LeaseError as exc:
+        raise UsageError(f"usage import refused: workspace lease unavailable ({exc})") from exc
+
+
+def _import_usage_under_lease(
+    *,
+    workspace: Path,
+    provider_name: str,
+    export_path: Path,
+) -> dict[str, Any]:
     provider = get_usage_provider(provider_name)
     export_path = export_path.expanduser().resolve()
     if not export_path.is_file():
@@ -211,6 +234,9 @@ def import_usage(
         raise UsageError(f"usage provider failed: {exc}") from exc
 
     ledger = load_ledger(workspace)
+    path = ledger_path(workspace)
+    prior_existed = path.is_file()
+    prior_digest = ledger.get("artifact_digest") if prior_existed else None
     known = set(ledger.get("import_keys") or [])
     events = list(ledger.get("events") or [])
     added = 0
@@ -247,7 +273,14 @@ def import_usage(
         ),
     }
     ledger = bind_artifact_digest(ledger)
-    path = ledger_path(workspace)
+    if prior_existed:
+        current = load_ledger(workspace)
+        if current.get("artifact_digest") != prior_digest:
+            raise UsageError(
+                "usage ledger digest changed during import; refusing to overwrite"
+            )
+    elif path.exists():
+        raise UsageError("usage ledger appeared during import; refusing to overwrite")
     ensure_dir(path.parent)
     atomic_write_json(path, ledger)
     return {

@@ -1,6 +1,6 @@
 # Reviewer demo + App Review notes
 
-**Status:** paste-ready for a future review of candidate **0.1.5 (12)**. These notes were not re-pasted into the **0.1.4 (9)** submission that is already on file. Do not treat them as proof that Apple has this build. Local **0.1.5 (11)** does not include the confirmation-claim or pipe-drain fixes.
+**Status:** paste-ready for a future review. These notes were not re-pasted into the **0.1.4 (9)** submission that is already on file. Do not treat them as proof that Apple has this build. Local **0.1.5 (11)** and **0.1.5 (12)** are earlier packages. This branch's label is **0.1.5 (13)** and is not uploaded.
 
 ## Review notes (paste)
 

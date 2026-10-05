@@ -347,6 +347,7 @@ def _evidence_panel(*, workspace: Path, contract: Contract) -> dict[str, Any]:
         "receipt_authenticity": "see trust ladder / verify in terminal",
         "check_outcome": "none",
         "applicability": "unknown",
+        "load_error": "",
         "note": (
             "Authentic history can contain a failed check or now-stale evidence. "
             "This panel is read-only and is not verify."
@@ -374,8 +375,8 @@ def _evidence_panel(*, workspace: Path, contract: Contract) -> dict[str, Any]:
         )
         panel["applicability"] = fresh.get("applicability")
         panel["freshness_changes"] = fresh.get("changes")
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — read-only panel; a load failure is data, not a crash
+        panel["load_error"] = f"evidence panel could not be read: {exc}"
     panel.update(_fastpath_dashboard_stats(workspace))
     return panel
 
@@ -549,6 +550,7 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
         <div class="fact"><dt>Fast-path executions</dt><dd id="ev-fastpath">{_escape((view.get('evidence') or {}).get('fastpath_executions'))}</dd></div>
         <div class="fact"><dt>Model calls avoided</dt><dd id="ev-avoided">{_escape((view.get('evidence') or {}).get('model_calls_avoided'))}</dd></div>
         <div class="fact wide"><dt>Note</dt><dd id="ev-note">{_escape((view.get('evidence') or {}).get('note'))}</dd></div>
+        <div class="fact wide"><dt>Evidence load</dt><dd id="ev-load-error">{_escape((view.get('evidence') or {}).get('load_error') or '')}</dd></div>
         <div class="fact wide"><dt>Fast path</dt><dd id="ev-fastpath-note">{_escape((view.get('evidence') or {}).get('fastpath_note'))}</dd></div>
       </dl>
     </div>
@@ -680,6 +682,7 @@ function renderStatus(doc){{
   text("ev-fastpath",evidenceView.fastpath_executions);
   text("ev-avoided",evidenceView.model_calls_avoided);
   text("ev-note",evidenceView.note);
+  text("ev-load-error",evidenceView.load_error||"");
   text("ev-fastpath-note",evidenceView.fastpath_note);
   renderTrust(view.trust_ladder);
   document.querySelectorAll(".step").forEach((step,index)=>{{step.className=`step ${{view.steps[index]}}`;step.querySelector(".step-state").textContent=view.steps[index];}});

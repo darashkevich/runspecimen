@@ -86,10 +86,29 @@ class PluginManifestTests(unittest.TestCase):
         self.assertTrue((PLUGIN / "antigravity" / "skills" / "runspecimen" / "SKILL.md").is_file())
         self.assertTrue((PLUGIN / "antigravity" / "rules" / "runspecimen.md").is_file())
         self.assertTrue((PLUGIN / "antigravity" / "README.md").is_file())
-        for name in ("block_approve_gate.py", "runspecimen_mcp.py"):
-            shared = (PLUGIN / "scripts" / name).read_bytes()
-            staged = (PLUGIN / "antigravity" / "scripts" / name).read_bytes()
-            self.assertEqual(shared, staged, name)
+        shared_gate = (PLUGIN / "scripts" / "block_approve_gate.py").read_bytes()
+        staged_gate = (PLUGIN / "antigravity" / "scripts" / "block_approve_gate.py").read_bytes()
+        self.assertEqual(shared_gate, staged_gate)
+        import importlib.util
+
+        def _load(path: Path, name: str):
+            spec = importlib.util.spec_from_file_location(name, path)
+            self.assertIsNotNone(spec and spec.loader)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+
+        canonical = _load(PLUGIN / "scripts" / "runspecimen_mcp.py", "rs_mcp_canonical_test")
+        antigravity_mcp = _load(
+            PLUGIN / "antigravity" / "scripts" / "runspecimen_mcp.py",
+            "rs_mcp_antigravity_test",
+        )
+        self.assertEqual(canonical.ALLOWED, antigravity_mcp.ALLOWED)
+        self.assertNotIn("approve", antigravity_mcp.ALLOWED)
+        self.assertEqual(
+            [tool["name"] for tool in canonical.TOOLS],
+            [tool["name"] for tool in antigravity_mcp.TOOLS],
+        )
         muse_mcp = json.loads(
             (PLUGIN / "muse" / "examples" / "mcp_settings.fragment.json").read_text(encoding="utf-8")
         )
@@ -444,10 +463,11 @@ class PluginApproveBoundaryExtras(unittest.TestCase):
         import tempfile
 
         antigravity = PLUGIN / "antigravity" / "scripts" / "runspecimen_mcp.py"
-        for source in (MCP, antigravity, ADAPTER):
+        for source in (MCP, ADAPTER):
             text = source.read_text(encoding="utf-8")
             self.assertIn('"evaluate"', text)
             self.assertNotIn('"freshness",\n                "check"', text)
+        self.assertIn("runspecimen_mcp.py", antigravity.read_text(encoding="utf-8"))
         with tempfile.TemporaryDirectory(prefix="rs-mcp-fresh-") as td:
             root = Path(td)
             bin_dir = root / "bin"
@@ -509,6 +529,31 @@ class PluginApproveBoundaryExtras(unittest.TestCase):
             self.assertEqual(mcp.returncode, 0, mcp.stderr)
             recorded = log.read_text(encoding="utf-8").splitlines()
             self.assertEqual(recorded[:2], ["freshness", "evaluate"])
+            self.assertFalse(list(ws.rglob("freshness_report.json")))
+            log.write_text("", encoding="utf-8")
+            staged = subprocess.run(
+                [sys.executable, str(antigravity)],
+                input=json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 10,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "freshness_check",
+                        "arguments": {
+                            "workspace": str(ws),
+                            "contract": str(contract),
+                        },
+                    },
+                }) + "\n",
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(staged.returncode, 0, staged.stderr)
+            recorded = log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(recorded[:2], ["freshness", "evaluate"])
+            self.assertNotIn("approve", recorded)
             self.assertFalse(list(ws.rglob("freshness_report.json")))
 
     def _gate(self, payload: dict, extra: list[str] | None = None) -> dict | None:

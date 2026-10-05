@@ -33,6 +33,13 @@ class HolderStageTests(unittest.TestCase):
                 "rsync is absent; holder stage was not copied and install assertions were not weakened"
             )
 
+    def _require_swiftc(self) -> None:
+        if shutil.which("swiftc") is None and not Path("/usr/bin/xcrun").is_file():
+            self.skipTest(
+                "swiftc is absent (no swiftc on PATH and no /usr/bin/xcrun); "
+                "compiled holder stage assertions were not run and were not weakened"
+            )
+
     def test_dangerous_build_directories_are_not_deleted(self) -> None:
         script = f"""
 set -euo pipefail
@@ -125,8 +132,7 @@ exit $fail
 
     def test_compiled_stage_is_adhoc_signed_and_not_installed(self) -> None:
         self._require_rsync()
-        if not Path("/usr/bin/xcrun").is_file():
-            self.skipTest("swiftc is not on this runner")
+        self._require_swiftc()
         with tempfile.TemporaryDirectory(prefix="rs-runtime-src-") as td:
             source = Path(td) / "python3"
             source.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")

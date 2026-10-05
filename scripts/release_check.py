@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import importlib.util
 import hashlib
 import io
 import json
@@ -45,7 +46,6 @@ PLUGIN_COMPONENTS = (
     ".claude-plugin/plugin.json", "gemini-extension.json", "extension.json",
     ".mcp.json", "mcp/.mcp.json", "GEMINI.md", "README.md",
     "assets/logo.png",
-    "assets/logo.png",
     "assets/composer-icon.png",
     "assets/logo.svg",
     "assets/composer-icon.svg",
@@ -79,6 +79,15 @@ def run(*args: str, cwd: Path = ROOT, env: dict[str, str] | None = None,
         args, cwd=cwd, env=env, check=True, text=True,
         stdin=subprocess.DEVNULL, capture_output=capture, timeout=300,
     )
+
+
+def _load_script_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def check_versions() -> None:
@@ -175,13 +184,26 @@ def check_versions() -> None:
     )
     if "runspecimen" not in (muse_mcp.get("mcp_servers") or {}):
         raise SystemExit("muse MCP fragment must declare runspecimen under mcp_servers")
-    for shared_name in ("block_approve_gate.py", "runspecimen_mcp.py"):
-        shared = (plugin_root / "scripts" / shared_name).read_bytes()
-        staged = (plugin_root / "antigravity" / "scripts" / shared_name).read_bytes()
-        if shared != staged:
-            raise SystemExit(
-                f"antigravity/scripts/{shared_name} must match plugins/runspecimen/scripts/{shared_name}"
-            )
+    gate_name = "block_approve_gate.py"
+    shared_gate = (plugin_root / "scripts" / gate_name).read_bytes()
+    staged_gate = (plugin_root / "antigravity" / "scripts" / gate_name).read_bytes()
+    if shared_gate != staged_gate:
+        raise SystemExit(
+            f"antigravity/scripts/{gate_name} must match plugins/runspecimen/scripts/{gate_name}"
+        )
+    canonical_mcp = _load_script_module(
+        plugin_root / "scripts" / "runspecimen_mcp.py", "rs_mcp_canonical_check"
+    )
+    staged_mcp = _load_script_module(
+        plugin_root / "antigravity" / "scripts" / "runspecimen_mcp.py",
+        "rs_mcp_antigravity_check",
+    )
+    if "approve" in canonical_mcp.ALLOWED or canonical_mcp.ALLOWED != staged_mcp.ALLOWED:
+        raise SystemExit("antigravity MCP must re-export the canonical allow-list and omit approve")
+    canonical_tools = [tool["name"] for tool in canonical_mcp.TOOLS]
+    staged_tools = [tool["name"] for tool in staged_mcp.TOOLS]
+    if canonical_tools != staged_tools or "approve" in canonical_tools:
+        raise SystemExit("antigravity MCP tools diverged from the canonical server")
     plugin_xml = (
         plugin_root / "jetbrains/intellij-plugin/src/main/resources/META-INF/plugin.xml"
     ).read_text(encoding="utf-8")

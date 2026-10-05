@@ -2,9 +2,14 @@
 
 Practical how-to for the local CLI. The published install is
 `0.2.0rc14` (GitHub and PyPI). This branch's engine is unpublished
-`0.2.0rc15`. Commands under "Requirements, evidence, and freshness" exist
+`0.2.0rc15`. Approved Mac App Store **0.1.4 (9)** freezes that published
+engine. The local successor label on this branch is **0.1.5 (13)** and is
+not uploaded; **0.1.5 (10)**, **(11)**, and **(12)** are earlier packages.
+Commands under "Requirements, evidence, and freshness" exist
 on this branch and are absent from published rc14. Isolation, `retain`,
-`digest`, and `diff` do ship in published rc14. For a short product overview see
+`digest`, and `diff` do ship in published rc14. The Mac app sandbox versus
+the payload is [apps/macos/docs/SECURITY_BOUNDARY.md](../apps/macos/docs/SECURITY_BOUNDARY.md).
+For a short product overview see
 [ABOUT.md](ABOUT.md); for product intent see
 [PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
 

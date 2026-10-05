@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.helpers import PYTHON, RunSpecimenTestCase, approve, base_contract, write_contract
+from tests.helpers import PYTHON, SRC, RunSpecimenTestCase, approve, base_contract, write_contract
 
 from runspecimen.artifact import bind_artifact_digest, verify_artifact_digest
 from runspecimen.atomic import atomic_write_json
@@ -28,7 +28,7 @@ from runspecimen.requirements import (
     write_evidence_report,
 )
 from runspecimen.snapshot import get_snapshot_provider
-from runspecimen.usage import import_usage, summarize_usage
+from runspecimen.usage import UsageError, import_usage, summarize_usage
 from runspecimen.errors import PreflightError
 from runspecimen.certificate import verify_run_receipt
 from runspecimen.scenes import run_scenes
@@ -369,6 +369,59 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
         self.assertGreaterEqual(summary["unknown_amount_events"], 1)
         self.assertGreaterEqual(summary["unallocated_events"], 1)
 
+    def test_usage_import_refuses_a_held_lease(self) -> None:
+        import subprocess
+        import sys
+        import textwrap
+        import time
+
+        export = self.ws / "usage-lease.json"
+        atomic_write_json(
+            export,
+            {
+                "events": [
+                    {
+                        "import_key": "k-lease",
+                        "provider": "p",
+                        "amount_kind": "unknown",
+                        "confidence": "unknown",
+                    }
+                ]
+            },
+        )
+        script = textwrap.dedent(
+            """\
+            import sys, time
+            from pathlib import Path
+            sys.path.insert(0, sys.argv[1])
+            from runspecimen.lease import hold_workspace_lease
+            marker = Path(sys.argv[3])
+            with hold_workspace_lease(Path(sys.argv[2]), holder="other-writer"):
+                marker.write_text("held", encoding="utf-8")
+                time.sleep(30)
+            """
+        )
+        marker = self.ws / "lease-held"
+        proc = subprocess.Popen(
+            [sys.executable, "-c", script, str(SRC), str(self.ws), str(marker)],
+        )
+        try:
+            deadline = time.time() + 10
+            while time.time() < deadline and not marker.exists():
+                if proc.poll() is not None:
+                    self.fail(f"lease holder exited early: {proc.returncode}")
+                time.sleep(0.05)
+            self.assertTrue(marker.exists())
+            with self.assertRaises(UsageError) as caught:
+                import_usage(
+                    workspace=self.ws, provider_name="local_json", export_path=export
+                )
+            self.assertIn("lease", str(caught.exception).lower())
+            self.assertFalse((self.ws / ".runspecimen" / "usage" / "ledger.json").exists())
+        finally:
+            proc.kill()
+            proc.wait(timeout=5)
+
     def test_decision_search_and_stale_flag(self) -> None:
         target = self.ws / "work" / "job.py"
         digest = sha256_file(target)
@@ -422,8 +475,11 @@ class EvidenceExpansionTests(RunSpecimenTestCase):
         self.assertEqual(requirement.required_evidence, ("unittest_stream_sha256",))
         text = paths["manifest_pass"].read_text(encoding="utf-8").lower()
         self.assertNotIn("pytest", text)
+        self.assertNotIn("junit", text)
+        self.assertIn("unittest", text)
         fail_text = paths["manifest_fail"].read_text(encoding="utf-8").lower()
         self.assertNotIn("pytest", fail_text)
+        self.assertNotIn("junit", fail_text)
 
     def test_requirements_check_splits_receipt_binding_from_checks(self) -> None:
         import contextlib

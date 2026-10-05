@@ -5,6 +5,7 @@ research and engineering commands.
 
 **Current package version (this branch):** `0.2.0rc15` (not published)  
 **Published release, unchanged:** [v0.2.0-rc.14](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.14) / PyPI `runspecimen==0.2.0rc14` (identical bytes; checksum-only, not SLSA-attested). Do not replace those artifacts.  
+**Mac App Store:** approved **0.1.4 (9)** freezes published engine `0.2.0rc14` and stays guarantee (1). The local label on this branch is **0.1.5 (13)** and is not an upload. Earlier **0.1.5 (10)**, **(11)**, and **(12)** are not this candidate.  
 Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `v0.2.0-rc.12`. See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
 
 ## Core promise

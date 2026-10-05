@@ -18,6 +18,8 @@ include docs/SCHEMA_COMPATIBILITY.md
 include docs/SUBMISSION.md
 include docs/THREAT_MODEL.md
 include docs/USER_GUIDE.md
+include docs/ADR-005-evidence-expansion.md
+include docs/FASTPATH.md
 include examples/demo_contract.json
 include examples/showcase/README.md
 include examples/showcase/contract.json
@@ -25,7 +27,6 @@ include examples/showcase/work/compute.py
 include packaging/homebrew/runspecimen.rb
 include packaging/homebrew/README.md
 include work/compute.py
-include plugins/runspecimen/assets/logo.png
 include plugins/runspecimen/assets/logo.png
 include plugins/runspecimen/assets/logo.svg
 include plugins/runspecimen/assets/composer-icon.png
