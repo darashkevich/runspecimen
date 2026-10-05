@@ -10,7 +10,7 @@ Tip: checkout `origin/cursor/integrated-release-candidate` (`git rev-parse HEAD`
 
 ```
 git fetch origin && git checkout cursor/integrated-release-candidate
-git rev-parse HEAD   # must equal tip above
+git rev-parse HEAD   # descendant of 5f35cfc (package tree) and 0fcfc8f (pack recording)
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 PYTHONPATH=src python3 -m unittest tests.test_new01_unittest_packaged_suite -v
 # honesty greps
