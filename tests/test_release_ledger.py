@@ -150,6 +150,21 @@ exit $fail
                 timeout=10,
             )
             self.assertIn("Signature=adhoc", signed.stderr)
+            sealed = subprocess.run(
+                ["/usr/bin/codesign", "--verify", "--strict", app],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(sealed.returncode, 0, sealed.stderr)
+            daemon = Path(app) / "Contents/MacOS/RunSpecimenHolderDaemon"
+            daemon_sealed = subprocess.run(
+                ["/usr/bin/codesign", "--verify", "--strict", str(daemon)],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(daemon_sealed.returncode, 0, daemon_sealed.stderr)
             live = Path("/Applications/RunSpecimen Holder.app/Contents/MacOS/RunSpecimenHolder")
             if live.exists():
                 self.assertFalse(live.samefile(binary))

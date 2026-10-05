@@ -189,8 +189,6 @@ elif [[ "${RS_HOLDER_STAGE_COMPILE:-}" == "1" ]]; then
   /usr/bin/xcrun swiftc -O \
     -o "$APP/Contents/MacOS/RunSpecimenHolderDaemon" \
     "$ROOT/apps/holder/Sources/RunSpecimenHolderDaemon/main.swift"
-  /usr/bin/codesign --force --sign - "$APP/Contents/MacOS/RunSpecimenHolder"
-  /usr/bin/codesign --force --sign - "$APP/Contents/MacOS/RunSpecimenHolderDaemon"
 else
   echo "REFUSING: set RS_HOLDER_STAGE_FIXTURES=1 or RS_HOLDER_STAGE_COMPILE=1. Neither installs." >&2
   exit 2
@@ -202,6 +200,13 @@ rsync -a \
 cp "$ROOT/apps/holder/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/apps/holder/Resources/LaunchDaemons/com.darashkevich.runspecimen.holder.daemon.plist" \
   "$APP/Contents/Library/LaunchDaemons/com.darashkevich.runspecimen.holder.daemon.plist"
+
+if [[ "${RS_HOLDER_STAGE_COMPILE:-}" == "1" ]]; then
+  # Sign the nested daemon, then the bundle, after Info.plist is present.
+  # Signing the main executable before that seals an empty bundle.
+  /usr/bin/codesign --force --sign - "$APP/Contents/MacOS/RunSpecimenHolderDaemon"
+  /usr/bin/codesign --force --sign - "$APP"
+fi
 
 cat > "$BUILD/ownership-plan.txt" <<'EOF'
 This stage is not installed. A later consented install would require a
