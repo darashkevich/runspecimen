@@ -1,18 +1,19 @@
 # Branch hygiene
 
-Pull-request actions below were recorded against `5f35cfcf401107648d61b84e29da5a2e8b45f708` (NEW-01 packaged-suite discovery). The golden-master pack and this hygiene note land afterward and do not change those actions. This is not a merge plan and not a production sign-off. PR #39 merged into `cursor/evidence-expansion-coherence` as `e2a32166662ec06a7b47a89df6ccabb3058263a8`. That evidence branch is the working tip. Leave `cursor/integrated-release-candidate` at historical pre-merge `a0dc23361856db8a68075471860bd4ab25af838c` (same tree as the merge).
+The working tip is `cursor/evidence-expansion-coherence` after the evidence-branch lineage: PR #39 merge `e2a32166662ec06a7b47a89df6ccabb3058263a8`, PR #47 merge `329e08bf83ecb3a512f880b5833cd90df46af23e`, PR #49 merge `18ef46180141bdd6ac02a0aa31299e5b52d85433`. `cursor/integrated-release-candidate` is historical at pre-merge `a0dc23361856db8a68075471860bd4ab25af838c` (same tree as the #39 merge). Do not retarget work there. This is not a merge plan and not a production sign-off. NEW-01 packaged-suite discovery remains `5f35cfcf401107648d61b84e29da5a2e8b45f708`.
 
-## Open pull requests
+## Pull requests
 
 | PR | Purpose | Commits in the integrated tip? | Action |
 | --- | --- | --- | --- |
-| #39 | Integrated candidate (capture, receipts, holder packaging) | Merge commit is the working tip | Merged into `cursor/evidence-expansion-coherence` |
+| #39 | Integrated candidate (capture, receipts, holder packaging) | Merge `e2a3216` is the first evidence-branch parent | Merged into `cursor/evidence-expansion-coherence` |
+| #47 | `.cursor/environment.json` from #35 | Merge `329e08b` is on the evidence tip | Merged. Env-file only |
+| #49 | Diagnostic-root Swift fixture and CHANNEL_MATRIX hashes | Merge `18ef461` is the evidence tip before OPEN-SDIST | Merged |
 | #34 | Evidence expansion onto `main` | Yes. `cursor/evidence-expansion-coherence` is contained | Closed as superseded |
 | #38 | Eval fast path must not forge requirement results | Yes. `cursor/deterministic-fastpath` is contained | Closed as superseded |
 | #35 | Cloud Agent `environment.json` | No, until restacked | Closed. Restacked as #47 |
 | #46 | Independent QA report of an older head (draft) | No. Point-in-time report | Left open as a draft. Do not merge |
-| #47 | `.cursor/environment.json` from #35 | Restacked onto the evidence tip | Leave open until CI is green. Env-file only |
-| #48 | Draft GM notes plus Swift diagnostic-root fixture | Dirty against IRC; GM notes already on the tip | Close. Fixture restacked in a clean follow-up |
+| #48 | Draft GM notes plus Swift diagnostic-root fixture | Dirty against IRC; GM notes already on the tip | Close. Fixture restacked in #49 |
 
 ## Other remote branches
 
@@ -29,8 +30,8 @@ Leave, do not restack onto this tip: `cursor/add-release-docs-43d7`, `cursor/ed2
 | Branch | What it is for |
 | --- | --- |
 | `main` | Published history through the Mac freeze fix. Not the unpublished candidate |
-| `cursor/evidence-expansion-coherence` | Working tip after PR #39. Unpublished `0.2.0rc15` engineering integration |
-| `cursor/integrated-release-candidate` | Historical pre-merge tip `a0dc233`. Same tree as the merge. Do not retarget work here |
-| `cursor/cloud-agent-environment` | Follow-up #47. Cloud Agent install snippet only |
+| `cursor/evidence-expansion-coherence` | Working tip after #39/`e2a3216`, #47/`329e08b`, #49/`18ef461`. Unpublished `0.2.0rc15` engineering integration |
+| `cursor/integrated-release-candidate` | Historical pre-merge tip `a0dc233`. Same tree as the #39 merge. Do not retarget work here |
+| `cursor/cloud-agent-environment` | Merged as #47. Cloud Agent install snippet only |
 | `cursor/ios-companion-observe` | Older iOS companion line. ADR-003/004 already exist on the tip; do not merge this ref as a second implementation |
 | `cursor/native-receipt-parity` | Follow-up native receipt work that is not this candidate's Store path |

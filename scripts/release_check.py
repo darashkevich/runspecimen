@@ -35,6 +35,8 @@ EXPECTED_PLUGIN_VERSION = "0.2.0-rc.15"
 # matches the plugin zip and is representable in zip (dates before 1980 are not).
 ARCHIVE_MTIME = 1577836800
 ARCHIVE_ZIP_DATE = (2020, 1, 1, 0, 0, 0)
+# Reproducible-builds gzip convention: header mtime 0, no original filename.
+GZIP_MTIME = 0
 SOURCE_COMPONENTS = (
     "pyproject.toml", "MANIFEST.in", "README.md", "LICENSE", "CHANGELOG.md",
     "SECURITY.md", "src", "scripts", "tests", "docs", "examples", "work",
@@ -265,10 +267,17 @@ def offline_env() -> dict[str, str]:
 
 
 def release_build_env(env: dict[str, str]) -> dict[str, str]:
-    """Pin ``SOURCE_DATE_EPOCH`` so wheel zip timestamps ignore the clock."""
+    """Pin ``SOURCE_DATE_EPOCH`` so setuptools archive timestamps ignore the clock."""
     build_env = dict(env)
     build_env["SOURCE_DATE_EPOCH"] = str(ARCHIVE_MTIME)
     return build_env
+
+
+def normalized_sdist_mode(member: tarfile.TarInfo) -> int:
+    """Map builder umask bits onto a two-mode reproducible set."""
+    if member.isdir() or member.mode & 0o111:
+        return 0o755
+    return 0o644
 
 
 def stage_source(destination: Path) -> None:
@@ -637,40 +646,50 @@ def smoke_install(wheel: Path, source: Path, temp: Path, env: dict[str, str]) ->
 
 
 def normalize_sdist_timestamps(path: Path, mtime: int = ARCHIVE_MTIME) -> None:
-    """Rewrite gzip and tar timestamps without changing archived file bytes.
+    """Rewrite the sdist so archive metadata does not depend on the builder.
 
-    setuptools stores the current time in the gzip header and in tar member
-    mtimes (including pax extended headers for fractional seconds). Those
-    fields are archive metadata: names, modes, owners, and file contents stay
-    as the builder wrote them.
+    setuptools honors ``SOURCE_DATE_EPOCH`` for some timestamps but still
+    records the builder uid/gid/uname and the local walk order. Those fields
+    change the archive bytes across hosts even when file contents match
+    (OPEN-SDIST: committed ``b2db7b78…`` vs a non-ubuntu rebuild ``6979460d…``).
+    This rewrite keeps names and file bytes, then pins:
+
+    * tar member mtime to ``SOURCE_DATE_EPOCH`` / ``ARCHIVE_MTIME``
+    * uid/gid 0 and empty uname/gname (numeric-owner zero record)
+    * modes 0755 for directories and executables, 0644 otherwise
+    * members sorted by name
+    * gzip header mtime 0 and no original filename
+    * USTAR (not PAX) so Python versions do not emit extra pax headers
     """
     with tarfile.open(path, "r:gz") as inbound:
-        members = inbound.getmembers()
-        payloads: list[bytes | None] = []
-        for member in members:
+        records: list[tuple[tarfile.TarInfo, bytes | None]] = []
+        for member in inbound.getmembers():
             if member.isdir():
-                payloads.append(None)
+                records.append((member, None))
             elif member.isfile():
                 extracted = inbound.extractfile(member)
                 if extracted is None:
                     raise SystemExit(f"unreadable source archive member: {member.name}")
-                payloads.append(extracted.read())
+                records.append((member, extracted.read()))
             else:
                 raise SystemExit(f"unsupported source archive member: {member.name}")
 
+    records.sort(key=lambda item: item[0].name)
+    expected_names = [member.name for member, _payload in records]
+
     buffer = io.BytesIO()
     with gzip.GzipFile(
-        filename=path.name, mode="wb", fileobj=buffer, mtime=mtime, compresslevel=9,
+        filename="", mode="wb", fileobj=buffer, mtime=GZIP_MTIME, compresslevel=9,
     ) as compressed:
-        with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as outbound:
-            for member, payload in zip(members, payloads):
+        with tarfile.open(fileobj=compressed, mode="w", format=tarfile.USTAR_FORMAT) as outbound:
+            for member, payload in records:
                 info = tarfile.TarInfo(member.name)
                 info.mtime = mtime
-                info.mode = member.mode
-                info.uid = member.uid
-                info.gid = member.gid
-                info.uname = member.uname or ""
-                info.gname = member.gname or ""
+                info.mode = normalized_sdist_mode(member)
+                info.uid = 0
+                info.gid = 0
+                info.uname = ""
+                info.gname = ""
                 if payload is None:
                     info.type = tarfile.DIRTYPE
                     outbound.addfile(info)
@@ -681,11 +700,13 @@ def normalize_sdist_timestamps(path: Path, mtime: int = ARCHIVE_MTIME) -> None:
     rewritten = buffer.getvalue()
     with tarfile.open(fileobj=io.BytesIO(rewritten), mode="r:gz") as check:
         checked = check.getmembers()
-        if [member.name for member in checked] != [member.name for member in members]:
+        if [member.name for member in checked] != expected_names:
             raise SystemExit("rewritten source archive changed member names")
-        for current, payload in zip(checked, payloads):
+        for current, (_member, payload) in zip(checked, records):
             if current.mtime != mtime:
                 raise SystemExit(f"source archive member kept a moving timestamp: {current.name}")
+            if current.uid != 0 or current.gid != 0 or current.uname or current.gname:
+                raise SystemExit(f"source archive member kept builder identity: {current.name}")
             if payload is None:
                 if not current.isdir():
                     raise SystemExit(f"rewritten source archive changed a directory: {current.name}")

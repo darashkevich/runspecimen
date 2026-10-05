@@ -4,8 +4,10 @@ This file is not a Store submission plan and it is not packed into the sdist. A 
 
 | Item | Identity |
 | --- | --- |
-| Branch | `cursor/integrated-release-candidate` |
-| Package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` |
+| Branch | `cursor/evidence-expansion-coherence` |
+| Evidence-branch lineage | PR #39 merge `e2a32166662ec06a7b47a89df6ccabb3058263a8`, PR #47 merge `329e08bf83ecb3a512f880b5833cd90df46af23e`, PR #49 merge `18ef46180141bdd6ac02a0aa31299e5b52d85433` |
+| Historical IRC tip | `cursor/integrated-release-candidate` remains `a0dc23361856db8a68075471860bd4ab25af838c`. Do not retarget work there |
+| NEW-01 package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` (packaged-suite discovery). Still the last change to engine/plugin payload bytes |
 | Engine / package | unpublished `0.2.0rc15` |
 | Plugin | unpublished `0.2.0-rc.15` |
 | App marketing version in the project | **0.1.5 (13)**. That label also appears on a different tree: source `ea21a7fa17140dc15dab74493d384b2a8b7a150c`, engine rc14, package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa`, report `runspecimen-candidates/0.1.5-13/QA-2026-09-29.md`. That report is not this candidate |
@@ -15,15 +17,17 @@ This file is not a Store submission plan and it is not packed into the sdist. A 
 | Published wheel / sdist / plugin zip | `d720bf5163a2b250699c30e804f89708e71c1c0d22682fbb43a4644b59c45948` / `6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3` / `0073e04e21bd225da328de06ef840ead6956a8cced4510a0025fb1e2ddc7fc16` |
 | Homebrew | still pinned to published rc14 |
 
-Canonical unpublished rc15 archives for this pass, built by `release_check.py` on CPython 3.12.3 at `/tmp/rs-gm-gate` (650 tests, 0 failures, 78 skipped on this Linux host). Copies are in `artifacts/rc15-2026-10-05-golden-master/`. The sdist does not contain this manifest or its own hash. These are not the published rc14 bytes. There is one hash table.
+Canonical unpublished rc15 archives for this pass are in `artifacts/rc15-2026-10-05-golden-master/`. The sdist does not contain this manifest or its own hash. These are not the published rc14 bytes. There is one hash table.
+
+OPEN-SDIST: the committed sdist `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` recorded builder uid/gid/uname (`ubuntu`/`1000`) and setuptools walk order, so a rebuild on another host produced `6979460d…`. `release_check.py` now rewrites the sdist with `SOURCE_DATE_EPOCH`, gzip mtime 0, numeric owner 0/0, empty uname/gname, sorted members, and 0644/0755 modes. The pack sdist was regenerated to `ddd6f667a09e5e18a71171329df62965bc8849c6d0efa144fa7f535493f828f6`. The wheel and plugin zip bytes were not rebuilt.
 
 | File | SHA-256 |
 | --- | --- |
 | `runspecimen-0.2.0rc15-py3-none-any.whl` | `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` |
-| `runspecimen-0.2.0rc15.tar.gz` | `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` |
+| `runspecimen-0.2.0rc15.tar.gz` | `ddd6f667a09e5e18a71171329df62965bc8849c6d0efa144fa7f535493f828f6` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` |
 
-The plugin zip matches the previous canonical table (`d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6`). The wheel and sdist changed because packaged `UnittestProvider` discovery, `tests/test_new01_unittest_packaged_suite.py`, `CHANGELOG.md`, and `docs/FAQ.md` shipped in the sdist. Prior `artifacts/rc15-*` directories were not overwritten, including `artifacts/rc15-2026-10-05-qa-py312-tree/` wheel/sdist `7b0883b7c7cb31cf512ff4763d28c40dac4867bc506e2a9c00eb59e955276d81` / `c84e0deaa471b4fc8040ae8c13b184223264db79c344e13b4982709c1f77344c`. There is no new holder stage tar. The prior sealed stage `5200682fec6d5cdeee72c81ea8a419b0b2d80022f648f77a75a783b4eee9cdc9` in `artifacts/rc15-2026-10-05-qa-py312-seal/` was not overwritten. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist.
+The wheel matches the previous canonical table (`809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae`). The plugin zip matches the previous canonical table (`d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6`). The sdist hash changed because archive metadata is now host-independent and because `scripts/release_check.py`, `tests/test_release_archive_reproducibility.py`, and `CHANGELOG.md` shipped in the sdist. Prior `artifacts/rc15-*` directories were not overwritten, including `artifacts/rc15-2026-10-05-qa-py312-tree/` wheel/sdist `7b0883b7c7cb31cf512ff4763d28c40dac4867bc506e2a9c00eb59e955276d81` / `c84e0deaa471b4fc8040ae8c13b184223264db79c344e13b4982709c1f77344c`. There is no new holder stage tar. The prior sealed stage `5200682fec6d5cdeee72c81ea8a419b0b2d80022f648f77a75a783b4eee9cdc9` in `artifacts/rc15-2026-10-05-qa-py312-seal/` was not overwritten. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist.
 
 ## Status
 

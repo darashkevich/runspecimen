@@ -1,6 +1,6 @@
 # Scope matrix
 
-Unpublished candidate on `cursor/integrated-release-candidate`. Approved macOS **0.1.4 (9)** stays as it is. This is not a Store submission.
+Unpublished candidate on `cursor/evidence-expansion-coherence` after #39/`e2a3216`, #47/`329e08b`, #49/`18ef461`. `cursor/integrated-release-candidate` is historical at `a0dc233`. Approved macOS **0.1.4 (9)** stays as it is. This is not a Store submission.
 
 Completion gates for the current tip. "Implemented" means the code exists. "Integrated" means a real run or the Store archive uses it. "Auto" means a unit or GUI automation test. "Human" means a person completed the hardware or approval step. "Release" means the exact Store package for this commit passed the qualification checks.
 

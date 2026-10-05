@@ -4,22 +4,23 @@ Not a production biometric sign-off. Not a Store, PyPI, or notarized publish.
 
 ## SHAs
 
-Packed identity is the package-tree SHA and the pack-recording SHA. Reviewed/merge HEAD on `cursor/integrated-release-candidate` may be a later SHA-label commit and is not a new package identity. Do not treat a peeled parent as the merge tip.
+Packed identity is the package-tree SHA and the current pack sdist hash. The working tip is `cursor/evidence-expansion-coherence` after #39/`e2a32166662ec06a7b47a89df6ccabb3058263a8`, #47/`329e08bf83ecb3a512f880b5833cd90df46af23e`, #49/`18ef46180141bdd6ac02a0aa31299e5b52d85433`. `cursor/integrated-release-candidate` is historical at `a0dc23361856db8a68075471860bd4ab25af838c`. Do not treat a peeled parent as the merge tip.
 
 | Field | Value |
 | --- | --- |
 | START_SHA | `6bb64d1c6ee6798b102023652255d15830e51178` |
-| Package-tree SHA | `5f35cfcf401107648d61b84e29da5a2e8b45f708` (NEW-01 + `test_new01_*` + CHANGELOG Unreleased + FAQ identity sentence) |
-| Pack-recording SHA | `0fcfc8f6c39c359a153a81d08cd048280ece5e08` |
-| Reviewed/merge HEAD | `git rev-parse HEAD` after `git fetch` and checkout of `cursor/integrated-release-candidate`. As of this GM-01 correction the merge candidate was `9fde02ad530a792fc180d963012e6a3010b3375d`; this notes commit is a later SHA-label successor. `5b47e5f5bcb5fdaf64f88075d42f35271de149a8` is not the merge tip |
-| PR base | `cursor/evidence-expansion-coherence` @ `d54c803c9b6dfe82cb91f55c5a21923c822041d9` |
+| NEW-01 package-tree SHA | `5f35cfcf401107648d61b84e29da5a2e8b45f708` (NEW-01 + `test_new01_*` + CHANGELOG Unreleased + FAQ identity sentence). Wheel and plugin payload still match that tree |
+| Prior pack-recording SHA | `0fcfc8f6c39c359a153a81d08cd048280ece5e08` |
+| Evidence tip before OPEN-SDIST | `18ef46180141bdd6ac02a0aa31299e5b52d85433` |
+| Working tip | `cursor/evidence-expansion-coherence` after #39/`e2a3216`, #47/`329e08b`, #49/`18ef461` plus this OPEN-SDIST rewrite |
+| Historical IRC tip | `cursor/integrated-release-candidate` @ `a0dc23361856db8a68075471860bd4ab25af838c` |
 | Pack | `artifacts/rc15-2026-10-05-golden-master/` |
 
 Canonical hashes: `docs/CANDIDATE_MANIFEST.md` (one table). Do not treat this file as a second source of truth.
 
-ChatGPT’s local sdist rebuild mismatch is **unresolved reproducibility evidence**, not a closed claim: local rebuild `6979460d…` ≠ committed sdist `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9`. Packed archives were not rebuilt for this notes correction. Do not claim byte-identical sdist rebuilds.
+OPEN-SDIST is **closed as byte-reproducible**. The old committed sdist `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname (`ubuntu`/`1000`) and setuptools walk order, so ChatGPT’s rebuild `6979460d…` differed. `release_check.py` now rewrites the sdist with `SOURCE_DATE_EPOCH`, gzip mtime 0, numeric owner 0/0, empty uname/gname, sorted members, and 0644/0755 modes. Regenerated sdist `ddd6f667a09e5e18a71171329df62965bc8849c6d0efa144fa7f535493f828f6`. Wheel `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` and plugin `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` were not rebuilt. `tests/test_release_archive_reproducibility.py` rebuilds and compares against the committed SHA256SUMS hash.
 
-`git diff --stat 5f35cfcf401107648d61b84e29da5a2e8b45f708..HEAD` after the pack-recording commit touches only non-sdist paths (`docs/CANDIDATE_MANIFEST.md`, `docs/BRANCH_HYGIENE.md`, this pack). `tar tzf` of the sdist has CHANGELOG, FAQ, `tests/test_new01_unittest_packaged_suite.py`, and does not contain `CANDIDATE_MANIFEST.md`, `BRANCH_HYGIENE.md`, or `SECURE_ENCLAVE_ADMISSION.md`.
+`tar tzf` of the sdist has CHANGELOG, FAQ, `tests/test_new01_unittest_packaged_suite.py`, and does not contain `CANDIDATE_MANIFEST.md`, `BRANCH_HYGIENE.md`, or `SECURE_ENCLAVE_ADMISSION.md`.
 
 ## Honesty / identity
 
@@ -31,7 +32,7 @@ ChatGPT’s local sdist rebuild mismatch is **unresolved reproducibility evidenc
 | `e2_closed` false | Pass | same rows; D1 locked |
 | Installed admission fail-closed | Pass | `docs/SECURE_ENCLAVE_ADMISSION.md:3,69`; `docs/HOLDER_NATIVE_BRIDGE.md:28` |
 | Holder id accepted, Developer ID DR pinned | Pass | D2 2026-10-05. `docs/SECURE_ENCLAVE_ADMISSION.md:42`; `apps/holder/Resources/Info.plist:11-12` `com.darashkevich.runspecimen.holder`; `apps/holder/Scripts/build_install_holder.sh:206-223` |
-| Manifest hashes match the package tree | Pass | table in `docs/CANDIDATE_MANIFEST.md`; wheel `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae`, sdist `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9`, plugin `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` (plugin unchanged from prior canonical table) |
+| Manifest hashes match the package tree | Pass | table in `docs/CANDIDATE_MANIFEST.md`; wheel `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` (unchanged), sdist `ddd6f667a09e5e18a71171329df62965bc8849c6d0efa144fa7f535493f828f6` (OPEN-SDIST rewrite; old `b2db7b78…`), plugin `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` (unchanged) |
 
 ## Disposition (ChatGPT re-QA at `6bb64d1`)
 
@@ -104,7 +105,7 @@ Skip reasons on this Linux host (78): PyNaCl (29), CryptoKit signer compiler abs
 
 ## CI
 
-Pushed to `cursor/integrated-release-candidate`. Expect 9 check names × push+PR. Status recorded on the PR after this tip is green. CI green is not biometric or holder threat-model proof.
+Pushed to `cursor/evidence-expansion-coherence`. Expect 9 check names × push+PR. Status recorded on the PR after this tip is green. CI green is not biometric or holder threat-model proof.
 
 ## Human / authority residuals (unchecked)
 
