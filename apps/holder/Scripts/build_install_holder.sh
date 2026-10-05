@@ -183,6 +183,7 @@ if [[ "${RS_HOLDER_STAGE_FIXTURES:-}" == "1" ]]; then
 elif [[ "${RS_HOLDER_STAGE_COMPILE:-}" == "1" ]]; then
   /usr/bin/xcrun swiftc -parse-as-library -O \
     -o "$APP/Contents/MacOS/RunSpecimenHolder" \
+    "$ROOT/apps/holder/Sources/HolderSocket/ExactRunCoordinator.swift" \
     "$ROOT/apps/holder/Sources/HolderSocket/HolderSocketClient.swift" \
     "$ROOT/apps/holder/Sources/RunSpecimenHolderApp/main.swift"
   /usr/bin/xcrun swiftc -O \
