@@ -60,6 +60,21 @@ struct PairingView: View {
                         .font(.caption2)
                         .foregroundStyle(RSTheme.muted)
 
+                    fieldLabel("Pinned holder id")
+                    TextField("From the Mac holder, not from the request", text: $session.pinnedHolderId)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .padding(12)
+                        .background(RSTheme.elevated)
+                        .foregroundStyle(RSTheme.ink)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .onChange(of: session.pinnedHolderId) { _, _ in
+                            session.rememberPinnedHolderId()
+                        }
+                    Text("An exact-run holder id is signed only when it matches this pin. The mailbox value alone is not trusted.")
+                        .font(.caption2)
+                        .foregroundStyle(RSTheme.muted)
+
                     fieldLabel("TLS fingerprint (HTTPS / LAN)")
                     TextField("tls_fingerprint_sha256 from Mac", text: $session.tlsFingerprint)
                         .textInputAutocapitalization(.never)

@@ -22,6 +22,8 @@ final class CompanionSession: ObservableObject {
     @Published var exactRunNote: String = "No exact run is waiting for review. Phone approval is not physical presence at the Mac."
     @Published var reviewedExactRunLines: [String] = []
     @Published var macSessionPublicKey: String = ""
+    /// Entered by the person from the Mac. A holder id inside a mailbox request is not this pin.
+    @Published var pinnedHolderId: String = ""
     var phoneChallenge: PhonePeerChallengeMessage?
     var signedPhonePublicKey: String?
     private var phoneSignGeneration = 0
@@ -30,9 +32,15 @@ final class CompanionSession: ObservableObject {
     private var acceptedReceiptSignatures: Set<String> = []
 
     private let defaultsKey = "rs.observe.pairing"
+    private let holderPinKey = "rs.observe.pinnedHolderId"
 
     init() {
         load()
+        pinnedHolderId = UserDefaults.standard.string(forKey: holderPinKey) ?? ""
+    }
+
+    func rememberPinnedHolderId() {
+        UserDefaults.standard.set(pinnedHolderId, forKey: holderPinKey)
     }
 
     var boundaryCopy: String {
@@ -264,7 +272,12 @@ final class CompanionSession: ObservableObject {
                 exactRunNote = "Exact run review was cancelled before a signature was returned."
                 return
             }
-            let parsed = try parseExactRun(fetched: fetched, now: now)
+            let pin = pinnedHolderId.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !pin.isEmpty else {
+                exactRunNote = "Holder identity is not pinned. The mailbox holder id was not trusted."
+                return
+            }
+            let parsed = try parseExactRun(fetched: fetched, now: now, pinnedHolderId: pin)
             guard generation == exactRunGeneration else {
                 exactRunNote = "Exact run review was replaced before it could be shown."
                 return
@@ -285,7 +298,9 @@ final class CompanionSession: ObservableObject {
     /// Sign the reviewed bytes with the committed phone key and return that signature for the same nonce.
     func approveReviewedExactRun(
         signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
-        peer: (any ExactRunPhoneSigningTransport)? = nil
+        peer: (any ExactRunPhoneSigningTransport)? = nil,
+        now: @MainActor () -> Int = { Int(Date().timeIntervalSince1970) },
+        beforeSign: (@MainActor () async -> Void)? = nil
     ) async {
         lastError = nil
         guard let reviewed = reviewedExactRun else {
@@ -303,12 +318,33 @@ final class CompanionSession: ObservableObject {
             return
         }
         do {
-            let signed = try signer.signCommitted(message: reviewed.bound)
+            if let beforeSign {
+                await beforeSign()
+            }
+            try Task.checkCancellation()
+            let pin = pinnedHolderId.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !pin.isEmpty, reviewed.holderId == pin else {
+                exactRunNote = "Holder identity is not the pinned holder. The signature was not returned."
+                return
+            }
+            guard now() < reviewed.expiry else {
+                reviewedExactRun = nil
+                reviewedExactRunLines = []
+                exactRunNote = "Exact run expired before signing. The signature was not returned."
+                return
+            }
             guard generation == exactRunGeneration, reviewedExactRun?.bound == reviewed.bound, reviewedExactRun?.nonce == reviewed.nonce else {
                 exactRunNote = "Exact run changed after review. The signature was not returned."
                 return
             }
+            let signed = try signer.signCommitted(message: reviewed.bound)
+            try Task.checkCancellation()
             let again = try await transport.fetchRetainedExactRun()
+            try Task.checkCancellation()
+            guard now() < reviewed.expiry else {
+                exactRunNote = "Exact run expired before the signature was returned."
+                return
+            }
             guard generation == exactRunGeneration, again.challengeId == reviewed.nonce, again.bound == reviewed.bound else {
                 reviewedExactRun = nil
                 reviewedExactRunLines = []
@@ -322,6 +358,9 @@ final class CompanionSession: ObservableObject {
             }
             exactRunNote = "Exact-run signature returned for challenge \(reviewed.nonce). This is not physical presence at the Mac."
         } catch PhonePeerSignError.cancelled {
+            exactRunNote = "Exact run was cancelled before a signature was returned."
+            lastError = nil
+        } catch is CancellationError {
             exactRunNote = "Exact run was cancelled before a signature was returned."
             lastError = nil
         } catch {
@@ -676,7 +715,7 @@ func jsonStringLiteral(_ value: String) -> String {
     return out
 }
 
-func parseExactRun(fetched: FetchedExactRun, now: Int) throws -> ParsedExactRun {
+func parseExactRun(fetched: FetchedExactRun, now: Int, pinnedHolderId: String) throws -> ParsedExactRun {
     guard
         let object = try JSONSerialization.jsonObject(with: fetched.bound) as? [String: Any],
         Set(object.keys) == ["domain", "expiry", "generation", "holder_id", "key_generation", "launch_argv", "nonce", "payload_digest", "policy"]
@@ -687,7 +726,7 @@ func parseExactRun(fetched: FetchedExactRun, now: Int) throws -> ParsedExactRun 
         throw CompanionClientError.transport("exact run domain is not holder-exact-run-v1")
     }
     guard
-        let holderId = object["holder_id"] as? String, !holderId.isEmpty,
+        let holderId = object["holder_id"] as? String, !pinnedHolderId.isEmpty, holderId == pinnedHolderId,
         let digest = object["payload_digest"] as? String, digest.count == 64, digest.allSatisfy({ $0.isHexDigit }),
         let argvValues = object["launch_argv"] as? [Any], argvValues.allSatisfy({ $0 is String }),
         let nonce = object["nonce"] as? String, !nonce.isEmpty,

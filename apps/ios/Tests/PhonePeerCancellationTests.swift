@@ -179,6 +179,11 @@ struct PhonePeerCancellationTests {
             try await testExactRunReplacementDoesNotSubmit()
             try await testExactRunMalformedBoundDoesNotSign()
             try await testExactRunMissingKeyDoesNotSubmit()
+            try await testExactRunExpiryBeforeApproveDoesNotSign()
+            try await testExactRunExpiryAfterWaitDoesNotSubmit()
+            try await testExactRunCancellationBeforeSignDoesNotSign()
+            try await testExactRunUnpinnedHolderDoesNotSign()
+            try await testExactRunSubstitutedHolderDoesNotSign()
             try testPhoneKeyOwnershipRejectsADifferentChallenge()
             try testPhoneKeyStageRollsBackAndRevokes()
             try testPhoneKeyCommitFailureKeepsThePreviousGeneration()
@@ -432,6 +437,7 @@ func testExactRunSignatureUsesTheFetchedNonce() async throws {
     let peer = RecordingExactPeer(fetched: fetched)
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.pinnedHolderId = "holder-a"
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     if session.reviewedExactRunLines.contains("policy companion") == false
         || session.reviewedExactRunLines.contains("holder holder-a") == false
@@ -450,6 +456,7 @@ func testExactRunCancelDuringReviewDoesNotSign() async throws {
     let peer = RecordingExactPeer(fetched: sampleFetchedExactRun(), hold: hold)
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.pinnedHolderId = "holder-a"
     let task = Task { await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer) }
     while await hold.entered == false {
         await Task.yield()
@@ -470,6 +477,7 @@ func testExactRunReplacementDoesNotSubmit() async throws {
     peer.replacement = sampleFetchedExactRun(nonce: "nonce-other")
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.pinnedHolderId = "holder-a"
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     await session.approveReviewedExactRun(signer: signer, peer: peer)
     if peer.submissions != 0 || signer.committedSigns != 1 {
@@ -490,6 +498,7 @@ func testExactRunMalformedBoundDoesNotSign() async throws {
     let peer = RecordingExactPeer(fetched: fetched)
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.pinnedHolderId = "holder-a"
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     await session.approveReviewedExactRun(signer: signer, peer: peer)
     if signer.signs != 0 || signer.committedSigns != 0 || peer.submissions != 0 {
@@ -503,10 +512,90 @@ func testExactRunMissingKeyDoesNotSubmit() async throws {
     let signer = CountingSigner()
     signer.refuseCommitted = true
     let session = CompanionSession()
+    session.pinnedHolderId = "holder-a"
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     await session.approveReviewedExactRun(signer: signer, peer: peer)
     if signer.committedSigns != 0 || signer.signs != 0 || peer.submissions != 0 {
         throw TestFailure.lateCancelEnrolled
+    }
+}
+
+@MainActor
+func testExactRunExpiryBeforeApproveDoesNotSign() async throws {
+    let peer = RecordingExactPeer(fetched: sampleFetchedExactRun(expiry: 1_800_000_000))
+    let signer = CountingSigner()
+    let session = CompanionSession()
+    session.pinnedHolderId = "holder-a"
+    await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
+    await session.approveReviewedExactRun(signer: signer, peer: peer, now: { 1_800_000_000 })
+    if signer.committedSigns != 0 || signer.signs != 0 || peer.submissions != 0 {
+        throw TestFailure.lateCancelEnrolled
+    }
+}
+
+@MainActor
+func testExactRunExpiryAfterWaitDoesNotSubmit() async throws {
+    let peer = RecordingExactPeer(fetched: sampleFetchedExactRun(expiry: 1_800_000_000))
+    let signer = CountingSigner()
+    let session = CompanionSession()
+    session.pinnedHolderId = "holder-a"
+    await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
+    var calls = 0
+    await session.approveReviewedExactRun(signer: signer, peer: peer, now: {
+        calls += 1
+        return calls == 1 ? 1_700_000_000 : 1_900_000_000
+    })
+    if signer.committedSigns != 1 || peer.submissions != 0 {
+        throw TestFailure.lateCancelEnrolled
+    }
+}
+
+@MainActor
+func testExactRunCancellationBeforeSignDoesNotSign() async throws {
+    let hold = FetchHold()
+    let peer = RecordingExactPeer(fetched: sampleFetchedExactRun())
+    let signer = CountingSigner()
+    let session = CompanionSession()
+    session.pinnedHolderId = "holder-a"
+    await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
+    let task = Task {
+        await session.approveReviewedExactRun(signer: signer, peer: peer, now: { 1_700_000_000 }, beforeSign: {
+            await hold.enter()
+        })
+    }
+    while await hold.entered == false {
+        await Task.yield()
+    }
+    task.cancel()
+    await hold.release()
+    await task.value
+    if signer.committedSigns != 0 || signer.signs != 0 || peer.submissions != 0 {
+        throw TestFailure.cancelledPathSignedOrPosted
+    }
+}
+
+@MainActor
+func testExactRunUnpinnedHolderDoesNotSign() async throws {
+    let peer = RecordingExactPeer(fetched: sampleFetchedExactRun())
+    let signer = CountingSigner()
+    let session = CompanionSession()
+    await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
+    await session.approveReviewedExactRun(signer: signer, peer: peer, now: { 1_700_000_000 })
+    if signer.committedSigns != 0 || peer.submissions != 0 || session.reviewedExactRunLines.isEmpty == false {
+        throw TestFailure.mailboxAcceptanceEnrolled
+    }
+}
+
+@MainActor
+func testExactRunSubstitutedHolderDoesNotSign() async throws {
+    let peer = RecordingExactPeer(fetched: sampleFetchedExactRun())
+    let signer = CountingSigner()
+    let session = CompanionSession()
+    session.pinnedHolderId = "holder-b"
+    await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
+    await session.approveReviewedExactRun(signer: signer, peer: peer, now: { 1_700_000_000 })
+    if signer.committedSigns != 0 || peer.submissions != 0 || session.reviewedExactRunLines.isEmpty == false {
+        throw TestFailure.mailboxAcceptanceEnrolled
     }
 }
 

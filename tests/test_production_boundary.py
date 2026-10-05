@@ -2699,6 +2699,47 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
         self.assertNotIn(expired["nonce"], nonces)
         self.assertNotIn(current["nonce"], nonces)
 
+    def test_exact_run_uncertain_lease_is_not_released_or_replayed(self) -> None:
+        if sys.platform != "darwin":
+            self.skipTest("P-256 verification uses the Darwin verifier")
+        td = tempfile.TemporaryDirectory(prefix="rsh-exact-uncertain-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        server, client, custody, material = self._enroll_exact_roles(root, ("mac",))
+        self._set_exact_policy(server, custody, "local")
+        ws, script, binding, issued, issued_b64 = self._issue_exact(
+            server, client, "local", request_id="uncertain"
+        )
+        signature = self._sign_exact(material, "mac", issued, issued_b64)
+        authorized = self._authorize_exact(client, issued, {"mac": signature}, policy="local")
+        self.assertEqual(authorized["lease"], "uncertain")
+        self.assertFalse(authorized["run_integration_complete"])
+        with self.assertRaises(HolderRefusal) as released:
+            server.holder.cancel_uncertain(
+                issued["nonce"],
+                server.holder.sign_from_session(custody, "cancel", issued["nonce"], "local"),
+            )
+        self.assertIn("uncertain exact-run lease stays held", str(released.exception))
+        lease = json.loads((server.holder.root / "lease.json").read_text(encoding="utf-8"))
+        self.assertTrue(lease["held"])
+        self.assertEqual(lease["child"], "uncertain")
+        self.assertIsNone(lease.get("pid"))
+        with self.assertRaises(HolderRefusal) as replay:
+            server.holder.consume(
+                nonce=issued["nonce"],
+                policy="local",
+                human={"method": "not-a-signature"},
+                workspace=ws,
+                files=[(str(script.resolve()), sha256_file(script))],
+                binding=binding,
+            )
+        self.assertIn("uncertain child still holds the lease", str(replay.exception))
+        spent = json.loads((server.holder.root / "spent.json").read_text(encoding="utf-8"))["nonces"]
+        self.assertEqual([item.get("nonce") for item in spent].count(issued["nonce"]), 1)
+        lease_after = json.loads((server.holder.root / "lease.json").read_text(encoding="utf-8"))
+        self.assertTrue(lease_after["held"])
+        self.assertEqual(lease_after["child"], "uncertain")
+
     def test_phone_receipt_rejects_forged_flags_wrong_key_replay_and_stale(self) -> None:
         import base64
 

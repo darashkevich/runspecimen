@@ -6,10 +6,16 @@ let package = Package(
     platforms: [.macOS(.v13)],
     targets: [
         .target(name: "HolderSocket", path: "Sources/HolderSocket"),
+        .target(name: "DaemonKeyFeasibility", path: "Sources/DaemonKeyFeasibility"),
         .testTarget(
             name: "HolderSocketTests",
             dependencies: ["HolderSocket"],
             path: "Tests/HolderSocketTests"
+        ),
+        .testTarget(
+            name: "DaemonKeyFeasibilityTests",
+            dependencies: ["DaemonKeyFeasibility"],
+            path: "Tests/DaemonKeyFeasibilityTests"
         ),
     ]
 )

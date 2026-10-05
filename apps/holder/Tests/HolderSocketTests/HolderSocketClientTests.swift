@@ -502,6 +502,55 @@ final class HolderSocketClientTests: XCTestCase {
         XCTAssertNil(transport.executedNonce)
     }
 
+    func testInvalidateAfterAuthorizeKeepsTheUncertainLease() async throws {
+        let transport = ConsumingExactTransport()
+        let coordinator = ExactRunCoordinator()
+        transport.onAuthorize = { await coordinator.invalidate() }
+        let inputs = sampleInputs(policy: "local")
+        let prepared = try await coordinator.prepare(
+            policy: "local",
+            workspace: "/tmp/ws",
+            files: [["script", String(repeating: "a", count: 64)]],
+            binding: [:],
+            inputs: inputs,
+            transport: transport,
+            mailbox: RecordingExactMailbox()
+        )
+        do {
+            _ = try await coordinator.continueRun(
+                now: prepared.expiry,
+                inputs: inputs,
+                transport: transport,
+                mailbox: RecordingExactMailbox(),
+                signer: RecordingMacSigner()
+            )
+            XCTFail("execute followed an invalidated authorize")
+        } catch ExactRunCoordinatorError.leaseUncertain {
+        }
+        XCTAssertEqual(transport.authorizeCount, 1)
+        XCTAssertEqual(transport.executeCount, 0)
+        XCTAssertNil(transport.inner.executedNonce)
+        do {
+            _ = try await coordinator.continueRun(
+                now: prepared.expiry,
+                inputs: inputs,
+                transport: transport,
+                mailbox: RecordingExactMailbox(),
+                signer: RecordingMacSigner()
+            )
+            XCTFail("a second continue replayed the consumed nonce")
+        } catch ExactRunCoordinatorError.missingPrepare {
+        }
+        XCTAssertEqual(transport.authorizeCount, 1)
+        XCTAssertEqual(transport.executeCount, 0)
+        do {
+            try await transport.authorize(nonce: prepared.nonce, policy: "local", signatures: ["mac": "again"])
+            XCTFail("a second consume of the nonce was accepted")
+        } catch ExactRunCoordinatorError.leaseUncertain {
+        }
+        XCTAssertEqual(transport.authorizeCount, 1)
+    }
+
     private func sampleInputs(policy: String) -> ExactRunInputs {
         ExactRunInputs(
             policy: policy,
@@ -747,6 +796,44 @@ final class RecordingExactTransport: ExactRunTransport {
     func execute(nonce: String, signatures: [String: String]) async throws -> String {
         executedNonce = nonce
         return "executed \(nonce)"
+    }
+}
+
+final class ConsumingExactTransport: ExactRunTransport {
+    let inner = RecordingExactTransport()
+    var authorizeCount = 0
+    var executeCount = 0
+    var consumed: Set<String> = []
+    var onAuthorize: (() async -> Void)?
+
+    func issue(
+        policy: String,
+        workspace: String,
+        files: [[String]],
+        binding: [String: Any]
+    ) async throws -> RetainedExactRun {
+        try await inner.issue(policy: policy, workspace: workspace, files: files, binding: binding)
+    }
+
+    func liveSession() async throws -> ExactRunLiveSession {
+        try await inner.liveSession()
+    }
+
+    func authorize(nonce: String, policy: String, signatures: [String: String]) async throws {
+        if consumed.contains(nonce) {
+            throw ExactRunCoordinatorError.leaseUncertain
+        }
+        authorizeCount += 1
+        consumed.insert(nonce)
+        try await inner.authorize(nonce: nonce, policy: policy, signatures: signatures)
+        if let onAuthorize {
+            await onAuthorize()
+        }
+    }
+
+    func execute(nonce: String, signatures: [String: String]) async throws -> String {
+        executeCount += 1
+        return try await inner.execute(nonce: nonce, signatures: signatures)
     }
 }
 

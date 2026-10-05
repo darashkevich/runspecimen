@@ -2259,6 +2259,10 @@ class ExecutionHolder:
             raise HolderRefusal("only an uncertain child can be cancelled this way")
         if lease.get("pid") is not None:
             raise HolderRefusal("cancel cannot clear a lease after the holder has spawned")
+        spent = self._spent()
+        record = next((item for item in spent if item.get("nonce") == token), None)
+        if isinstance(record, dict) and record.get("exact_run") is True:
+            raise HolderRefusal("an uncertain exact-run lease stays held until verified termination")
         self._write("lease.json", {"held": False, "token": token, "child": "cancelled"})
         return {"ok": True, "cancelled": True, "installed_protection": self.installed_protection}
 

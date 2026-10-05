@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+These notes describe source on the unpublished candidate. They are not a public release.
+
+- Exact-run approval checks expiry and the pinned holder id before signing, and an authorize that loses its request keeps the uncertain lease. Root-daemon Secure Enclave creation is unsupported on current Apple guidance. Installed admission stays closed.
+
 ### Evidence expansion (ADR-005) — review branch, not released
 
 Local-first expansion answering: what was authorized, what ran, which

@@ -99,6 +99,8 @@ public enum ExactRunCoordinatorError: Error, Equatable {
     case missingMacKey
     case busy
     case inputsChanged
+    /// Authorize already consumed the nonce. The uncertain lease stays held. This is not permission to execute or to consume again.
+    case leaseUncertain
 }
 
 /// Prepare displays and sends one challenge. Continue accepts and executes that same challenge.
@@ -111,6 +113,8 @@ public actor ExactRunCoordinator {
     private var retainedInputs: ExactRunInputs?
     private var busy = false
     private var epoch = 0
+    /// Nonces whose authorize succeeded and whose execute did not. Invalidation does not release these.
+    private var uncertainNonces: Set<String> = []
 
     public init() {}
 
@@ -192,6 +196,7 @@ public actor ExactRunCoordinator {
         busy = true
         defer { busy = false }
         guard let prepared = retained else { throw ExactRunCoordinatorError.missingPrepare }
+        if uncertainNonces.contains(prepared.nonce) { throw ExactRunCoordinatorError.leaseUncertain }
         guard retainedInputs == inputs else { throw ExactRunCoordinatorError.inputsChanged }
         let epochAtStart = epoch
         let nonce = prepared.nonce
@@ -222,7 +227,10 @@ public actor ExactRunCoordinator {
         }
         try requireSameRequest(epochAtStart: epochAtStart, nonce: nonce, inputs: inputs)
         try await transport.authorize(nonce: nonce, policy: prepared.policy, signatures: signatures)
-        try requireSameRequest(epochAtStart: epochAtStart, nonce: nonce, inputs: inputs)
+        if epoch != epochAtStart || retained?.nonce != nonce || retainedInputs != inputs {
+            uncertainNonces.insert(nonce)
+            throw ExactRunCoordinatorError.leaseUncertain
+        }
         return try await transport.execute(nonce: nonce, signatures: signatures)
     }
 
