@@ -1,16 +1,17 @@
 # Branch hygiene
 
-Recorded against the integrated tip after the tree-tightening pass. This is not a merge plan and not a production sign-off. Do not delete `cursor/evidence-expansion-coherence`: pull request #39 uses it as its base.
+Recorded against integrated tip `51c46acf418f09e7536bee92c893f87f3efebc60`. This is not a merge plan and not a production sign-off. Do not delete `cursor/evidence-expansion-coherence`: pull request #39 uses it as its base.
 
 ## Open pull requests
 
 | PR | Purpose | Commits in the integrated tip? | Action |
 | --- | --- | --- | --- |
-| #39 | Integrated candidate (capture, receipts, holder packaging) | This is the tip | Leave open. Do not merge from this pass |
-| #34 | Evidence expansion onto `main` | Yes. `cursor/evidence-expansion-coherence` is contained | Close. Superseded by the integrated tip. The branch stays because #39 targets it |
-| #38 | Eval fast path must not forge requirement results | Yes. `cursor/deterministic-fastpath` is contained | Close. Superseded by the integrated tip |
-| #35 | Cloud Agent `environment.json` | No. One commit, file absent here | Restack onto the integrated head as a small follow-up. Close #35 once that PR exists |
-| #46 | Independent QA report of an older head (draft) | No. Point-in-time report | Leave draft. Do not merge. The reviewed SHA is not this tip |
+| #39 | Integrated candidate (capture, receipts, holder packaging) | This is the tip | Left open. Not merged |
+| #34 | Evidence expansion onto `main` | Yes. `cursor/evidence-expansion-coherence` is contained | Closed as superseded. The branch stays because #39 targets it |
+| #38 | Eval fast path must not forge requirement results | Yes. `cursor/deterministic-fastpath` is contained | Closed as superseded |
+| #35 | Cloud Agent `environment.json` | No, until restacked | Closed. Restacked as #47 |
+| #46 | Independent QA report of an older head (draft) | No. Point-in-time report | Left open as a draft. Do not merge |
+| #47 | `.cursor/environment.json` from #35 | Follow-up on this tip | Leave open. Not merged |
 
 ## Other remote branches
 
@@ -29,5 +30,6 @@ Leave, do not restack onto this tip: `cursor/add-release-docs-43d7`, `cursor/ed2
 | `main` | Published history through the Mac freeze fix. Not the unpublished candidate |
 | `cursor/evidence-expansion-coherence` | Base of pull request #39. Contained in the tip. Keep until #39 has another base |
 | `cursor/integrated-release-candidate` | The one integrated tip. Unpublished `0.2.0rc15` |
+| `cursor/cloud-agent-environment` | Follow-up #47. Cloud Agent install snippet only |
 | `cursor/ios-companion-observe` | Older iOS companion line. ADR-003/004 already exist on the tip; do not merge this ref as a second implementation |
 | `cursor/native-receipt-parity` | Follow-up native receipt work that is not this candidate's Store path |
