@@ -1,6 +1,6 @@
 # Channel matrix
 
-This matrix is the unpublished candidate on `cursor/integrated-release-candidate`. It is not a listing, a Store submission, or a production sign-off. Marketplace presence is not acceptance. Historical **0.1.4 (9)** stays the approved Store app and is guarantee (1). The Developer ID holder is guarantee (2) and is not that app. A version label such as 0.1.5 (13) does not identify a binary.
+This matrix is the unpublished candidate on `cursor/integrated-release-candidate`. It is not a listing, a Store submission, or a production sign-off. Marketplace presence is not acceptance. Historical **0.1.4 (9)** stays the approved Store app and is guarantee (1). The Developer ID holder is guarantee (2) and is not that app. A version label such as 0.1.5 (13) does not identify a binary. Installed Secure Enclave admission stays blocked. The unconfirmed proposal is a holder-sealed creation receipt bound to the key fingerprint, not an origin string or a pin match. A Mac-session signature proves possession of the pinned key and does not prove that protected holder state committed it. A press does not close that engineering, and `run_integration_complete` stays false.
 
 | Channel | Feature set | Version | Tested artifact | Limitation | Distribution |
 | --- | --- | --- | --- | --- | --- |

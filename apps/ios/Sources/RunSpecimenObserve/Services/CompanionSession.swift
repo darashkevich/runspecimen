@@ -152,6 +152,7 @@ final class CompanionSession: ObservableObject {
                 try? await transport.invalidatePhonePeerChallenge(challengeId: message.challengeId)
                 throw PhonePeerSignError.cancellationTooLate
             }
+            try signer.bindStagedOwnership(challengeId: message.challengeId, publicKey: signed.publicKey)
             signedPhonePublicKey = signed.publicKey
             phonePeerNote = "Mailbox accepted challenge \(message.challengeId). That is not holder verification and the key is not enrolled."
         } catch PhonePeerSignError.cancelled {
@@ -194,8 +195,15 @@ final class CompanionSession: ObservableObject {
             phonePeerNote = "Mailbox acceptance is not holder verification."
             return
         }
+        let generation = phoneSignGeneration
+        let challengeId = message.challengeId
         do {
-            let record = try await transport.fetchHolderVerification(challengeId: message.challengeId)
+            let record = try await transport.fetchHolderVerification(challengeId: challengeId)
+            try Task.checkCancellation()
+            guard generation == phoneSignGeneration, phoneChallenge?.challengeId == challengeId, signedPhonePublicKey == phonePublicKey else {
+                phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
+                return
+            }
             let decision = phoneReceiptAuthentic(
                 record: record,
                 challenge: message,
@@ -207,10 +215,39 @@ final class CompanionSession: ObservableObject {
                 phonePeerNote = "A caller flag is not a holder receipt."
                 return
             }
+            guard generation == phoneSignGeneration, phoneChallenge?.challengeId == challengeId else {
+                phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
+                return
+            }
+            try signer.commitEnrollment(ownedBy: challengeId, publicKey: phonePublicKey)
             acceptedReceiptSignatures.insert(signature)
-            try signer.commitEnrollment()
             phoneChallenge = nil
-            phonePeerNote = "Holder receipt verified for challenge \(message.challengeId). The phone key is enrolled."
+            phonePeerNote = "Holder receipt verified for challenge \(challengeId). The phone key is enrolled."
+        } catch PhonePeerSignError.cancelled {
+            phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
+            lastError = nil
+        } catch is CancellationError {
+            phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// Sign the published exact-run bytes. The nonce is the one that was fetched.
+    func signRetainedExactRun(
+        signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
+        peer: any ExactRunPhoneSigningTransport
+    ) async {
+        lastError = nil
+        do {
+            let published = try await peer.fetchRetainedExactRun()
+            guard !published.nonce.isEmpty, !published.bound.isEmpty else {
+                throw PhonePeerSignError.cancelled
+            }
+            let signed = try signer.sign(message: published.bound)
+            try await peer.submitRetainedExactRunSignature(challengeId: published.nonce, signature: signed.signature)
+            phonePeerNote = "Exact-run signature returned for challenge \(published.nonce)."
         } catch {
             lastError = error.localizedDescription
         }
@@ -466,14 +503,21 @@ enum PhonePeerSignError: Error {
     case cancellationTooLate
 }
 
+protocol ExactRunPhoneSigningTransport {
+    func fetchRetainedExactRun() async throws -> (nonce: String, bound: Data)
+    func submitRetainedExactRunSignature(challengeId: String, signature: String) async throws
+}
+
 protocol PhoneChallengeSigning {
     func sign(message: Data) throws -> (publicKey: String, signature: String)
-    func commitEnrollment() throws
+    func bindStagedOwnership(challengeId: String, publicKey: String) throws
+    func commitEnrollment(ownedBy challengeId: String, publicKey: String) throws
     func discardStagedEnrollment()
 }
 
 extension PhoneChallengeSigning {
-    func commitEnrollment() throws {}
+    func bindStagedOwnership(challengeId: String, publicKey: String) throws {}
+    func commitEnrollment(ownedBy challengeId: String, publicKey: String) throws {}
     func discardStagedEnrollment() {}
 }
 
@@ -483,9 +527,51 @@ struct PhoneKeyStage {
     let directory: URL
 
     func stage(handle: Data, publicKey: Data) throws {
+        try stage(handle: handle, publicKey: publicKey, challengeId: "")
+    }
+
+    func stage(handle: Data, publicKey: Data, challengeId: String) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try handle.write(to: pendingHandle, options: .atomic)
         try publicKey.write(to: pendingPublic, options: .atomic)
+        let owner: [String: String] = [
+            "challengeId": challengeId,
+            "publicKey": publicKey.base64EncodedString(),
+        ]
+        let encoded = try JSONSerialization.data(withJSONObject: owner)
+        try encoded.write(to: pendingOwner, options: .atomic)
+    }
+
+    func bindOwner(challengeId: String, publicKey: Data) throws {
+        let staged = try Data(contentsOf: pendingPublic)
+        guard staged == publicKey else {
+            throw CompanionClientError.transport("staged phone key belongs to another challenge")
+        }
+        let owner: [String: String] = [
+            "challengeId": challengeId,
+            "publicKey": publicKey.base64EncodedString(),
+        ]
+        let encoded = try JSONSerialization.data(withJSONObject: owner)
+        try encoded.write(to: pendingOwner, options: .atomic)
+    }
+
+    func commit(ownedBy challengeId: String, publicKey: Data, failAfterFirstWrite: Bool = false) throws {
+        guard FileManager.default.fileExists(atPath: pendingOwner.path) else {
+            throw CompanionClientError.transport("staged phone key belongs to another challenge")
+        }
+        let ownerData = try Data(contentsOf: pendingOwner)
+        guard
+            let owner = try JSONSerialization.jsonObject(with: ownerData) as? [String: String],
+            owner["challengeId"] == challengeId,
+            owner["publicKey"] == publicKey.base64EncodedString()
+        else {
+            throw CompanionClientError.transport("staged phone key belongs to another challenge")
+        }
+        let staged = try Data(contentsOf: pendingPublic)
+        guard staged == publicKey else {
+            throw CompanionClientError.transport("staged phone key belongs to another challenge")
+        }
+        try commit(failAfterFirstWrite: failAfterFirstWrite)
     }
 
     /// One record. A failure after the next-file write leaves the previous generation.
@@ -517,6 +603,7 @@ struct PhoneKeyStage {
     func discard() {
         try? FileManager.default.removeItem(at: pendingHandle)
         try? FileManager.default.removeItem(at: pendingPublic)
+        try? FileManager.default.removeItem(at: pendingOwner)
     }
 
     func committedGeneration() throws -> Int {
@@ -546,6 +633,7 @@ struct PhoneKeyStage {
 
     private var pendingHandle: URL { directory.appendingPathComponent("phone-session-handle.pending") }
     private var pendingPublic: URL { directory.appendingPathComponent("phone-session-public.pending") }
+    private var pendingOwner: URL { directory.appendingPathComponent("phone-session-owner.pending") }
     private var recordURL: URL { directory.appendingPathComponent("custody.json") }
     private var nextRecordURL: URL { directory.appendingPathComponent("custody-next.json") }
 
@@ -598,8 +686,18 @@ struct LivePhoneSecureEnclaveSigner: PhoneChallengeSigning {
         )
     }
 
-    func commitEnrollment() throws {
-        try stage.commit()
+    func bindStagedOwnership(challengeId: String, publicKey: String) throws {
+        guard let key = Data(base64Encoded: publicKey) else {
+            throw CompanionClientError.transport("staged phone key belongs to another challenge")
+        }
+        try stage.bindOwner(challengeId: challengeId, publicKey: key)
+    }
+
+    func commitEnrollment(ownedBy challengeId: String, publicKey: String) throws {
+        guard let key = Data(base64Encoded: publicKey) else {
+            throw CompanionClientError.transport("staged phone key belongs to another challenge")
+        }
+        try stage.commit(ownedBy: challengeId, publicKey: key)
     }
 
     func discardStagedEnrollment() {

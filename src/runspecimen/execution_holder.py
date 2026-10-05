@@ -884,6 +884,8 @@ class ExecutionHolder:
                 keys = {}
             keys[device_id] = {"id": proof_id, "public_key": public_key, "generation": started}
             atomic_write_json(proof_path, {"keys": keys, "generation": started})
+            if role == "mac":
+                self._drop_pending_phone_receipt()
             if role == "phone":
                 atomic_write_json(
                     self.root / "phone-receipt-pending.json",
@@ -925,8 +927,17 @@ class ExecutionHolder:
         if pending.get("challenge_id") not in self._spent_device_nonces():
             raise HolderRefusal("stale phone receipt")
         mac = self._devices().get("mac-human")
+        if isinstance(mac, dict) and mac.get("revoked") is True:
+            raise HolderRefusal("phone receipt mac key is revoked")
         if not isinstance(mac, dict) or not isinstance(mac.get("public_key"), str):
             raise HolderRefusal("phone receipt has no enrolled mac key")
+        phone = self._devices().get("phone-human")
+        if not isinstance(phone, dict) or phone.get("revoked") is True:
+            raise HolderRefusal("phone receipt phone key is revoked")
+        if phone.get("fingerprint") != pending.get("phone_fingerprint") or phone.get("public_key") != pending.get(
+            "phone_public_key"
+        ):
+            raise HolderRefusal("phone receipt fingerprint does not match")
         supplied = body.get("mac_public_key")
         if supplied not in (None, mac["public_key"]):
             raise HolderRefusal("phone receipt key does not match")
@@ -1101,7 +1112,41 @@ class ExecutionHolder:
             "generation": self.generation,
             "key_generation": self.key_generation,
             "expiry": expiry,
+            "enrolled_mac_public_key": self._enrolled_mac_public_key(),
         }
+
+    def session_generation(self) -> dict[str, Any]:
+        """Read the live policy and generations. This does not sign or consume."""
+
+        with self._transaction():
+            self._load()
+            policy = self._active_policy_name() or ""
+            generation = self.generation
+            key_generation = self.key_generation
+        return {
+            "ok": True,
+            "policy": policy,
+            "generation": generation,
+            "key_generation": key_generation,
+            "hardware": False,
+            "not_hardware": True,
+            "run_integration_complete": False,
+            "e2_closed": False,
+        }
+
+    def _enrolled_mac_public_key(self) -> str | None:
+        mac = self._devices().get("mac-human")
+        if not isinstance(mac, dict) or mac.get("revoked") is True:
+            return None
+        public_key = mac.get("public_key")
+        if not isinstance(public_key, str) or not public_key:
+            return None
+        return public_key
+
+    def _drop_pending_phone_receipt(self) -> None:
+        path = self.root / "phone-receipt-pending.json"
+        if path.exists():
+            path.unlink()
 
     def authorize_exact_run(
         self,
@@ -1937,6 +1982,8 @@ class ExecutionHolder:
         device["attestation"] = "unverified" if human.get("attestation") else "software-test-double"
         devices[device_id] = device
         self._write("devices.json", devices)
+        if device.get("role") in {"mac", "phone"}:
+            self._drop_pending_phone_receipt()
         return {
             "ok": True,
             "device_id": device_id,
@@ -1969,6 +2016,7 @@ class ExecutionHolder:
         meta = self._read("meta.json")
         meta["key_generation"] = key_generation
         self._write("meta.json", meta)
+        self._drop_pending_phone_receipt()
         self._load()
         return {
             "ok": True,
@@ -1994,6 +2042,8 @@ class ExecutionHolder:
         device["revoked"] = True
         devices[device_id] = device
         self._write("devices.json", devices)
+        if device.get("role") in {"mac", "phone"} or device_id in {"mac-human", "phone-human"}:
+            self._drop_pending_phone_receipt()
         return {
             "ok": True,
             "device_id": device_id,
@@ -2039,6 +2089,7 @@ class ExecutionHolder:
         meta = self._read("meta.json")
         meta["generation"] = generation
         self._write("meta.json", meta)
+        self._drop_pending_phone_receipt()
         self._load()
         return {
             "ok": True,
@@ -3805,6 +3856,8 @@ def dispatch(holder: ExecutionHolder, body: dict[str, Any], *, caller_id: str) -
         if not isinstance(peer, int):
             raise HolderRefusal("ipc peer is missing")
         return holder.seal_phone_receipt(body, peer_uid=peer)
+    if op == "session-generation":
+        return holder.session_generation()
     if op == "issue-exact-run":
         peer = body.get("_peer_uid")
         if not isinstance(peer, int):

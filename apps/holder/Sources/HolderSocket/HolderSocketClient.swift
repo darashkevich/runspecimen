@@ -355,7 +355,7 @@ public final class HolderSocketClient: @unchecked Sendable {
         files: [[String]],
         binding: [String: Any],
         deadline: TimeInterval = 5
-    ) async throws -> IssuedExactRun {
+    ) async throws -> RetainedExactRun {
         let rows: [Any] = files.map { [$0[0], $0[1]] as [Any] }
         let body = try await transact([
             "op": "issue-exact-run",
@@ -368,14 +368,36 @@ public final class HolderSocketClient: @unchecked Sendable {
             let nonce = body["nonce"] as? String,
             let boundB64 = body["bound"] as? String,
             let bound = Data(base64Encoded: boundB64),
+            let generation = holderJSONInt(body["generation"]),
+            let keyGeneration = holderJSONInt(body["key_generation"]),
+            let expiry = holderJSONInt(body["expiry"]),
             body["authorized"] as? Bool == false,
             body["run_integration_complete"] as? Bool == false
         else { throw HolderSocketError.missingExactRun }
-        return IssuedExactRun(
+        let enrolledText = body["enrolled_mac_public_key"] as? String ?? ""
+        let enrolled = Data(base64Encoded: enrolledText) ?? Data()
+        return RetainedExactRun(
             nonce: nonce,
             bound: bound,
-            payloadDigest: body["payload_digest"] as? String ?? "",
-            launchArgv: []
+            policy: body["policy"] as? String ?? policy,
+            generation: generation,
+            keyGeneration: keyGeneration,
+            expiry: expiry,
+            enrolledMacPublicKey: enrolled
+        )
+    }
+
+    public func exactRunLiveSession(deadline: TimeInterval = 5) async throws -> ExactRunLiveSession {
+        let body = try await transact(["op": "session-generation"], deadline: deadline)
+        guard
+            let generation = holderJSONInt(body["generation"]),
+            let keyGeneration = holderJSONInt(body["key_generation"]),
+            body["run_integration_complete"] as? Bool == false
+        else { throw HolderSocketError.ipcFailed }
+        return ExactRunLiveSession(
+            policy: body["policy"] as? String ?? "",
+            generation: generation,
+            keyGeneration: keyGeneration
         )
     }
 

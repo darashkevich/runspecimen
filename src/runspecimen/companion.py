@@ -179,6 +179,7 @@ def make_handler(
         "invalidated": None,
         "receipts": [],
     }
+    exact_run_mailbox: dict[str, Any] = {"challenge": None, "signature": None}
 
     def current_status() -> dict[str, Any]:
         live = load_contract(contract_path)
@@ -362,6 +363,56 @@ def make_handler(
                         ).encode("utf-8"),
                     )
                     return
+                if route == "/v1/exact-peer-challenge":
+                    with phone_lock:
+                        current = exact_run_mailbox.get("challenge")
+                    if not isinstance(current, dict):
+                        self._error(404, "exact run challenge is not waiting")
+                        return
+                    self._respond(
+                        200,
+                        json.dumps(
+                            {
+                                "ok": True,
+                                "can_approve": False,
+                                "mutates_lifecycle": False,
+                                "challenge_id": current["challenge_id"],
+                                "bound": current["bound"],
+                                "policy": current["policy"],
+                                "generation": current["generation"],
+                                "key_generation": current["key_generation"],
+                                "expiry": current["expiry"],
+                            },
+                            sort_keys=True,
+                        ).encode("utf-8"),
+                    )
+                    return
+                if route == "/v1/exact-peer-signature":
+                    with phone_lock:
+                        current = exact_run_mailbox.get("challenge")
+                        signed = exact_run_mailbox.get("signature")
+                    if not isinstance(current, dict) or not isinstance(signed, dict):
+                        self._error(404, "exact run signature is not waiting")
+                        return
+                    if signed.get("challenge_id") != current.get("challenge_id"):
+                        self._error(409, "exact run signature is not bound to the prepared challenge")
+                        return
+                    self._respond(
+                        200,
+                        json.dumps(
+                            {
+                                "ok": True,
+                                "can_approve": False,
+                                "enrolled": False,
+                                "verified": False,
+                                "mutates_lifecycle": False,
+                                "challenge_id": signed["challenge_id"],
+                                "signature": signed["signature"],
+                            },
+                            sort_keys=True,
+                        ).encode("utf-8"),
+                    )
+                    return
                 if route == "/v1/phone-peer-signature":
                     with phone_lock:
                         if phone_mailbox.get("invalidated"):
@@ -497,6 +548,86 @@ def make_handler(
                             "mutates_lifecycle": False,
                             "challenge_id": challenge_id,
                             "ios_bundle_id": CAPABILITIES["ios_bundle_id"],
+                        },
+                        sort_keys=True,
+                    ).encode("utf-8"),
+                )
+                return
+            if route == "/v1/exact-peer-challenge":
+                challenge_id = payload.get("challenge_id")
+                bound = payload.get("bound")
+                policy = payload.get("policy")
+                generation = payload.get("generation")
+                key_generation = payload.get("key_generation")
+                expiry = payload.get("expiry")
+                if not isinstance(challenge_id, str) or not challenge_id:
+                    self._error(400, "exact run challenge id is missing")
+                    return
+                if not isinstance(bound, str) or not bound or policy not in {"local", "companion", "dual"}:
+                    self._error(400, "exact run challenge is not bound")
+                    return
+                if not isinstance(generation, int) or not isinstance(key_generation, int) or not isinstance(expiry, int):
+                    self._error(400, "exact run challenge is not bound")
+                    return
+                try:
+                    raw_bound = base64.b64decode(bound, validate=True)
+                except (ValueError, TypeError):
+                    self._error(400, "exact run challenge is not bound")
+                    return
+                if not raw_bound:
+                    self._error(400, "exact run challenge is not bound")
+                    return
+                with phone_lock:
+                    exact_run_mailbox["challenge"] = {
+                        "challenge_id": challenge_id,
+                        "bound": bound,
+                        "policy": policy,
+                        "generation": generation,
+                        "key_generation": key_generation,
+                        "expiry": expiry,
+                    }
+                    exact_run_mailbox["signature"] = None
+                self._respond(
+                    202,
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "accepted": True,
+                            "can_approve": False,
+                            "enrolled": False,
+                            "mutates_lifecycle": False,
+                            "challenge_id": challenge_id,
+                        },
+                        sort_keys=True,
+                    ).encode("utf-8"),
+                )
+                return
+            if route == "/v1/exact-peer-signature":
+                challenge_id = payload.get("challenge_id")
+                signature = payload.get("signature")
+                if not isinstance(challenge_id, str) or not challenge_id or not isinstance(signature, str) or not signature:
+                    self._error(400, "exact run signature is not bound to the prepared challenge")
+                    return
+                with phone_lock:
+                    current = exact_run_mailbox.get("challenge")
+                    if not isinstance(current, dict) or current.get("challenge_id") != challenge_id:
+                        self._error(409, "exact run signature is not bound to the prepared challenge")
+                        return
+                    exact_run_mailbox["signature"] = {
+                        "challenge_id": challenge_id,
+                        "signature": signature,
+                    }
+                self._respond(
+                    202,
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "accepted": True,
+                            "can_approve": False,
+                            "enrolled": False,
+                            "verified": False,
+                            "mutates_lifecycle": False,
+                            "challenge_id": challenge_id,
                         },
                         sort_keys=True,
                     ).encode("utf-8"),

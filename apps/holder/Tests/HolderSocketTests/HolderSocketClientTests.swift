@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import HolderSocket
 
@@ -314,6 +315,101 @@ final class HolderSocketClientTests: XCTestCase {
         XCTAssertThrowsError(try store.committedHandle())
     }
 
+    func testContinueKeepsThePreparedNonce() async throws {
+        let transport = RecordingExactTransport()
+        let mailbox = RecordingExactMailbox()
+        let signer = RecordingMacSigner()
+        let coordinator = ExactRunCoordinator()
+        let prepared = try await coordinator.prepare(
+            policy: "dual",
+            workspace: "/tmp/ws",
+            files: [["script", String(repeating: "a", count: 64)]],
+            binding: ["policy": "dual"],
+            transport: transport,
+            mailbox: mailbox
+        )
+        XCTAssertEqual(coordinator.issueCount, 1)
+        XCTAssertEqual(coordinator.displayedBound, Data("bound-once".utf8))
+        XCTAssertEqual(mailbox.publishedNonce, prepared.nonce)
+        mailbox.response = BoundPhoneExactSignature(nonce: prepared.nonce, signature: "cGhvbmU")
+        let executed = try await coordinator.continueRun(
+            now: prepared.expiry,
+            transport: transport,
+            mailbox: mailbox,
+            signer: signer
+        )
+        XCTAssertEqual(coordinator.issueCount, 1)
+        XCTAssertEqual(transport.authorizedNonce, prepared.nonce)
+        XCTAssertEqual(transport.executedNonce, prepared.nonce)
+        XCTAssertEqual(executed, "executed \(prepared.nonce)")
+        XCTAssertEqual(signer.signedMessage, Data("bound-once".utf8))
+        XCTAssertEqual(transport.authorizedSignatures["phone"], "cGhvbmU")
+    }
+
+    func testContinueRefusesADifferentPhoneNonceExpiryGenerationAndPolicy() async throws {
+        let transport = RecordingExactTransport()
+        let mailbox = RecordingExactMailbox()
+        let coordinator = ExactRunCoordinator()
+        let prepared = try await coordinator.prepare(
+            policy: "companion",
+            workspace: "/tmp/ws",
+            files: [["script", String(repeating: "a", count: 64)]],
+            binding: [:],
+            transport: transport,
+            mailbox: mailbox
+        )
+        let issues = coordinator.issueCount
+        mailbox.response = BoundPhoneExactSignature(nonce: "other-nonce", signature: "cGhvbmU")
+        do {
+            _ = try await coordinator.continueRun(now: prepared.expiry, transport: transport, mailbox: mailbox, signer: RecordingMacSigner())
+            XCTFail("a different phone nonce was accepted")
+        } catch ExactRunCoordinatorError.phoneNotBound {
+        }
+        XCTAssertEqual(coordinator.issueCount, issues)
+        XCTAssertNil(transport.authorizedNonce)
+        mailbox.response = BoundPhoneExactSignature(nonce: prepared.nonce, signature: "cGhvbmU")
+        do {
+            _ = try await coordinator.continueRun(now: prepared.expiry + 1, transport: transport, mailbox: mailbox, signer: RecordingMacSigner())
+            XCTFail("an expired challenge continued")
+        } catch ExactRunCoordinatorError.expired {
+        }
+        transport.live = ExactRunLiveSession(policy: prepared.policy, generation: prepared.generation + 1, keyGeneration: prepared.keyGeneration)
+        do {
+            _ = try await coordinator.continueRun(now: prepared.expiry, transport: transport, mailbox: mailbox, signer: RecordingMacSigner())
+            XCTFail("a changed generation continued")
+        } catch ExactRunCoordinatorError.generationChanged {
+        }
+        transport.live = ExactRunLiveSession(policy: "local", generation: prepared.generation, keyGeneration: prepared.keyGeneration)
+        do {
+            _ = try await coordinator.continueRun(now: prepared.expiry, transport: transport, mailbox: mailbox, signer: RecordingMacSigner())
+            XCTFail("a changed policy continued")
+        } catch ExactRunCoordinatorError.policyRefused {
+        }
+        XCTAssertEqual(coordinator.issueCount, issues)
+    }
+
+    func testRestartWithoutReenrollmentSignsTheCommittedKey() throws {
+        let key = P256.Signing.PrivateKey()
+        let directory = URL(fileURLWithPath: "/private/tmp/rs-qa-reload-\(UUID().uuidString)", isDirectory: true)
+        let store = StagedCustodyFiles(directory: directory)
+        try store.stage(handle: Data("software-handle-not-enclave".utf8), publicKey: key.publicKey.x963Representation)
+        try store.commit()
+        let source = SoftwareCommittedKey(store: store, key: key)
+        let restarted = ReloadingSessionCustody(source: source)
+        let message = Data("retained-bound".utf8)
+        let signature = try restarted.sign(role: "mac", message: message, enrolledPublicKey: key.publicKey.x963Representation)
+        let parsed = try P256.Signing.ECDSASignature(rawRepresentation: signature)
+        XCTAssertTrue(key.publicKey.isValidSignature(parsed, for: message))
+        XCTAssertEqual(source.signs, 1)
+        let other = P256.Signing.PrivateKey()
+        XCTAssertThrowsError(
+            try restarted.sign(role: "mac", message: message, enrolledPublicKey: other.publicKey.x963Representation)
+        ) { error in
+            XCTAssertEqual(error as? CustodyReloadError, .identityMismatch)
+        }
+        XCTAssertEqual(source.signs, 1)
+    }
+
     private func client(_ path: String) async throws -> HolderSocketClient {
         let client = HolderSocketClient(socketPath: path)
         try client.authenticate(callerId: "app", callerSecret: secret)
@@ -488,5 +584,90 @@ private final class FrameServer: @unchecked Sendable {
     func stop() {
         close(fd)
         try? FileManager.default.removeItem(atPath: path)
+    }
+}
+
+final class RecordingExactTransport: ExactRunTransport {
+    var issues = 0
+    var live = ExactRunLiveSession(policy: "dual", generation: 3, keyGeneration: 1)
+    var authorizedNonce: String?
+    var executedNonce: String?
+    var authorizedSignatures: [String: String] = [:]
+
+    func issue(
+        policy: String,
+        workspace: String,
+        files: [[String]],
+        binding: [String: Any]
+    ) async throws -> RetainedExactRun {
+        issues += 1
+        live = ExactRunLiveSession(policy: policy, generation: 3, keyGeneration: 1)
+        return RetainedExactRun(
+            nonce: "nonce-kept",
+            bound: Data("bound-once".utf8),
+            policy: policy,
+            generation: 3,
+            keyGeneration: 1,
+            expiry: 1_700_000_000,
+            enrolledMacPublicKey: Data("mac-public".utf8)
+        )
+    }
+
+    func liveSession() async throws -> ExactRunLiveSession { live }
+
+    func authorize(nonce: String, policy: String, signatures: [String: String]) async throws {
+        authorizedNonce = nonce
+        authorizedSignatures = signatures
+    }
+
+    func execute(nonce: String, signatures: [String: String]) async throws -> String {
+        executedNonce = nonce
+        return "executed \(nonce)"
+    }
+}
+
+final class RecordingExactMailbox: ExactRunPhoneMailbox {
+    var publishedNonce: String?
+    var response = BoundPhoneExactSignature(nonce: "", signature: "")
+
+    func publish(run: RetainedExactRun) async throws {
+        publishedNonce = run.nonce
+    }
+
+    func collect(nonce: String) async throws -> BoundPhoneExactSignature {
+        response
+    }
+}
+
+final class RecordingMacSigner: ReloadedMacSigner {
+    var signedMessage = Data()
+
+    func sign(message: Data, enrolledPublicKey: Data) throws -> Data {
+        signedMessage = message
+        return Data("mac-sig".utf8)
+    }
+}
+
+final class SoftwareCommittedKey: CommittedCustodySource {
+    let store: StagedCustodyFiles
+    let key: P256.Signing.PrivateKey
+    var signs = 0
+
+    init(store: StagedCustodyFiles, key: P256.Signing.PrivateKey) {
+        self.store = store
+        self.key = key
+    }
+
+    func committedPublicKey() throws -> Data {
+        try store.committedPublicKey()
+    }
+
+    func sign(message: Data) throws -> Data {
+        let committed = try committedPublicKey()
+        guard committed == key.publicKey.x963Representation else {
+            throw CustodyReloadError.identityMismatch
+        }
+        signs += 1
+        return try key.signature(for: message).rawRepresentation
     }
 }

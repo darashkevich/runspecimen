@@ -17,6 +17,7 @@ struct RunSpecimenHolderApp: App {
     private let daemonPlist = "com.darashkevich.runspecimen.holder.daemon.plist"
     private let custody = UserSessionKeyCustody()
     private let holderClient = HolderSocketClient()
+    private let exactRuns = ExactRunCoordinator()
     @State private var callerId = ""
     @State private var callerSecret = ""
     @State private var companionURL = ""
@@ -25,7 +26,6 @@ struct RunSpecimenHolderApp: App {
     @State private var exactWorkspace = ""
     @State private var exactScript = ""
     @State private var exactExecutable = ""
-    @State private var exactPhoneSignature = ""
     @State private var pendingPhone: IssuedDeviceChallenge?
 
     var body: some Scene {
@@ -49,12 +49,17 @@ struct RunSpecimenHolderApp: App {
                 TextField("Exact-run workspace", text: $exactWorkspace)
                 TextField("Exact-run script path", text: $exactScript)
                 TextField("Exact-run executable", text: $exactExecutable)
-                TextField("Phone signature for companion or dual", text: $exactPhoneSignature)
+                Text("Phone signature is collected for the prepared challenge. Continue does not issue another nonce.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Button("Enroll with Secure Enclave") {
                     Task { await enrollLocalFromPerson() }
                 }
-                Button("Sign with session key") {
-                    Task { await signReloadedFromPerson() }
+                Button("Prepare exact run") {
+                    Task { await prepareExactRunFromPerson() }
+                }
+                Button("Continue exact run") {
+                    Task { await continueExactRunFromPerson() }
                 }
                 Button("Enroll paired phone") {
                     Task { await enrollPhoneFromPerson() }
@@ -98,67 +103,80 @@ struct RunSpecimenHolderApp: App {
         }
     }
 
-    /// Issue, authorize, and execute one snapshot-bound run. Installed admission stays undecided.
-    private func signReloadedFromPerson() async {
+    /// Issue one snapshot challenge, show its bound bytes, and send that same challenge to the phone.
+    private func prepareExactRunFromPerson() async {
         do {
-            let policy = exactPolicy.trimmingCharacters(in: .whitespacesAndNewlines)
-            let workspace = exactWorkspace.trimmingCharacters(in: .whitespacesAndNewlines)
-            let script = exactScript.trimmingCharacters(in: .whitespacesAndNewlines)
-            let executable = exactExecutable.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard policy == "local" || policy == "companion" || policy == "dual" else {
-                throw HolderEnrollmentError.policyRefused
-            }
-            guard !workspace.isEmpty, !script.isEmpty, !executable.isEmpty else {
-                statusText = "Exact run did not reach snapshot-bound execute."
-                detail = "Workspace, script, and executable are required. A digest field is not a run."
-                return
-            }
-            let scriptData = try Data(contentsOf: URL(fileURLWithPath: script))
-            let digest = SHA256.hash(data: scriptData).map { String(format: "%02x", $0) }.joined()
-            let launch: [Any] = [executable, script]
-            let bounds: [String: Any] = [
-                "wall_timeout_sec": 10,
-                "stdout_max_bytes": 65536,
-                "stderr_max_bytes": 65536,
-            ]
-            let binding: [String: Any] = [
-                "contract_hash": String(repeating: "c", count: 64),
-                "workspace": workspace,
-                "argv": [script] as [Any],
-                "executable": script,
-                "policy": policy,
-                "cwd": workspace,
-                "launch_argv": launch,
-                "bounds": bounds,
-            ]
-            let client = try authenticatedClient()
-            let issued = try await client.issueSnapshotExactRun(
-                policy: policy,
-                workspace: workspace,
-                files: [[script, digest]],
-                binding: binding
+            let prepared = try await exactRuns.prepare(
+                policy: exactPolicy,
+                workspace: exactWorkspace.trimmingCharacters(in: .whitespacesAndNewlines),
+                files: try exactRunFiles(),
+                binding: try exactRunBinding(),
+                transport: try appExactTransport(),
+                mailbox: appExactMailbox()
             )
-            var signatures: [String: String] = [:]
-            if policy == "local" || policy == "dual" {
-                signatures["mac"] = try custody.sign(role: "mac", message: issued.bound).base64EncodedString()
-            }
-            if policy == "companion" || policy == "dual" {
-                let phone = exactPhoneSignature.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !phone.isEmpty else {
-                    statusText = "Exact run did not reach snapshot-bound execute."
-                    detail = "Companion and dual require the phone key signature. A local-only signature is not enough."
-                    return
-                }
-                signatures["phone"] = phone
-            }
-            try await client.authorizeSnapshotExactRun(nonce: issued.nonce, policy: policy, signatures: signatures)
-            let executed = try await client.executeSnapshotExactRun(nonce: issued.nonce, signatures: signatures)
+            statusText = "Exact run is prepared. Continue uses this challenge."
+            detail = "nonce=\(prepared.nonce) policy=\(prepared.policy) generation=\(prepared.generation) expiry=\(prepared.expiry) bound=\(prepared.bound.base64EncodedString())"
+        } catch {
+            statusText = "Exact run was not prepared."
+            detail = "\(error)"
+        }
+    }
+
+    /// Accept the phone response for the prepared challenge and execute it. This does not issue again.
+    private func continueExactRunFromPerson() async {
+        do {
+            let executed = try await exactRuns.continueRun(
+                now: Int(Date().timeIntervalSince1970),
+                transport: try appExactTransport(),
+                mailbox: appExactMailbox(),
+                signer: custody
+            )
             statusText = "Exact run reached snapshot-bound execute. Installed admission is still undecided."
             detail = "\(executed). run_integration_complete is false. A press does not admit a Secure Enclave key."
         } catch {
             statusText = "Exact run did not reach snapshot-bound execute."
             detail = "\(error)"
         }
+    }
+
+    private func exactRunFiles() throws -> [[String]] {
+        let script = exactScript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !script.isEmpty else { throw HolderEnrollmentError.policyRefused }
+        let scriptData = try Data(contentsOf: URL(fileURLWithPath: script))
+        let digest = SHA256.hash(data: scriptData).map { String(format: "%02x", $0) }.joined()
+        return [[script, digest]]
+    }
+
+    private func exactRunBinding() throws -> [String: Any] {
+        let policy = exactPolicy.trimmingCharacters(in: .whitespacesAndNewlines)
+        let workspace = exactWorkspace.trimmingCharacters(in: .whitespacesAndNewlines)
+        let script = exactScript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let executable = exactExecutable.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !workspace.isEmpty, !script.isEmpty, !executable.isEmpty else {
+            throw HolderEnrollmentError.policyRefused
+        }
+        return [
+            "contract_hash": String(repeating: "c", count: 64),
+            "workspace": workspace,
+            "argv": [script] as [Any],
+            "executable": script,
+            "policy": policy,
+            "cwd": workspace,
+            "launch_argv": [executable, script] as [Any],
+            "bounds": [
+                "wall_timeout_sec": 10,
+                "stdout_max_bytes": 65536,
+                "stderr_max_bytes": 65536,
+            ] as [String: Any],
+        ]
+    }
+
+    private func appExactTransport() throws -> AppExactRunTransport {
+        AppExactRunTransport(client: try authenticatedClient())
+    }
+
+    private func appExactMailbox() -> AppExactRunMailbox {
+        AppExactRunMailbox(baseURL: companionURL, pairingToken: pairingToken)
     }
 
     /// Publishes a holder-issued challenge to RunSpecimenObserve. It does not enroll.
@@ -194,7 +212,10 @@ struct RunSpecimenHolderApp: App {
                 signatureBase64: submission.signature
             )
             let prepared = try await authenticatedClient().preparePhoneReceipt(challengeId: issued.nonce)
-            let macSignature = try custody.sign(role: "mac", message: prepared.receipt)
+            guard let enrolledMac = Data(base64Encoded: prepared.macPublicKey) else {
+                throw HolderEnrollmentError.identityMismatch
+            }
+            let macSignature = try custody.sign(role: "mac", message: prepared.receipt, enrolledPublicKey: enrolledMac)
             let sealed = try await authenticatedClient().sealPhoneReceipt(
                 challengeId: issued.nonce,
                 signatureBase64: macSignature.base64EncodedString()
@@ -287,19 +308,86 @@ struct SessionHeldKey {
     let sign: (Data) throws -> Data
 }
 
-final class UserSessionKeyCustody {
-    private var keys: [String: SessionHeldKey] = [:]
+final class UserSessionKeyCustody: ReloadedMacSigner {
+    private let reloading = ReloadingSessionCustody(source: LiveCommittedMacKey())
 
     func keep(_ key: SessionHeldKey) {
-        keys[key.role] = key
+        reloading.keep(HeldSessionKey(
+            role: key.role,
+            publicKey: key.publicKey,
+            accessPolicy: key.accessPolicy,
+            sign: key.sign
+        ))
     }
 
-    func sign(role: String, message: Data) throws -> Data {
-        guard let key = keys[role] else { throw HolderEnrollmentError.missingCustody }
-        guard key.accessPolicy == BiometricAccessPolicy.eachSignature else {
+    func sign(message: Data, enrolledPublicKey: Data) throws -> Data {
+        try sign(role: "mac", message: message, enrolledPublicKey: enrolledPublicKey)
+    }
+
+    func sign(role: String, message: Data, enrolledPublicKey: Data) throws -> Data {
+        do {
+            return try reloading.sign(role: role, message: message, enrolledPublicKey: enrolledPublicKey)
+        } catch CustodyReloadError.missingCustody {
+            throw HolderEnrollmentError.missingCustody
+        } catch CustodyReloadError.identityMismatch {
+            throw HolderEnrollmentError.identityMismatch
+        } catch CustodyReloadError.policyRefused {
             throw HolderEnrollmentError.policyRefused
         }
-        return try key.sign(message)
+    }
+}
+
+/// Reloads the committed session file. The Secure Enclave prompt is on this sign call, not on launch.
+struct LiveCommittedMacKey: CommittedCustodySource {
+    func committedPublicKey() throws -> Data {
+        try LiveSecureEnclaveKeyMaker().reloadPublicKey()
+    }
+
+    func sign(message: Data) throws -> Data {
+        try LiveSecureEnclaveKeyMaker().reloadAndSign(message)
+    }
+}
+
+struct AppExactRunTransport: ExactRunTransport {
+    let client: HolderSocketClient
+
+    func issue(
+        policy: String,
+        workspace: String,
+        files: [[String]],
+        binding: [String: Any]
+    ) async throws -> RetainedExactRun {
+        try await client.issueSnapshotExactRun(
+            policy: policy,
+            workspace: workspace,
+            files: files,
+            binding: binding
+        )
+    }
+
+    func liveSession() async throws -> ExactRunLiveSession {
+        try await client.exactRunLiveSession()
+    }
+
+    func authorize(nonce: String, policy: String, signatures: [String: String]) async throws {
+        try await client.authorizeSnapshotExactRun(nonce: nonce, policy: policy, signatures: signatures)
+    }
+
+    func execute(nonce: String, signatures: [String: String]) async throws -> String {
+        try await client.executeSnapshotExactRun(nonce: nonce, signatures: signatures)
+    }
+}
+
+struct AppExactRunMailbox: ExactRunPhoneMailbox {
+    let baseURL: String
+    let pairingToken: String
+
+    func publish(run: RetainedExactRun) async throws {
+        try await ObserveMailbox.publishExactRun(run, baseURL: baseURL, pairingToken: pairingToken)
+    }
+
+    func collect(nonce: String) async throws -> BoundPhoneExactSignature {
+        try await ObserveMailbox.collectExactRun(nonce: nonce, baseURL: baseURL, pairingToken: pairingToken)
     }
 }
 
@@ -382,6 +470,7 @@ enum HolderEnrollmentError: Error {
     case emptyKey
     case policyRefused
     case missingCustody
+    case identityMismatch
     case localKeyIsNotPhone
     case missingCaller
     case ipcFailed
@@ -402,6 +491,28 @@ enum ObserveMailbox {
             "role": "phone",
         ]
         _ = try await request(baseURL: baseURL, pairingToken: pairingToken, path: "/v1/phone-peer-challenge", method: "POST", payload: payload)
+    }
+
+    static func publishExactRun(_ run: RetainedExactRun, baseURL: String, pairingToken: String) async throws {
+        let payload: [String: Any] = [
+            "challenge_id": run.nonce,
+            "bound": run.bound.base64EncodedString(),
+            "policy": run.policy,
+            "generation": run.generation,
+            "key_generation": run.keyGeneration,
+            "expiry": run.expiry,
+        ]
+        _ = try await request(baseURL: baseURL, pairingToken: pairingToken, path: "/v1/exact-peer-challenge", method: "POST", payload: payload)
+    }
+
+    static func collectExactRun(nonce: String, baseURL: String, pairingToken: String) async throws -> BoundPhoneExactSignature {
+        let body = try await request(baseURL: baseURL, pairingToken: pairingToken, path: "/v1/exact-peer-signature", method: "GET", payload: nil)
+        guard
+            let returned = body["challenge_id"] as? String,
+            let signature = body["signature"] as? String,
+            returned == nonce
+        else { throw HolderEnrollmentError.tamperedChallenge }
+        return BoundPhoneExactSignature(nonce: returned, signature: signature)
     }
 
     static func collect(baseURL: String, pairingToken: String) async throws -> (challenge: String, publicKey: String, signature: String) {

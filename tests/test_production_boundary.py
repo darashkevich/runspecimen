@@ -2794,3 +2794,42 @@ class HumanOperatedNativeAdapterTests(HumanNativeSignerTests):
                 }
             )
         self.assertIn("replayed phone receipt", str(replay.exception))
+
+    def test_phone_receipt_refuses_revoked_keys_and_fingerprint_mismatch(self) -> None:
+        if sys.platform != "darwin":
+            self.skipTest("P-256 verification uses the Darwin verifier")
+        td = tempfile.TemporaryDirectory(prefix="rsh-phone-revoke-")
+        self.addCleanup(td.cleanup)
+        root = Path(td.name)
+        server, client, _custody, _material = self._enroll_exact_roles(root, ("mac", "phone"))
+        pending_path = server.holder.root / "phone-receipt-pending.json"
+        pending = json.loads(pending_path.read_text(encoding="utf-8"))
+        devices_path = server.holder.root / "devices.json"
+        os.chmod(devices_path, 0o600)
+
+        def rewrite(mutate) -> None:
+            devices = json.loads(devices_path.read_text(encoding="utf-8"))
+            mutate(devices)
+            devices_path.write_text(json.dumps(devices), encoding="utf-8")
+
+        rewrite(lambda devices: devices["mac-human"].__setitem__("revoked", True))
+        with self.assertRaises(HolderRefusal) as revoked_mac:
+            client.call({"op": "prepare-phone-receipt", "challenge_id": pending["challenge_id"]})
+        self.assertIn("phone receipt mac key is revoked", str(revoked_mac.exception))
+        rewrite(lambda devices: devices["mac-human"].__setitem__("revoked", False))
+        rewrite(lambda devices: devices["phone-human"].__setitem__("revoked", True))
+        with self.assertRaises(HolderRefusal) as revoked_phone:
+            client.call({"op": "seal-phone-receipt", "challenge_id": pending["challenge_id"], "signature": "aa"})
+        self.assertIn("phone receipt phone key is revoked", str(revoked_phone.exception))
+        rewrite(lambda devices: devices["phone-human"].__setitem__("revoked", False))
+        rewrite(lambda devices: devices["phone-human"].__setitem__("fingerprint", "not-the-enrolled-fingerprint"))
+        with self.assertRaises(HolderRefusal) as fingerprint:
+            client.call({"op": "prepare-phone-receipt", "challenge_id": pending["challenge_id"]})
+        self.assertIn("phone receipt fingerprint does not match", str(fingerprint.exception))
+        rewrite(lambda devices: devices["phone-human"].__setitem__("fingerprint", pending["phone_fingerprint"]))
+        self.assertTrue(pending_path.exists())
+        server.holder.set_policy(server.holder.sign_from_session(_custody, "set-policy", "dual", "dual"))
+        self.assertFalse(pending_path.exists())
+        with self.assertRaises(HolderRefusal) as dropped:
+            client.call({"op": "seal-phone-receipt", "challenge_id": pending["challenge_id"], "signature": "aa"})
+        self.assertIn("stale phone receipt", str(dropped.exception))

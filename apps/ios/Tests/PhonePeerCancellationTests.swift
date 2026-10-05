@@ -7,6 +7,7 @@ final class HoldingPeer: PhonePeerTransport {
     var holdFetch = true
     var holdBeforePost = false
     var holdDuringPost = false
+    var holdVerification = false
     var posts = 0
     var invalidations = 0
     var published = false
@@ -55,19 +56,47 @@ final class HoldingPeer: PhonePeerTransport {
     }
 
     func fetchHolderVerification(challengeId: String) async throws -> PhoneHolderVerification {
-        verification ?? PhoneHolderVerification(verified: false, consumed: false, invalidated: false)
+        if holdVerification {
+            await hold.enter()
+        }
+        return verification ?? PhoneHolderVerification(verified: false, consumed: false, invalidated: false)
     }
 }
 
 final class CountingSigner: PhoneChallengeSigning {
     var signs = 0
     var commits = 0
+    var failCommits = 0
+    var lastMessage = Data()
     func sign(message: Data) throws -> (publicKey: String, signature: String) {
         signs += 1
+        lastMessage = message
         return ("cHVibGlj", "c2ln")
     }
-    func commitEnrollment() throws {
+    func commitEnrollment(ownedBy challengeId: String, publicKey: String) throws {
+        if failCommits > 0 {
+            failCommits -= 1
+            throw CompanionClientError.transport("phone custody commit failed")
+        }
         commits += 1
+    }
+}
+
+final class RecordingExactPeer: ExactRunPhoneSigningTransport {
+    let nonce: String
+    let bound: Data
+    var submittedNonce = ""
+    var submittedSignature = ""
+    init(nonce: String, bound: Data) {
+        self.nonce = nonce
+        self.bound = bound
+    }
+    func fetchRetainedExactRun() async throws -> (nonce: String, bound: Data) {
+        (nonce, bound)
+    }
+    func submitRetainedExactRunSignature(challengeId: String, signature: String) async throws {
+        submittedNonce = challengeId
+        submittedSignature = signature
     }
 }
 
@@ -99,6 +128,11 @@ struct PhonePeerCancellationTests {
             try await testCancelBeforePostDoesNotPublish()
             try await testPostThatAlreadyLeftIsCancellationTooLate()
             try await testForgedFlagsWrongKeyChallengeReplayCancelAndStaleDoNotCommit()
+            try await testDelayedReceiptThenCancelDoesNotCommit()
+            try await testDelayedReceiptThenNewChallengeDoesNotCommit()
+            try await testFailedCommitThenRetryEnrolls()
+            try await testExactRunSignatureUsesTheFetchedNonce()
+            try testPhoneKeyOwnershipRejectsADifferentChallenge()
             try testPhoneKeyStageRollsBackAndRevokes()
             try testPhoneKeyCommitFailureKeepsThePreviousGeneration()
             print("PhonePeerCancellationTests passed")
@@ -247,6 +281,135 @@ func testForgedFlagsWrongKeyChallengeReplayCancelAndStaleDoNotCommit() async thr
     peer.verification = good
     await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
     if signer.commits != 1 { throw TestFailure.mailboxAcceptanceEnrolled }
+}
+
+@MainActor
+func testDelayedReceiptThenCancelDoesNotCommit() async throws {
+    let hold = FetchHold()
+    let peer = HoldingPeer(hold: hold)
+    peer.holdFetch = false
+    peer.holdVerification = true
+    let signer = CountingSigner()
+    let session = CompanionSession()
+    let mac = P256.Signing.PrivateKey()
+    session.macSessionPublicKey = mac.publicKey.x963Representation.base64EncodedString()
+    let challenge = PhonePeerChallengeMessage(
+        challengeId: "nonce-1",
+        challenge: "Y2hhbGxlbmdl",
+        generation: 1,
+        holderId: "holder",
+        expiry: 1,
+        role: "phone"
+    )
+    session.phoneChallenge = challenge
+    session.signedPhonePublicKey = "cHVibGlj"
+    peer.verification = try signedPhoneReceipt(key: mac, challenge: challenge, phonePublic: "cHVibGlj")
+    let task = Task { await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer) }
+    while await hold.entered == false {
+        await Task.yield()
+    }
+    await session.cancelPhonePeerChallenge()
+    await hold.release()
+    await task.value
+    if signer.commits != 0 {
+        throw TestFailure.lateCancelEnrolled
+    }
+}
+
+@MainActor
+func testDelayedReceiptThenNewChallengeDoesNotCommit() async throws {
+    let hold = FetchHold()
+    let peer = HoldingPeer(hold: hold)
+    peer.holdVerification = true
+    let signer = CountingSigner()
+    let session = CompanionSession()
+    let mac = P256.Signing.PrivateKey()
+    session.macSessionPublicKey = mac.publicKey.x963Representation.base64EncodedString()
+    let challenge = PhonePeerChallengeMessage(
+        challengeId: "nonce-1",
+        challenge: "Y2hhbGxlbmdl",
+        generation: 1,
+        holderId: "holder",
+        expiry: 1,
+        role: "phone"
+    )
+    session.phoneChallenge = challenge
+    session.signedPhonePublicKey = "cHVibGlj"
+    peer.verification = try signedPhoneReceipt(key: mac, challenge: challenge, phonePublic: "cHVibGlj")
+    let task = Task { await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer) }
+    while await hold.entered == false {
+        await Task.yield()
+    }
+    peer.holdFetch = false
+    let newer = Task { await session.signPhonePeerChallenge(signer: signer, peer: peer) }
+    await newer.value
+    await hold.release()
+    await task.value
+    if signer.commits != 0 {
+        throw TestFailure.lateCancelEnrolled
+    }
+}
+
+@MainActor
+func testFailedCommitThenRetryEnrolls() async throws {
+    let peer = HoldingPeer(hold: FetchHold())
+    let signer = CountingSigner()
+    signer.failCommits = 1
+    let session = CompanionSession()
+    let mac = P256.Signing.PrivateKey()
+    session.macSessionPublicKey = mac.publicKey.x963Representation.base64EncodedString()
+    let challenge = PhonePeerChallengeMessage(
+        challengeId: "nonce-1",
+        challenge: "Y2hhbGxlbmdl",
+        generation: 1,
+        holderId: "holder",
+        expiry: 1,
+        role: "phone"
+    )
+    session.phoneChallenge = challenge
+    session.signedPhonePublicKey = "cHVibGlj"
+    peer.verification = try signedPhoneReceipt(key: mac, challenge: challenge, phonePublic: "cHVibGlj")
+    await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
+    if signer.commits != 0 || session.phoneChallenge == nil {
+        throw TestFailure.injectedCommitFailureDidNotStop
+    }
+    await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
+    if signer.commits != 1 {
+        throw TestFailure.holderVerificationDidNotEnroll
+    }
+}
+
+@MainActor
+func testExactRunSignatureUsesTheFetchedNonce() async throws {
+    let bound = Data("exact-bound".utf8)
+    let peer = RecordingExactPeer(nonce: "nonce-kept", bound: bound)
+    let signer = CountingSigner()
+    let session = CompanionSession()
+    await session.signRetainedExactRun(signer: signer, peer: peer)
+    if peer.submittedNonce != "nonce-kept" || signer.lastMessage != bound || signer.signs != 1 {
+        throw TestFailure.holderVerificationDidNotEnroll
+    }
+}
+
+func testPhoneKeyOwnershipRejectsADifferentChallenge() throws {
+    let directory = URL(fileURLWithPath: "/private/tmp/rs-qa-own-phone-\(UUID().uuidString)", isDirectory: true)
+    let stage = PhoneKeyStage(directory: directory)
+    let publicKey = Data("public-a".utf8)
+    try stage.stage(handle: Data("handle-a".utf8), publicKey: publicKey, challengeId: "nonce-a")
+    do {
+        try stage.commit(ownedBy: "nonce-b", publicKey: publicKey)
+        throw TestFailure.lateCancelEnrolled
+    } catch {
+    }
+    if FileManager.default.fileExists(atPath: directory.appendingPathComponent("custody.json").path) {
+        throw TestFailure.lateCancelEnrolled
+    }
+    try stage.commit(ownedBy: "nonce-a", publicKey: publicKey)
+    let generation = try stage.committedGeneration()
+    let committed = try stage.committedPublicKey()
+    if generation != 1 || committed != publicKey {
+        throw TestFailure.rollbackLostPreviousKey
+    }
 }
 
 func testPhoneKeyCommitFailureKeepsThePreviousGeneration() throws {

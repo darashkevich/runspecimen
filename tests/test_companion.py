@@ -249,6 +249,72 @@ class TestCompanion(RunSpecimenTestCase):
                 pairing_token="short",
             )
 
+    def test_exact_run_mailbox_keeps_one_challenge(self) -> None:
+        contract_path = write_contract(self.ws, "contract.json", base_contract())
+        token = generate_pairing_token()
+        server, _url, _meta = start_companion(
+            workspace=self.ws,
+            contract_path=contract_path,
+            pairing_token=token,
+            host="127.0.0.1",
+            port=0,
+            allow_lan=False,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = server.server_address[:2]
+            conn = HTTPConnection(host, port, timeout=5)
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            conn.request(
+                "POST",
+                "/v1/exact-peer-signature",
+                body=json.dumps({"challenge_id": "nonce-kept", "signature": "c2ln"}),
+                headers=headers,
+            )
+            unbound = conn.getresponse()
+            self.assertEqual(unbound.status, 409)
+            unbound.read()
+            conn.request(
+                "POST",
+                "/v1/exact-peer-challenge",
+                body=json.dumps(
+                    {
+                        "challenge_id": "nonce-kept",
+                        "bound": "Ym91bmQ=",
+                        "policy": "companion",
+                        "generation": 1,
+                        "key_generation": 1,
+                        "expiry": 10,
+                    }
+                ),
+                headers=headers,
+            )
+            self.assertEqual(conn.getresponse().status, 202)
+            conn.request(
+                "POST",
+                "/v1/exact-peer-signature",
+                body=json.dumps({"challenge_id": "other-nonce", "signature": "c2ln"}),
+                headers=headers,
+            )
+            mismatched = conn.getresponse()
+            self.assertEqual(mismatched.status, 409)
+            mismatched.read()
+            conn.request(
+                "POST",
+                "/v1/exact-peer-signature",
+                body=json.dumps({"challenge_id": "nonce-kept", "signature": "c2ln"}),
+                headers=headers,
+            )
+            self.assertEqual(conn.getresponse().status, 202)
+            conn.request("GET", "/v1/exact-peer-signature", headers=headers)
+            body = json.loads(conn.getresponse().read().decode("utf-8"))
+            self.assertEqual(body["challenge_id"], "nonce-kept")
+            self.assertEqual(body["signature"], "c2ln")
+            self.assertFalse(body["enrolled"])
+        finally:
+            server.shutdown()
+
     def test_make_handler_exists(self) -> None:
         contract_path = write_contract(self.ws, "contract.json", base_contract())
         handler = make_handler(

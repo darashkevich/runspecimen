@@ -23,6 +23,8 @@ Yahor confirmed the Developer ID holder pin: team `UN6KF8636A` and designated re
 3. Privileged install. Install the holder only through the privileged path. The live `/Applications/RunSpecimen Holder.app` is not repaired from this ledger.
 4. One real bounded run after those enrollments. Do not type APPROVE and do not pass `--human-invoked` from automation.
 
+Trust-boundary proposal, unconfirmed. The evidence that would let installed protection accept an exact-run signature is a holder-sealed receipt of Secure Enclave key creation bound to that key's fingerprint. The receipt is produced by the holder. It is not a caller-supplied origin string and it is not a pin match. A Mac-session signature proves possession of the pinned key. It does not independently prove that protected holder state committed that key. The D1 pin still authenticates verifier code only. The decision for Yahor is yes or no: accept that sealed creation receipt as the admission evidence. This proposal is not authorized and is not implemented. A biometric press does not close this engineering. `run_integration_complete` stays false until that admission exists.
+
 ## Packaging
 
 The pure wheel stays `py3-none-any` and must not contain `native_p256_verify`. The holder loads the helper from `platform/darwin_arm64/` in the runtime tree. A hash file next to an ad-hoc signature does not establish a trusted publisher. Trust is the pinned team identifier plus the designated requirement.

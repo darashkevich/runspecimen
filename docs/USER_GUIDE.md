@@ -411,7 +411,7 @@ exclude `approve`.
 
 The Mac App Store app is guarantee (1). An ordinary contract is bound when a person types `APPROVE` in a real terminal. That phrase does not authorize a contract whose policy is local, companion, or dual.
 
-Guarantee (2) is a separate Developer ID holder. It is not in the Store app, it is not installed from this guide, and a software test double is not Touch ID or Face ID. Do not describe the approved 0.1.4 (9) app as the protected holder.
+Guarantee (2) is a separate Developer ID holder. It is not in the Store app, it is not installed from this guide, and a software test double is not Touch ID or Face ID. Do not describe the approved 0.1.4 (9) app as the protected holder. A biometric press does not close holder engineering. The unconfirmed admission proposal is a holder-sealed receipt of Secure Enclave key creation bound to the key fingerprint. A Mac-session signature proves possession of the pinned key and does not by itself prove that protected holder state committed that key. That proposal is not authorized.
 
 ## Troubleshooting
 
