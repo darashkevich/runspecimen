@@ -132,7 +132,7 @@ struct RunSpecimenHolderApp: App {
     private func continueExactRunFromPerson() async {
         do {
             let executed = try await exactRuns.continueRun(
-                now: Int(Date().timeIntervalSince1970),
+                now: { Int(Date().timeIntervalSince1970) },
                 inputs: try exactRunInputs(),
                 transport: try appExactTransport(),
                 mailbox: appExactMailbox(),

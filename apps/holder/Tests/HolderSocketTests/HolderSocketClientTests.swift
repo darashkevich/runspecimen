@@ -603,6 +603,88 @@ final class HolderSocketClientTests: XCTestCase {
         XCTAssertEqual(transport.authorizeCount, 1)
     }
 
+    func testCompletedExecuteDoesNotSignOrAuthorizeAgain() async throws {
+        let transport = ConsumingExactTransport()
+        let signer = RecordingMacSigner()
+        let coordinator = ExactRunCoordinator()
+        let inputs = sampleInputs(policy: "local")
+        let prepared = try await coordinator.prepare(
+            policy: "local",
+            workspace: "/tmp/ws",
+            files: [["script", String(repeating: "a", count: 64)]],
+            binding: [:],
+            inputs: inputs,
+            transport: transport,
+            mailbox: RecordingExactMailbox()
+        )
+        let executed = try await coordinator.continueRun(
+            now: prepared.expiry,
+            inputs: inputs,
+            transport: transport,
+            mailbox: RecordingExactMailbox(),
+            signer: signer
+        )
+        XCTAssertEqual(executed, "executed \(prepared.nonce)")
+        XCTAssertEqual(signer.signCount, 1)
+        XCTAssertEqual(transport.authorizeCount, 1)
+        XCTAssertEqual(transport.executeCount, 1)
+        do {
+            _ = try await coordinator.continueRun(
+                now: prepared.expiry,
+                inputs: inputs,
+                transport: transport,
+                mailbox: RecordingExactMailbox(),
+                signer: signer
+            )
+            XCTFail("a completed exact run signed again")
+        } catch ExactRunCoordinatorError.missingPrepare {
+        }
+        XCTAssertEqual(signer.signCount, 1)
+        XCTAssertEqual(transport.authorizeCount, 1)
+        XCTAssertEqual(transport.executeCount, 1)
+    }
+
+    func testExpiryDuringSessionDoesNotSign() async throws {
+        final class AdvancingClock: @unchecked Sendable {
+            var calls = 0
+            let expiry: Int
+            init(expiry: Int) { self.expiry = expiry }
+            func next() -> Int {
+                calls += 1
+                return calls == 1 ? expiry : expiry + 1
+            }
+        }
+        let transport = ConsumingExactTransport()
+        let signer = RecordingMacSigner()
+        let coordinator = ExactRunCoordinator()
+        let inputs = sampleInputs(policy: "local")
+        let prepared = try await coordinator.prepare(
+            policy: "local",
+            workspace: "/tmp/ws",
+            files: [["script", String(repeating: "a", count: 64)]],
+            binding: [:],
+            inputs: inputs,
+            transport: transport,
+            mailbox: RecordingExactMailbox()
+        )
+        let clock = AdvancingClock(expiry: prepared.expiry)
+        do {
+            _ = try await coordinator.continueRun(
+                now: { clock.next() },
+                inputs: inputs,
+                transport: transport,
+                mailbox: RecordingExactMailbox(),
+                signer: signer
+            )
+            XCTFail("an expired session was signed")
+        } catch ExactRunCoordinatorError.expired {
+        }
+        XCTAssertEqual(signer.signCount, 0)
+        XCTAssertEqual(transport.authorizeCount, 0)
+        XCTAssertEqual(transport.executeCount, 0)
+        XCTAssertGreaterThan(clock.calls, 1)
+    }
+
     private func sampleInputs(policy: String) -> ExactRunInputs {
         ExactRunInputs(
             policy: policy,
@@ -959,8 +1041,10 @@ final class HoldingExactMailbox: ExactRunPhoneMailbox {
 
 final class RecordingMacSigner: ReloadedMacSigner {
     var signedMessage = Data()
+    var signCount = 0
 
     func sign(message: Data, enrolledPublicKey: Data) throws -> Data {
+        signCount += 1
         signedMessage = message
         return Data("mac-sig".utf8)
     }

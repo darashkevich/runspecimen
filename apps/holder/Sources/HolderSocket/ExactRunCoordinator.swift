@@ -115,6 +115,8 @@ public actor ExactRunCoordinator {
     private var epoch = 0
     /// Nonces whose authorize succeeded and whose execute did not. Invalidation does not release these.
     private var uncertainNonces: Set<String> = []
+    /// Nonces whose execute finished. A later Continue must not sign or authorize them again.
+    private var finishedNonces: Set<String> = []
 
     public init() {}
 
@@ -192,18 +194,31 @@ public actor ExactRunCoordinator {
         mailbox: any ExactRunPhoneMailbox,
         signer: any ReloadedMacSigner
     ) async throws -> String {
+        try await continueRun(now: { now }, inputs: inputs, transport: transport, mailbox: mailbox, signer: signer)
+    }
+
+    /// `now` is read again after each wait so an expiry during the session does not sign.
+    public func continueRun(
+        now: @escaping @Sendable () -> Int,
+        inputs: ExactRunInputs,
+        transport: any ExactRunTransport,
+        mailbox: any ExactRunPhoneMailbox,
+        signer: any ReloadedMacSigner
+    ) async throws -> String {
         guard !busy else { throw ExactRunCoordinatorError.busy }
         busy = true
         defer { busy = false }
         guard let prepared = retained else { throw ExactRunCoordinatorError.missingPrepare }
+        if finishedNonces.contains(prepared.nonce) { throw ExactRunCoordinatorError.missingPrepare }
         if uncertainNonces.contains(prepared.nonce) { throw ExactRunCoordinatorError.leaseUncertain }
         guard retainedInputs == inputs else { throw ExactRunCoordinatorError.inputsChanged }
         let epochAtStart = epoch
         let nonce = prepared.nonce
         let bound = prepared.bound
-        if now > prepared.expiry { throw ExactRunCoordinatorError.expired }
+        if now() > prepared.expiry { throw ExactRunCoordinatorError.expired }
         let live = try await transport.liveSession()
         try requireSameRequest(epochAtStart: epochAtStart, nonce: nonce, inputs: inputs)
+        if now() > prepared.expiry { throw ExactRunCoordinatorError.expired }
         if live.policy != prepared.policy { throw ExactRunCoordinatorError.policyRefused }
         if live.generation != prepared.generation || live.keyGeneration != prepared.keyGeneration {
             throw ExactRunCoordinatorError.generationChanged
@@ -213,6 +228,7 @@ public actor ExactRunCoordinator {
             guard !prepared.enrolledMacPublicKey.isEmpty else {
                 throw ExactRunCoordinatorError.missingMacKey
             }
+            if now() > prepared.expiry { throw ExactRunCoordinatorError.expired }
             let raw = try signer.sign(message: bound, enrolledPublicKey: prepared.enrolledMacPublicKey)
             try requireSameRequest(epochAtStart: epochAtStart, nonce: nonce, inputs: inputs)
             signatures["mac"] = raw.base64EncodedString()
@@ -226,6 +242,7 @@ public actor ExactRunCoordinator {
             signatures["phone"] = signature
         }
         try requireSameRequest(epochAtStart: epochAtStart, nonce: nonce, inputs: inputs)
+        if now() > prepared.expiry { throw ExactRunCoordinatorError.expired }
         try await transport.authorize(nonce: nonce, policy: prepared.policy, signatures: signatures)
         if epoch != epochAtStart || retained?.nonce != nonce || retainedInputs != inputs {
             uncertainNonces.insert(nonce)
@@ -243,6 +260,11 @@ public actor ExactRunCoordinator {
             uncertainNonces.insert(nonce)
             throw ExactRunCoordinatorError.leaseUncertain
         }
+        finishedNonces.insert(nonce)
+        retained = nil
+        retainedInputs = nil
+        displayedBound = nil
+        publishedNonce = nil
         return outcome
     }
 

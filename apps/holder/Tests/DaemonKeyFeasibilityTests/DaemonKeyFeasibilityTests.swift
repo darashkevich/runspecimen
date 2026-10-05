@@ -35,4 +35,35 @@ final class DaemonKeyFeasibilityTests: XCTestCase {
         _ = DaemonKeyCreationHarness.unattendedAssessment()
         XCTAssertEqual(DaemonKeyCreationHarness.hardwareCallsiteReached, before)
     }
+
+    func testAccessValueReachesTheKeyFunctionWithoutTheHardwareAPI() throws {
+        let before = DaemonKeyCreationHarness.hardwareCallsiteReached
+        let sentinel = NSObject()
+        var delivered: NSObject?
+        let key = try DaemonKeyCreationHarness.bindAccessForExplicitHandoff(
+            acknowledgePrivilegedHardwareTrial: true,
+            makeAccess: { sentinel },
+            makeKey: { access -> String in
+                delivered = access
+                return "stand-in"
+            }
+        )
+        XCTAssertEqual(key, "stand-in")
+        XCTAssertTrue(delivered === sentinel)
+        XCTAssertEqual(DaemonKeyCreationHarness.hardwareCallsiteReached, before)
+        XCTAssertThrowsError(
+            try DaemonKeyCreationHarness.bindAccessForExplicitHandoff(
+                acknowledgePrivilegedHardwareTrial: false,
+                makeAccess: { () -> NSObject? in
+                    XCTFail("the refused handoff built an access value")
+                    return nil
+                },
+                makeKey: { (_: NSObject) -> String in
+                    XCTFail("the refused handoff called key creation")
+                    return "no"
+                }
+            )
+        )
+        XCTAssertEqual(DaemonKeyCreationHarness.hardwareCallsiteReached, before)
+    }
 }

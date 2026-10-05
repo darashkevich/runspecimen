@@ -300,7 +300,8 @@ final class CompanionSession: ObservableObject {
         signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
         peer: (any ExactRunPhoneSigningTransport)? = nil,
         now: @MainActor () -> Int = { Int(Date().timeIntervalSince1970) },
-        beforeSign: (@MainActor () async -> Void)? = nil
+        beforeSign: (@MainActor () async -> Void)? = nil,
+        beforeSubmit: (@MainActor () async -> Void)? = nil
     ) async {
         lastError = nil
         guard let reviewed = reviewedExactRun else {
@@ -349,6 +350,14 @@ final class CompanionSession: ObservableObject {
                 reviewedExactRun = nil
                 reviewedExactRunLines = []
                 exactRunNote = "The Mac replaced the exact run. The signature was not returned."
+                return
+            }
+            if let beforeSubmit {
+                await beforeSubmit()
+            }
+            try Task.checkCancellation()
+            guard generation == exactRunGeneration, reviewedExactRun?.bound == reviewed.bound, reviewedExactRun?.nonce == reviewed.nonce else {
+                exactRunNote = "Exact run was cancelled before the signature was returned."
                 return
             }
             try await transport.submitRetainedExactRunSignature(challengeId: reviewed.nonce, signature: signed.signature)

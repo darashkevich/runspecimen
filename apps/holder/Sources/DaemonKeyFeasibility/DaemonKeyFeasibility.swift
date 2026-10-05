@@ -29,22 +29,40 @@ public enum DaemonKeyCreationHarness {
         )
     }
 
+    /// Passes the access value into key creation. Tests call this with stand-ins and do not use the hardware APIs.
+    public static func bindAccessForExplicitHandoff<Access, Key>(
+        acknowledgePrivilegedHardwareTrial: Bool,
+        makeAccess: () -> Access?,
+        makeKey: (Access) throws -> Key
+    ) throws -> Key {
+        guard acknowledgePrivilegedHardwareTrial else {
+            throw DaemonKeyCreationError.handoffRequired
+        }
+        guard let access = makeAccess() else {
+            throw DaemonKeyCreationError.handoffRequired
+        }
+        return try makeKey(access)
+    }
+
     /// Later human handoff only. Tests and unattended code must pass `false` or not call this.
     public static func createKeyForExplicitHumanHandoff(acknowledgePrivilegedHardwareTrial: Bool) throws {
         guard acknowledgePrivilegedHardwareTrial else {
             throw DaemonKeyCreationError.handoffRequired
         }
         hardwareCallsiteReached += 1
-        guard let access = SecAccessControlCreateWithFlags(
-            kCFAllocatorDefault,
-            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            [.privateKeyUsage, .biometryCurrentSet],
-            nil
-        ) else {
-            throw DaemonKeyCreationError.handoffRequired
-        }
-        // The access-control value constrains the key only when this call receives it.
-        // The parameterless initializer would apply a different default and ignore `access`.
-        _ = try SecureEnclave.P256.Signing.PrivateKey(accessControl: access)
+        _ = try bindAccessForExplicitHandoff(
+            acknowledgePrivilegedHardwareTrial: acknowledgePrivilegedHardwareTrial,
+            makeAccess: {
+                SecAccessControlCreateWithFlags(
+                    kCFAllocatorDefault,
+                    kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                    [.privateKeyUsage, .biometryCurrentSet],
+                    nil
+                )
+            },
+            makeKey: { access in
+                try SecureEnclave.P256.Signing.PrivateKey(accessControl: access)
+            }
+        )
     }
 }

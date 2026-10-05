@@ -182,6 +182,7 @@ struct PhonePeerCancellationTests {
             try await testExactRunExpiryBeforeApproveDoesNotSign()
             try await testExactRunExpiryAfterWaitDoesNotSubmit()
             try await testExactRunCancellationBeforeSignDoesNotSign()
+            try await testExactRunCancellationBeforeSubmitDoesNotSubmit()
             try await testExactRunUnpinnedHolderDoesNotSign()
             try await testExactRunSubstitutedHolderDoesNotSign()
             try testPhoneKeyOwnershipRejectsADifferentChallenge()
@@ -570,6 +571,21 @@ func testExactRunCancellationBeforeSignDoesNotSign() async throws {
     await hold.release()
     await task.value
     if signer.committedSigns != 0 || signer.signs != 0 || peer.submissions != 0 {
+        throw TestFailure.cancelledPathSignedOrPosted
+    }
+}
+
+@MainActor
+func testExactRunCancellationBeforeSubmitDoesNotSubmit() async throws {
+    let peer = RecordingExactPeer(fetched: sampleFetchedExactRun())
+    let signer = CountingSigner()
+    let session = CompanionSession()
+    session.pinnedHolderId = "holder-a"
+    await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
+    await session.approveReviewedExactRun(signer: signer, peer: peer, now: { 1_700_000_000 }, beforeSubmit: {
+        session.cancelExactRunReview()
+    })
+    if signer.committedSigns != 1 || peer.submissions != 0 {
         throw TestFailure.cancelledPathSignedOrPosted
     }
 }
