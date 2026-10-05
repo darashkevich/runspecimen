@@ -1,16 +1,16 @@
 # ChatGPT retest brief — PR #39 engineering GM
 
-Tip `5b47e5f5bcb5fdaf64f88075d42f35271de149a8` on `cursor/integrated-release-candidate` (`git fetch` then checkout; HEAD may be a later SHA-label commit). Pack-recording `0fcfc8f6c39c359a153a81d08cd048280ece5e08`. Base `d54c803c9b6dfe82cb91f55c5a21923c822041d9`. Pack `artifacts/rc15-2026-10-05-golden-master/`. Package tree `5f35cfcf401107648d61b84e29da5a2e8b45f708`. Canonical hashes: `docs/CANDIDATE_MANIFEST.md`.
+Retest the **package tree** `5f35cfcf401107648d61b84e29da5a2e8b45f708` on `cursor/integrated-release-candidate`. Pack-recording `0fcfc8f6c39c359a153a81d08cd048280ece5e08`. Independent QA already ran at evidence-only successor `9fde02ad530a792fc180d963012e6a3010b3375d` (packed hashes unchanged). Base `d54c803c9b6dfe82cb91f55c5a21923c822041d9`. Pack `artifacts/rc15-2026-10-05-golden-master/`. Canonical hashes: `docs/CANDIDATE_MANIFEST.md`. Do not chase HEAD of later notes/report commits as a new package identity.
 
-**Locked.** D1: installed admission fail-closed; E2 open; `run_integration_complete` and `e2_closed` false; no SE invention. D2: holder id `com.darashkevich.runspecimen.holder` accepted; no rename.
+**Locked.** D1: installed admission fail-closed; E2 open (engineering gap, not closed by a biometric press); `run_integration_complete` and `e2_closed` false; no SE invention. D2: holder id `com.darashkevich.runspecimen.holder` accepted; no rename.
 
-**Since `6bb64d1`:** NEW-01 only (plus docs/pack). Sandbox `top_level` now wins on `sys.path` over the live workspace for packaged unittest suites; app imports still resolve live. `test_new01_*` added. No sweep regressions required a fix.
+**Since `6bb64d1`:** NEW-01 only in packed inputs (plus docs/pack). Sandbox `top_level` now wins on `sys.path` over the live workspace for packaged unittest suites; app imports still resolve live. `test_new01_*` added. No sweep regressions required a fix. A later macOS test fixture creates the Touch ID diagnostic root itself so `testInterruptedOrPartialWritesLeaveNoFile` is order-independent; that file is not in the sdist.
 
 ## Retest
 
 ```
-git fetch origin && git checkout cursor/integrated-release-candidate
-git rev-parse HEAD   # descendant of 5f35cfc (package tree) and 0fcfc8f (pack recording)
+git fetch origin && git checkout 5f35cfcf401107648d61b84e29da5a2e8b45f708
+git rev-parse HEAD
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 PYTHONPATH=src python3 -m unittest tests.test_new01_unittest_packaged_suite -v
 # honesty greps
@@ -19,11 +19,13 @@ rg -n "com.darashkevich.runspecimen.holder" apps/holder/Resources/Info.plist app
 # hashes: sha256sum artifacts/rc15-2026-10-05-golden-master/runspecimen-0.2.0rc15* vs docs/CANDIDATE_MANIFEST.md
 ```
 
+On Darwin, also `swift test --package-path apps/macos` and, if authorized and isolated from the live daemon, `swift test --package-path apps/holder`. Linux skips do not cover those packages.
+
 Prove NEW-01: a workspace `tests/__init__.py` + `tests/test_ok.py` through `UnittestProvider` must be `outcome=passed` / 1 test. Old runner at `6bb64d1` failed with `module incorrectly imported from …/tests`.
 
 ## Deliverable format
 
-Honesty table (hardware / rc15 / E2 / holder id / hashes). Findings table `ID|Sev|Cat|Location|Evidence|Fix direction`. NEW-01 disposition. Residual debt ≤10 lines.
+Honesty table (hardware / rc15 / E2 / holder id / hashes). Findings table `ID|Sev|Cat|Location|Evidence|Fix direction`. NEW-01 disposition. Residuals split into engineering gaps / human acceptance / release-operator actions. E2 is an engineering gap.
 
 ## Do not
 
