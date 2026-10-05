@@ -1,6 +1,6 @@
 # Branch hygiene
 
-Recorded against integrated tip `51c46acf418f09e7536bee92c893f87f3efebc60`. This is not a merge plan and not a production sign-off. Do not delete `cursor/evidence-expansion-coherence`: pull request #39 uses it as its base.
+Pull-request actions below were recorded against `51c46acf418f09e7536bee92c893f87f3efebc60`. The Linux holder-stage skip landed afterward in `d54f51f089149145f26ae19e2f76216473c20dfe` and does not change those actions. This is not a merge plan and not a production sign-off. Do not delete `cursor/evidence-expansion-coherence`: pull request #39 uses it as its base.
 
 ## Open pull requests
 
