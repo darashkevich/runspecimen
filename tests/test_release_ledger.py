@@ -34,9 +34,11 @@ class HolderStageTests(unittest.TestCase):
             )
 
     def _require_swiftc(self) -> None:
-        if shutil.which("swiftc") is None and not Path("/usr/bin/xcrun").is_file():
+        # The stage script invokes /usr/bin/xcrun. A Linux swiftc on PATH is not
+        # that compiler, so the compiled assertions stay skipped there.
+        if sys.platform != "darwin" or not Path("/usr/bin/xcrun").is_file():
             self.skipTest(
-                "swiftc is absent (no swiftc on PATH and no /usr/bin/xcrun); "
+                "swiftc is absent for holder staging (need macOS /usr/bin/xcrun); "
                 "compiled holder stage assertions were not run and were not weakened"
             )
 
