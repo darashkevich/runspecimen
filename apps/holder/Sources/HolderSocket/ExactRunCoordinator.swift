@@ -231,7 +231,19 @@ public actor ExactRunCoordinator {
             uncertainNonces.insert(nonce)
             throw ExactRunCoordinatorError.leaseUncertain
         }
-        return try await transport.execute(nonce: nonce, signatures: signatures)
+        let outcome: String
+        do {
+            outcome = try await transport.execute(nonce: nonce, signatures: signatures)
+        } catch {
+            // An execute error is not a definite non-start. The consumed nonce stays uncertain.
+            uncertainNonces.insert(nonce)
+            throw ExactRunCoordinatorError.leaseUncertain
+        }
+        if epoch != epochAtStart || retained?.nonce != nonce || retainedInputs != inputs {
+            uncertainNonces.insert(nonce)
+            throw ExactRunCoordinatorError.leaseUncertain
+        }
+        return outcome
     }
 
     private func requireSameRequest(epochAtStart: Int, nonce: String, inputs: ExactRunInputs) throws {

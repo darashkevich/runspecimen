@@ -43,7 +43,8 @@ public enum DaemonKeyCreationHarness {
         ) else {
             throw DaemonKeyCreationError.handoffRequired
         }
-        _ = access
-        _ = try SecureEnclave.P256.Signing.PrivateKey()
+        // The access-control value constrains the key only when this call receives it.
+        // The parameterless initializer would apply a different default and ignore `access`.
+        _ = try SecureEnclave.P256.Signing.PrivateKey(accessControl: access)
     }
 }
