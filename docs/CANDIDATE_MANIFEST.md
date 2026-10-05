@@ -5,7 +5,7 @@ This file is not a Store submission plan and it is not packed into the sdist. A 
 | Item | Identity |
 | --- | --- |
 | Branch | `cursor/integrated-release-candidate` |
-| Package tree | `d54f51f089149145f26ae19e2f76216473c20dfe` |
+| Package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` |
 | Engine / package | unpublished `0.2.0rc15` |
 | Plugin | unpublished `0.2.0-rc.15` |
 | App marketing version in the project | **0.1.5 (13)**. That label also appears on a different tree: source `ea21a7fa17140dc15dab74493d384b2a8b7a150c`, engine rc14, package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa`, report `runspecimen-candidates/0.1.5-13/QA-2026-09-29.md`. That report is not this candidate |
@@ -15,15 +15,15 @@ This file is not a Store submission plan and it is not packed into the sdist. A 
 | Published wheel / sdist / plugin zip | `d720bf5163a2b250699c30e804f89708e71c1c0d22682fbb43a4644b59c45948` / `6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3` / `0073e04e21bd225da328de06ef840ead6956a8cced4510a0025fb1e2ddc7fc16` |
 | Homebrew | still pinned to published rc14 |
 
-Canonical unpublished rc15 archives for this pass, built by `release_check.py` on Homebrew Python 3.12.14 at `/tmp/rs-py312-rel-holder` (644 tests, 0 failures, 35 skipped). Copies are in `artifacts/rc15-2026-10-05-qa-py312-tree/`. The sdist does not contain this manifest or its own hash. These are not the published rc14 bytes. There is one hash table.
+Canonical unpublished rc15 archives for this pass, built by `release_check.py` on CPython 3.12.3 at `/tmp/rs-gm-gate` (650 tests, 0 failures, 78 skipped on this Linux host). Copies are in `artifacts/rc15-2026-10-05-golden-master/`. The sdist does not contain this manifest or its own hash. These are not the published rc14 bytes. There is one hash table.
 
 | File | SHA-256 |
 | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | `7b0883b7c7cb31cf512ff4763d28c40dac4867bc506e2a9c00eb59e955276d81` |
-| `runspecimen-0.2.0rc15.tar.gz` | `c84e0deaa471b4fc8040ae8c13b184223264db79c344e13b4982709c1f77344c` |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` |
+| `runspecimen-0.2.0rc15.tar.gz` | `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` |
 
-The wheel and plugin match `artifacts/rc15-2026-10-05-qa-py312-hygiene/` (`7b0883b7c7cb31cf512ff4763d28c40dac4867bc506e2a9c00eb59e955276d81`, `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6`). The sdist changed because `tests/test_release_ledger.py` is packed; that directory's sdist `be67ccf91b3be88af07afc77c8fb9adc6c8c74aa3d3c31b1def78e05e958532d` was not overwritten. All three differ from `artifacts/rc15-2026-10-05-qa-py312-protocol/` (`eb0a42cc87ffc2700ab35550b4ed5515d156f4681e31ffc84021dfac3397b191`, `92f03e69ab55a0246ec6cfdd918031d70d05617ee8e20ca617fa1f252dfc5038`, `a3c194600d70c77a74fc9cce00442ba716cdb2596760b766b93a45a52c7b5db2`). That directory was not overwritten. There is no new holder stage tar. The prior sealed stage `5200682fec6d5cdeee72c81ea8a419b0b2d80022f648f77a75a783b4eee9cdc9` in `artifacts/rc15-2026-10-05-qa-py312-seal/` was not overwritten. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist.
+The plugin zip matches the previous canonical table (`d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6`). The wheel and sdist changed because packaged `UnittestProvider` discovery, `tests/test_new01_unittest_packaged_suite.py`, `CHANGELOG.md`, and `docs/FAQ.md` shipped in the sdist. Prior `artifacts/rc15-*` directories were not overwritten, including `artifacts/rc15-2026-10-05-qa-py312-tree/` wheel/sdist `7b0883b7c7cb31cf512ff4763d28c40dac4867bc506e2a9c00eb59e955276d81` / `c84e0deaa471b4fc8040ae8c13b184223264db79c344e13b4982709c1f77344c`. There is no new holder stage tar. The prior sealed stage `5200682fec6d5cdeee72c81ea8a419b0b2d80022f648f77a75a783b4eee9cdc9` in `artifacts/rc15-2026-10-05-qa-py312-seal/` was not overwritten. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist.
 
 ## Status
 
