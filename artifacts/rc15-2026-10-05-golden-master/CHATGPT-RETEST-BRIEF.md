@@ -1,6 +1,6 @@
 # ChatGPT retest brief — PR #39 engineering GM
 
-Tip `9b6a80edccc5e4ee7601ac86b9ef56eb23930def` on `cursor/integrated-release-candidate`. Base `d54c803c9b6dfe82cb91f55c5a21923c822041d9`. Pack `artifacts/rc15-2026-10-05-golden-master/`. Package tree `5f35cfcf401107648d61b84e29da5a2e8b45f708`. Canonical hashes: `docs/CANDIDATE_MANIFEST.md`.
+Tip: checkout `origin/cursor/integrated-release-candidate` (`git rev-parse HEAD`). Pack-recording `0fcfc8f6c39c359a153a81d08cd048280ece5e08`. Base `d54c803c9b6dfe82cb91f55c5a21923c822041d9`. Pack `artifacts/rc15-2026-10-05-golden-master/`. Package tree `5f35cfcf401107648d61b84e29da5a2e8b45f708`. Canonical hashes: `docs/CANDIDATE_MANIFEST.md`.
 
 **Locked.** D1: installed admission fail-closed; E2 open; `run_integration_complete` and `e2_closed` false; no SE invention. D2: holder id `com.darashkevich.runspecimen.holder` accepted; no rename.
 
