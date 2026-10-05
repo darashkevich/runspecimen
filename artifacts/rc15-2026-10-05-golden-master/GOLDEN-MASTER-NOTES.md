@@ -9,7 +9,7 @@ Not a production biometric sign-off. Not a Store, PyPI, or notarized publish.
 | START_SHA | `6bb64d1c6ee6798b102023652255d15830e51178` |
 | Package-tree SHA | `5f35cfcf401107648d61b84e29da5a2e8b45f708` (NEW-01 + `test_new01_*` + CHANGELOG Unreleased + FAQ identity sentence) |
 | Pack-recording SHA | `0fcfc8f6c39c359a153a81d08cd048280ece5e08` |
-| Final tip SHA | `git rev-parse HEAD` on `cursor/integrated-release-candidate` (descendant of pack-recording `0fcfc8f6c39c359a153a81d08cd048280ece5e08`) |
+| Final tip SHA | `5b47e5f5bcb5fdaf64f88075d42f35271de149a8` |
 | PR base | `cursor/evidence-expansion-coherence` @ `d54c803c9b6dfe82cb91f55c5a21923c822041d9` |
 | Pack | `artifacts/rc15-2026-10-05-golden-master/` |
 
