@@ -18,7 +18,7 @@ Packed identity is the package-tree SHA and the current pack sdist hash. The wor
 
 Canonical hashes: `docs/CANDIDATE_MANIFEST.md` (one table). Do not treat this file as a second source of truth.
 
-OPEN-SDIST is **closed as byte-reproducible**. The old committed sdist `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname (`ubuntu`/`1000`) and setuptools walk order, so ChatGPT’s rebuild `6979460d…` differed. `release_check.py` now rewrites the sdist with `SOURCE_DATE_EPOCH`, gzip mtime 0, numeric owner 0/0, empty uname/gname, sorted members, and 0644/0755 modes. Regenerated sdist `ddd6f667a09e5e18a71171329df62965bc8849c6d0efa144fa7f535493f828f6`. Wheel `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` and plugin `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` were not rebuilt. `tests/test_release_archive_reproducibility.py` rebuilds and compares against the committed SHA256SUMS hash.
+OPEN-SDIST is **closed as byte-reproducible**. The old committed sdist `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname (`ubuntu`/`1000`) and setuptools walk order, so ChatGPT’s rebuild `6979460d…` differed. `release_check.py` now rewrites the sdist with `SOURCE_DATE_EPOCH`, gzip mtime 0, numeric owner 0/0, empty uname/gname, sorted members, and 0644/0755 modes. Regenerated sdist `316938cea04f6747e32fd88f263533d710d489861fc36372c897680088fd63d3` (was `ddd6f667…` before the 3.9 CI fix). Wheel `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` and plugin `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` were not rebuilt. `tests/test_release_archive_reproducibility.py` rebuilds and compares the sdist against the committed SHA256SUMS hash. The golden wheel byte hash is setuptools 84.0.0; CI 3.9 (setuptools 82.0.1) compares wheel payload excluding `WHEEL`/`RECORD` Generator lines.
 
 `tar tzf` of the sdist has CHANGELOG, FAQ, `tests/test_new01_unittest_packaged_suite.py`, and does not contain `CANDIDATE_MANIFEST.md`, `BRANCH_HYGIENE.md`, or `SECURE_ENCLAVE_ADMISSION.md`.
 
@@ -32,7 +32,7 @@ OPEN-SDIST is **closed as byte-reproducible**. The old committed sdist `b2db7b78
 | `e2_closed` false | Pass | same rows; D1 locked |
 | Installed admission fail-closed | Pass | `docs/SECURE_ENCLAVE_ADMISSION.md:3,69`; `docs/HOLDER_NATIVE_BRIDGE.md:28` |
 | Holder id accepted, Developer ID DR pinned | Pass | D2 2026-10-05. `docs/SECURE_ENCLAVE_ADMISSION.md:42`; `apps/holder/Resources/Info.plist:11-12` `com.darashkevich.runspecimen.holder`; `apps/holder/Scripts/build_install_holder.sh:206-223` |
-| Manifest hashes match the package tree | Pass | table in `docs/CANDIDATE_MANIFEST.md`; wheel `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` (unchanged), sdist `ddd6f667a09e5e18a71171329df62965bc8849c6d0efa144fa7f535493f828f6` (OPEN-SDIST rewrite; old `b2db7b78…`), plugin `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` (unchanged) |
+| Manifest hashes match the package tree | Pass | table in `docs/CANDIDATE_MANIFEST.md`; wheel `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` (unchanged), sdist `316938cea04f6747e32fd88f263533d710d489861fc36372c897680088fd63d3` (OPEN-SDIST rewrite; old `b2db7b78…` / `ddd6f667…`), plugin `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` (unchanged) |
 
 ## Disposition (ChatGPT re-QA at `6bb64d1`)
 
