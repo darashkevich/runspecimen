@@ -57,10 +57,10 @@ This boundary must stay explicit. The MVP is not an operating-system sandbox and
 | GitHub releases | Source, signed artifacts, examples, issue tracker | Technical evaluation and trust-building | Lead generation and enterprise diligence | Launch |
 | Cursor Marketplace | Free plugin: skill, commands, hooks, narrow MCP adapter | Cursor user discovers RunSpecimen in-product | Acquisition; direct link to Pro/Team | Launch |
 | Codex Plugin Directory | Free plugin: skill plus local-engine adapter | Codex user installs the supported workflow | Acquisition; direct link to Pro/Team | Launch |
-| Claude Code marketplace | Free plugin and lifecycle hooks | Claude Code team adopts the same contracts | Acquisition and ecosystem coverage | **In-repo ready**; submit next |
+| Claude Code marketplace | Free plugin and lifecycle hooks | Claude Code team adopts the same contracts | Acquisition and ecosystem coverage | **In-repo ready**; directory form submitted 2026-09-21, not listed |
 | Grok Build (xAI) | Claude-compat plugin + optional AGENTS.md | Grok Build users get the same lifecycle | Acquisition and ecosystem coverage | **In-repo ready** (Claude compat) |
-| Gemini CLI gallery | Free extension: skill, commands, hooks, MCP | Gemini CLI users get the same lifecycle | Acquisition and ecosystem coverage | **In-repo ready**; gallery not submitted |
-| JetBrains Junie / IntelliJ | Junie extension + Tools-menu scaffold | Enterprise IDE users shell to the CLI | Acquisition and ecosystem coverage | **In-repo ready**; Marketplace not submitted |
+| Gemini CLI gallery | Free extension: skill, commands, hooks, MCP | Gemini CLI users get the same lifecycle | Acquisition and ecosystem coverage | **In-repo ready**; crawler-indexed gallery, not indexed as of 2026-09-21 |
+| JetBrains Junie / IntelliJ | Junie extension + Tools-menu scaffold | Enterprise IDE users shell to the CLI | Acquisition and ecosystem coverage | **In-repo ready**; Junie catalog PR #16 open, not merged (checked 2026-10-06); IntelliJ Marketplace not submitted |
 | Windsurf Cascade | Skill + rule pack (Cursor-compatible story) | Cascade users get TTY-approve workflow | Acquisition and ecosystem coverage | **In-repo ready**; store not submitted |
 | Homebrew tap | Versioned CLI install and upgrades | macOS/Linux developer installs without Python packaging knowledge | Reduces paid-trial friction | **Live** ([`darashkevich/homebrew-runspecimen`](https://github.com/darashkevich/homebrew-runspecimen); pins `0.2.0rc14`) |
 | VS Code Marketplace / Open VSX | Approval, status, evidence, and incident-review UI | Team uses an editor-neutral control surface | Pro feature entry point | After design partners |

@@ -34,6 +34,8 @@ Published engine bytes stay **`0.2.0rc14`**. This tree's engine is unpublished *
   (identical bytes; checksum-only, not attested).
   - Prospective release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.14
 
+For unpublished `0.2.0rc15`, three decisions stay separate and none is made by this checklist: (1) candidate selection (published rc14, the `b3367eb` sdist, or the `fb05284` qualification sdist), (2) qualification (the human guarantee (1) session on those exact bytes, then a post-upload byte compare), and (3) release authorization by Yahor. A green suite or CI run is evidence for (2) only.
+
 Run `python3 scripts/release_check.py` before tagging. A release candidate is not
 a stable release and does not change the explicit limitations in the threat model.
 
@@ -41,7 +43,7 @@ a stable release and does not change the explicit limitations in the threat mode
 ## Stable 0.2.0 gate
 
 **Status: not met.** Published package remains **`0.2.0rc14`**. Do not retag,
-promote, or claim rc13 as stable. A release candidate is not a stable release.
+promote, or claim rc13, rc14, or the unpublished rc15 as stable. A release candidate is not a stable release.
 
 ### Honesty constraints (must stay true on the cut commit)
 
@@ -62,7 +64,7 @@ promote, or claim rc13 as stable. A release candidate is not a stable release.
 
 ### Still required before tagging `v0.2.0`
 
-- [ ] Version / classifier bump from `0.2.0rc14` → `0.2.0` (package, plugins,
+- [ ] Version / classifier bump from the current RC (`0.2.0rc15` on this branch) → `0.2.0` (package, plugins,
       docs identity pins) on a dedicated PR.
 - [ ] CI green on the exact cut commit (Linux 3.9–3.14, macOS 3.11/3.14, macos-app).
 - [ ] Copy audit: USER_GUIDE, THREAT_MODEL, FAQ, SUBMISSION, site pins — no

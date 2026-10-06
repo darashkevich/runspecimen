@@ -45,7 +45,7 @@ hardware-backed identity.
 | Ed25519 offline pubkey receipts | Shipped optional extra (see `docs/ED25519_RECEIPTS.md`) |
 | Tested isolation integrations | Published in `0.2.0rc13` (`none` / `sandbox-exec` / `bwrap`). Default `none` does not confine the process. `sandbox-exec` and `bwrap` are not an OS sandbox. Published `0.2.0rc12` rejects the field |
 | Fuzz / golden depth | Published in `0.2.0rc13` (`tests/test_fuzz_contracts.py`) |
-| Activation / adapters | Adapters shipped in-repo; public Homebrew tap pins published `0.2.0rc13` |
+| Activation / adapters | Adapters shipped in-repo; public Homebrew tap pins published `0.2.0rc14` (checked 2026-10-06) |
 | Local evidence slice | Published in `0.2.0rc13` (policy file, local OS user, `retain`). No paid control plane |
 | UX a11y + digest/diff + site copy | Published in `0.2.0rc13` (`digest`, `diff`, dashboard a11y). Public site no longer lists a price book. Proof adapters stay buyer-driven |
 
@@ -148,9 +148,9 @@ Done in this tree, without new marketplace submissions:
 
 - `examples/templates/` for a research step, an ML eval step, and a security check that names a shared policy.
 - `examples/campaigns/adversarial-first-run/` shows a second worker refused by the workspace lease.
-- `packaging/homebrew/runspecimen.rb` installs the `v0.2.0-rc.13` sdist. Public tap: [`darashkevich/homebrew-runspecimen`](https://github.com/darashkevich/homebrew-runspecimen) (`brew tap darashkevich/runspecimen && brew install runspecimen`).
+- `packaging/homebrew/runspecimen.rb` installs the `v0.2.0-rc.14` sdist. Public tap: [`darashkevich/homebrew-runspecimen`](https://github.com/darashkevich/homebrew-runspecimen) (`brew tap darashkevich/runspecimen && brew install runspecimen`).
 
-Still outside this change: Cursor, Claude, Gemini, Junie, and OpenAI submissions already filed. Do not file them again. Windsurf, VS Code, and Amazon Q stay unsubmitted. GitHub showcase was already published with rc12.
+Still outside this change: Cursor and Claude forms and the Junie catalog PR were filed on 2026-09-21, and Gemini relies on the gallery crawler. The Codex/OpenAI directory is not submitted (verified developer identity still required). See `docs/SUBMISSION.md`. Do not file the filed ones again. Windsurf, VS Code, and Amazon Q stay unsubmitted. GitHub showcase was already published with rc12.
 
 ---
 
@@ -171,7 +171,7 @@ Not built: browser approval, one-tap Approve, a public retention service, remote
 
 - `runspecimen digest` and `runspecimen diff` compare recorded receipts. They are not `verify`. `digest --live` reports output-byte drift only.
 - Dashboard: skip link, main landmark, stronger focus outlines, muted text darkened for contrast, auto-refresh starts off when the user prefers reduced motion, and the page states the contract's isolation backend without applying it.
-- The public page `sites/runspecimen/public/index.html` (in the portfolio repo) no longer lists Pro/Team prices. It installs `0.2.0rc13` and says opt-in confinement is not an OS sandbox. Published `0.2.0rc12` does not include these commands.
+- The public page `sites/runspecimen/public/index.html` (in the portfolio repo) no longer lists Pro/Team prices. At the time of that phase it installed `0.2.0rc13`; it now installs `0.2.0rc14` (website source read 2026-10-06). It says opt-in confinement is not an OS sandbox. Published `0.2.0rc12` does not include these commands.
 - No production claim that opt-in confinement is an OS sandbox.
 
 ### Domain-specific proof adapters (optional, buyer-driven)

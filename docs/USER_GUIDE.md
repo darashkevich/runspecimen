@@ -408,7 +408,7 @@ adversarially review docs **without** using Cursor’s in-chat model alone, use
 | --- | --- |
 | Connect | Composio toolkit `grok` + xAI API key from [console.x.ai](https://console.x.ai) |
 | Chat | Prefer tools whose slug starts with `GROK_` (e.g. `GROK_CREATE_RESPONSE`) |
-| Log | Append only real replies to [GROK_TANDEM.md](GROK_TANDEM.md) |
+| Log | Append only real replies to a review log in your own notes (no Grok log file is committed in this repository) |
 | ChatGPT history | [CHATGPT_TANDEM.md](CHATGPT_TANDEM.md) (often quota-blocked) |
 
 **Footgun:** Composio search often confuses **Grok / Groq / OpenAI**. Reject any
@@ -453,6 +453,5 @@ Guarantee (2) is a separate Developer ID holder. It is not in the Store app, it 
 - [THREAT_MODEL.md](THREAT_MODEL.md)
 - [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)
 - [Integrations](INTEGRATIONS.md) — adapter status ledger + frontier research
-- [GROK_TANDEM.md](GROK_TANDEM.md) — external Grok review log
 - [CHATGPT_TANDEM.md](CHATGPT_TANDEM.md) — ChatGPT tandem history
 - [SECURITY.md](../SECURITY.md)

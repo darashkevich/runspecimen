@@ -9,8 +9,8 @@ This file is the live ledger. Golden-master notes are historical. Later commits 
 | Item | Value |
 | --- | --- |
 | Working branch | `cursor/evidence-expansion-coherence` |
-| Source SHA this ledger was written against | Parent `ae6a07123150b7ad057c60bfaa188a59833c1bbc` (PR #53 merge on `cursor/evidence-expansion-coherence`). Not `main` |
-| This follow-up | Qualification successor of `b3367eb`. Pack `artifacts/rc15-2026-10-06-qualification/`. Wheel `68685be9…`, sdist `de90ab7a…`, plugin unchanged. Not production sign-off |
+| Source SHA this ledger was written against | Parent `ae6a07123150b7ad057c60bfaa188a59833c1bbc` (PR #53 merge on `cursor/evidence-expansion-coherence`). Package identity `fb05284`; evidence-only tip `c0812ac`. Not `main` |
+| This follow-up | Docs-only successor of `c0812ac`. Pack `artifacts/rc15-2026-10-06-qualification-docfix/`. Wheel `a68094f0…`, sdist `5fd68a6f…`, plugin unchanged. Prior packs not overwritten. Not production sign-off. This successor's CI is pending until it runs |
 | Historical IRC tip | `a0dc23361856db8a68075471860bd4ab25af838c` |
 | NEW-01 package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` |
 | Engine | unpublished `0.2.0rc15` |
@@ -23,15 +23,15 @@ Draft operator merge to `main`: [#51](https://github.com/darashkevich/runspecime
 
 ## Artifact provenance
 
-Canonical table: [CANDIDATE_MANIFEST.md](CANDIDATE_MANIFEST.md). Checklist: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Pack: `artifacts/rc15-2026-10-06-qualification/`. Prior packs, including `artifacts/rc15-2026-10-06-isolated-evidence/` (`682fe989…` / `809431ea…`), were not overwritten.
+Canonical table: [CANDIDATE_MANIFEST.md](CANDIDATE_MANIFEST.md). Checklist: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Pack: `artifacts/rc15-2026-10-06-qualification-docfix/`. Prior packs, including `artifacts/rc15-2026-10-06-qualification/` (`de90ab7a…` / `68685be9…`) and `artifacts/rc15-2026-10-06-isolated-evidence/` (`682fe989…` / `809431ea…`), were not overwritten.
 
 | File | SHA-256 | Provenance |
 | --- | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | `68685be9ffaf8fdc37dd26ae4d6f1987190e485252a97f118426137408a9012a` | Fail-closed admission string. Was `809431ea…` |
-| `runspecimen-0.2.0rc15.tar.gz` | `de90ab7a9b51cc7c944f06ac5085de6abe93804a25b72e40dbe23adad1fad464` | That string plus packed doc corrections. Was `682fe989…` |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | `a68094f0a4321b5ca19af047b48ecb6a7505c3b9b3d166b996775b1d0ebbfa9f` | Packed-doc errata successor of `68685be9…` |
+| `runspecimen-0.2.0rc15.tar.gz` | `5fd68a6f06d7712ce16d57f3d892a505256349820428b51dc978ee4e97a7fde4` | Packed-doc errata successor of `de90ab7a…` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` | Unchanged |
 
-**OPEN-SDIST (closed).** Historical mismatch: committed `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname, so a rebuild produced `6979460d…`. `release_check.py` now pins `SOURCE_DATE_EPOCH`, gzip mtime 0, owner 0/0, empty uname/gname, sorted members, 0644/0755. Regression: `tests/test_release_archive_reproducibility.py`. The golden-master sdist `c001cb08…` stays in that directory. The `b3367eb` sdist `682fe989…` stays in `artifacts/rc15-2026-10-06-isolated-evidence/`. The current pack sdist is `de90ab7a…`. Do not restore the older digests as current.
+**OPEN-SDIST (closed).** Historical mismatch: committed `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname, so a rebuild produced `6979460d…`. `release_check.py` now pins `SOURCE_DATE_EPOCH`, gzip mtime 0, owner 0/0, empty uname/gname, sorted members, 0644/0755. Regression: `tests/test_release_archive_reproducibility.py`. The golden-master sdist `c001cb08…` stays in that directory. The `b3367eb` sdist `682fe989…` stays in `artifacts/rc15-2026-10-06-isolated-evidence/`. The `fb05284` sdist `de90ab7a…` stays in `artifacts/rc15-2026-10-06-qualification/`. The current pack sdist is `5fd68a6f…`. Do not restore the older digests as current.
 
 Published rc14 bytes are unchanged. Homebrew still pins rc14.
 
@@ -82,7 +82,7 @@ Local Homebrew Python 3.12.14 `release_check.py`: 658 tests, 36 skipped, 0 faile
 
 ### Qualification suite (this successor)
 
-CPython 3.12.14, pack already present: 658 tests, 35 skipped, exit 0. Rebuilt sdist `de90ab7a…` and wheel `68685be9…` matched `artifacts/rc15-2026-10-06-qualification/SHA256SUMS`. The 35 skips are PyNaCl (29), bubblewrap (3), Linux `ldd` (2), and pytest (1). They were not simulated as passes. Channel gates: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Package commit `fb05284` CI is 20/20 (push 37480847104, pull request 37480855659). A later edit of this ledger is not a new package.
+CPython 3.12.14, pack already present: 658 tests, 35 skipped, exit 0. Rebuilt sdist `de90ab7a…` and wheel `68685be9…` matched `artifacts/rc15-2026-10-06-qualification/SHA256SUMS`. The 35 skips are PyNaCl (29), bubblewrap (3), Linux `ldd` (2), and pytest (1). They were not simulated as passes. Channel gates: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Package commit `fb05284` CI is 20/20 (push 37480847104, pull request 37480855659). Evidence-only tip `c0812ac` CI is 20/20 (push 37482547229, pull request 37482561658). This docs-only successor pack is `artifacts/rc15-2026-10-06-qualification-docfix/` (sdist `5fd68a6f…`, wheel `a68094f0…`, plugin unchanged, report `1fb513a1…` on linux/3.12.3). Local `release_check.py` second pass: 658 tests, 46 skipped, exit 0; reproducibility compare executed against that directory and matched. This successor's CI is pending until it runs.
 
 ## Open items
 
@@ -91,7 +91,7 @@ CPython 3.12.14, pack already present: 658 tests, 35 skipped, exit 0. Rebuilt sd
 | E2 | Engineering gap | Engineering | Installed holder / exact-run admission | Keep fail-closed. Root `launchd` cannot create or reload a Secure Enclave key ([SECURE_ENCLAVE_ADMISSION.md](SECURE_ENCLAVE_ADMISSION.md)). A biometric press does not close this. Any other design is a new decision |
 | SWIFT-STARTUP | Closed | Engineering | macos-app | Production default stays 5s (`defaultReadyDeadline`). Marker tests keep an explicit 20s CI python3 allowance. New tests pin the constant and fail a never-ready child at the default. Smoke does not retry assertion flakes |
 | HOLDER-SWIFT-CI | Closed | Engineering | Holder | Isolated script refuses `RS_HOLDER_SOCKET` and install consent. Zero tests run fails the job. No retry |
-| H1 | Human acceptance | Yahor | Local / companion / dual prompt | Press Touch ID / Face ID on a provenance-identified build. Does **not** close E2 |
+| H1 | Human acceptance | Yahor | Local / companion / dual prompt | Mac+iPhone diagnostic passed 2026-10-06 (Mac carried-approval pin; iPhone enroll/rotate/sign/revoke). IOS-H1-08 and IOS-H1-02 remain, tracked separately, not blocking the CLI pack. Does **not** close E2 |
 | H2 | Release / operator | Yahor | Developer ID holder | Live SMAppService install on a real Mac. Unauthorized here |
 | H3 | Release / operator | Yahor | Apple | Send [APPLE_DTS_HOLDER_QUESTION.md](APPLE_DTS_HOLDER_QUESTION.md) |
 | H4 | Release / operator | Yahor | Holder | Developer ID sign + notarize |
