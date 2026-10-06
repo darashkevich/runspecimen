@@ -9,8 +9,8 @@ This file is the live ledger. Golden-master notes are historical. Later commits 
 | Item | Value |
 | --- | --- |
 | Working branch | `cursor/evidence-expansion-coherence` |
-| Source SHA this ledger was written against | Parent `ae6a07123150b7ad057c60bfaa188a59833c1bbc` (PR #53 merge on `cursor/evidence-expansion-coherence`). Package identity `fb05284`; evidence-only tip `c0812ac`. Not `main` |
-| This follow-up | Docs-only successor of `c0812ac`. Pack `artifacts/rc15-2026-10-06-qualification-docfix/`. Wheel `a68094f0…`, sdist `5fd68a6f…`, plugin unchanged. Prior packs not overwritten. Not production sign-off. CI 20/20 on `d42fe583dc3dd04e3cd3315f50608045c144d818` (push 37487406807, pull request 37487436430), not on evidence-only `c226b692f100eab0f5b288edc7d99369abadef16` |
+| Source SHA this ledger was written against | Source parent `311da6c72e95721dac40c7466040898f6e5de83f` on `cursor/evidence-expansion-coherence`. Engine payload still `fb05284`. Not `main` |
+| This follow-up | Bump-pack successor of `311da6c`. Pack `artifacts/0.2.0rc15-2026-10-06-bump/`. Wheel `a68094f0…` (unchanged from docfix), sdist `886f90d0…`, plugin unchanged. Prior packs not overwritten. Not production sign-off |
 | Historical IRC tip | `a0dc23361856db8a68075471860bd4ab25af838c` |
 | NEW-01 package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` |
 | Engine | unpublished `0.2.0rc15` |
@@ -23,15 +23,15 @@ Draft operator merge to `main`: [#51](https://github.com/darashkevich/runspecime
 
 ## Artifact provenance
 
-Canonical table: [CANDIDATE_MANIFEST.md](CANDIDATE_MANIFEST.md). Checklist: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Pack: `artifacts/rc15-2026-10-06-qualification-docfix/`. Prior packs, including `artifacts/rc15-2026-10-06-qualification/` (`de90ab7a…` / `68685be9…`) and `artifacts/rc15-2026-10-06-isolated-evidence/` (`682fe989…` / `809431ea…`), were not overwritten.
+Canonical table: [CANDIDATE_MANIFEST.md](CANDIDATE_MANIFEST.md). Checklist: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Pack: `artifacts/0.2.0rc15-2026-10-06-bump/`. Prior packs, including `artifacts/rc15-2026-10-06-qualification-docfix/` (`5fd68a6f…` / `a68094f0…`), `artifacts/rc15-2026-10-06-qualification/` (`de90ab7a…` / `68685be9…`), and `artifacts/rc15-2026-10-06-isolated-evidence/` (`682fe989…` / `809431ea…`), were not overwritten.
 
 | File | SHA-256 | Provenance |
 | --- | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | `a68094f0a4321b5ca19af047b48ecb6a7505c3b9b3d166b996775b1d0ebbfa9f` | Packed-doc errata successor of `68685be9…` |
-| `runspecimen-0.2.0rc15.tar.gz` | `5fd68a6f06d7712ce16d57f3d892a505256349820428b51dc978ee4e97a7fde4` | Packed-doc errata successor of `de90ab7a…` |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | `a68094f0a4321b5ca19af047b48ecb6a7505c3b9b3d166b996775b1d0ebbfa9f` | Unchanged from the docfix pack |
+| `runspecimen-0.2.0rc15.tar.gz` | `886f90d0e2d9532e9c5c191f6d67095f72159fb7b6e019917a471f98b5f9f805` | Packed A17 banner + golden-pack pointer successor of `5fd68a6f…` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` | Unchanged |
 
-**OPEN-SDIST (closed).** Historical mismatch: committed `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname, so a rebuild produced `6979460d…`. `release_check.py` now pins `SOURCE_DATE_EPOCH`, gzip mtime 0, owner 0/0, empty uname/gname, sorted members, 0644/0755. Regression: `tests/test_release_archive_reproducibility.py`. The golden-master sdist `c001cb08…` stays in that directory. The `b3367eb` sdist `682fe989…` stays in `artifacts/rc15-2026-10-06-isolated-evidence/`. The `fb05284` sdist `de90ab7a…` stays in `artifacts/rc15-2026-10-06-qualification/`. The current pack sdist is `5fd68a6f…`. Do not restore the older digests as current.
+**OPEN-SDIST (closed).** Historical mismatch: committed `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname, so a rebuild produced `6979460d…`. `release_check.py` now pins `SOURCE_DATE_EPOCH`, gzip mtime 0, owner 0/0, empty uname/gname, sorted members, 0644/0755. Regression: `tests/test_release_archive_reproducibility.py`. The golden-master sdist `c001cb08…` stays in that directory. The `b3367eb` sdist `682fe989…` stays in `artifacts/rc15-2026-10-06-isolated-evidence/`. The `fb05284` sdist `de90ab7a…` stays in `artifacts/rc15-2026-10-06-qualification/`. The docfix sdist `5fd68a6f…` stays in `artifacts/rc15-2026-10-06-qualification-docfix/`. The current pack sdist is `886f90d0…`. Do not restore the older digests as current.
 
 Published rc14 bytes are unchanged. Homebrew still pins rc14.
 
@@ -82,7 +82,7 @@ Local Homebrew Python 3.12.14 `release_check.py`: 658 tests, 36 skipped, 0 faile
 
 ### Qualification suite (this successor)
 
-CPython 3.12.14, pack already present: 658 tests, 35 skipped, exit 0. Rebuilt sdist `de90ab7a…` and wheel `68685be9…` matched `artifacts/rc15-2026-10-06-qualification/SHA256SUMS`. The 35 skips are PyNaCl (29), bubblewrap (3), Linux `ldd` (2), and pytest (1). They were not simulated as passes. Channel gates: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Package commit `fb05284` CI is 20/20 (push 37480847104, pull request 37480855659). Evidence-only tip `c0812ac` CI is 20/20 (push 37482547229, pull request 37482561658). This docs-only successor pack is `artifacts/rc15-2026-10-06-qualification-docfix/` (sdist `5fd68a6f…`, wheel `a68094f0…`, plugin unchanged, report `1fb513a1…` on linux/3.12.3). Local `release_check.py` second pass: 658 tests, 46 skipped, exit 0; reproducibility compare executed against that directory and matched. CI 20/20 on `d42fe583dc3dd04e3cd3315f50608045c144d818` (push 37487406807, pull request 37487436430), not on evidence-only `c226b692f100eab0f5b288edc7d99369abadef16`.
+CPython 3.12.14, pack already present: 658 tests, 35 skipped, exit 0. Rebuilt sdist `de90ab7a…` and wheel `68685be9…` matched `artifacts/rc15-2026-10-06-qualification/SHA256SUMS`. The 35 skips are PyNaCl (29), bubblewrap (3), Linux `ldd` (2), and pytest (1). They were not simulated as passes. Channel gates: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Package commit `fb05284` CI is 20/20 (push 37480847104, pull request 37480855659). Evidence-only tip `c0812ac` CI is 20/20 (push 37482547229, pull request 37482561658). The docs-only successor pack `artifacts/rc15-2026-10-06-qualification-docfix/` (sdist `5fd68a6f…`, wheel `a68094f0…`, plugin unchanged, report `1fb513a1…` on linux/3.12.3) stays historical. CI 20/20 on `d42fe583dc3dd04e3cd3315f50608045c144d818` (push 37487406807, pull request 37487436430), not on evidence-only `c226b692f100eab0f5b288edc7d99369abadef16`. This bump pack is `artifacts/0.2.0rc15-2026-10-06-bump/` (sdist `886f90d0…`, wheel `a68094f0…`, plugin unchanged, report `529718ff…` on linux/3.12.3). Local `release_check.py` first pass: 658 tests, 77 skipped, exit 0 (reproducibility skipped while the new pack was absent). Second pass: 658 tests, 76 skipped, exit 0; reproducibility compare executed against that directory and matched (`cmp` of all five files).
 
 ## Open items
 

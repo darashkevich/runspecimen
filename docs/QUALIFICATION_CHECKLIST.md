@@ -4,7 +4,7 @@ This file is not packed into the sdist. It is not a production sign-off. It does
 
 ## Identities
 
-Keep these three apart. Do not cite one as another.
+Keep these identities apart. Do not cite one as another.
 
 | Role | SHA | Notes |
 | --- | --- | --- |
@@ -13,6 +13,8 @@ Keep these three apart. Do not cite one as another.
 | Evidence-only parent | `c0812acda391e6729880d06d5177587d4ccec792` | Unpacked docs/CI record only. A rebuild at `c0812ac` is byte-identical to the `fb05284` pack (verified 2026-10-06). Not overwritten |
 | Docs-only package tree | `d42fe583dc3dd04e3cd3315f50608045c144d818` | Packed-doc errata plus pack `artifacts/rc15-2026-10-06-qualification-docfix/`. No `src/` change. Old packs untouched. Not a release. CI 20/20 on this SHA: push [37487406807](https://github.com/darashkevich/runspecimen/actions/runs/37487406807), pull request [37487436430](https://github.com/darashkevich/runspecimen/actions/runs/37487436430) |
 | Evidence-only successor | `c226b692f100eab0f5b288edc7d99369abadef16` | Unpacked H1 and CI wording only. No `artifacts/` or `src/` change, so the pack bytes stay `d42fe58`. A QA snapshot saw 19 success and one unfinished check. That snapshot is not the `d42fe58` 20/20 copied forward. The finished runs on this SHA are push [37488988851](https://github.com/darashkevich/runspecimen/actions/runs/37488988851) and pull request [37488995481](https://github.com/darashkevich/runspecimen/actions/runs/37488995481), both success. Merged here as `97c8704d1ac67e66776aa1c9fb1d1692e1da9fcf` |
+| Source parent of this pack | `311da6c72e95721dac40c7466040898f6e5de83f` | Carried-companion pin refuses a missing, revoked, or other state. Swift/docs only. Not in the wheel. Merged on `cursor/evidence-expansion-coherence` |
+| This bump pack | this successor | New immutable pack `artifacts/0.2.0rc15-2026-10-06-bump/`. Wheel `a68094f0…` (unchanged from docfix). Sdist `886f90d0…` (A17 banner + golden-pack pointer). Plugin `d27799f7…` (unchanged). Prior packs not overwritten. Not a release |
 
 `main` is `93f9b5708c1ba2d9b325ae2f9016d6a472fe6a20`. Landing source on `main` is not a public release.
 
@@ -36,7 +38,9 @@ Two recordings on the parent package tree, on the same Mac, both with the qualif
 
 Before the `fb05284` pack existed, `release_check.py` exited 0 with 36 skips. The extra skip was the reproducibility comparison. That run is superseded by the two above.
 
-This successor's local `release_check.py` is recorded in `artifacts/rc15-2026-10-06-qualification-docfix/`. CPython 3.12.3, venv `/tmp/rs-relprep-docfix` (setuptools 84.0.0, wheel 0.48.0, pip 26.2.1). First pass: 658 tests, 47 skipped, 0 failed, then 4/4 distribution tests, exit 0. The extra skip was `test_wheel_and_sdist_digests_repeat` while the new pack was not on disk. Second pass (`--output-dir /tmp/rs-docfix-verify`): 658 tests, 46 skipped, 0 failed, then 4/4, exit 0. The reproducibility compare executed against `artifacts/rc15-2026-10-06-qualification-docfix/` and printed `reproducible sdist 5fd68a6f…` / `reproducible wheel a68094f0…`. The three archives in the verify directory were byte-identical (`cmp`) to that pack. CI 20/20 success on `d42fe583dc3dd04e3cd3315f50608045c144d818`: push run 37487406807, pull request run 37487436430. That is not `c226b692f100eab0f5b288edc7d99369abadef16`. The 46 Linux skips are Darwin-only or host-specific (CryptoKit, P-256 verifier, phone peer, rsync/holder stage, codesign, sandbox-exec, relocatable Mach-O, and the bwrap missing-backend case). None was turned into a passing stand-in.
+This successor's local `release_check.py` is recorded in `artifacts/0.2.0rc15-2026-10-06-bump/`. CPython 3.12.3, venv `/tmp/rs-relprep-bump` (setuptools 84.0.0, wheel 0.48.0, pip 26.2.1). First pass: 658 tests, 77 skipped, 0 failed, then 4/4 distribution tests, exit 0. The extra skip was `test_wheel_and_sdist_digests_repeat` while the new pack was not on disk. Second pass (`--output-dir /tmp/rs-rc15-bump-verify`): 658 tests, 76 skipped, 0 failed, then 4/4, exit 0. The reproducibility compare executed against `artifacts/0.2.0rc15-2026-10-06-bump/` and printed `reproducible sdist 886f90d0…` / `reproducible wheel a68094f0…`. All five files in the verify directory were byte-identical (`cmp`) to that pack. The 76 Linux skips are Darwin-only or host-specific (CryptoKit, P-256 verifier, phone peer, rsync/holder stage, codesign, sandbox-exec, relocatable Mach-O) plus PyNaCl (29) and pytest (1). None was turned into a passing stand-in. The earlier docfix recording in `artifacts/rc15-2026-10-06-qualification-docfix/` stays historical.
+
+The previous docs-only successor's local `release_check.py` remains in `artifacts/rc15-2026-10-06-qualification-docfix/`. CPython 3.12.3, venv `/tmp/rs-relprep-docfix` (setuptools 84.0.0, wheel 0.48.0, pip 26.2.1). First pass: 658 tests, 47 skipped, 0 failed, then 4/4 distribution tests, exit 0. The extra skip was `test_wheel_and_sdist_digests_repeat` while the new pack was not on disk. Second pass (`--output-dir /tmp/rs-docfix-verify`): 658 tests, 46 skipped, 0 failed, then 4/4, exit 0. The reproducibility compare executed against `artifacts/rc15-2026-10-06-qualification-docfix/` and printed `reproducible sdist 5fd68a6f…` / `reproducible wheel a68094f0…`. The three archives in the verify directory were byte-identical (`cmp`) to that pack. CI 20/20 success on `d42fe583dc3dd04e3cd3315f50608045c144d818`: push run 37487406807, pull request run 37487436430. That is not `c226b692f100eab0f5b288edc7d99369abadef16`. The 46 Linux skips are Darwin-only or host-specific (CryptoKit, P-256 verifier, phone peer, rsync/holder stage, codesign, sandbox-exec, relocatable Mach-O, and the bwrap missing-backend case). None was turned into a passing stand-in.
 
 Skips on the parent Mac recordings, each one. These are unavailable dependencies or the wrong OS. None was turned into a passing stand-in.
 
@@ -60,17 +64,15 @@ CI, all with conclusion `success` (10 jobs per event: 8 `release-check` matrix e
 | File | SHA-256 |
 | --- | --- |
 | `runspecimen-0.2.0rc15-py3-none-any.whl` | `a68094f0a4321b5ca19af047b48ecb6a7505c3b9b3d166b996775b1d0ebbfa9f` |
-| `runspecimen-0.2.0rc15.tar.gz` | `5fd68a6f06d7712ce16d57f3d892a505256349820428b51dc978ee4e97a7fde4` |
+| `runspecimen-0.2.0rc15.tar.gz` | `886f90d0e2d9532e9c5c191f6d67095f72159fb7b6e019917a471f98b5f9f805` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` |
-| `release-report.json` | `1fb513a14d0f85c35140868daf4f52948eade152fd81915242cd884417104bcf` |
+| `release-report.json` | `529718fff371abce1df29853035331846605df707cfe152efc29185113395ac3` |
 
-Wheel, sdist, and plugin match the expected Mac-prep archive hashes. `release-report.json` records `platform: linux` and `python: 3.12.3`, so its digest is this host's recording, not the Darwin 3.12.14 prep digest `af3b37aa…`. Archive bytes are the package identity.
+Wheel and plugin match the docfix pack (`a68094f0…` / `d27799f7…`). The sdist does not (`886f90d0…` vs `5fd68a6f…`). `release-report.json` records `platform: linux` and `python: 3.12.3`. Archive bytes are the package identity.
 
-The plugin zip matches the `b3367eb` and `fb05284` packs. The wheel and sdist do not. Prior packs `artifacts/rc15-2026-10-06-qualification/` and `artifacts/rc15-2026-10-06-isolated-evidence/` were not modified.
+The plugin zip matches the `b3367eb`, `fb05284`, and docfix packs. The wheel matches the docfix pack. The sdist does not. Prior packs `artifacts/rc15-2026-10-06-qualification-docfix/`, `artifacts/rc15-2026-10-06-qualification/`, and `artifacts/rc15-2026-10-06-isolated-evidence/` were not modified.
 
-Packed-doc errata that were present in the `fb05284` pack (`docs/HOLDER_NATIVE_BRIDGE.md` and `docs/HOLDER_GATE_LEDGER.md` calling installed admission "undecided"; stale marketplace, Homebrew, and Store status lines; README linking a missing `docs/GROK_TANDEM.md`) are corrected in this successor pack. That correction is why this pack has a new directory. It is not an edit of the previous packs.
-
-Known packed-doc erratum remaining in this pack: the `docs/RELEASE_CANDIDATE_REPORT.md` banner (A17) still names the old pack `artifacts/rc15-2026-10-06-qualification/` as the current identity. The correct current pack for this successor is `artifacts/rc15-2026-10-06-qualification-docfix/`. Do not edit that packed file here. Fix it only if a future pack is built.
+Packed-doc errata that were present in the `fb05284` pack were corrected in the docfix pack. This successor also fixes the remaining packed A17 banner in `docs/RELEASE_CANDIDATE_REPORT.md` (it now names `artifacts/0.2.0rc15-2026-10-06-bump/`) and repoints `tests/test_release_archive_reproducibility.py` at that directory. Those packed edits are why the sdist moved. They are not edits of the previous packs.
 
 ## Release steps (apply to every channel)
 
@@ -84,10 +86,10 @@ Candidate selection, qualification, and release authorization are three distinct
 | --- | --- |
 | Supported | `doctor`, `validate`, `status`, receipts, and guarantee (1) typed approval in a real terminal on an ordinary contract with no `execution_approval`. Unpublished engine `0.2.0rc15` |
 | Excluded | PyPI listing of rc15. Installed holder. Secure Enclave admission. Contracts with `execution_approval` of `local`, `companion`, or `dual` (they refuse the phrase). Evidence-expansion commands are not in published rc14 |
-| Artifacts | This pack's wheel `a68094f0…` and sdist `5fd68a6f…`. Published rc14 stays the public pin (wheel `d720bf51…`, sdist `6ffcfe2f…`; PyPI latest is still `0.2.0rc14` and has no rc15, checked 2026-10-06) |
+| Artifacts | This pack's wheel `a68094f0…` and sdist `886f90d0…`. Published rc14 stays the public pin (wheel `d720bf51…`, sdist `6ffcfe2f…`; PyPI latest is still `0.2.0rc14` and has no rc15, checked 2026-10-06) |
 | Completed evidence | Parent suite, reproducibility compare, and release-check rows above. CI green on `fb05284` and `c0812ac`. CI 20/20 success on `d42fe583dc3dd04e3cd3315f50608045c144d818`: push run 37487406807, pull request run 37487436430. That is not `c226b692f100eab0f5b288edc7d99369abadef16`. |
 | Missing (acceptance) | A human guarantee (1) session on this exact wheel (see HUMAN_DEVICE_KIT.md or the rc15 human acceptance sheet). A post-upload byte compare after any upload |
-| Selection | Not made. Choose among published rc14, the `b3367eb` sdist, the `fb05284` sdist, or this docs-only successor pack |
+| Selection | Not made. Choose among published rc14, the `b3367eb` sdist, the `fb05284` sdist, the docfix sdist, or this bump pack |
 | Authorization | Separate from selection and from qualification. Not granted here |
 
 ### Homebrew
@@ -149,9 +151,9 @@ Candidate selection, qualification, and release authorization are three distinct
 
 ## Smallest remaining actions
 
-1. Selection (Yahor): choose the CLI publish candidate. The options are published rc14, the `b3367eb` sdist, the `fb05284` sdist, or this docs-only successor pack. Green CI does not make this choice. CI 20/20 success on `d42fe583dc3dd04e3cd3315f50608045c144d818`: push run 37487406807, pull request run 37487436430. That is not `c226b692f100eab0f5b288edc7d99369abadef16`.
+1. Selection (Yahor): choose the CLI publish candidate. The options are published rc14, the `b3367eb` sdist, the `fb05284` sdist, the docfix sdist, or this bump pack. Green CI does not make this choice. CI 20/20 success on `d42fe583dc3dd04e3cd3315f50608045c144d818`: push run 37487406807, pull request run 37487436430. That is not `c226b692f100eab0f5b288edc7d99369abadef16`.
 2. Qualification (Yahor, in person): run the guarantee (1) session on the chosen wheel, and keep the identity row with the result. A human H1 diagnostic session ran 2026-10-06 on an `ae6a071` Release build (not this SHA). It found IOS-H1-01 through IOS-H1-09, including IOS-H1-08 (the Mac pinned a revoked key as active) and IOS-H1-02 (Rotate/Revoke do not prompt Face ID despite the hints). It is diagnostic and defect evidence. It is not candidate qualification, and it is not E2 acceptance.
 3. Authorization (Yahor): a separate, explicit release decision. After any upload, compare the published bytes with the selected pack.
 4. Leave E2 fail-closed. Do not schedule installed local, companion, or dual runs.
-5. Keep the CLI and plugin bytes at `artifacts/rc15-2026-10-06-qualification-docfix/` unless a packed defect is reproduced. Swift-only fixes do not get a new pack.
+5. Keep the CLI and plugin bytes at `artifacts/0.2.0rc15-2026-10-06-bump/` unless a packed defect is reproduced. Swift-only fixes after this pack do not get another pack.
 6. Leave installed local, companion, and dual acceptance blocked. The carried-import fix does not close E2.
