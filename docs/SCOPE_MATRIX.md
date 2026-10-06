@@ -1,6 +1,6 @@
 # Scope matrix
 
-Unpublished candidate on `cursor/evidence-expansion-coherence` after #39/`e2a3216`, #47/`329e08b`, #49/`18ef461`. `cursor/integrated-release-candidate` is historical at `a0dc233`. Approved macOS **0.1.4 (9)** stays as it is. This is not a Store submission.
+Unpublished candidate on `cursor/evidence-expansion-coherence` after #39/`e2a3216`, #47/`329e08b`, #49/`18ef461`, #50/`dd85691`. `cursor/integrated-release-candidate` is historical at `a0dc233`. Approved macOS **0.1.4 (9)** stays as it is. This is not a Store submission. Draft #51 to `main` is blocked on human/release gates.
 
 Completion gates for the current tip. "Implemented" means the code exists. "Integrated" means a real run or the Store archive uses it. "Auto" means a unit or GUI automation test. "Human" means a person completed the hardware or approval step. "Release" means the exact Store package for this commit passed the qualification checks.
 
@@ -20,7 +20,7 @@ Completion gates for the current tip. "Implemented" means the code exists. "Inte
 | Capture, pipe-read and cleanup failures | On the branch since `cd8b860` | Swift capture suite | CLI and app share the decoder | None for the prototype |
 | Receipts, workspace and contract guards | App workflows and `SessionRestore`. Retain confirmation is an in-sheet panel | Swift session tests; development-app digest, compare, diff, retain cancel, and retain confirm on a labeled synthetic fixture in `apps/macos/asc-kit/evidence/2026-09-28-rc15-acceptance.md` | Development app only. The fixture is not a human-approved run | A large captured run still waits for a person to type APPROVE |
 | Fast path | PR #38 is in this branch | Existing eval tests | In the candidate | None known on this tip |
-| PR #34 evidence expansion | Integrated on this branch, not merged | Python expansion tests | In the candidate | PR #34 itself remains open against its own base |
+| PR #34 evidence expansion | On EEC via #39. #34 closed as superseded | Python expansion tests | In the candidate. Not on `main` | Draft #51 to `main` is the operator merge |
 | PR #35 dev environment | Not product code | n/a | Not required for the app | None |
 | Engine identity | Unpublished `0.2.0rc15` / plugin `0.2.0-rc.15` | `release_check.py` local build | Manifest `docs/CANDIDATE_MANIFEST.md` | Do not replace published rc14 bytes |
 | Settings Close | AppKit button, Escape still dismisses | Development-app accessibility pass | In the macOS app | None |

@@ -56,3 +56,11 @@ jobs:
           export RS_FREEZE_PYTHON="$(command -v python)"
           echo "RS_FREEZE_PYTHON=$RS_FREEZE_PYTHON"
           bash apps/macos/Scripts/smoke_macos.sh
+
+  holder-swift:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Isolated holder Swift tests (no live daemon)
+        run: bash apps/holder/Scripts/test_holder_isolated.sh
