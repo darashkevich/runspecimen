@@ -82,7 +82,7 @@ Local Homebrew Python 3.12.14 `release_check.py`: 658 tests, 36 skipped, 0 faile
 
 ### Qualification suite (this successor)
 
-CPython 3.12.14, pack already present: 658 tests, 35 skipped, exit 0. Rebuilt sdist `de90ab7a…` and wheel `68685be9…` matched `artifacts/rc15-2026-10-06-qualification/SHA256SUMS`. The 35 skips are PyNaCl (29), bubblewrap (3), Linux `ldd` (2), and pytest (1). They were not simulated as passes. Channel gates: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Parent `b3367eb` CI does not cover this pack.
+CPython 3.12.14, pack already present: 658 tests, 35 skipped, exit 0. Rebuilt sdist `de90ab7a…` and wheel `68685be9…` matched `artifacts/rc15-2026-10-06-qualification/SHA256SUMS`. The 35 skips are PyNaCl (29), bubblewrap (3), Linux `ldd` (2), and pytest (1). They were not simulated as passes. Channel gates: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Package commit `fb05284` CI is 20/20 (push 37480847104, pull request 37480855659). A later edit of this ledger is not a new package.
 
 ## Open items
 

@@ -4,7 +4,7 @@ This file is not packed into the sdist. It is not a production sign-off. It does
 
 Parent engineering tip: `b3367ebeff76a1ed0c6fd6ecda2f613e5e8e93a4`. That commit closed the shared-log race. Its pack remains `artifacts/rc15-2026-10-06-isolated-evidence/` and was not overwritten.
 
-This checklist's package identity is the successor that corrects two stale claims: installed Secure Enclave admission is fail-closed, not undecided, and the Store note follows the 2026-09-28 Connect record. Pack: `artifacts/rc15-2026-10-06-qualification/`. The source commit is the one that adds that directory. A later edit of this file alone does not change the sdist.
+This checklist's package identity is `fb05284d897d165b6fab9ad544ff9a1116675294`. That commit corrects two stale claims: installed Secure Enclave admission is fail-closed, not undecided, and the Store note follows the 2026-09-28 Connect record. Pack: `artifacts/rc15-2026-10-06-qualification/`. A later edit of this file alone does not change the sdist.
 
 `main` is `93f9b5708c1ba2d9b325ae2f9016d6a472fe6a20`. Source landing on `main` is not a public release.
 
@@ -36,7 +36,7 @@ Skips, each one. These are unavailable dependencies or the wrong OS. They were n
 
 CryptoKit and `sandbox-exec` tests ran on this Mac because those tools are present. That is not installed-holder or Secure Enclave qualification.
 
-CI on parent `b3367eb` was 20/20 and does not cover this successor. This successor still needs its own CI before anyone treats the branch tip as the same evidence.
+CI on this pack's commit `fb05284d897d165b6fab9ad544ff9a1116675294` is 20/20: push [37480847104](https://github.com/darashkevich/runspecimen/actions/runs/37480847104) and pull request [37480855659](https://github.com/darashkevich/runspecimen/actions/runs/37480855659). Both conclusions are success. Parent `b3367eb` CI is a different tree. This is not production sign-off.
 
 | File | SHA-256 |
 | --- | --- |
@@ -57,7 +57,7 @@ Candidate selection, qualification, and release authorization are three differen
 | Supported | `doctor`, `validate`, `status`, receipts, and guarantee (1) typed approval on an ordinary contract with no `execution_approval`. Unpublished engine `0.2.0rc15`. |
 | Excluded | PyPI listing of rc15. Installed holder. Secure Enclave admission. Evidence-expansion commands are not in published rc14. |
 | Artifacts | This pack's wheel and sdist. Published rc14 bytes stay the public pin. |
-| Completed evidence | The suite and reproducibility row above. Parent `b3367eb` CI does not cover this wheel. |
+| Completed evidence | The suite and reproducibility row above. CI 20/20 on `fb05284`. |
 | Missing | A human guarantee (1) session on this exact wheel ([HUMAN_DEVICE_KIT.md](HUMAN_DEVICE_KIT.md)). A decision that this sdist, not rc14 and not the `b3367eb` sdist, is the candidate to publish. A post-upload byte compare. |
 | Authorization | Separate from selection and from this suite. Not granted here. |
 
@@ -112,16 +112,15 @@ Candidate selection, qualification, and release authorization are three differen
 | Supported | Source for observe, enroll, sign, revoke, and rotate. Software tests. |
 | Excluded | TestFlight, the App Store, and treating a signed install as acceptance. Phone approval is not physical presence at the Mac. |
 | Artifacts | No signed device build of this SHA. The unsigned kit binary `4f38ee0a…` is from `5c3957a`, not this pack. |
-| Completed evidence | Unit tests in CI on the parent tip, not a device session, and not this successor's CI yet. |
+| Completed evidence | `macos-app` and `holder-swift` succeeded on `fb05284` CI. That is not a device session. |
 | Missing | A person signing a build of this SHA, then a separate acceptance decision. Install alone does not qualify the channel. |
 | Authorization | Not granted. |
 
 ## Smallest remaining actions
 
-1. Let CI finish on the successor commit. Do not treat parent `b3367eb` CI as this pack.
-2. Choose whether the publish candidate is published rc14, the `b3367eb` sdist, or this qualification sdist. That choice is not this checklist.
-3. If the choice is this sdist, run the guarantee (1) session in [HUMAN_DEVICE_KIT.md](HUMAN_DEVICE_KIT.md) and keep the identity row with the result.
-4. Leave E2 fail-closed. Do not schedule installed local, companion, or dual runs.
-5. Stop code changes on this candidate unless a later run reproduces a defect.
+1. Choose whether the publish candidate is published rc14, the `b3367eb` sdist, or this qualification sdist. That choice is not this checklist. CI on `fb05284` is already green and does not make the choice.
+2. If the choice is this sdist, run the guarantee (1) session in [HUMAN_DEVICE_KIT.md](HUMAN_DEVICE_KIT.md) and keep the identity row with the result.
+3. Leave E2 fail-closed. Do not schedule installed local, companion, or dual runs.
+4. Stop code changes on this candidate unless a later run reproduces a defect.
 
 Human steps, and only those, are in [HUMAN_DEVICE_KIT.md](HUMAN_DEVICE_KIT.md).

@@ -4,7 +4,7 @@ An agent must not run these steps. Do not pass `--human-invoked`. Do not tap Tou
 
 The kit directory, when prepared, is `artifacts/human-device-kit/` next to the approved 0.1.4 (9) archive. It holds an unsigned iPhone build and the Mac diagnostic binary. Neither is installed. Neither is a Store package. Neither is this candidate. Diagnostic signing is not a bounded run. Phone approval is not physical presence at the Mac.
 
-Candidate under review: the commit that adds `artifacts/rc15-2026-10-06-qualification/`, parent `b3367ebeff76a1ed0c6fd6ecda2f613e5e8e93a4`, on `cursor/evidence-expansion-coherence`. `main` remains `93f9b5708c1ba2d9b325ae2f9016d6a472fe6a20`. A merge to `main` is not a public release. Contracts with `execution_approval` of `local`, `companion`, or `dual` refuse a typed phrase. That refusal is not installed protection.
+Candidate under review: `fb05284d897d165b6fab9ad544ff9a1116675294`, which adds `artifacts/rc15-2026-10-06-qualification/`. Parent `b3367ebeff76a1ed0c6fd6ecda2f613e5e8e93a4`, on `cursor/evidence-expansion-coherence`. `main` remains `93f9b5708c1ba2d9b325ae2f9016d6a472fe6a20`. A merge to `main` is not a public release. Contracts with `execution_approval` of `local`, `companion`, or `dual` refuse a typed phrase. That refusal is not installed protection.
 
 The two hashes below were built from `5c3957a3a8ddf9fceacc3096b2208ee7757e6b72`. Holder, iOS companion, and macOS core sources have changed since that commit. Those hashes are not this candidate. Do not use them to qualify any channel.
 
