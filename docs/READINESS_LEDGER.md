@@ -10,7 +10,7 @@ This file is the live ledger. Golden-master notes are historical. Later commits 
 | --- | --- |
 | Working branch | `cursor/evidence-expansion-coherence` |
 | Source SHA this ledger was written against | Parent `ae6a07123150b7ad057c60bfaa188a59833c1bbc` (PR #53 merge on `cursor/evidence-expansion-coherence`). Package identity `fb05284`; evidence-only tip `c0812ac`. Not `main` |
-| This follow-up | Docs-only successor of `c0812ac`. Pack `artifacts/rc15-2026-10-06-qualification-docfix/`. Wheel `a68094f0…`, sdist `5fd68a6f…`, plugin unchanged. Prior packs not overwritten. Not production sign-off. This successor's CI is pending until it runs |
+| This follow-up | Docs-only successor of `c0812ac`. Pack `artifacts/rc15-2026-10-06-qualification-docfix/`. Wheel `a68094f0…`, sdist `5fd68a6f…`, plugin unchanged. Prior packs not overwritten. Not production sign-off. CI 20/20 success on this head: push run 37487406807, pull request run 37487436430 |
 | Historical IRC tip | `a0dc23361856db8a68075471860bd4ab25af838c` |
 | NEW-01 package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` |
 | Engine | unpublished `0.2.0rc15` |
@@ -82,7 +82,7 @@ Local Homebrew Python 3.12.14 `release_check.py`: 658 tests, 36 skipped, 0 faile
 
 ### Qualification suite (this successor)
 
-CPython 3.12.14, pack already present: 658 tests, 35 skipped, exit 0. Rebuilt sdist `de90ab7a…` and wheel `68685be9…` matched `artifacts/rc15-2026-10-06-qualification/SHA256SUMS`. The 35 skips are PyNaCl (29), bubblewrap (3), Linux `ldd` (2), and pytest (1). They were not simulated as passes. Channel gates: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Package commit `fb05284` CI is 20/20 (push 37480847104, pull request 37480855659). Evidence-only tip `c0812ac` CI is 20/20 (push 37482547229, pull request 37482561658). This docs-only successor pack is `artifacts/rc15-2026-10-06-qualification-docfix/` (sdist `5fd68a6f…`, wheel `a68094f0…`, plugin unchanged, report `1fb513a1…` on linux/3.12.3). Local `release_check.py` second pass: 658 tests, 46 skipped, exit 0; reproducibility compare executed against that directory and matched. This successor's CI is pending until it runs.
+CPython 3.12.14, pack already present: 658 tests, 35 skipped, exit 0. Rebuilt sdist `de90ab7a…` and wheel `68685be9…` matched `artifacts/rc15-2026-10-06-qualification/SHA256SUMS`. The 35 skips are PyNaCl (29), bubblewrap (3), Linux `ldd` (2), and pytest (1). They were not simulated as passes. Channel gates: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Package commit `fb05284` CI is 20/20 (push 37480847104, pull request 37480855659). Evidence-only tip `c0812ac` CI is 20/20 (push 37482547229, pull request 37482561658). This docs-only successor pack is `artifacts/rc15-2026-10-06-qualification-docfix/` (sdist `5fd68a6f…`, wheel `a68094f0…`, plugin unchanged, report `1fb513a1…` on linux/3.12.3). Local `release_check.py` second pass: 658 tests, 46 skipped, exit 0; reproducibility compare executed against that directory and matched. CI 20/20 success on this head: push run 37487406807, pull request run 37487436430.
 
 ## Open items
 
@@ -91,7 +91,7 @@ CPython 3.12.14, pack already present: 658 tests, 35 skipped, exit 0. Rebuilt sd
 | E2 | Engineering gap | Engineering | Installed holder / exact-run admission | Keep fail-closed. Root `launchd` cannot create or reload a Secure Enclave key ([SECURE_ENCLAVE_ADMISSION.md](SECURE_ENCLAVE_ADMISSION.md)). A biometric press does not close this. Any other design is a new decision |
 | SWIFT-STARTUP | Closed | Engineering | macos-app | Production default stays 5s (`defaultReadyDeadline`). Marker tests keep an explicit 20s CI python3 allowance. New tests pin the constant and fail a never-ready child at the default. Smoke does not retry assertion flakes |
 | HOLDER-SWIFT-CI | Closed | Engineering | Holder | Isolated script refuses `RS_HOLDER_SOCKET` and install consent. Zero tests run fails the job. No retry |
-| H1 | Human acceptance | Yahor | Local / companion / dual prompt | Mac+iPhone diagnostic passed 2026-10-06 (Mac carried-approval pin; iPhone enroll/rotate/sign/revoke). IOS-H1-08 and IOS-H1-02 remain, tracked separately, not blocking the CLI pack. Does **not** close E2 |
+| H1 | Human acceptance | Yahor | Local / companion / dual prompt | A human H1 diagnostic session ran 2026-10-06 on an `ae6a071` Release build (not this SHA). It found IOS-H1-01 through IOS-H1-09, including IOS-H1-08 (the Mac pinned a revoked key as active) and IOS-H1-02 (Rotate/Revoke do not prompt Face ID despite the hints). It is not evidence, not qualification, and does not close E2 |
 | H2 | Release / operator | Yahor | Developer ID holder | Live SMAppService install on a real Mac. Unauthorized here |
 | H3 | Release / operator | Yahor | Apple | Send [APPLE_DTS_HOLDER_QUESTION.md](APPLE_DTS_HOLDER_QUESTION.md) |
 | H4 | Release / operator | Yahor | Holder | Developer ID sign + notarize |

@@ -36,7 +36,7 @@ Do not run `--human-invoked` to qualify this candidate. A Touch ID or Face ID pr
 
 ## iPhone provisioning is not acceptance
 
-Signing and installing `RunSpecimenObserve` does not accept the iOS channel. The steps below are how a person would produce a signed build later. They are not a supported acceptance workflow for this candidate. The H1 Mac+iPhone diagnostic was completed 2026-10-06 (Mac carried-approval pin; iPhone enroll/rotate/sign/revoke). IOS-H1-08 and IOS-H1-02 remain, tracked separately, and do not block the CLI pack. That diagnostic is not this acceptance.
+Signing and installing `RunSpecimenObserve` does not accept the iOS channel. The steps below are how a person would produce a signed build later. They are not a supported acceptance workflow for this candidate. A human H1 diagnostic session ran 2026-10-06 on an `ae6a071` Release build (not this SHA). It found IOS-H1-01 through IOS-H1-09, including IOS-H1-08 (the Mac pinned a revoked key as active) and IOS-H1-02 (Rotate/Revoke do not prompt Face ID despite the hints). It is not evidence, not qualification, and does not close E2.
 
 This Mac had no local provisioning profiles when the unsigned build was made. The agent did not create one.
 
@@ -46,9 +46,9 @@ This Mac had no local provisioning profiles when the unsigned build was made. Th
 4. Connect the iPhone, select it as the run destination, and press Run in Xcode. The first launch may ask the phone to trust the developer certificate. Accept that yourself.
 5. The unsigned file `RunSpecimenObserve.app` in the kit is a Release iphoneos build of the shipping target (`com.darashkevich.runspecimen.observe`). It is not signed and was not installed. Use it only as the binary you can compare with the one Xcode installs. Installing still has to be the Xcode run above.
 
-## iPhone hardware steps do not qualify this candidate
+## iPhone hardware steps are blocked for this candidate
 
-The 2026-10-06 H1 enroll/rotate/sign/revoke checks passed as a diagnostic. They do not qualify the iOS channel, do not close E2, and are not installed holder admission. Carrying a package to the Mac is not a companion or dual run. A signature would show that a private key signed bytes. It would not show that protected holder state created that key. Do not treat a further biometric press as acceptance.
+Do not enroll, sign, rotate, or revoke on the phone to qualify this candidate. A Face ID press is not installed holder admission and does not close E2. Carrying a package to the Mac is not a companion or dual run. A signature would show that a private key signed bytes. It would not show that protected holder state created that key.
 
 ## Supported acceptance: guarantee (1) only
 
