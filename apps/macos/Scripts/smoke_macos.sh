@@ -6,7 +6,24 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$ROOT/../.." && pwd)"
+# shellcheck source=../../holder/Scripts/isolated_evidence.sh
+source "$REPO/apps/holder/Scripts/isolated_evidence.sh"
 cd "$ROOT"
+EVIDENCE="$(rs_evidence_create rs-macos-smoke)"
+cleanup_smoke_evidence() {
+  local status=$?
+  if [[ "$status" -ne 0 && -n "${EVIDENCE:-}" && -d "$EVIDENCE" && ! -L "$EVIDENCE" ]]; then
+    local kept=""
+    if kept="$(rs_evidence_preserve_files "$EVIDENCE" rs-macos-smoke-kept)"; then
+      echo "SMOKE_EVIDENCE: $kept" >&2
+      rs_evidence_cleanup "$EVIDENCE" rs-macos-smoke || true
+    fi
+  elif [[ -n "${EVIDENCE:-}" ]]; then
+    rs_evidence_cleanup "$EVIDENCE" rs-macos-smoke || true
+  fi
+  exit "$status"
+}
+trap cleanup_smoke_evidence EXIT
 
 echo "==> CLIVersionGate checks"
 # Box/Finder xattrs break ad-hoc codesign of .xctest bundles on cloud-synced trees.
@@ -14,7 +31,7 @@ xattr -cr "$ROOT/.build" 2>/dev/null || true
 find "$ROOT/.build" \( -name '._*' -o -name '.DS_Store' \) -delete 2>/dev/null || true
 if swift package --package-path "$ROOT" describe >/dev/null 2>&1; then
   echo "SwiftPM OK — running swift test (first pass is the record)"
-  FIRST_LOG="${TMPDIR:-/tmp}/rs-macos-swift-first.log"
+  FIRST_LOG="$EVIDENCE/first.log"
   set +e
   swift test --package-path "$ROOT" >"$FIRST_LOG" 2>&1
   FIRST_RC=$?
@@ -22,21 +39,22 @@ if swift package --package-path "$ROOT" describe >/dev/null 2>&1; then
   cat "$FIRST_LOG"
   # Retry only Apple codesign/xattr detritus. A real XCTest/Swift Testing
   # failure must not retry even if the same log also mentions codesign.
-  CODESIGN_DETRITUS_RE='resource fork, Finder information, or similar detritus not allowed|code object is not signed at path|code object is not signed at all'
-  ASSERTION_RE='XCTAssert|error: -\[.*\] : |Test Case .* failed|Issue recorded'
-  if [[ "$FIRST_RC" -eq 0 ]]; then
-    echo "FIRST_PASS: OK"
-  elif grep -E "$CODESIGN_DETRITUS_RE" "$FIRST_LOG" >/dev/null \
-       && ! grep -E "$ASSERTION_RE" "$FIRST_LOG" >/dev/null; then
-    echo "FIRST_PASS: FAIL (codesign/xattr detritus) — retrying once after xattr clear"
-    rm -rf "$ROOT/.build"
-    xattr -cr "$ROOT" 2>/dev/null || true
-    swift test --package-path "$ROOT"
-    echo "RETRY: OK"
-  else
-    echo "FIRST_PASS: FAIL (product or test assertion) — not retrying"
-    exit "$FIRST_RC"
-  fi
+  case "$(rs_smoke_first_pass_disposition "$FIRST_RC" "$FIRST_LOG")" in
+    ok)
+      echo "FIRST_PASS: OK"
+      ;;
+    retry)
+      echo "FIRST_PASS: FAIL (codesign/xattr detritus) — retrying once after xattr clear"
+      rm -rf "$ROOT/.build"
+      xattr -cr "$ROOT" 2>/dev/null || true
+      swift test --package-path "$ROOT"
+      echo "RETRY: OK"
+      ;;
+    *)
+      echo "FIRST_PASS: FAIL (product or test assertion) — not retrying"
+      exit "$FIRST_RC"
+      ;;
+  esac
 else
   echo "SwiftPM unavailable — running Python parity checks for CLIVersionGate"
   python3 - <<'PY'
@@ -71,9 +89,9 @@ echo "==> security boundary + PTY never-auto-APPROVE"
 ./Scripts/test_security_boundary.sh
 
 echo "==> stage_helper (docs / layout)"
-./Scripts/stage_helper.sh >/tmp/rs-stage-helper.out
-grep -q "Exact next packaging steps" /tmp/rs-stage-helper.out
-grep -q "LICENSE NOTES" /tmp/rs-stage-helper.out
+./Scripts/stage_helper.sh >"$EVIDENCE/stage-helper.out"
+grep -q "Exact next packaging steps" "$EVIDENCE/stage-helper.out"
+grep -q "LICENSE NOTES" "$EVIDENCE/stage-helper.out"
 
 echo "==> stage_helper --from-src + --verify (package-tree helper)"
 ./Scripts/stage_helper.sh --from-src --verify
@@ -83,15 +101,15 @@ echo "==> freeze interpreter selection (no Apple Python, no lost export)"
 ./Scripts/test_freeze_python_select.sh
 
 echo "==> freeze_helper default skip (CI-safe without PyInstaller)"
-./Scripts/freeze_helper.sh >/tmp/rs-freeze.out
-grep -q "skipped (optional)" /tmp/rs-freeze.out
-grep -q "stage_helper.sh --from-src" /tmp/rs-freeze.out
+./Scripts/freeze_helper.sh >"$EVIDENCE/freeze.out"
+grep -q "skipped (optional)" "$EVIDENCE/freeze.out"
+grep -q "stage_helper.sh --from-src" "$EVIDENCE/freeze.out"
 
 echo "==> build_app.sh --help documents --frozen-helper and --mas"
-./Scripts/build_app.sh -h >/tmp/rs-build-help.out
-grep -q -- "--frozen-helper" /tmp/rs-build-help.out
-grep -q -- "--from-src" /tmp/rs-build-help.out
-grep -q -- "--mas" /tmp/rs-build-help.out
+./Scripts/build_app.sh -h >"$EVIDENCE/build-help.out"
+grep -q -- "--frozen-helper" "$EVIDENCE/build-help.out"
+grep -q -- "--from-src" "$EVIDENCE/build-help.out"
+grep -q -- "--mas" "$EVIDENCE/build-help.out"
 test -f "$ROOT/RELEASE_CHECKLIST.md"
 grep -qi "Mac App Store" "$ROOT/RELEASE_CHECKLIST.md"
 
@@ -228,8 +246,8 @@ PY
   SHOWCASE="$REPO/examples/showcase"
   if [[ -d "$SHOWCASE" ]]; then
     echo "==> helper doctor --workspace examples/showcase"
-    if "$HELPER" doctor --workspace "$SHOWCASE" >/tmp/rs-doctor.out 2>&1; then
-      if python3 -c 'import json; json.load(open("/tmp/rs-doctor.out"))' 2>/dev/null; then
+    if "$HELPER" doctor --workspace "$SHOWCASE" >"$EVIDENCE/doctor.out" 2>&1; then
+      if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$EVIDENCE/doctor.out" 2>/dev/null; then
         echo "helper doctor JSON OK"
       else
         echo "helper doctor ran (non-JSON output acceptable for smoke)"
@@ -245,12 +263,12 @@ fi
 echo "==> build_app.sh --frozen-helper (freeze if PyInstaller else --from-src fallback)"
 # Runs after the --from-src Prefer Bundled e2e so a local freeze cannot break those checks.
 # Unset RS_FREEZE_HELPER so this invocation is driven only by --frozen-helper.
-env -u RS_FREEZE_HELPER ./Scripts/build_app.sh --frozen-helper >/tmp/rs-frozen-build.out 2>&1 || {
-  cat /tmp/rs-frozen-build.out >&2
+env -u RS_FREEZE_HELPER ./Scripts/build_app.sh --frozen-helper >"$EVIDENCE/frozen-build.out" 2>&1 || {
+  cat "$EVIDENCE/frozen-build.out" >&2
   exit 1
 }
-cat /tmp/rs-frozen-build.out
-grep -E "Using frozen helper payload|falling back to stage_helper" /tmp/rs-frozen-build.out
+cat "$EVIDENCE/frozen-build.out"
+grep -E "Using frozen helper payload|falling back to stage_helper" "$EVIDENCE/frozen-build.out"
 # Frozen onedir lives under Resources/RunSpecimenEngine; --from-src fallback under Helpers.
 if [[ -x "$APP/Contents/Resources/RunSpecimenEngine/runspecimen" ]]; then
   HELPER="$APP/Contents/Resources/RunSpecimenEngine/runspecimen"
@@ -262,7 +280,7 @@ else
 fi
 test -x "$HELPER"
 # Frozen path: no package-tree lib/. Fallback --from-src: lib/ present.
-if grep -q "Using frozen helper payload" /tmp/rs-frozen-build.out; then
+if grep -q "Using frozen helper payload" "$EVIDENCE/frozen-build.out"; then
   test ! -d "$APP/Contents/Helpers/lib"
   test -d "$APP/Contents/Resources/RunSpecimenEngine/_internal"
   file "$APP/Contents/Resources/RunSpecimenEngine/runspecimen" | grep -q 'Mach-O'
@@ -288,12 +306,12 @@ fi
 
 echo "==> MAS packaging path (frozen helper required; fail closed)"
 if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/null 2>&1; then
-  ./Scripts/build_app.sh --mas >/tmp/rs-mas-build.out 2>&1 || {
-    cat /tmp/rs-mas-build.out >&2
+  ./Scripts/build_app.sh --mas >"$EVIDENCE/mas-build.out" 2>&1 || {
+    cat "$EVIDENCE/mas-build.out" >&2
     exit 1
   }
-  cat /tmp/rs-mas-build.out
-  grep -q "Using frozen helper payload for MAS" /tmp/rs-mas-build.out
+  cat "$EVIDENCE/mas-build.out"
+  grep -q "Using frozen helper payload for MAS" "$EVIDENCE/mas-build.out"
   test -x "$APP/Contents/Resources/RunSpecimenEngine/runspecimen"
   test -d "$APP/Contents/Resources/RunSpecimenEngine/_internal"
   test ! -d "$APP/Contents/Helpers/lib"
@@ -322,12 +340,12 @@ if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/n
   }
   # Runtime sandbox probe: inherit helper must fail from unsandboxed shell.
   set +e
-  "$APP/Contents/Resources/RunSpecimenEngine/runspecimen" --version >/tmp/rs-mas-helper-shell.out 2>&1
+  "$APP/Contents/Resources/RunSpecimenEngine/runspecimen" --version >"$EVIDENCE/mas-helper-shell.out" 2>&1
   MAS_HELPER_RC=$?
   set -e
   if [[ "$MAS_HELPER_RC" -eq 0 ]]; then
     echo "ERROR: inherit-signed MAS helper ran from shell (expected non-zero)" >&2
-    cat /tmp/rs-mas-helper-shell.out >&2
+    cat "$EVIDENCE/mas-helper-shell.out" >&2
     exit 1
   fi
   echo "OK: MAS frozen helper bundle matches repo $REPO_VER (sandbox+inherit; shell rc=$MAS_HELPER_RC)"
@@ -336,15 +354,15 @@ if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/n
   ./Scripts/test_store_export_gate.sh
 
   echo "==> Store export fail-closed without Apple Distribution"
-  if ./Scripts/assert_store_export_ready.sh >/tmp/rs-export-gate.out 2>&1; then
+  if ./Scripts/assert_store_export_ready.sh >"$EVIDENCE/export-gate.out" 2>&1; then
     echo "NOTE: Apple Distribution appears present on this host — export gate opened"
-    cat /tmp/rs-export-gate.out
+    cat "$EVIDENCE/export-gate.out"
   else
-    grep -q 'STORE EXPORT BLOCKED' /tmp/rs-export-gate.out \
-      || grep -qi 'Apple Distribution' /tmp/rs-export-gate.out \
+    grep -q 'STORE EXPORT BLOCKED' "$EVIDENCE/export-gate.out" \
+      || grep -qi 'Apple Distribution' "$EVIDENCE/export-gate.out" \
       || {
         echo "ERROR: assert_store_export_ready should fail closed with a clear block message" >&2
-        cat /tmp/rs-export-gate.out >&2
+        cat "$EVIDENCE/export-gate.out" >&2
         exit 1
       }
     echo "OK: Store export blocked without Apple Distribution + team + profile"
@@ -360,12 +378,12 @@ if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/n
   fi
 else
   echo "PyInstaller absent — verifying --mas fails closed"
-  if ./Scripts/build_app.sh --mas >/tmp/rs-mas-fail.out 2>&1; then
+  if ./Scripts/build_app.sh --mas >"$EVIDENCE/mas-fail.out" 2>&1; then
     echo "ERROR: --mas should fail without PyInstaller" >&2
-    cat /tmp/rs-mas-fail.out >&2
+    cat "$EVIDENCE/mas-fail.out" >&2
     exit 1
   fi
-  grep -Eiq 'requires a frozen|PyInstaller required|ERROR' /tmp/rs-mas-fail.out
+  grep -Eiq 'requires a frozen|PyInstaller required|ERROR' "$EVIDENCE/mas-fail.out"
   echo "OK: --mas fail-closed without PyInstaller"
 fi
 

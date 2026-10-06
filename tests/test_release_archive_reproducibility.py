@@ -17,7 +17,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-GOLDEN_PACK = ROOT / "artifacts" / "rc15-2026-10-05-golden-master"
+GOLDEN_PACK = ROOT / "artifacts" / "rc15-2026-10-06-isolated-evidence"
 SDIST_NAME = "runspecimen-0.2.0rc15.tar.gz"
 WHEEL_NAME = "runspecimen-0.2.0rc15-py3-none-any.whl"
 
@@ -300,7 +300,7 @@ class ReleaseArchiveReproducibilityTests(unittest.TestCase):
         self.assertEqual(
             sdist_digest,
             committed_sdist,
-            "rebuilt sdist SHA-256 must match artifacts/rc15-2026-10-05-golden-master/SHA256SUMS",
+            f"rebuilt sdist SHA-256 must match {GOLDEN_PACK}/SHA256SUMS",
         )
         packed_sdist = GOLDEN_PACK / SDIST_NAME
         if packed_sdist.is_file():
