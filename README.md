@@ -36,7 +36,6 @@ No watchers, no recurring scheduler, no parallel workers.
 - [Market and distribution](docs/MARKET_AND_DISTRIBUTION.md) — wedge, channels, commercial sequence
 - [Integrations](docs/INTEGRATIONS.md) — adapter status ledger + frontier-lab research
 - [Marketing pitches](docs/MARKETING_PITCHES.md) — honest one-liners, elevators, CTAs
-- [Grok tandem](docs/GROK_TANDEM.md) — external xAI Grok review log (Composio `GROK_*`)
 - [Submission](docs/SUBMISSION.md) — marketplace submission checklist (Cursor/Codex/Claude/Grok)
 - [Release identity](docs/RELEASE_IDENTITY.md) — live vs draft vs next tag; checksum-only vs attested
 - [Threat model](docs/THREAT_MODEL.md) — trusted boundary and residual risks

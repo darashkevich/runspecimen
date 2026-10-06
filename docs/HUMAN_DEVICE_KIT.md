@@ -4,9 +4,9 @@ An agent must not run these steps. Do not pass `--human-invoked`. Do not tap Tou
 
 The kit directory, when prepared, is `artifacts/human-device-kit/` next to the approved 0.1.4 (9) archive. It holds an unsigned iPhone build and the Mac diagnostic binary. Neither is installed. Neither is a Store package. Neither is this candidate. Diagnostic signing is not a bounded run. Phone approval is not physical presence at the Mac.
 
-Candidate under review: `fb05284d897d165b6fab9ad544ff9a1116675294`, which adds `artifacts/rc15-2026-10-06-qualification/`. Parent `b3367ebeff76a1ed0c6fd6ecda2f613e5e8e93a4`, on `cursor/evidence-expansion-coherence`. `main` remains `93f9b5708c1ba2d9b325ae2f9016d6a472fe6a20`. A merge to `main` is not a public release. Contracts with `execution_approval` of `local`, `companion`, or `dual` refuse a typed phrase. That refusal is not installed protection.
+Candidate under review: the docs-only successor of `c0812acda391e6729880d06d5177587d4ccec792`, which adds `artifacts/rc15-2026-10-06-qualification-docfix/`. Previous package tree `fb05284d897d165b6fab9ad544ff9a1116675294` (`artifacts/rc15-2026-10-06-qualification/`, not overwritten). Parent `b3367ebeff76a1ed0c6fd6ecda2f613e5e8e93a4`, on `cursor/evidence-expansion-coherence`. `main` remains `93f9b5708c1ba2d9b325ae2f9016d6a472fe6a20`. A merge to `main` is not a public release. Contracts with `execution_approval` of `local`, `companion`, or `dual` refuse a typed phrase. That refusal is not installed protection.
 
-The two hashes below were built from `5c3957a3a8ddf9fceacc3096b2208ee7757e6b72`. Holder, iOS companion, and macOS core sources have changed since that commit. Those hashes are not this candidate. Do not use them to qualify any channel.
+The two hashes below were built from `5c3957a3a8ddf9fceacc3096b2208ee7757e6b72`. Holder, iOS companion, and macOS core sources have changed since that commit. Since `1873f42`, iOS and macOS core sources changed; the kit hashes do not identify this candidate. Do not use them to qualify any channel.
 
 | File | SHA-256 |
 | --- | --- |
@@ -36,7 +36,7 @@ Do not run `--human-invoked` to qualify this candidate. A Touch ID or Face ID pr
 
 ## iPhone provisioning is not acceptance
 
-Signing and installing `RunSpecimenObserve` does not accept the iOS channel. The steps below are how a person would produce a signed build later. They are not a supported acceptance workflow for this candidate, and they were not run on 2026-10-06.
+Signing and installing `RunSpecimenObserve` does not accept the iOS channel. The steps below are how a person would produce a signed build later. They are not a supported acceptance workflow for this candidate. A human H1 diagnostic session ran 2026-10-06 on an `ae6a071` Release build (not this SHA). It found IOS-H1-01 through IOS-H1-09, including IOS-H1-08 (the Mac pinned a revoked key as active) and IOS-H1-02 (Rotate/Revoke do not prompt Face ID despite the hints). It is not evidence, not qualification, and does not close E2.
 
 This Mac had no local provisioning profiles when the unsigned build was made. The agent did not create one.
 
@@ -59,7 +59,7 @@ Pick one identity and write it down before you start. Do not mix them.
 | Identity | What it is | What to record |
 | --- | --- | --- |
 | Published CLI | `0.2.0rc14` from PyPI or the GitHub Release | `runspecimen --version` and the published wheel or sdist hash you installed |
-| This candidate | Unpublished `0.2.0rc15` from `artifacts/rc15-2026-10-06-qualification/` | `git rev-parse HEAD`, `runspecimen --version`, and the wheel and sdist hashes in that directory's `SHA256SUMS` |
+| This candidate | Unpublished `0.2.0rc15` from `artifacts/rc15-2026-10-06-qualification-docfix/` | `git rev-parse HEAD`, `runspecimen --version`, and the wheel and sdist hashes in that directory's `SHA256SUMS` |
 
 Prerequisites: an ordinary contract with no `execution_approval` field, a disposable workspace, and a harmless bounded command. `doctor`, `validate`, and `status` should exit 0 before you approve.
 

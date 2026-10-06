@@ -17,7 +17,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-GOLDEN_PACK = ROOT / "artifacts" / "rc15-2026-10-06-qualification"
+GOLDEN_PACK = ROOT / "artifacts" / "rc15-2026-10-06-qualification-docfix"
 SDIST_NAME = "runspecimen-0.2.0rc15.tar.gz"
 WHEEL_NAME = "runspecimen-0.2.0rc15-py3-none-any.whl"
 

@@ -351,14 +351,14 @@ Release assets** (wheel, sdist, plugin zip, SHA256SUMS), verifies SHA-256
 digests and filenames, and uploads **those same wheel/sdist bytes** to PyPI.
 It does **not** rebuild distributions at publish time.
 
-**rc12 provenance:** checksum-only. `SHA256SUMS` is the integrity contract.
+**rc14 provenance (same as rc12 and rc13):** checksum-only. `SHA256SUMS` is the integrity contract.
 `gh attestation verify` is expected to 404 until a future CI-built release
 attaches SLSA / GitHub Artifact Attestation provenance. Do not describe this
 candidate as attested.
 
 The GitHub `pypi` environment is restricted to `v*` tags.
 
-Public product/support/privacy/terms pages pin **rc12**. Do not retarget download links
+Public product and support pages pin **rc14** (website source last read 2026-10-06; see section 4). Do not retarget download links
 from a draft. Do not publish the rc11 draft.
 
 ---
@@ -408,7 +408,7 @@ listings are confirmed live (not pending review).
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
 | PyPI | ✅ | — | `0.2.0rc14` (same bytes as GitHub) | [runspecimen 0.2.0rc14](https://pypi.org/project/runspecimen/0.2.0rc14/) |
 | Homebrew tap | ✅ | — | `0.2.0rc14` sdist from GitHub Release | [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen) |
-| Mac App Store | ⏳ recorded WAITING_FOR_REVIEW | Apple review of macOS **0.1.4 (9)** (package `584f6868…`). **0.1.3 (8)** was rejected. Not re-read from Connect on 2026-09-25 | not public | no `apps.apple.com` URL — see `apps/macos/asc-kit/STATUS.md` |
+| Mac App Store | ✅ submitted 2026-09-24 | — | **0.1.4 (9)** `READY_FOR_SALE` on the 2026-09-28 Connect query (package `584f6868…`); not re-queried on 2026-10-06. The 2026-09-24 `WAITING_FOR_REVIEW` state is historical. **0.1.3 (8)** was rejected | no `apps.apple.com` URL recorded — see `apps/macos/asc-kit/STATUS.md` |
 
 **Important:** Do not claim a listing is "public" or "available" until:
 1. Submission is accepted (not just submitted)
