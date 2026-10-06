@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import gzip
 import hashlib
 import importlib.util
@@ -37,6 +38,11 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _urlsafe_sha256(data: bytes) -> str:
+    digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode("ascii").rstrip("=")
+    return f"sha256={digest}"
+
+
 def _committed_digest(filename: str) -> str | None:
     sums = GOLDEN_PACK / "SHA256SUMS"
     if not sums.is_file():
@@ -48,7 +54,16 @@ def _committed_digest(filename: str) -> str | None:
     return None
 
 
-def _wheel_stable_member_digests(blob: bytes) -> dict[str, str]:
+def _is_wheel_meta(name: str) -> bool:
+    return name.endswith(".dist-info/WHEEL") or name.endswith(".dist-info/RECORD")
+
+
+def _wheel_member_names(blob: bytes) -> set[str]:
+    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+        return {info.filename for info in archive.infolist()}
+
+
+def _wheel_payload_digests(blob: bytes) -> dict[str, str]:
     """Per-file digests that must not depend on the setuptools Generator line.
 
     CI installs the newest setuptools for each Python. 3.9 currently gets
@@ -60,10 +75,132 @@ def _wheel_stable_member_digests(blob: bytes) -> dict[str, str]:
     with zipfile.ZipFile(io.BytesIO(blob)) as archive:
         for info in archive.infolist():
             name = info.filename
-            if name.endswith(".dist-info/WHEEL") or name.endswith(".dist-info/RECORD"):
+            if _is_wheel_meta(name):
                 continue
             stable[name] = _sha256(archive.read(name))
     return stable
+
+
+def _wheel_stable_member_digests(blob: bytes) -> dict[str, str]:
+    return _wheel_payload_digests(blob)
+
+
+def _parse_record(text: str) -> list[tuple[str, str, str]]:
+    rows: list[tuple[str, str, str]] = []
+    for line in text.splitlines():
+        if not line:
+            continue
+        name, separator, rest = line.partition(",")
+        if not separator:
+            raise ValueError(f"malformed RECORD line: {line!r}")
+        digest, size_separator, size = rest.partition(",")
+        if not size_separator:
+            raise ValueError(f"malformed RECORD line: {line!r}")
+        rows.append((name, digest, size))
+    return rows
+
+
+def _record_payload_hashes(blob: bytes) -> dict[str, str]:
+    """Validate RECORD hashes against zip members. Return payload RECORD hashes.
+
+    ``WHEEL`` is excluded from the returned map because its Generator line
+    (and therefore its RECORD hash) moves across setuptools versions. Payload
+    hashes must still match the bytes in the zip, so a payload change cannot
+    hide behind the WHEEL/RECORD exclusion.
+    """
+    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+        names = {info.filename for info in archive.infolist()}
+        record_names = [name for name in names if name.endswith(".dist-info/RECORD")]
+        if len(record_names) != 1:
+            raise AssertionError(f"expected one RECORD member, got {record_names}")
+        record_name = record_names[0]
+        rows = _parse_record(archive.read(record_name).decode("utf-8"))
+        listed = {name for name, _digest, _size in rows}
+        if listed != names:
+            raise AssertionError(
+                f"RECORD member set {sorted(listed)} != zip member set {sorted(names)}"
+            )
+        payload_hashes: dict[str, str] = {}
+        for name, digest, size in rows:
+            data = archive.read(name)
+            if name.endswith(".dist-info/RECORD"):
+                if digest != "":
+                    raise AssertionError(f"RECORD hashed itself: {digest}")
+                continue
+            expected = _urlsafe_sha256(data)
+            if digest != expected:
+                raise AssertionError(f"RECORD hash for {name} does not match payload")
+            if size != str(len(data)):
+                raise AssertionError(f"RECORD size for {name} does not match payload")
+            if not name.endswith(".dist-info/WHEEL"):
+                payload_hashes[name] = digest
+        wheel_names = [name for name in names if name.endswith(".dist-info/WHEEL")]
+        if len(wheel_names) != 1:
+            raise AssertionError(f"expected one WHEEL member, got {wheel_names}")
+        return payload_hashes
+
+
+def _assert_wheels_match_across_setuptools(rebuilt: bytes, packed: bytes) -> None:
+    rebuilt_names = _wheel_member_names(rebuilt)
+    packed_names = _wheel_member_names(packed)
+    if rebuilt_names != packed_names:
+        raise AssertionError(
+            "wheel member set differed: "
+            f"added={sorted(rebuilt_names - packed_names)} "
+            f"removed={sorted(packed_names - rebuilt_names)}"
+        )
+    if _wheel_payload_digests(rebuilt) != _wheel_payload_digests(packed):
+        raise AssertionError("rebuilt wheel payload differed from the golden wheel")
+    if _record_payload_hashes(rebuilt) != _record_payload_hashes(packed):
+        raise AssertionError("RECORD payload hashes differed from the golden wheel")
+
+
+def _zip_bytes(members: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, data in members.items():
+            info = zipfile.ZipInfo(name)
+            info.date_time = (1980, 1, 1, 0, 0, 0)
+            archive.writestr(info, data)
+    return buffer.getvalue()
+
+
+def _record_text(members: dict[str, bytes], record_name: str, *, lie: dict[str, str] | None = None) -> bytes:
+    lines = []
+    for name, data in members.items():
+        digest = _urlsafe_sha256(data)
+        if lie and name in lie:
+            digest = lie[name]
+        lines.append(f"{name},{digest},{len(data)}")
+    lines.append(f"{record_name},,")
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def _fixture_wheel(*, generator: str = "setuptools (84.0.0)", extra: dict[str, bytes] | None = None,
+                   payload: bytes = b"hello\n", drop_record: bool = False,
+                   lie: dict[str, str] | None = None) -> bytes:
+    dist = "pkg-1.0.dist-info"
+    wheel = (
+        "Wheel-Version: 1.0\n"
+        f"Generator: {generator}\n"
+        "Root-Is-Purelib: true\n"
+        "Tag: py3-none-any\n"
+    ).encode("utf-8")
+    members: dict[str, bytes] = {
+        "pkg/__init__.py": payload,
+        f"{dist}/WHEEL": wheel,
+        f"{dist}/METADATA": b"Name: pkg\nVersion: 1.0\n",
+    }
+    if extra:
+        members.update(extra)
+    record_name = f"{dist}/RECORD"
+    if not drop_record:
+        members[record_name] = _record_text(
+            {name: data for name, data in members.items()},
+            record_name,
+            lie=lie,
+        )
+    return _zip_bytes(members)
 
 
 class ReleaseArchiveReproducibilityTests(unittest.TestCase):
@@ -170,14 +307,35 @@ class ReleaseArchiveReproducibilityTests(unittest.TestCase):
             self.assertEqual(_sha256(packed_sdist.read_bytes()), committed_sdist)
         packed_wheel = GOLDEN_PACK / WHEEL_NAME
         if packed_wheel.is_file():
-            self.assertEqual(
-                _wheel_stable_member_digests(first_wheel),
-                _wheel_stable_member_digests(packed_wheel.read_bytes()),
-                "rebuilt wheel payload differed from the golden wheel "
-                "(WHEEL/RECORD Generator lines may differ across setuptools)",
-            )
+            _assert_wheels_match_across_setuptools(first_wheel, packed_wheel.read_bytes())
         print(f"reproducible sdist {sdist_digest}")
         print(f"reproducible wheel {wheel_digest}")
+
+    def test_wheel_member_set_and_record_hashes_close_the_exclusion_gap(self) -> None:
+        golden = _fixture_wheel(generator="setuptools (84.0.0)")
+        rebuilt = _fixture_wheel(generator="setuptools (82.0.1)")
+        _assert_wheels_match_across_setuptools(rebuilt, golden)
+        self.assertNotEqual(_sha256(rebuilt), _sha256(golden))
+
+        with self.assertRaises(AssertionError):
+            _assert_wheels_match_across_setuptools(
+                _fixture_wheel(extra={"pkg/extra.py": b"new\n"}),
+                golden,
+            )
+        with self.assertRaises(AssertionError):
+            _assert_wheels_match_across_setuptools(
+                _fixture_wheel(payload=b"changed\n"),
+                golden,
+            )
+        with self.assertRaises(AssertionError):
+            _assert_wheels_match_across_setuptools(
+                _fixture_wheel(drop_record=True),
+                golden,
+            )
+        with self.assertRaises(AssertionError):
+            _record_payload_hashes(
+                _fixture_wheel(lie={"pkg/__init__.py": "sha256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"})
+            )
 
 
 if __name__ == "__main__":

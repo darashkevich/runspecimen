@@ -4,7 +4,7 @@ Not a production biometric sign-off. Not a Store, PyPI, or notarized publish.
 
 ## SHAs
 
-Packed identity is the package-tree SHA and the current pack sdist hash. The working tip is `cursor/evidence-expansion-coherence` after #39/`e2a32166662ec06a7b47a89df6ccabb3058263a8`, #47/`329e08bf83ecb3a512f880b5833cd90df46af23e`, #49/`18ef46180141bdd6ac02a0aa31299e5b52d85433`. `cursor/integrated-release-candidate` is historical at `a0dc23361856db8a68075471860bd4ab25af838c`. Do not treat a peeled parent as the merge tip.
+Packed identity is the package-tree SHA and the current pack sdist hash. The working tip is `cursor/evidence-expansion-coherence` after #39/`e2a32166662ec06a7b47a89df6ccabb3058263a8`, #47/`329e08bf83ecb3a512f880b5833cd90df46af23e`, #49/`18ef46180141bdd6ac02a0aa31299e5b52d85433`, #50/`dd85691e42e49df7a25caaddd27fa313e3fdf728`, #52/`32cd6a2907c347b050a8ab67bc9e3547a55f44f6`. `cursor/integrated-release-candidate` is historical at `a0dc23361856db8a68075471860bd4ab25af838c`. Do not treat a peeled parent as the merge tip.
 
 | Field | Value |
 | --- | --- |
@@ -12,13 +12,13 @@ Packed identity is the package-tree SHA and the current pack sdist hash. The wor
 | NEW-01 package-tree SHA | `5f35cfcf401107648d61b84e29da5a2e8b45f708` (NEW-01 + `test_new01_*` + CHANGELOG Unreleased + FAQ identity sentence). Wheel and plugin payload still match that tree |
 | Prior pack-recording SHA | `0fcfc8f6c39c359a153a81d08cd048280ece5e08` |
 | Evidence tip before OPEN-SDIST | `18ef46180141bdd6ac02a0aa31299e5b52d85433` |
-| Working tip | `cursor/evidence-expansion-coherence` after #39/`e2a3216`, #47/`329e08b`, #49/`18ef461` plus this OPEN-SDIST rewrite |
+| Working tip | `cursor/evidence-expansion-coherence` after #39/`e2a3216`, #47/`329e08b`, #49/`18ef461`, #50/`dd85691`, #52/`32cd6a2` |
 | Historical IRC tip | `cursor/integrated-release-candidate` @ `a0dc23361856db8a68075471860bd4ab25af838c` |
 | Pack | `artifacts/rc15-2026-10-05-golden-master/` |
 
 Canonical hashes: `docs/CANDIDATE_MANIFEST.md` (one table). Do not treat this file as a second source of truth.
 
-OPEN-SDIST is **closed as byte-reproducible**. The old committed sdist `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname (`ubuntu`/`1000`) and setuptools walk order, so ChatGPT’s rebuild `6979460d…` differed. `release_check.py` now rewrites the sdist with `SOURCE_DATE_EPOCH`, gzip mtime 0, numeric owner 0/0, empty uname/gname, sorted members, and 0644/0755 modes. Regenerated sdist `316938cea04f6747e32fd88f263533d710d489861fc36372c897680088fd63d3` (was `ddd6f667…` before the 3.9 CI fix). Wheel `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` and plugin `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` were not rebuilt. `tests/test_release_archive_reproducibility.py` rebuilds and compares the sdist against the committed SHA256SUMS hash. The golden wheel byte hash is setuptools 84.0.0; CI 3.9 (setuptools 82.0.1) compares wheel payload excluding `WHEEL`/`RECORD` Generator lines.
+OPEN-SDIST is **closed as byte-reproducible**. The old committed sdist `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname (`ubuntu`/`1000`) and setuptools walk order, so ChatGPT’s rebuild `6979460d…` differed. `release_check.py` now rewrites the sdist with `SOURCE_DATE_EPOCH`, gzip mtime 0, numeric owner 0/0, empty uname/gname, sorted members, and 0644/0755 modes. Current pack sdist `c001cb088f8710802a84149d32843667f36b8fb0dedd941abbbd9dd18137a2da` (was `316938ce…` before packed RECORD/member-set checks; was `ddd6f667…` before the 3.9 CI fix). Wheel `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` and plugin `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` were not rebuilt. `tests/test_release_archive_reproducibility.py` rebuilds and compares the sdist against the committed SHA256SUMS hash, compares the wheel member set, and validates RECORD payload hashes. The golden wheel byte hash is setuptools 84.0.0; CI 3.9 (setuptools 82.0.1) still excludes `WHEEL`/`RECORD` Generator bytes while checking payload and RECORD hashes.
 
 `tar tzf` of the sdist has CHANGELOG, FAQ, `tests/test_new01_unittest_packaged_suite.py`, and does not contain `CANDIDATE_MANIFEST.md`, `BRANCH_HYGIENE.md`, or `SECURE_ENCLAVE_ADMISSION.md`.
 
@@ -32,7 +32,7 @@ OPEN-SDIST is **closed as byte-reproducible**. The old committed sdist `b2db7b78
 | `e2_closed` false | Pass | same rows; D1 locked |
 | Installed admission fail-closed | Pass | `docs/SECURE_ENCLAVE_ADMISSION.md:3,69`; `docs/HOLDER_NATIVE_BRIDGE.md:28` |
 | Holder id accepted, Developer ID DR pinned | Pass | D2 2026-10-05. `docs/SECURE_ENCLAVE_ADMISSION.md:42`; `apps/holder/Resources/Info.plist:11-12` `com.darashkevich.runspecimen.holder`; `apps/holder/Scripts/build_install_holder.sh:206-223` |
-| Manifest hashes match the package tree | Pass | table in `docs/CANDIDATE_MANIFEST.md`; wheel `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` (unchanged), sdist `316938cea04f6747e32fd88f263533d710d489861fc36372c897680088fd63d3` (OPEN-SDIST rewrite; old `b2db7b78…` / `ddd6f667…`), plugin `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` (unchanged) |
+| Manifest hashes match the package tree | Pass | table in `docs/CANDIDATE_MANIFEST.md`; wheel `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` (unchanged), sdist `c001cb088f8710802a84149d32843667f36b8fb0dedd941abbbd9dd18137a2da` (RECORD/member-set test change; old `316938ce…` / `b2db7b78…` / `ddd6f667…`), plugin `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` (unchanged) |
 
 ## Disposition (ChatGPT re-QA at `6bb64d1`)
 

@@ -20,9 +20,14 @@ if swift package --package-path "$ROOT" describe >/dev/null 2>&1; then
   FIRST_RC=$?
   set -e
   cat "$FIRST_LOG"
+  # Retry only Apple codesign/xattr detritus. A real XCTest/Swift Testing
+  # failure must not retry even if the same log also mentions codesign.
+  CODESIGN_DETRITUS_RE='resource fork, Finder information, or similar detritus not allowed|code object is not signed at path|code object is not signed at all'
+  ASSERTION_RE='XCTAssert|error: -\[.*\] : |Test Case .* failed|Issue recorded'
   if [[ "$FIRST_RC" -eq 0 ]]; then
     echo "FIRST_PASS: OK"
-  elif grep -Ei 'resource fork|extended attributes|codesign.*not allowed|code object is not signed at path' "$FIRST_LOG" >/dev/null; then
+  elif grep -E "$CODESIGN_DETRITUS_RE" "$FIRST_LOG" >/dev/null \
+       && ! grep -E "$ASSERTION_RE" "$FIRST_LOG" >/dev/null; then
     echo "FIRST_PASS: FAIL (codesign/xattr detritus) — retrying once after xattr clear"
     rm -rf "$ROOT/.build"
     xattr -cr "$ROOT" 2>/dev/null || true
