@@ -1,6 +1,6 @@
 # ChatGPT retest brief — PR #39 engineering GM
 
-Package-tree SHA `5f35cfcf401107648d61b84e29da5a2e8b45f708`. Pack-recording SHA `0fcfc8f6c39c359a153a81d08cd048280ece5e08`. Reviewed/merge HEAD on `cursor/integrated-release-candidate` may be a later SHA-label commit (as of GM-01, `9fde02ad530a792fc180d963012e6a3010b3375d`; `git fetch` then checkout the branch, not a peeled parent such as `5b47e5f`). Base `d54c803c9b6dfe82cb91f55c5a21923c822041d9`. Pack `artifacts/rc15-2026-10-05-golden-master/`. Canonical hashes: `docs/CANDIDATE_MANIFEST.md`. Do not treat HEAD of a later notes commit as a new package identity.
+Working tip: `cursor/evidence-expansion-coherence` after #39/`e2a3216`, #47/`329e08b`, #49/`18ef461`. `cursor/integrated-release-candidate` is historical at `a0dc233`. NEW-01 package-tree SHA `5f35cfcf401107648d61b84e29da5a2e8b45f708`. Prior pack-recording SHA `0fcfc8f6c39c359a153a81d08cd048280ece5e08`. OPEN-SDIST regenerated the sdist to `316938cea04f6747e32fd88f263533d710d489861fc36372c897680088fd63d3`; wheel and plugin hashes are unchanged. Pack `artifacts/rc15-2026-10-05-golden-master/`. Canonical hashes: `docs/CANDIDATE_MANIFEST.md`.
 
 **Locked.** D1: installed admission fail-closed; E2 open; `run_integration_complete` and `e2_closed` false; no SE invention. D2: holder id `com.darashkevich.runspecimen.holder` accepted; no rename.
 
@@ -9,8 +9,8 @@ Package-tree SHA `5f35cfcf401107648d61b84e29da5a2e8b45f708`. Pack-recording SHA 
 ## Retest
 
 ```
-git fetch origin && git checkout cursor/integrated-release-candidate
-git rev-parse HEAD   # descendant of 5f35cfc (package tree) and 0fcfc8f (pack recording)
+git fetch origin && git checkout cursor/evidence-expansion-coherence
+git rev-parse HEAD   # descendant of e2a3216 (#39), 329e08b (#47), 18ef461 (#49)
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 PYTHONPATH=src python3 -m unittest tests.test_new01_unittest_packaged_suite -v
 # honesty greps
