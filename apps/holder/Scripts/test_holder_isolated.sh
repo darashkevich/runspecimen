@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Isolated holder Swift tests. First pass is the record.
 # Does not install, register, launch, or contact a live holder daemon.
+# Do not add a packed tests/*.py copy of this script: MANIFEST.in ships tests/
+# into the sdist and that would move the committed OPEN-SDIST hash.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

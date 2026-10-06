@@ -50,7 +50,13 @@ Published rc14 bytes are unchanged. Homebrew still pins rc14.
 | Darwin `release-check` 3.11/3.14 | 651 tests, 35 skipped, 0 failed | First pass (no hidden retry) | Engine |
 | Ubuntu `release-check` 3.12 | 651 tests, 77 skipped, 0 failed | First pass | Engine |
 
-651 vs historical 650 is successor work already on `dd85691` (OPEN-SDIST / P3), not a claim that `9fde02a` counts still apply. This evidence-only revision adds four Python refuse-path guards (`tests/test_isolated_holder_ci_guard.py`). They do not run `swift test`. Next CI should report 655 Python tests with the same skip bands. That later count is not `bd3db41` and is not a new package identity.
+651 vs historical 650 is successor work already on `dd85691` (OPEN-SDIST / P3), not a claim that `9fde02a` counts still apply.
+
+### `51dcb0b` — packed-test defect, not a Swift regression
+
+Push [37405306078](https://github.com/darashkevich/runspecimen/actions/runs/37405306078) and PR [37405309218](https://github.com/darashkevich/runspecimen/actions/runs/37405309218): workflow **failure**. 8 unique `release-check` names failed on both events. macos-app and holder-swift stayed first-pass green on both (`FIRST_PASS: OK` 110 / 1 skip; `HOLDER_FIRST_PASS: OK` 24 / 0 fail; no retry).
+
+Cause: `tests/test_isolated_holder_ci_guard.py` is packed (`MANIFEST.in` `recursive-include tests *.py`). Rebuilt sdist `2c136c43ddbb6d55789f1342d0285225b494f719d3342b7248f9b8e8c09646cf` ≠ committed `316938ce…`. The four Python guards are withdrawn. Refuse-path stays in `apps/holder/Scripts/test_holder_isolated.sh`, `smoke_macos.sh`, and the `holder-swift` job. Expected Python count remains **651**. Archives were not rebuilt.
 
 ### Package-tree source `dd85691` (before this follow-up)
 
