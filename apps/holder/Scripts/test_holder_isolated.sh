@@ -20,18 +20,22 @@ fi
 echo "HOLDER isolated swift test — package $ROOT"
 echo "Does not install SMAppService, does not touch /Applications, does not invoke biometrics."
 echo "Does not bind or contact $PRODUCTION_SOCK"
-xattr -cr "$ROOT/.build" 2>/dev/null || true
-find "$ROOT/.build" \( -name '._*' -o -name '.DS_Store' \) -delete 2>/dev/null || true
+SCRATCH="${TMPDIR:-/tmp}/rs-holder-swift.$$"
+mkdir -p "$SCRATCH"
+trap 'rm -rf "$SCRATCH"' EXIT
+# Build products stay off the source tree so Finder/Box xattrs cannot
+# inject detritus into .xctest bundles. This is setup, not a retry.
+xattr -cr "$SCRATCH" 2>/dev/null || true
 
 if ! swift package --package-path "$ROOT" describe >/dev/null 2>&1; then
   echo "SwiftPM unavailable — cannot run holder tests on this host"
   exit 3
 fi
 
-echo "HOLDER_FIRST_PASS: running swift test --package-path $ROOT"
+echo "HOLDER_FIRST_PASS: running swift test --package-path $ROOT --scratch-path $SCRATCH"
 FIRST_LOG="${TMPDIR:-/tmp}/rs-holder-swift-first.log"
 set +e
-swift test --package-path "$ROOT" >"$FIRST_LOG" 2>&1
+swift test --package-path "$ROOT" --scratch-path "$SCRATCH" >"$FIRST_LOG" 2>&1
 FIRST_RC=$?
 set -e
 cat "$FIRST_LOG"
