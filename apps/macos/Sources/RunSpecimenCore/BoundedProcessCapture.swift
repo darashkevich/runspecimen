@@ -11,6 +11,19 @@ import Foundation
 /// cannot hold this call open.
 public enum BoundedProcessCapture {
     public static let defaultTerminationGrace: TimeInterval = 0.5
+    /// Window to wait for `readyMarker` before failing startup.
+    ///
+    /// Production `LiveProcessCapture` does not pass a marker, so this deadline
+    /// is not on the engine path: the macOS app launches the bundled helper or
+    /// PATH CLI (`/bin/bash` plus a shebang script, or a frozen Mach-O) and the
+    /// 15-minute command timeout starts at spawn. Marker-based callers (tests
+    /// and any future READY protocol) keep 5s because a child that is supposed
+    /// to print a short line should do so immediately after exec. CI
+    /// `/usr/bin/python3` fixtures can exceed that on a cold runner; those
+    /// tests pass an explicit longer deadline. Do not raise this default to
+    /// hide fixture startup — that would hide a hung child from marker-based
+    /// callers.
+    public static let defaultReadyDeadline: TimeInterval = 5
 
     public struct Output: Equatable, Sendable {
         public var exitCode: Int32
@@ -94,7 +107,7 @@ public enum BoundedProcessCapture {
         timeout: TimeInterval? = nil,
         terminationGrace: TimeInterval = defaultTerminationGrace,
         readyMarker: Data? = nil,
-        readyDeadline: TimeInterval = 5,
+        readyDeadline: TimeInterval = defaultReadyDeadline,
         isCancelled: @escaping @Sendable () -> Bool = { false }
     ) throws -> Output {
         let pipes = try openPipes()

@@ -9,8 +9,8 @@ This file is the live ledger. Golden-master notes are historical. Later commits 
 | Item | Value |
 | --- | --- |
 | Working branch | `cursor/evidence-expansion-coherence` |
-| Source SHA this ledger was written against | `dd85691e42e49df7a25caaddd27fa313e3fdf728` (PR #50 merge; also head of draft #51). Package identity. Not overwritten by this follow-up |
-| This follow-up (evidence-only, not a new package) | `bd3db41d9b11b62d553e6e955261539913398924` on `cursor/readiness-ledger-5215` (draft #52). A later commit that only records these CI rows is still not a new package identity |
+| Source SHA this ledger was written against | `32cd6a2907c347b050a8ab67bc9e3547a55f44f6` (PR #52 merge). Package-tree successor of `dd85691` (PR #50). Engine/plugin/wheel bytes still the NEW-01 / OPEN-SDIST identity |
+| This follow-up | `cursor/qa-32cd6a2-fixes`: QA-32-01 ready-deadline pin, wheel RECORD/member-set checks, smoke retry tighten, holder vacuous-fail. Sdist `c001cb08…`. Not production sign-off |
 | Historical IRC tip | `a0dc23361856db8a68075471860bd4ab25af838c` |
 | NEW-01 package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` |
 | Engine | unpublished `0.2.0rc15` |
@@ -27,11 +27,11 @@ Canonical table: [CANDIDATE_MANIFEST.md](CANDIDATE_MANIFEST.md). Pack: `artifact
 
 | File | SHA-256 | Provenance |
 | --- | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` | NEW-01 package tree. Unchanged by OPEN-SDIST |
-| `runspecimen-0.2.0rc15.tar.gz` | `316938cea04f6747e32fd88f263533d710d489861fc36372c897680088fd63d3` | OPEN-SDIST rewrite at #50. Host-independent metadata |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` | NEW-01 package tree. Unchanged by OPEN-SDIST and this follow-up |
+| `runspecimen-0.2.0rc15.tar.gz` | `c001cb088f8710802a84149d32843667f36b8fb0dedd941abbbd9dd18137a2da` | Packed `test_release_archive_reproducibility.py` RECORD/member-set checks. Was `316938ce…` at #50/#52 |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` | Unchanged |
 
-**OPEN-SDIST (closed).** Historical mismatch: committed `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname, so a rebuild produced `6979460d…`. `release_check.py` now pins `SOURCE_DATE_EPOCH`, gzip mtime 0, owner 0/0, empty uname/gname, sorted members, 0644/0755. Regression: `tests/test_release_archive_reproducibility.py`. This host re-read the pack sdist and got `316938ce…`. Do not restore `b2db7b78…` as current.
+**OPEN-SDIST (closed).** Historical mismatch: committed `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname, so a rebuild produced `6979460d…`. `release_check.py` now pins `SOURCE_DATE_EPOCH`, gzip mtime 0, owner 0/0, empty uname/gname, sorted members, 0644/0755. Regression: `tests/test_release_archive_reproducibility.py`. Current pack sdist is `c001cb08…`. Do not restore `b2db7b78…` or `316938ce…` as current.
 
 Published rc14 bytes are unchanged. Homebrew still pins rc14.
 
@@ -39,7 +39,13 @@ Published rc14 bytes are unchanged. Homebrew still pins rc14.
 
 `9fde02a` independent QA (650 Python / 6 skip, 110 Swift / 1 human skip, NEW-01 and R-01..R-06 closed) is **historical** and is **not** current-tip sign-off.
 
-### Successor first-pass at `bd3db41` (this follow-up)
+### This follow-up (`cursor/qa-32cd6a2-fixes` on tip `32cd6a2`)
+
+ChatGPT QA-32-01 is **real**. Marker-based `BoundedProcessCaptureTests` still pass `readyDeadline: 20` because cold CI `/usr/bin/python3` can exceed 5s before `READY`. Production `LiveProcessCapture` does not pass a marker, so the 5s default is not on the engine path (15-minute command timeout starts at spawn). The production default stays **5s** as `BoundedProcessCapture.defaultReadyDeadline`, pinned and exercised when omitted. Do not raise it to hide fixture startup.
+
+Wheel comparison now checks the full member set (including `WHEEL`/`RECORD`) and validates RECORD payload hashes against zip bytes. Smoke retry matches only Apple codesign detritus strings and does not retry when an XCTest assertion is in the log. Isolated holder Swift fails if zero tests ran, refuses `RS_HOLDER_SOCKET` and `RS_HOLDER_INSTALL_CONSENT=yes`, and does not retry. Packed reproducibility tests add one case; expected Python count is **652**.
+
+### Successor first-pass at `bd3db41` (PR #52, now merged)
 
 20 unique SUCCESS checks (10 job names × push + PR). **Zero cancelled** jobs. Workflow conclusion **success** on both events. This is not production sign-off.
 
@@ -73,8 +79,8 @@ Historical `9fde02a` skips on a well-provisioned Mac were 6. Linux local golden-
 | ID | Class | Owner | Channel | Next action |
 | --- | --- | --- | --- | --- |
 | E2 | Engineering gap | Engineering | Installed holder / exact-run admission | Keep fail-closed. Root `launchd` cannot create or reload a Secure Enclave key ([SECURE_ENCLAVE_ADMISSION.md](SECURE_ENCLAVE_ADMISSION.md)). A biometric press does not close this. Any other design is a new decision |
-| SWIFT-STARTUP | Closed this follow-up | Engineering | macos-app | Verified first-pass at `bd3db41` on push and PR. `readyDeadline` 20s. Smoke no longer retries assertion flakes |
-| HOLDER-SWIFT-CI | Closed this follow-up | Engineering | Holder | Verified `HOLDER_FIRST_PASS: OK` 24 / 0 fail on push and PR. Isolated script refuses `RS_HOLDER_SOCKET` |
+| SWIFT-STARTUP | Closed | Engineering | macos-app | Production default stays 5s (`defaultReadyDeadline`). Marker tests keep an explicit 20s CI python3 allowance. New tests pin the constant and fail a never-ready child at the default. Smoke does not retry assertion flakes |
+| HOLDER-SWIFT-CI | Closed | Engineering | Holder | Isolated script refuses `RS_HOLDER_SOCKET` and install consent. Zero tests run fails the job. No retry |
 | H1 | Human acceptance | Yahor | Local / companion / dual prompt | Press Touch ID / Face ID on a provenance-identified build. Does **not** close E2 |
 | H2 | Release / operator | Yahor | Developer ID holder | Live SMAppService install on a real Mac. Unauthorized here |
 | H3 | Release / operator | Yahor | Apple | Send [APPLE_DTS_HOLDER_QUESTION.md](APPLE_DTS_HOLDER_QUESTION.md) |
@@ -103,7 +109,7 @@ Installed Secure Enclave admission stays fail-closed because this holder is a ro
 ## Smallest remaining decision/action list
 
 1. Yahor (human): H1 on a named, provenance-identified build. A biometric press does not close E2.
-2. Yahor (operator): H2–H6 only under a separate authorization. H7 is merge of draft [#51](https://github.com/darashkevich/runspecimen/pull/51) to `main`, not #39. Do not merge #51 or #52 from this record.
+2. Yahor (operator): H2–H6 only under a separate authorization. H7 is merge of draft [#51](https://github.com/darashkevich/runspecimen/pull/51) to `main`, not #39. Do not merge #51 from this record.
 3. Product decision (not this prototype): whether a later per-user Aqua agent may create the key. That is not a root daemon and is not authorized here.
 
 Engineering first-pass recording for this follow-up is done. E2 remains the open engineering limitation.

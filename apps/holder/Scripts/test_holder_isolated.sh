@@ -6,14 +6,20 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PRODUCTION_SOCK="/Library/Application Support/com.darashkevich.runspecimen.holder/holder.sock"
 
 if [[ -n "${RS_HOLDER_SOCKET:-}" ]]; then
   echo "REFUSED: RS_HOLDER_SOCKET is set; this job must not contact a live holder" >&2
   exit 2
 fi
+if [[ "${RS_HOLDER_INSTALL_CONSENT:-}" == "yes" ]]; then
+  echo "REFUSED: RS_HOLDER_INSTALL_CONSENT=yes; this job must not install" >&2
+  exit 2
+fi
 
 echo "HOLDER isolated swift test — package $ROOT"
 echo "Does not install SMAppService, does not touch /Applications, does not invoke biometrics."
+echo "Does not bind or contact $PRODUCTION_SOCK"
 xattr -cr "$ROOT/.build" 2>/dev/null || true
 find "$ROOT/.build" \( -name '._*' -o -name '.DS_Store' \) -delete 2>/dev/null || true
 
@@ -23,9 +29,19 @@ if ! swift package --package-path "$ROOT" describe >/dev/null 2>&1; then
 fi
 
 echo "HOLDER_FIRST_PASS: running swift test --package-path $ROOT"
-if swift test --package-path "$ROOT"; then
-  echo "HOLDER_FIRST_PASS: OK"
-else
+FIRST_LOG="${TMPDIR:-/tmp}/rs-holder-swift-first.log"
+set +e
+swift test --package-path "$ROOT" >"$FIRST_LOG" 2>&1
+FIRST_RC=$?
+set -e
+cat "$FIRST_LOG"
+if [[ "$FIRST_RC" -ne 0 ]]; then
   echo "HOLDER_FIRST_PASS: FAIL — not retrying"
   exit 1
 fi
+# Vacuous success is a failure. XCTest prints "Executed N tests" per suite.
+if ! grep -E "Executed [1-9][0-9]* tests?" "$FIRST_LOG" >/dev/null; then
+  echo "HOLDER_FIRST_PASS: FAIL — zero tests ran" >&2
+  exit 1
+fi
+echo "HOLDER_FIRST_PASS: OK"

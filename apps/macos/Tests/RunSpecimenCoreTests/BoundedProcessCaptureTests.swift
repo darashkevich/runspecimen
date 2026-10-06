@@ -353,6 +353,34 @@ final class BoundedProcessCaptureTests: XCTestCase {
         }
     }
 
+    func testProductionReadyDeadlineDefaultIsFiveSeconds() {
+        XCTAssertEqual(BoundedProcessCapture.defaultReadyDeadline, 5)
+    }
+
+    func testOmittedReadyDeadlineUsesTheProductionDefault() {
+        let started = Date()
+        XCTAssertThrowsError(
+            try BoundedProcessCapture.run(
+                executable: URL(fileURLWithPath: "/bin/sleep"),
+                arguments: ["30"],
+                readyMarker: Self.readyMarker
+            )
+        ) { error in
+            XCTAssertEqual(
+                (error as? EngineReportError)?.message,
+                "The child was not ready before the startup deadline."
+            )
+        }
+        let elapsed = Date().timeIntervalSince(started)
+        XCTAssertGreaterThan(elapsed, BoundedProcessCapture.defaultReadyDeadline - 0.25)
+        XCTAssertLessThan(
+            elapsed,
+            BoundedProcessCapture.defaultReadyDeadline
+                + BoundedProcessCapture.defaultTerminationGrace
+                + 2
+        )
+    }
+
     func testInterruptedReadIsRetriedAndAHardReadErrorIsNotSuccess() {
         XCTAssertEqual(BoundedProcessCapture.readDisposition(count: 4, errorNumber: EINTR), .data)
         XCTAssertEqual(BoundedProcessCapture.readDisposition(count: 0, errorNumber: EINTR), .end)
