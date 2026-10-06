@@ -107,14 +107,8 @@ Skip reasons on this Linux host (78): PyNaCl (29), CryptoKit signer compiler abs
 
 Pushed to `cursor/evidence-expansion-coherence`. Expect 9 check names × push+PR. Status recorded on the PR after this tip is green. CI green is not biometric or holder threat-model proof.
 
-## Human / authority residuals (unchecked)
+## Residuals
 
-- [ ] H1: real Touch ID / Face ID press on hardware (Yahor)
-- [ ] H2: live holder daemon install / SMAppService registration on a real Mac (Yahor)
-- [ ] H3: send `docs/APPLE_DTS_HOLDER_QUESTION.md` to Apple DTS (Yahor)
-- [ ] H4: Developer ID signing + notarization of the holder (Yahor)
-- [ ] H5: PyPI publish of the engine rc / any retag (Yahor)
-- [ ] H6: App Store / TestFlight upload of Mac or iOS builds (Yahor)
-- [ ] H7: merge PR #39 (Yahor, after independent retest)
+Historical H7 (merge PR #39) is done. Current residuals, owners, and next actions are in `docs/READINESS_LEDGER.md`. Do not treat this notes file as the live ledger.
 
 E2 remains open by decision D1. `run_integration_complete` and `e2_closed` are false. This is an engineering golden master of the evidence+approval slice, not a production biometric sign-off and not a Store submission.

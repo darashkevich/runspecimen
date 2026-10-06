@@ -5,7 +5,7 @@ This file is not a Store submission plan and it is not packed into the sdist. A 
 | Item | Identity |
 | --- | --- |
 | Branch | `cursor/evidence-expansion-coherence` |
-| Evidence-branch lineage | PR #39 merge `e2a32166662ec06a7b47a89df6ccabb3058263a8`, PR #47 merge `329e08bf83ecb3a512f880b5833cd90df46af23e`, PR #49 merge `18ef46180141bdd6ac02a0aa31299e5b52d85433` |
+| Evidence-branch lineage | PR #39 merge `e2a32166662ec06a7b47a89df6ccabb3058263a8`, PR #47 merge `329e08bf83ecb3a512f880b5833cd90df46af23e`, PR #49 merge `18ef46180141bdd6ac02a0aa31299e5b52d85433`, PR #50 merge `dd85691e42e49df7a25caaddd27fa313e3fdf728` |
 | Historical IRC tip | `cursor/integrated-release-candidate` remains `a0dc23361856db8a68075471860bd4ab25af838c`. Do not retarget work there |
 | NEW-01 package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` (packaged-suite discovery). Still the last change to engine/plugin payload bytes |
 | Engine / package | unpublished `0.2.0rc15` |
@@ -33,7 +33,7 @@ The wheel matches the previous canonical table (`809431ea6683a7779e13eb3cd024c7b
 
 | Area | State |
 | --- | --- |
-| Capture failures, receipts, fast path, PR #34 evidence expansion | Implemented on this branch. Not merged |
+| Capture failures, receipts, fast path, PR #34 evidence expansion | Merged into `cursor/evidence-expansion-coherence` via #39. Draft #51 to `main` is open and blocked on human/release gates. Not on `main`. #34 is closed as superseded |
 | Local RSBA1 / RSBA2 stores and user-mediated carried package | Implemented and tested in process. `consumeForExecution` is not wired to a run. `evaluateExecution.started` stays false |
 | iOS companion enroll, sign, revoke, rotate | Implemented. Enroll creates a key only for a missing file. Finalize and public revoke share the enrollment lock. Not run on a device by a person |
 | macOS confirmation | Claim matches the displayed request id. A workspace or contract change drops pending work and an unstarted claim. `performClaimedWorkflow` refuses when the live paths differ. A command that has already started is not stopped. AppModel tests cover the handlers. A development GUI of source `91081f5` (main hash `cfb41bcc…`) finished Compare, Diff, Retain cancel, and Retain copy on the synthetic fixture; that GUI binary does not contain the holder. Evidence is in `apps/macos/asc-kit/evidence/2026-09-28-rc15-acceptance.md`. The version string 0.1.5 (13) does not identify it |

@@ -125,7 +125,8 @@ final class BoundedProcessCaptureTests: XCTestCase {
             byteLimit: 1024,
             timeout: 0.1,
             terminationGrace: 0.25,
-            readyMarker: Self.readyMarker
+            readyMarker: Self.readyMarker,
+            readyDeadline: Self.readyDeadline
         )
         let elapsed = Date().timeIntervalSince(started)
         XCTAssertTrue(output.timedOut)
@@ -144,6 +145,7 @@ final class BoundedProcessCaptureTests: XCTestCase {
             timeout: 30,
             terminationGrace: 0.25,
             readyMarker: Self.readyMarker,
+            readyDeadline: Self.readyDeadline,
             isCancelled: { Date().timeIntervalSince(armed) >= 0.2 }
         )
         XCTAssertTrue(output.cancelled)
@@ -160,7 +162,8 @@ final class BoundedProcessCaptureTests: XCTestCase {
             byteLimit: 1024,
             timeout: 0.4,
             terminationGrace: 0.3,
-            readyMarker: Self.readyMarker
+            readyMarker: Self.readyMarker,
+            readyDeadline: Self.readyDeadline
         )
         let elapsed = Date().timeIntervalSince(started)
         XCTAssertTrue(output.timedOut)
@@ -182,7 +185,8 @@ final class BoundedProcessCaptureTests: XCTestCase {
             byteLimit: 1000,
             timeout: 0.2,
             terminationGrace: 0.25,
-            readyMarker: Self.readyMarker
+            readyMarker: Self.readyMarker,
+            readyDeadline: Self.readyDeadline
         )
         XCTAssertTrue(output.timedOut)
         XCTAssertTrue(output.stdoutTruncated)
@@ -305,7 +309,8 @@ final class BoundedProcessCaptureTests: XCTestCase {
             byteLimit: 1024,
             timeout: 0.2,
             terminationGrace: 0.3,
-            readyMarker: Self.readyMarker
+            readyMarker: Self.readyMarker,
+            readyDeadline: Self.readyDeadline
         )
         XCTAssertTrue(output.timedOut)
         XCTAssertFalse(output.cleanupFailed)
@@ -464,9 +469,11 @@ final class BoundedProcessCaptureTests: XCTestCase {
 
     private let python = URL(fileURLWithPath: "/usr/bin/python3")
     /// Startup may be slower than the action timeout. The capture waits for
-    /// this marker, then applies the short timeout. 8s is the startup deadline
-    /// plus kill grace, not a longer grace period.
-    private static let startupCeiling: TimeInterval = 8
+    /// this marker, then applies the short timeout. CI `/usr/bin/python3` can
+    /// exceed the production 5s default; tests pass an explicit 20s deadline.
+    /// 25s is that deadline plus kill grace, not a longer grace period.
+    private static let readyDeadline: TimeInterval = 20
+    private static let startupCeiling: TimeInterval = 25
     private static let readyMarker = Data("READY".utf8)
     private static let ignoreTermUntil = """
     import signal, sys, time
