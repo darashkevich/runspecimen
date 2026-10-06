@@ -9,8 +9,9 @@ The working tip is `cursor/evidence-expansion-coherence` after the evidence-bran
 | #39 | Integrated candidate (capture, receipts, holder packaging) | Merge `e2a3216` is the first evidence-branch parent | Merged into `cursor/evidence-expansion-coherence` |
 | #47 | `.cursor/environment.json` from #35 | Merge `329e08b` is on the evidence tip | Merged. Env-file only |
 | #49 | Diagnostic-root Swift fixture and CHANNEL_MATRIX hashes | Merge `18ef461` is the evidence tip before OPEN-SDIST | Merged |
-| #50 | OPEN-SDIST byte-reproducible rc15 sdist | Merge `dd85691` is the current EEC tip before this ledger | Merged |
+| #50 | OPEN-SDIST byte-reproducible rc15 sdist | Merge `dd85691` is the EEC package-tree tip | Merged |
 | #51 | Draft rc15 candidate onto `main` | Same tip as EEC | Open draft. Blocked on human/release gates. Do not merge |
+| #52 | Readiness ledger, first-pass Swift, isolated holder CI | Evidence-only on `cursor/readiness-ledger-5215`. Not a new package identity | Open draft into EEC. Not a merge instruction |
 | #34 | Evidence expansion onto `main` | Yes. `cursor/evidence-expansion-coherence` is contained | Closed as superseded |
 | #38 | Eval fast path must not forge requirement results | Yes. `cursor/deterministic-fastpath` is contained | Closed as superseded |
 | #35 | Cloud Agent `environment.json` | No, until restacked | Closed. Restacked as #47 |

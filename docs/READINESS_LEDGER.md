@@ -9,7 +9,8 @@ This file is the live ledger. Golden-master notes are historical. Later commits 
 | Item | Value |
 | --- | --- |
 | Working branch | `cursor/evidence-expansion-coherence` |
-| Source SHA this ledger was written against | `dd85691e42e49df7a25caaddd27fa313e3fdf728` (PR #50 merge; also head of draft #51) |
+| Source SHA this ledger was written against | `dd85691e42e49df7a25caaddd27fa313e3fdf728` (PR #50 merge; also head of draft #51). Package identity. Not overwritten by this follow-up |
+| This follow-up (evidence-only, not a new package) | `bd3db41d9b11b62d553e6e955261539913398924` on `cursor/readiness-ledger-5215` (draft #52). A later commit that only records these CI rows is still not a new package identity |
 | Historical IRC tip | `a0dc23361856db8a68075471860bd4ab25af838c` |
 | NEW-01 package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` |
 | Engine | unpublished `0.2.0rc15` |
@@ -34,9 +35,24 @@ Canonical table: [CANDIDATE_MANIFEST.md](CANDIDATE_MANIFEST.md). Pack: `artifact
 
 Published rc14 bytes are unchanged. Homebrew still pins rc14.
 
-## Tests at `dd85691` (not historical `9fde02a`)
+## Tests
 
-`9fde02a` independent QA (650 Python / 6 skip, 110 Swift / 1 human skip, NEW-01 and R-01..R-06 closed) is **not** current-tip sign-off.
+`9fde02a` independent QA (650 Python / 6 skip, 110 Swift / 1 human skip, NEW-01 and R-01..R-06 closed) is **historical** and is **not** current-tip sign-off.
+
+### Successor first-pass at `bd3db41` (this follow-up)
+
+20 unique SUCCESS checks (10 job names × push + PR). **Zero cancelled** jobs. Workflow conclusion **success** on both events. This is not production sign-off.
+
+| Surface | Result | First pass vs retry | Channel |
+| --- | --- | --- | --- |
+| CI push [37404310314](https://github.com/darashkevich/runspecimen/actions/runs/37404310314) | Workflow **success**. All 10 jobs green, 0 cancelled | macos-app `FIRST_PASS: OK` 110 / 1 human skip / 0 fail (no retry). `testCancellationKillsAChildThatIgnoresSIGTERM` passed 2.826s. holder-swift `HOLDER_FIRST_PASS: OK` 24 / 0 fail (21 socket + 3 feasibility) | Engine + Mac app + isolated holder |
+| CI PR #52 [37404325426](https://github.com/darashkevich/runspecimen/actions/runs/37404325426) | Workflow **success**. All 10 jobs green, 0 cancelled | macos-app `FIRST_PASS: OK` 110 / 1 human skip / 0 fail (no retry). holder-swift `HOLDER_FIRST_PASS: OK` 24 / 0 fail | Engine + Mac app + isolated holder |
+| Darwin `release-check` 3.11/3.14 | 651 tests, 35 skipped, 0 failed | First pass (no hidden retry) | Engine |
+| Ubuntu `release-check` 3.12 | 651 tests, 77 skipped, 0 failed | First pass | Engine |
+
+651 vs historical 650 is successor work already on `dd85691` (OPEN-SDIST / P3), not a claim that `9fde02a` counts still apply. This evidence-only revision adds four Python refuse-path guards (`tests/test_isolated_holder_ci_guard.py`). They do not run `swift test`. Next CI should report 655 Python tests with the same skip bands. That later count is not `bd3db41` and is not a new package identity.
+
+### Package-tree source `dd85691` (before this follow-up)
 
 | Surface | Result | First pass vs retry | Channel |
 | --- | --- | --- | --- |
@@ -44,15 +60,15 @@ Published rc14 bytes are unchanged. Homebrew still pins rc14.
 | CI PR #51 [37392937045](https://github.com/darashkevich/runspecimen/actions/runs/37392937045) | Workflow **success**. All 9 jobs green | macos-app **first pass failed** `testCancellationKillsAChildThatIgnoresSIGTERM` (child not ready in 5s). xattr retry hid it: 110 / 1 skip / 0 fail | Engine + Mac app |
 | Holder Swift `apps/holder` | Not in CI at `dd85691` (24 tests: 21 socket + 3 feasibility) | n/a | Holder source only |
 
-Historical `9fde02a` skips on a well-provisioned Mac were 6. Linux local golden-master was 650 / 78 skip. Darwin CI `release_check` at the golden-master SHA was 650 / 35 skip. This ledger does not reuse those counts as `dd85691` qualification.
+Historical `9fde02a` skips on a well-provisioned Mac were 6. Linux local golden-master was 650 / 78 skip. Darwin CI `release_check` at the golden-master SHA was 650 / 35 skip.
 
 ## Open items
 
 | ID | Class | Owner | Channel | Next action |
 | --- | --- | --- | --- | --- |
 | E2 | Engineering gap | Engineering | Installed holder / exact-run admission | Keep fail-closed. Root `launchd` cannot create or reload a Secure Enclave key ([SECURE_ENCLAVE_ADMISSION.md](SECURE_ENCLAVE_ADMISSION.md)). A biometric press does not close this. Any other design is a new decision |
-| SWIFT-STARTUP | Engineering (in this follow-up) | Engineering | macos-app | Tests now pass `readyDeadline` 20s. Smoke records FIRST_PASS and retries only on codesign/xattr detritus |
-| HOLDER-SWIFT-CI | Engineering (in this follow-up) | Engineering | Holder | Isolated `holder-swift` job: `apps/holder/Scripts/test_holder_isolated.sh`. No live socket, no install, first pass only |
+| SWIFT-STARTUP | Closed this follow-up | Engineering | macos-app | Verified first-pass at `bd3db41` on push and PR. `readyDeadline` 20s. Smoke no longer retries assertion flakes |
+| HOLDER-SWIFT-CI | Closed this follow-up | Engineering | Holder | Verified `HOLDER_FIRST_PASS: OK` 24 / 0 fail on push and PR. Isolated script refuses `RS_HOLDER_SOCKET` |
 | H1 | Human acceptance | Yahor | Local / companion / dual prompt | Press Touch ID / Face ID on a provenance-identified build. Does **not** close E2 |
 | H2 | Release / operator | Yahor | Developer ID holder | Live SMAppService install on a real Mac. Unauthorized here |
 | H3 | Release / operator | Yahor | Apple | Send [APPLE_DTS_HOLDER_QUESTION.md](APPLE_DTS_HOLDER_QUESTION.md) |
@@ -68,7 +84,7 @@ Historical `9fde02a` skips on a well-provisioned Mac were 6. Linux local golden-
 | CLI wheel/sdist | Unpublished rc15; doctor/validate/status work without Darwin verifier | Published; PyPI; Homebrew pin |
 | Plugins | Adapter calls CLI; `freshness_check` is evaluate-only | Marketplace listing |
 | Mac App Store | Approved **0.1.4 (9)** guarantee (1) only | This SHA has a Store archive; holder inside Store app |
-| Developer ID holder | Source + isolated tests. Stage can write a temp package | Installed, notarized, SE admission, Store parity |
+| Developer ID holder | Source + isolated tests + isolated CI first-pass. Stage can write a temp package | Installed, notarized, SE admission, Store parity |
 | iOS companion | Software tests. No device run | TestFlight / Store / physical presence at the Mac |
 | Isolation | Default `none`. Opt-in `sandbox-exec` / `bwrap` are not an OS sandbox | Default confinement |
 
@@ -80,7 +96,8 @@ Installed Secure Enclave admission stays fail-closed because this holder is a ro
 
 ## Smallest remaining decision/action list
 
-1. Engineering: land this follow-up (startup deadline + isolated holder CI + this ledger) and read successor first-pass CI, including `holder-swift`.
-2. Yahor (human): H1 on a named build, knowing it does not close E2.
-3. Yahor (operator): H2–H6 only under a separate authorization; H7 is merge of #51 to `main`, not #39.
-4. Product decision (not this prototype): whether a later per-user Aqua agent may create the key. That is not a root daemon and is not authorized here.
+1. Yahor (human): H1 on a named, provenance-identified build. A biometric press does not close E2.
+2. Yahor (operator): H2–H6 only under a separate authorization. H7 is merge of draft [#51](https://github.com/darashkevich/runspecimen/pull/51) to `main`, not #39. Do not merge #51 or #52 from this record.
+3. Product decision (not this prototype): whether a later per-user Aqua agent may create the key. That is not a root daemon and is not authorized here.
+
+Engineering first-pass recording for this follow-up is done. E2 remains the open engineering limitation.
