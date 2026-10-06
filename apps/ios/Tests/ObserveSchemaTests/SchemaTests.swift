@@ -395,6 +395,14 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(stored.generation, 1)
     }
 
+    func testRevokeAndRotateHintsDoNotClaimAFaceIDPromptForRevocation() {
+        XCTAssertFalse(CompanionHardwareHints.revoke.contains("Asks for Face ID"))
+        XCTAssertTrue(CompanionHardwareHints.revoke.contains("without asking for Face ID"))
+        XCTAssertFalse(CompanionHardwareHints.rotate.contains("Asks for Face ID"))
+        XCTAssertTrue(CompanionHardwareHints.rotate.contains("without asking for Face ID"))
+        XCTAssertTrue(CompanionHardwareHints.rotate.contains("revokes the current key"))
+    }
+
     private func sampleRecord(state: String, generation: Int) -> CompanionPairingRecord {
         CompanionPairingRecord(
             keyID: "phone-vector",

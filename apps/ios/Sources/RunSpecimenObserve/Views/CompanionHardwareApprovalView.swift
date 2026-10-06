@@ -3,7 +3,14 @@ import SwiftUI
 /// Buttons on this screen call the Secure Enclave directly.
 ///
 /// Nothing calls it until the person taps. The tap is only the call site.
-/// Face ID on the key operation is the authentication.
+/// Face ID on the key operation is the authentication. Revoke does not evaluate
+/// that context. Rotate enrolls the replacement through `enroll`, then revokes
+/// the current key without a second prompt.
+enum CompanionHardwareHints {
+    static let revoke = "Revokes the enrolled key without asking for Face ID. Does not approve a Mac run."
+    static let rotate = "Enrolls the replacement key through the same Secure Enclave enrollment as Enroll, then revokes the current key without asking for Face ID. Does not approve a Mac run."
+}
+
 struct CompanionHardwareApprovalView: View {
     @State private var keyID = "iphone-companion"
     @State private var replacementKeyID = "iphone-companion-2"
@@ -30,7 +37,7 @@ struct CompanionHardwareApprovalView: View {
                 Button("Enroll this iPhone") { enroll() }
                     .accessibilityHint("Asks for Face ID and creates a Secure Enclave key. Does not approve a Mac run by itself.")
                 Button("Revoke this iPhone key") { revokeKey() }
-                    .accessibilityHint("Asks for Face ID and revokes the enrolled key.")
+                    .accessibilityHint(CompanionHardwareHints.revoke)
                 TextField("Replacement key id", text: $replacementKeyID)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -38,7 +45,7 @@ struct CompanionHardwareApprovalView: View {
                     .background(RSTheme.elevated)
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 Button("Rotate to the replacement key") { rotateKey() }
-                    .accessibilityHint("Asks for Face ID, enrolls the replacement key, then revokes the current key. Does not approve a Mac run.")
+                    .accessibilityHint(CompanionHardwareHints.rotate)
                 if !pairingText.isEmpty {
                     Text(pairingText)
                         .font(.system(.footnote, design: .monospaced))

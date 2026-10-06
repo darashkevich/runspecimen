@@ -1324,6 +1324,79 @@ final class PolicyBoundApprovalTests: XCTestCase {
         }
     }
 
+    func testCarriedPinRefusesRevokedInvalidOrMissingStateWithoutWritingActive() throws {
+        let phone = P256.Signing.PrivateKey()
+        let publicKey = phone.publicKey.x963Representation
+        func payload(state: String?, generation: String = "1", key: Data = publicKey) throws -> Data {
+            var object: [String: String] = [
+                "backend": EnrollmentIdentity.backendSecureEnclave,
+                "provenance": EnrollmentIdentity.provenanceProduction,
+                "role": EnrollmentIdentity.roleCompanion,
+                "key_id": "phone-key",
+                "generation": generation,
+                "public_key_x963_b64": key.base64EncodedString(),
+            ]
+            if let state {
+                object["state"] = state
+            }
+            return try JSONSerialization.data(withJSONObject: object)
+        }
+        func refuse(_ data: Data, _ expected: BiometricApprovalError) {
+            XCTAssertThrowsError(try BiometricEnrollmentDirectory.pinCarriedCompanion(data, directory: directory)) { error in
+                XCTAssertEqual(error as? BiometricApprovalError, expected)
+            }
+            XCTAssertFalse(FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("phone-key.enrollment").path
+            ))
+        }
+        try refuse(payload(state: nil), .malformed("state"))
+        try refuse(payload(state: "pending"), .malformed("state"))
+        try refuse(payload(state: BiometricEnrollmentRecord.revoked), .revoked)
+
+        let pinned = try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            payload(state: BiometricEnrollmentRecord.active, generation: "2"),
+            directory: directory
+        )
+        XCTAssertEqual(pinned.state, BiometricEnrollmentRecord.active)
+        XCTAssertEqual(pinned.generation, 2)
+        XCTAssertEqual(pinned.backend, EnrollmentIdentity.backendUnverified)
+        XCTAssertEqual(pinned.provenance, EnrollmentIdentity.provenanceCarriedPin)
+        let again = try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            payload(state: BiometricEnrollmentRecord.active, generation: "2"),
+            directory: directory
+        )
+        XCTAssertEqual(again, pinned)
+
+        XCTAssertThrowsError(try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            payload(state: BiometricEnrollmentRecord.active, generation: "3"),
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .malformed("generation"))
+        }
+        XCTAssertEqual(try BiometricEnrollmentDirectory.load(keyID: "phone-key", directory: directory).generation, 2)
+
+        try BiometricEnrollmentDirectory.revoke(keyID: "phone-key", directory: directory)
+        let revoked = try BiometricEnrollmentDirectory.load(keyID: "phone-key", directory: directory)
+        XCTAssertEqual(revoked.state, BiometricEnrollmentRecord.revoked)
+        XCTAssertEqual(revoked.generation, 3)
+        XCTAssertThrowsError(try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            payload(state: BiometricEnrollmentRecord.active, generation: "2"),
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .revoked)
+        }
+        XCTAssertThrowsError(try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            payload(state: BiometricEnrollmentRecord.active, generation: "4"),
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .revoked)
+        }
+        let after = try BiometricEnrollmentDirectory.load(keyID: "phone-key", directory: directory)
+        XCTAssertEqual(after.state, BiometricEnrollmentRecord.revoked)
+        XCTAssertEqual(after.generation, 3)
+        XCTAssertNotEqual(after.state, BiometricEnrollmentRecord.active)
+    }
+
     func testPostAuthenticationRejectsAChangedOrExpiredEnrollment() throws {
         let key = Data(repeating: 4, count: 65)
         let before = CompanionEnrollmentSnapshot(

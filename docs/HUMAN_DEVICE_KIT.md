@@ -36,7 +36,7 @@ Do not run `--human-invoked` to qualify this candidate. A Touch ID or Face ID pr
 
 ## iPhone provisioning is not acceptance
 
-Signing and installing `RunSpecimenObserve` does not accept the iOS channel. The steps below are how a person would produce a signed build later. They are not a supported acceptance workflow for this candidate. A human H1 diagnostic session ran 2026-10-06 on an `ae6a071` Release build (not this SHA). It found IOS-H1-01 through IOS-H1-09, including IOS-H1-08 (the Mac pinned a revoked key as active) and IOS-H1-02 (Rotate/Revoke do not prompt Face ID despite the hints). It is not evidence, not qualification, and does not close E2.
+Signing and installing `RunSpecimenObserve` does not accept the iOS channel. The steps below are how a person would produce a signed build later. They are not a supported acceptance workflow for this candidate. A human H1 diagnostic session ran 2026-10-06 on an `ae6a071` Release build (not this SHA). It found IOS-H1-01 through IOS-H1-09, including IOS-H1-08 (the Mac pinned a revoked key as active) and IOS-H1-02 (Rotate/Revoke do not prompt Face ID despite the hints). It is diagnostic and defect evidence. It is not candidate qualification, and it is not E2 acceptance.
 
 This Mac had no local provisioning profiles when the unsigned build was made. The agent did not create one.
 
