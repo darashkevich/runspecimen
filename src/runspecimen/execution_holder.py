@@ -1299,7 +1299,7 @@ class ExecutionHolder:
                 raise HolderRefusal(production_enrollment_refusal())
             if self.installed_protection and not self._session_key_is_software(device):
                 raise HolderRefusal(
-                    "Secure Enclave admission under installed protection is undecided"
+                    "Installed Secure Enclave admission stays fail-closed"
                 )
 
     def _verify_exact_run_session(

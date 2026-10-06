@@ -10,7 +10,7 @@ This file is the live ledger. Golden-master notes are historical. Later commits 
 | --- | --- |
 | Working branch | `cursor/evidence-expansion-coherence` |
 | Source SHA this ledger was written against | Parent `ae6a07123150b7ad057c60bfaa188a59833c1bbc` (PR #53 merge on `cursor/evidence-expansion-coherence`). Not `main` |
-| This follow-up | Per-invocation evidence directories for isolated holder and macOS smoke. Pack `artifacts/rc15-2026-10-06-isolated-evidence/`. Sdist `682fe989…`. Wheel and plugin unchanged. Not production sign-off |
+| This follow-up | Qualification successor of `b3367eb`. Pack `artifacts/rc15-2026-10-06-qualification/`. Wheel `68685be9…`, sdist `de90ab7a…`, plugin unchanged. Not production sign-off |
 | Historical IRC tip | `a0dc23361856db8a68075471860bd4ab25af838c` |
 | NEW-01 package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` |
 | Engine | unpublished `0.2.0rc15` |
@@ -23,15 +23,15 @@ Draft operator merge to `main`: [#51](https://github.com/darashkevich/runspecime
 
 ## Artifact provenance
 
-Canonical table: [CANDIDATE_MANIFEST.md](CANDIDATE_MANIFEST.md). Pack: `artifacts/rc15-2026-10-06-isolated-evidence/`. Prior `artifacts/rc15-*` directories were not overwritten, including `artifacts/rc15-2026-10-05-golden-master/` sdist `c001cb08…`.
+Canonical table: [CANDIDATE_MANIFEST.md](CANDIDATE_MANIFEST.md). Checklist: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Pack: `artifacts/rc15-2026-10-06-qualification/`. Prior packs, including `artifacts/rc15-2026-10-06-isolated-evidence/` (`682fe989…` / `809431ea…`), were not overwritten.
 
 | File | SHA-256 | Provenance |
 | --- | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | `809431ea6683a7779e13eb3cd024c7bea4ce87dc90a483c9b8aa9892fac78dae` | Unchanged from the golden-master pack |
-| `runspecimen-0.2.0rc15.tar.gz` | `682fe9892d6c3ab3f90b566c957bea0beeb6404ce73d3b09ddaac1f05833ce78` | Packed `tests/test_isolated_script_evidence.py`. Was `c001cb08…` |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | `68685be9ffaf8fdc37dd26ae4d6f1987190e485252a97f118426137408a9012a` | Fail-closed admission string. Was `809431ea…` |
+| `runspecimen-0.2.0rc15.tar.gz` | `de90ab7a9b51cc7c944f06ac5085de6abe93804a25b72e40dbe23adad1fad464` | That string plus packed doc corrections. Was `682fe989…` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` | Unchanged |
 
-**OPEN-SDIST (closed).** Historical mismatch: committed `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname, so a rebuild produced `6979460d…`. `release_check.py` now pins `SOURCE_DATE_EPOCH`, gzip mtime 0, owner 0/0, empty uname/gname, sorted members, 0644/0755. Regression: `tests/test_release_archive_reproducibility.py`. The golden-master sdist `c001cb08…` stays in that directory. The current pack sdist is `682fe989…`. Do not restore `b2db7b78…`, `316938ce…`, or `c001cb08…` as current.
+**OPEN-SDIST (closed).** Historical mismatch: committed `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname, so a rebuild produced `6979460d…`. `release_check.py` now pins `SOURCE_DATE_EPOCH`, gzip mtime 0, owner 0/0, empty uname/gname, sorted members, 0644/0755. Regression: `tests/test_release_archive_reproducibility.py`. The golden-master sdist `c001cb08…` stays in that directory. The `b3367eb` sdist `682fe989…` stays in `artifacts/rc15-2026-10-06-isolated-evidence/`. The current pack sdist is `de90ab7a…`. Do not restore the older digests as current.
 
 Published rc14 bytes are unchanged. Homebrew still pins rc14.
 
@@ -79,6 +79,10 @@ Historical `9fde02a` skips on a well-provisioned Mac were 6. Linux local golden-
 Concurrent same-user runs no longer share `rs-holder-swift-first.log`, `rs-macos-swift-first.log`, or a PID scratch directory. Each invocation creates an exclusive `mktemp` directory, writes that run's log inside it, copies the log out on failure, and deletes only the directory it created. `tests/test_isolated_script_evidence.py` covers concurrent logs, zero-test refusal, assertion-plus-codesign classification, and `RS_HOLDER_SOCKET` / install-consent refusal. Those tests use a PATH stub. They do not call a live daemon.
 
 Local Homebrew Python 3.12.14 `release_check.py`: 658 tests, 36 skipped, 0 failed, then 4 distribution tests. The extra skip was `test_wheel_and_sdist_digests_repeat` while the new pack was not on disk yet. After `artifacts/rc15-2026-10-06-isolated-evidence/SHA256SUMS` existed, that test and the six evidence tests passed (9 tests, 0 skipped) and the rebuilt sdist matched `682fe989…`. Wheel `809431ea…` matched too. D1/D2 are unchanged: installed admission stays fail-closed, `run_integration_complete` and `e2_closed` stay false, and the accepted holder id stays out of `production_verifier_pin()`.
+
+### Qualification suite (this successor)
+
+CPython 3.12.14, pack already present: 658 tests, 35 skipped, exit 0. Rebuilt sdist `de90ab7a…` and wheel `68685be9…` matched `artifacts/rc15-2026-10-06-qualification/SHA256SUMS`. The 35 skips are PyNaCl (29), bubblewrap (3), Linux `ldd` (2), and pytest (1). They were not simulated as passes. Channel gates: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Parent `b3367eb` CI does not cover this pack.
 
 ## Open items
 

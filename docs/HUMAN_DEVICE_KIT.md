@@ -2,11 +2,11 @@
 
 An agent must not run these steps. Do not pass `--human-invoked`. Do not tap Touch ID or Face ID. Do not grant a permission dialog. Do not type `APPROVE`. Do not pass `-allowProvisioningUpdates`, register a device, or read `~/.appstoreconnect/private_keys`.
 
-The kit directory, when prepared, is `artifacts/human-device-kit/` next to the approved 0.1.4 (9) archive. It holds an unsigned iPhone build and the Mac diagnostic binary. Neither is installed. Neither is a Store package. Secure Enclave enroll, sign, revoke, and rotate are implemented and are not human-tested until you complete the prompts yourself. Diagnostic signing is not a bounded run. The chosen run policy is local Touch ID, an explicitly selected paired iPhone, or both devices. Phone approval is not physical presence at the Mac.
+The kit directory, when prepared, is `artifacts/human-device-kit/` next to the approved 0.1.4 (9) archive. It holds an unsigned iPhone build and the Mac diagnostic binary. Neither is installed. Neither is a Store package. Neither is this candidate. Diagnostic signing is not a bounded run. Phone approval is not physical presence at the Mac.
 
-Tip for these instructions: the commit that contains this file on `cursor/evidence-expansion-coherence` (lineage #39/`e2a3216`, #47/`329e08b`, #49/`18ef461`). `cursor/integrated-release-candidate` is historical at `a0dc233`. Holder fail-closed code at parent `1873f420888397f7f4e5d496d3f8daae80bc15c3` is unchanged by this docs pass. Contracts with `execution_approval` of `local`, `companion`, or `dual` fail closed without the holder and refuse a typed phrase. That path is the unprivileged adapter and core only. It is not installed protection, not Touch ID, and not a paired phone. A software test double stays labeled as not hardware. An imported Secure Enclave label is not attestation. Administrator or root can still defeat a user-level holder.
+Candidate under review: the commit that adds `artifacts/rc15-2026-10-06-qualification/`, parent `b3367ebeff76a1ed0c6fd6ecda2f613e5e8e93a4`, on `cursor/evidence-expansion-coherence`. `main` remains `93f9b5708c1ba2d9b325ae2f9016d6a472fe6a20`. A merge to `main` is not a public release. Contracts with `execution_approval` of `local`, `companion`, or `dual` refuse a typed phrase. That refusal is not installed protection.
 
-These binaries were built from `5c3957a3a8ddf9fceacc3096b2208ee7757e6b72`. Swift, iOS, and macOS product sources are unchanged from that commit through the tip that contains this file, so the kit was not rebuilt. Check the hashes before you run anything that can prompt.
+The two hashes below were built from `5c3957a3a8ddf9fceacc3096b2208ee7757e6b72`. Holder, iOS companion, and macOS core sources have changed since that commit. Those hashes are not this candidate. Do not use them to qualify any channel.
 
 | File | SHA-256 |
 | --- | --- |
@@ -32,21 +32,11 @@ RunSpecimenTouchIDDiagnostic enroll --directory /private/tmp/rs-touchid-diag --k
 
 `preview` exits 0 and prints that it made no Secure Enclave call. `enroll` without `--human-invoked` exits 2.
 
-You run the rest yourself. Each command passes `--human-invoked`, `--directory /private/tmp/rs-touchid-diag` (or a directory inside it), and `--key-id diag-...` of at most 64 characters. Read the printed request before you authenticate.
+Do not run `--human-invoked` to qualify this candidate. A Touch ID or Face ID press does not close E2 and does not admit an installed holder key. The commands that would prompt are not a supported acceptance workflow.
 
-```sh
-DIR=/private/tmp/rs-touchid-diag
-KEY=diag-human
-RunSpecimenTouchIDDiagnostic --human-invoked --directory "$DIR" --key-id "$KEY" enroll
-RunSpecimenTouchIDDiagnostic --human-invoked --directory "$DIR" --key-id "$KEY" sign
-RunSpecimenTouchIDDiagnostic --human-invoked --directory "$DIR" --key-id "$KEY" reload
-RunSpecimenTouchIDDiagnostic --human-invoked --directory "$DIR" --key-id "$KEY" cancel
-RunSpecimenTouchIDDiagnostic --human-invoked --directory "$DIR" --key-id "$KEY" revoke
-```
+## iPhone provisioning is not acceptance
 
-`sign` and `reload` print the request and then the signature. `cancel` asks you to cancel the prompt; a signature from that command is a failed cancel. `revoke` prints `revoked`. A later `sign` must not produce a signature.
-
-## iPhone provisioning
+Signing and installing `RunSpecimenObserve` does not accept the iOS channel. The steps below are how a person would produce a signed build later. They are not a supported acceptance workflow for this candidate, and they were not run on 2026-10-06.
 
 This Mac had no local provisioning profiles when the unsigned build was made. The agent did not create one.
 
@@ -56,37 +46,32 @@ This Mac had no local provisioning profiles when the unsigned build was made. Th
 4. Connect the iPhone, select it as the run destination, and press Run in Xcode. The first launch may ask the phone to trust the developer certificate. Accept that yourself.
 5. The unsigned file `RunSpecimenObserve.app` in the kit is a Release iphoneos build of the shipping target (`com.darashkevich.runspecimen.observe`). It is not signed and was not installed. Use it only as the binary you can compare with the one Xcode installs. Installing still has to be the Xcode run above.
 
-## On the iPhone, after you have installed that signed build
+## iPhone hardware steps are blocked for this candidate
 
-Use the shipping scheme, not `RunSpecimenObserveDev`. The buttons are on the companion hardware screen. There is no command-line enroll on the phone.
+Do not enroll, sign, rotate, or revoke on the phone to qualify this candidate. A Face ID press is not installed holder admission and does not close E2. Carrying a package to the Mac is not a companion or dual run. A signature would show that a private key signed bytes. It would not show that protected holder state created that key.
 
-1. Tap **Enroll this iPhone**. The Face ID prompt is the Secure Enclave access control (`biometryCurrentSet` and `privateKeyUsage`). Cancel once and confirm no pairing file is offered as a new active key.
-2. Tap **Enroll this iPhone** again and answer Face ID. Then tap **Rotate to the replacement key** and answer Face ID for the new key.
-3. Paste the carried package, tap **Show request**, and read the lines. Tap **Sign with Face ID** only after they match the package you mean.
-4. Edit the package after Show request. **Sign with Face ID** stays disabled until you tap **Show request** again.
-5. Tap **Revoke this iPhone key**. A later **Sign with Face ID** must not produce a signature.
-6. Carry the pairing JSON to the Mac and pin it in Workflows. The status must say the Secure Enclave label was not accepted.
+## Supported acceptance: guarantee (1) only
 
-A Release build of the phone app does not contain `beforeFinalSignatureDecision`. A Debug run from Xcode does, because that is the build the unit tests host. Use Release for the human check.
+Do this yourself, in a real terminal. An agent must not type the approval phrase, tap Touch ID or Face ID, or write that you did. Signing or installing the iPhone app is not this acceptance.
 
-A signature is evidence the matching private key signed those bytes. It is not evidence you compared the fingerprints on the two screens, and it is not evidence the key was created in a Secure Enclave. Those are three separate claims. It is not evidence you understood a command, and it does not start a run. The 0.1.5 (13) GUI report for source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14 is a different build. It does not accept this kit. `runspecimen run` still asks for a typed phrase. That phrase is guarantee (1). It is not local Touch ID, paired-iPhone approval, or dual approval, and it must not be used as a substitute for those once they are required.
+Pick one identity and write it down before you start. Do not mix them.
 
-## Human acceptance session
+| Identity | What it is | What to record |
+| --- | --- | --- |
+| Published CLI | `0.2.0rc14` from PyPI or the GitHub Release | `runspecimen --version` and the published wheel or sdist hash you installed |
+| This candidate | Unpublished `0.2.0rc15` from `artifacts/rc15-2026-10-06-qualification/` | `git rev-parse HEAD`, `runspecimen --version`, and the wheel and sdist hashes in that directory's `SHA256SUMS` |
 
-Do this yourself. An agent must not tap Touch ID or Face ID, type the approval phrase, or write that you did.
+Prerequisites: an ordinary contract with no `execution_approval` field, a disposable workspace, and a harmless bounded command. `doctor`, `validate`, and `status` should exit 0 before you approve.
 
-The binaries above are still the `5c3957a` diagnostic and the unsigned iPhone build. They can exercise hardware signing. They cannot exercise a bounded run under installed guarantee (2): the holder is not installed, launchd/`SMAppService` was not registered, and these kit binaries are not the development GUI. Diagnostic signing is not execution acceptance.
+Expected: you approve in your terminal, then `preflight`, `run`, `postflight`, and `verify` for that campaign and run. `verify` exits 0.
 
-What you can check now, on these binaries:
+Negatives:
 
-1. Mac: `preview`, then `enroll` without `--human-invoked` (expect exit 2). Then the `--human-invoked` enroll, sign, cancel, and revoke commands in the Mac section. Cancel must not produce a signature. A later sign after revoke must not produce a signature.
-2. iPhone: install a Release build of `RunSpecimenObserve` by the Xcode steps above. Enroll, cancel once, enroll again, rotate, sign, edit-after-show, and revoke. Carry the file to the Mac and pin it. The Mac must not treat a file's Secure Enclave label as hardware provenance.
-3. Quit and reopen the diagnostic directory. A revoked key must stay revoked.
+- Closing the terminal without the phrase does not certify a run. There is no receipt to verify.
+- A contract that sets `execution_approval` to `local`, `companion`, or `dual` refuses the phrase before a prompt. That refusal is expected. It is not a successful protected run.
 
-What waits until the holder in `docs/EXECUTOR_PROTECTION.md` is authorized and actually built:
+Return: the identity row you recorded, the campaign id, the run id, the `verify` exit status, and whether the phrase-refusal negative exited before a prompt.
 
-4. Protected pairing: compare the Mac fingerprint and the iPhone fingerprint on the two screens, then complete both signatures. Carried file only.
-5. One policy at a time: local Touch ID, then explicitly selected paired iPhone, then dual. Each must fail closed if you cancel. None may fall through to a typed phrase.
-6. One harmless bounded command in a disposable workspace, after you have read the request. Then repeat the same request and confirm the replay is rejected. Check the receipt for that run yourself.
+## Blocked by E2 — do not run these
 
-Both devices need those later steps if both ship. Completing only the diagnostic list is not that session.
+Installed local, companion, and dual flows are not supported on this candidate. Installed Secure Enclave admission stays fail-closed. `run_integration_complete` and `e2_closed` stay false. A root daemon cannot create the Secure Enclave key. Do not install, repair, or replace a holder. Do not notarize. Do not treat a biometric press, a carried phone package, or a second consume of a nonce as acceptance. Those steps are not waiting on you to exercise a working product.
