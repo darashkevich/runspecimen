@@ -67,6 +67,9 @@ public enum CompanionSecureEnclaveEnrollment {
     public static let active = "active"
     public static let revoked = "revoked"
     static var clock: () -> Int = { Int(Date().timeIntervalSince1970) }
+    /// Face ID gate for revoke and rotate. Release evaluates biometry. The test
+    /// host replaces this and must not call LocalAuthentication.
+    static var authenticateKeyMutation: () throws -> Void = { try defaultAuthenticateKeyMutation() }
     #if RUNSPECIMEN_TEST_HOOKS
     /// Runs after the fail-fast load and before the decision reload, while the enrollment lock is held.
     static var beforeFinalSignatureDecision: (() -> Void)?
@@ -140,6 +143,31 @@ public enum CompanionSecureEnclaveEnrollment {
     }
 
     public static func revoke(keyID: String, directory: URL) throws {
+        try authenticateKeyMutation()
+        try revokeWithoutPrompt(keyID: keyID, directory: directory)
+    }
+
+    /// Enrolls the new key first. If that fails, the old key stays. If revoking
+    /// the old key fails, the new key is left in place and the error says so.
+    /// Face ID is required once, before either write. The nested revoke does
+    /// not ask again.
+    public static func rotate(from oldKeyID: String, to newKeyID: String, directory: URL) throws -> CompanionPairingRecord {
+        try authenticateKeyMutation()
+        try validateKeyID(oldKeyID)
+        try validateKeyID(newKeyID)
+        guard oldKeyID != newKeyID else {
+            throw CompanionHardwareRefusal.malformed("enrollment")
+        }
+        let created = try enroll(keyID: newKeyID, directory: directory)
+        do {
+            try revokeWithoutPrompt(keyID: oldKeyID, directory: directory)
+        } catch {
+            throw CompanionHardwareRefusal.malformed("rotation-incomplete")
+        }
+        return created
+    }
+
+    private static func revokeWithoutPrompt(keyID: String, directory: URL) throws {
         try validateKeyID(keyID)
         try withLock(directory) {
             let record = try load(keyID: keyID, directory: directory)
@@ -149,21 +177,45 @@ public enum CompanionSecureEnclaveEnrollment {
         }
     }
 
-    /// Enrolls the new key first. If that fails, the old key stays. If revoking
-    /// the old key fails, the new key is left in place and the error says so.
-    public static func rotate(from oldKeyID: String, to newKeyID: String, directory: URL) throws -> CompanionPairingRecord {
-        try validateKeyID(oldKeyID)
-        try validateKeyID(newKeyID)
-        guard oldKeyID != newKeyID else {
-            throw CompanionHardwareRefusal.malformed("enrollment")
+    private static func defaultAuthenticateKeyMutation() throws {
+        #if RUNSPECIMEN_TEST_HOOKS
+        return
+        #else
+        try evaluateOwnerBiometry()
+        #endif
+    }
+
+    /// Asks for Face ID. Callers on the main thread pump the run loop so the
+    /// system callback can return. Tests do not call this.
+    private static func evaluateOwnerBiometry() throws {
+        let context = LAContext()
+        context.localizedFallbackTitle = ""
+        var policyError: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &policyError) else {
+            throw CompanionHardwareRefusal.malformed("biometry")
         }
-        let created = try enroll(keyID: newKeyID, directory: directory)
-        do {
-            try revoke(keyID: oldKeyID, directory: directory)
-        } catch {
-            throw CompanionHardwareRefusal.malformed("rotation-incomplete")
+        final class Outcome: @unchecked Sendable {
+            var success = false
         }
-        return created
+        let outcome = Outcome()
+        let semaphore = DispatchSemaphore(value: 0)
+        context.evaluatePolicy(
+            .deviceOwnerAuthenticationWithBiometrics,
+            localizedReason: "Confirm this iPhone key change. This does not approve a Mac run."
+        ) { success, _ in
+            outcome.success = success
+            semaphore.signal()
+        }
+        if Thread.isMainThread {
+            while semaphore.wait(timeout: .now() + 0.05) == .timedOut {
+                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.05))
+            }
+        } else {
+            semaphore.wait()
+        }
+        guard outcome.success else {
+            throw CompanionHardwareRefusal.malformed("biometry")
+        }
     }
 
     public static func carriedPairing(keyID: String, directory: URL) throws -> Data {

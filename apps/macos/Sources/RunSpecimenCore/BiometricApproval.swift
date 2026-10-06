@@ -343,8 +343,11 @@ public enum BiometricEnrollmentDirectory {
 
     /// Stores the public key from a file a person carried.
     ///
-    /// The file's backend and provenance strings are ignored. A label of
-    /// `secure-enclave` does not make the key production enrollment.
+    /// The pairing schema's `state` is kept. `active` stays active. `revoked`
+    /// stays revoked and is not an approval key. Any other or missing state is
+    /// refused and no enrollment file is written. The file's backend and
+    /// provenance strings are ignored. A label of `secure-enclave` does not
+    /// make the key production enrollment.
     public static func pinCarriedCompanion(_ data: Data, directory: URL) throws -> BiometricEnrollmentRecord {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: String] else {
             throw BiometricApprovalError.malformed("enrollment")
@@ -366,10 +369,14 @@ public enum BiometricEnrollmentDirectory {
               String(generation) == generationText else {
             throw BiometricApprovalError.malformed("enrollment")
         }
+        guard let state = object["state"],
+              state == BiometricEnrollmentRecord.active || state == BiometricEnrollmentRecord.revoked else {
+            throw BiometricApprovalError.malformed("state")
+        }
         let record = BiometricEnrollmentRecord(
             keyID: keyID,
             publicKey: publicKey,
-            state: BiometricEnrollmentRecord.active,
+            state: state,
             backend: EnrollmentIdentity.backendUnverified,
             role: EnrollmentIdentity.roleCompanion,
             provenance: EnrollmentIdentity.provenanceCarriedPin,

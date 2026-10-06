@@ -395,6 +395,35 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(stored.generation, 1)
     }
 
+    func testRevokeAndRotateRefuseWhenFaceIDIsDeclined() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-face-" + UUID().uuidString, isDirectory: true)
+        defer {
+            CompanionSecureEnclaveEnrollment.authenticateKeyMutation = {}
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let record = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(record, directory: directory) {}
+        CompanionSecureEnclaveEnrollment.authenticateKeyMutation = {
+            throw CompanionHardwareRefusal.malformed("biometry")
+        }
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.revoke(keyID: record.keyID, directory: directory)) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("biometry"))
+        }
+        let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
+        XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.active)
+        XCTAssertEqual(stored.generation, 1)
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.rotate(
+            from: record.keyID,
+            to: "phone-replacement",
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("biometry"))
+        }
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.inspect(keyID: "phone-replacement", directory: directory)) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .missing)
+        }
+    }
+
     private func sampleRecord(state: String, generation: Int) -> CompanionPairingRecord {
         CompanionPairingRecord(
             keyID: "phone-vector",

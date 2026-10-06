@@ -115,7 +115,10 @@ struct CompanionHardwareApprovalView: View {
             pairingText = String(decoding: carried, as: UTF8.self)
             message = "Replacement key generation \(record.generation) is enrolled. The previous key is revoked. This did not approve a run."
         } catch let error as CompanionHardwareRefusal {
-            if case .malformed("rotation-incomplete") = error {
+            if case .malformed("biometry") = error {
+                pairingText = ""
+                message = "Face ID did not confirm rotation. No key was changed."
+            } else if case .malformed("rotation-incomplete") = error {
                 message = "The replacement key was enrolled, and the previous key was not revoked. No run was approved."
             } else {
                 pairingText = ""
@@ -133,6 +136,8 @@ struct CompanionHardwareApprovalView: View {
             try CompanionSecureEnclaveEnrollment.revoke(keyID: keyID, directory: directory)
             pairingText = ""
             message = "This iPhone key is revoked. A later signature with the old generation will not verify."
+        } catch CompanionHardwareRefusal.malformed("biometry") {
+            message = "Face ID did not confirm revocation. The key was not revoked."
         } catch {
             message = "Revocation did not finish. The previous key was not replaced."
         }

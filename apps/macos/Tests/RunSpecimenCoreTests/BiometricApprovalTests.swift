@@ -1324,6 +1324,60 @@ final class PolicyBoundApprovalTests: XCTestCase {
         }
     }
 
+    func testCarriedPinKeepsActiveAndRefusesARevokedKey() throws {
+        let phone = P256.Signing.PrivateKey()
+        func payload(state: String, keyID: String) throws -> Data {
+            let object: [String: String] = [
+                "backend": EnrollmentIdentity.backendSecureEnclave,
+                "provenance": EnrollmentIdentity.provenanceProduction,
+                "role": EnrollmentIdentity.roleCompanion,
+                "state": state,
+                "key_id": keyID,
+                "generation": "1",
+                "public_key_x963_b64": phone.publicKey.x963Representation.base64EncodedString(),
+            ]
+            return try JSONSerialization.data(withJSONObject: object)
+        }
+        let active = try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            payload(state: BiometricEnrollmentRecord.active, keyID: "phone-active"),
+            directory: directory
+        )
+        XCTAssertEqual(active.state, BiometricEnrollmentRecord.active)
+        XCTAssertEqual(
+            try BiometricEnrollmentDirectory.load(keyID: "phone-active", directory: directory).state,
+            BiometricEnrollmentRecord.active
+        )
+        let revoked = try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            payload(state: BiometricEnrollmentRecord.revoked, keyID: "phone-revoked"),
+            directory: directory
+        )
+        XCTAssertEqual(revoked.state, BiometricEnrollmentRecord.revoked)
+        XCTAssertEqual(
+            try BiometricEnrollmentDirectory.load(keyID: "phone-revoked", directory: directory).state,
+            BiometricEnrollmentRecord.revoked
+        )
+        let request = sample(policy: .companion, companionKeyID: "phone-revoked")
+        XCTAssertThrowsError(try PolicyBoundApprovalStore.consumeEnrolled(
+            request: request,
+            enrollmentDirectory: directory,
+            approvalDirectory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .revoked)
+        }
+        XCTAssertFalse(BiometricApprovalStore.isConsumed(nonce: request.nonce, directory: directory))
+        var missing = try JSONSerialization.jsonObject(with: payload(state: "active", keyID: "phone-missing")) as! [String: String]
+        missing.removeValue(forKey: "state")
+        XCTAssertThrowsError(try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            try JSONSerialization.data(withJSONObject: missing),
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .malformed("state"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("phone-missing.enrollment").path
+        ))
+    }
+
     func testPostAuthenticationRejectsAChangedOrExpiredEnrollment() throws {
         let key = Data(repeating: 4, count: 65)
         let before = CompanionEnrollmentSnapshot(
