@@ -14,12 +14,12 @@ struct AboutView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
-                SignalMark(animated: false)
+                SignalMark(animated: false, compact: true)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("RunSpecimen")
                         .font(.system(size: 22, weight: .bold))
-                    Text("Native companion for one human-approved bounded run.")
+                    Text("You approve what may run. Then you get a receipt you can keep.")
                         .font(.system(size: 13))
                         .foregroundStyle(RSTheme.muted)
                 }
@@ -45,10 +45,16 @@ struct AboutView: View {
 
             Divider()
 
-            Text("Local-only. No product telemetry. Approval stays on a real PTY — this app never types APPROVE. Certificates are hash-chained receipts, not asymmetric digital signatures.")
+            Text("Stays on this Mac. No account. No telemetry. You type APPROVE yourself — this app never types it. The receipt is a checkable history, not a bank-style signature.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            DetailsDisclosure(title: "Exact terms") {
+                Text("Local-only. Approval stays on a real PTY. Certificates are hash-chained receipts, not asymmetric digital signatures.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(RSTheme.soft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             HStack(spacing: 16) {
                 Link("Privacy policy", destination: AppLinks.privacyPolicy)

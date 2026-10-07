@@ -35,7 +35,7 @@ struct ApproveSheet: View {
     private var transcriptPane: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                Text(sheet.transcript.isEmpty ? "Starting interactive approval PTY…" : sheet.transcript)
+                Text(sheet.transcript.isEmpty ? "Getting the approval prompt ready…" : sheet.transcript)
                     .font(RSTheme.mono)
                     .foregroundStyle(RSTheme.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -94,7 +94,7 @@ struct ApproveSheet: View {
                 .accessibilityHint("Stops the PTY session without approving.")
             }
 
-            Text("Invariant: agents and plugins cannot approve. Only a human on this PTY. The app never types APPROVE for you.")
+            Text("Only you can approve. Assistants cannot type APPROVE, and this app will not type it for you.")
                 .font(.system(size: 11))
                 .foregroundStyle(RSTheme.soft)
                 .accessibilityLabel("Invariant: agents and plugins cannot approve. Only a human on this PTY.")
@@ -106,34 +106,63 @@ struct ApproveSheet: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Human approval")
-                    .font(.system(size: 20, weight: .semibold))
+                Text("Review and approve")
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
                     .foregroundStyle(RSTheme.ink)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
-                CapsuleLabel(text: "TTY required", tone: .amber)
+                CapsuleLabel(text: "You type this yourself", tone: .amber)
                     .accessibilityLabel("TTY required. Interactive terminal gate.")
             }
-            Text("This sheet attaches runspecimen approve to a real PTY so the engine’s interactive gate still holds. Agents and plugins cannot approve unattended.")
-                .font(.system(size: 12))
+            Text("This window is the real approval step. Read the plan, then type APPROVE when you are ready. Assistants cannot approve unattended.")
+                .font(.system(size: 13))
                 .foregroundStyle(RSTheme.muted)
                 .accessibilityLabel("Explanation: real PTY attached so interactive approval gate holds. Unattended agent approval is not possible.")
             if let argv = model.contract?.argv, !argv.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Bound command")
+                    Text("What will run")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(RSTheme.soft)
                     Text(argv.joined(separator: " "))
                         .font(RSTheme.monoSmall)
-                        .foregroundStyle(RSTheme.signal)
+                        .foregroundStyle(RSTheme.brand)
                         .textSelection(.enabled)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Bound command: \(argv.joined(separator: " "))")
             }
+            DetailsDisclosure(title: "Show fingerprints and exact terms") {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let campaign = model.contract?.campaignID {
+                        labeled("Project (campaign)", campaign)
+                    }
+                    if let run = model.contract?.runID {
+                        labeled("This run", run)
+                    }
+                    if let hash = model.contract?.contractHash {
+                        labeled("Plan fingerprint (SHA-256)", hash)
+                    }
+                    Text("Human approval · TTY required. This sheet attaches runspecimen approve to a real PTY so the engine’s interactive gate still holds.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(RSTheme.soft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .padding(16)
         .background(RSTheme.bgPanel.opacity(0.95))
+    }
+
+    private func labeled(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 11))
+                .foregroundStyle(RSTheme.soft)
+            Text(value)
+                .font(RSTheme.monoSmall)
+                .foregroundStyle(RSTheme.ink)
+                .textSelection(.enabled)
+        }
     }
 
     private func startSession() {
@@ -157,7 +186,7 @@ struct ApproveSheet: View {
         sheet.session = session
         do {
             try session.start(cli: cli, workspace: workspace, contract: contract)
-            sheet.statusNote = "PTY live. Read the prompt carefully, then type APPROVE yourself."
+            sheet.statusNote = "Waiting on you. When the prompt appears, type APPROVE yourself."
             announceAccessibility(sheet.statusNote)
         } catch {
             sheet.sessionFailed = true
@@ -192,6 +221,6 @@ final class ApproveSheetModel: ObservableObject {
     @Published var input = ""
     @Published var started = false
     @Published var sessionFailed = false
-    @Published var statusNote = "Review the bound command, then type APPROVE exactly when prompted."
+    @Published var statusNote = "Review the plan, then type APPROVE exactly when prompted."
     var session: PTYApprovalSession?
 }
