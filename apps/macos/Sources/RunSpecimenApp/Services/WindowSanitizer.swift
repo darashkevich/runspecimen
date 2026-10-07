@@ -1,10 +1,15 @@
 import AppKit
 import RunSpecimenCore
 
-/// Keeps the SwiftUI `WindowGroup` on a real display, resizable, and Full Screen capable.
+/// Keeps the SwiftUI `Window` on a real display, resizable, and Full Screen capable.
 enum WindowSanitizer {
     private static var observers: [NSObjectProtocol] = []
     private static var launchDeadline = Date.distantPast
+    private static var fullscreenTransitionWindows = Set<ObjectIdentifier>()
+
+    static func shouldSkipFrameSanitize(isFullScreen: Bool, isTransitioningToOrFromFullScreen: Bool) -> Bool {
+        isFullScreen || isTransitioningToOrFromFullScreen
+    }
 
     static func install() {
         guard observers.isEmpty else {
@@ -33,10 +38,47 @@ enum WindowSanitizer {
                 enableFullScreen(window)
             }
         })
+        observeFullScreenTransitions(center)
         apply()
         DispatchQueue.main.async { apply() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { apply() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { apply() }
+    }
+
+    private static func observeFullScreenTransitions(_ center: NotificationCenter) {
+        observers.append(center.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: nil, queue: .main) { note in
+            guard let window = note.object as? NSWindow else { return }
+            beginFullScreenTransition(window)
+            enableFullScreen(window)
+        })
+        observers.append(center.addObserver(forName: NSWindow.willExitFullScreenNotification, object: nil, queue: .main) { note in
+            guard let window = note.object as? NSWindow else { return }
+            beginFullScreenTransition(window)
+        })
+        observers.append(center.addObserver(forName: NSWindow.didEnterFullScreenNotification, object: nil, queue: .main) { note in
+            guard let window = note.object as? NSWindow else { return }
+            endFullScreenTransition(window)
+            enableFullScreen(window)
+        })
+        observers.append(center.addObserver(forName: NSWindow.didExitFullScreenNotification, object: nil, queue: .main) { note in
+            guard let window = note.object as? NSWindow else { return }
+            endFullScreenTransition(window)
+            apply(window)
+        })
+    }
+
+    private static func beginFullScreenTransition(_ window: NSWindow) {
+        let id = ObjectIdentifier(window)
+        fullscreenTransitionWindows.insert(id)
+        // AppKit has no did-fail-to-enter/exit notification. Drop the flag if
+        // didEnter/didExit never arrives so a failed transition cannot stick.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            fullscreenTransitionWindows.remove(id)
+        }
+    }
+
+    private static func endFullScreenTransition(_ window: NSWindow) {
+        fullscreenTransitionWindows.remove(ObjectIdentifier(window))
     }
 
     static func apply() {
@@ -45,9 +87,13 @@ enum WindowSanitizer {
 
     static func apply(_ window: NSWindow) {
         guard isMainWindow(window) else { return }
-        if window.styleMask.contains(.fullScreen) { return }
-
         enableFullScreen(window)
+        if shouldSkipFrameSanitize(
+            isFullScreen: window.styleMask.contains(.fullScreen),
+            isTransitioningToOrFromFullScreen: fullscreenTransitionWindows.contains(ObjectIdentifier(window))
+        ) {
+            return
+        }
 
         let screens = NSScreen.screens.map(\.visibleFrame)
         let frame = window.frame
@@ -73,7 +119,7 @@ enum WindowSanitizer {
         window.isRestorable = false
     }
 
-    private static func isMainWindow(_ window: NSWindow) -> Bool {
+    static func isMainWindow(_ window: NSWindow) -> Bool {
         if window.isSheet { return false }
         if window.level != .normal { return false }
         if !window.styleMask.contains(.titled) { return false }
