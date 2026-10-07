@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Human-readable CLI (opt-in)
+
+- Add `runspecimen quickstart` and a `--help` example block so a first run is
+  copy-pasteable. Missing-command usage still exits 2.
+- Add opt-in `--pretty` / `--color` (before or after the subcommand). Default
+  stdout is still sorted indented JSON; exit codes are unchanged.
+- Make the TTY approve prompt easier to scan. The bind line remains
+  `Type 'APPROVE' to bind this approval:` (macOS MAS e2e contract).
+- `--pretty` refusals keep `RunSpecimen error: …` and add a next-step hint.
+
 ## 0.2.0rc14 - 2026-09-23
 
 GitHub pre-release `v0.2.0-rc.14` and PyPI `0.2.0rc14` (identical bytes, checksum-only, not SLSA-attested). Do not publish draft `v0.2.0-rc.11`. Do not move `v0.2.0-rc.12` or `v0.2.0-rc.13`. Stable `0.2.0` gate remains not met.

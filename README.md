@@ -30,6 +30,7 @@ No watchers, no recurring scheduler, no parallel workers.
 
 - [About](docs/ABOUT.md) — what RunSpecimen does, lifecycle, safety model, dashboard role
 - [User guide](docs/USER_GUIDE.md) — install, lifecycle, contracts, dashboard, plugins, troubleshooting
+- [CLI and macOS UX review](docs/ux/CLI_AND_MACOS_REVIEW.md) — presentation findings; `--pretty` is opt-in JSON stays default
 - [FAQ](docs/FAQ.md) — vs CI/sandbox/agents, TTY approval, verify-after-clone, parallelism, receipts
 - [Product plan](docs/PRODUCT_PLAN.md) — invariants and roadmap
 - [Market and distribution](docs/MARKET_AND_DISTRIBUTION.md) — wedge, channels, commercial sequence
@@ -160,6 +161,10 @@ runspecimen status --workspace . --campaign-id demo-campaign --run-id run-001
 runspecimen bundle --workspace . --campaign-id demo-campaign --run-id run-001 \
   --out /tmp/rs-incident --contract examples/demo_contract.json
 ```
+
+JSON is the default output. For a copy-paste first run, `runspecimen quickstart`.
+For a human table of the same result, pass `--pretty` (exit codes and JSON
+defaults stay unchanged): `runspecimen --pretty status --workspace . --campaign-id demo-campaign --run-id run-001`.
 
 ## Local dashboard for agent-host users
 

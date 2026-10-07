@@ -24,6 +24,7 @@ from runspecimen.paths import (
     resolve_workspace,
     run_state_dir,
 )
+from runspecimen.present import format_approve_prompt
 from runspecimen.state import load_state, update_state
 from runspecimen.runtime import runtime_provenance
 
@@ -90,7 +91,7 @@ def require_interactive_tty(
     ):
         raise ApprovalError(
             "approval requires an interactive TTY on stdin and stdout "
-            "(refuse unattended / piped approval)"
+            "(refuse unattended / piped approval); run this in a real terminal"
         )
 
 
@@ -156,27 +157,28 @@ def _approve_under_lease(
     policy_line = "none" if policy is None else f"{policy['id']} ({policy['sha256'][:12]})"
 
     stdout.write(
-        f"Approve bounded run?\n"
-        f"  campaign: {contract.campaign_id}\n"
-        f"  run_id:   {contract.run_id}\n"
-        f"  argv:     {list(contract.argv)!r}\n"
-        f"  cwd:      {contract.cwd}\n"
-        f"  sources:  {list(contract.source.roots)!r}\n"
-        f"  excludes: {list(contract.source.excludes)!r}\n"
-        f"  outputs:  {list(contract.asserted_output_paths)!r}\n"
-        f"  timeout:  {contract.caps.wall_timeout_sec}s\n"
-        f"  capture:  stdout={contract.caps.stdout_max_bytes}B "
-        f"stderr={contract.caps.stderr_max_bytes}B\n"
-        f"  prior:    {contract.predecessor!r}\n"
-        f"  isolation: {isolation['claim']}\n"
-        f"  policy:   {policy_line}\n"
-        f"  approver: {approver['user']} (local OS user)\n"
-        f"  contract: {contract.contract_hash}\n"
-        f"  source:   {source_hash}\n"
-        f"  runtime:  {runtime['resolved_executable']}\n"
-        f"  runtime#: {runtime['runtime_id']}\n"
-        f"  ttl_sec:  {contract.approval.ttl_sec}\n"
-        f"Type {confirm_phrase!r} to bind this approval: "
+        format_approve_prompt(
+            campaign_id=contract.campaign_id,
+            run_id=contract.run_id,
+            argv=list(contract.argv),
+            cwd=str(contract.cwd),
+            sources=list(contract.source.roots),
+            excludes=list(contract.source.excludes),
+            outputs=list(contract.asserted_output_paths),
+            timeout_sec=int(contract.caps.wall_timeout_sec),
+            stdout_max_bytes=int(contract.caps.stdout_max_bytes),
+            stderr_max_bytes=int(contract.caps.stderr_max_bytes),
+            predecessor=contract.predecessor,
+            isolation_claim=str(isolation["claim"]),
+            policy_line=policy_line,
+            approver_user=str(approver["user"]),
+            contract_hash=contract.contract_hash,
+            source_hash=source_hash,
+            runtime_path=str(runtime["resolved_executable"]),
+            runtime_id=str(runtime["runtime_id"]),
+            ttl_sec=int(contract.approval.ttl_sec),
+            confirm_phrase=confirm_phrase,
+        )
     )
     stdout.flush()
     line = stdin.readline()
