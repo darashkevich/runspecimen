@@ -30,6 +30,18 @@ from runspecimen.runtime import runtime_provenance
 CONFIRM_PHRASE = "APPROVE"
 
 
+def typed_phrase_fallback_refusal(policy: str) -> str:
+    """Plain-English refusal when a holder policy has no TTY APPROVE path.
+
+    Used by approve, preflight, and postflight so piped and interactive
+    callers see the same sentence. This is not a holder-receipt path.
+    """
+    return (
+        f"This run must be authorized from the holder ({policy}). "
+        "There is no typed-phrase fallback."
+    )
+
+
 def local_approver() -> dict[str, Any]:
     """The OS account that settled approval on this machine. Not an SSO identity.
 
@@ -107,12 +119,13 @@ def approve_contract(
     """Prompt on a TTY and write a binding approval document under workspace lease."""
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
-    if not skip_tty_check:
-        require_interactive_tty(stdin, stdout)
-
     workspace = resolve_workspace(workspace)
     contract = load_contract(contract_path)
     check_contract_paths(contract, workspace)
+    if contract.execution_approval is not None:
+        raise ApprovalError(typed_phrase_fallback_refusal(contract.execution_approval))
+    if not skip_tty_check:
+        require_interactive_tty(stdin, stdout)
 
     try:
         with hold_workspace_lease(workspace, holder="approve"):
@@ -138,10 +151,7 @@ def _approve_under_lease(
     now: float | None,
 ) -> dict:
     if contract.execution_approval is not None:
-        raise ApprovalError(
-            "execution policy "
-            f"{contract.execution_approval} has no typed-phrase fallback"
-        )
+        raise ApprovalError(typed_phrase_fallback_refusal(contract.execution_approval))
     state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
     ensure_dir(state_dir)
     state = load_state(state_dir)
@@ -238,7 +248,7 @@ def _approve_under_lease(
         confirm_evidence={
             "kind": "interactive_tty_phrase",
             "phrase": confirm_phrase,
-            "claim": "Interactive local TTY APPROVE on the Mac.",
+            "claim": "Interactive local TTY APPROVE on this computer.",
         },
         expected_source_hash=source_hash,
         expected_runtime=runtime,
@@ -264,10 +274,7 @@ def complete_approval_document(
     Caller must already hold the workspace lease. Re-checks phase and provenance.
     """
     if contract.execution_approval is not None:
-        raise ApprovalError(
-            "execution policy "
-            f"{contract.execution_approval} has no typed-phrase fallback"
-        )
+        raise ApprovalError(typed_phrase_fallback_refusal(contract.execution_approval))
     state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
     ensure_dir(state_dir)
     state = load_state(state_dir)

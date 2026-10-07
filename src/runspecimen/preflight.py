@@ -5,7 +5,11 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from runspecimen.approve import approval_is_valid, load_approval
+from runspecimen.approve import (
+    approval_is_valid,
+    load_approval,
+    typed_phrase_fallback_refusal,
+)
 from runspecimen.certificate import verify_run_receipt
 from runspecimen.contract import (
     Contract,
@@ -93,6 +97,8 @@ def _preflight_under_lease(
     now: float | None,
 ) -> dict:
     state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
+    if contract.execution_approval is not None:
+        raise PreflightError(typed_phrase_fallback_refusal(contract.execution_approval))
     approval = load_approval(state_dir)
     if approval is None:
         raise PreflightError("no approval present; run approve first")
