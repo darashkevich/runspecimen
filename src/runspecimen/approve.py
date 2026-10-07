@@ -107,11 +107,17 @@ def approve_contract(
     """Prompt on a TTY and write a binding approval document under workspace lease."""
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
-    if not skip_tty_check:
-        require_interactive_tty(stdin, stdout)
 
     workspace = resolve_workspace(workspace)
     contract = load_contract(contract_path)
+    if contract.execution_approval is not None:
+        raise ApprovalError(
+            "execution policy "
+            f"{contract.execution_approval} has no typed-phrase fallback"
+        )
+    if not skip_tty_check:
+        require_interactive_tty(stdin, stdout)
+
     check_contract_paths(contract, workspace)
 
     try:
@@ -137,11 +143,6 @@ def _approve_under_lease(
     confirm_phrase: str,
     now: float | None,
 ) -> dict:
-    if contract.execution_approval is not None:
-        raise ApprovalError(
-            "execution policy "
-            f"{contract.execution_approval} has no typed-phrase fallback"
-        )
     state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
     ensure_dir(state_dir)
     state = load_state(state_dir)

@@ -10,7 +10,7 @@ This file is the live ledger. Golden-master notes are historical. Later commits 
 | --- | --- |
 | Working branch | `cursor/qa-docfix-rc15-1c51` (from `8015b6d` / `cursor/rc15-bump-pack-ced9`) |
 | Source SHA this ledger was written against | Frozen QA candidate `8015b6d8017e5566f7558cc916dc0ee470c653ad`. Engine payload still `fb05284` plus this docs/help/acceptance successor. Not `main` |
-| This follow-up | Qafix2-pack successor of `5875c72`. Pack `artifacts/0.2.0rc15-2026-10-07-qafix2/`. Version stays `0.2.0rc15`. Prior packs, including `artifacts/0.2.0rc15-2026-10-07-qafix/` and `artifacts/0.2.0rc15-2026-10-06-bump/`, not overwritten. Not production sign-off |
+| This follow-up | Qafix3-pack successor of `4a97450`. Pack `artifacts/0.2.0rc15-2026-10-07-qafix3/`. Version stays `0.2.0rc15`. Prior packs, including `artifacts/0.2.0rc15-2026-10-07-qafix2/`, `artifacts/0.2.0rc15-2026-10-07-qafix/`, and `artifacts/0.2.0rc15-2026-10-06-bump/`, not overwritten. Not production sign-off |
 | Historical IRC tip | `a0dc23361856db8a68075471860bd4ab25af838c` |
 | NEW-01 package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` |
 | Engine | unpublished `0.2.0rc15` |
@@ -23,13 +23,13 @@ Draft operator merge to `main`: [#51](https://github.com/darashkevich/runspecime
 
 ## Artifact provenance
 
-Canonical table: [CANDIDATE_MANIFEST.md](CANDIDATE_MANIFEST.md). Checklist: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Pack: `artifacts/0.2.0rc15-2026-10-07-qafix2/`. Prior packs, including `artifacts/0.2.0rc15-2026-10-07-qafix/` (`1ac1ca57…` / `b181822a…`), `artifacts/0.2.0rc15-2026-10-06-bump/` (`886f90d0…` / `a68094f0…`), `artifacts/rc15-2026-10-06-qualification-docfix/` (`5fd68a6f…` / `a68094f0…`), `artifacts/rc15-2026-10-06-qualification/` (`de90ab7a…` / `68685be9…`), and `artifacts/rc15-2026-10-06-isolated-evidence/` (`682fe989…` / `809431ea…`), were not overwritten.
+Canonical table: [CANDIDATE_MANIFEST.md](CANDIDATE_MANIFEST.md). Checklist: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Pack: `artifacts/0.2.0rc15-2026-10-07-qafix3/`. Prior packs, including `artifacts/0.2.0rc15-2026-10-07-qafix2/` (`659c72cf…` / `b181822a…`), `artifacts/0.2.0rc15-2026-10-07-qafix/` (`1ac1ca57…` / `b181822a…`), `artifacts/0.2.0rc15-2026-10-06-bump/` (`886f90d0…` / `a68094f0…`), `artifacts/rc15-2026-10-06-qualification-docfix/` (`5fd68a6f…` / `a68094f0…`), `artifacts/rc15-2026-10-06-qualification/` (`de90ab7a…` / `68685be9…`), and `artifacts/rc15-2026-10-06-isolated-evidence/` (`682fe989…` / `809431ea…`), were not overwritten.
 
 | File | SHA-256 | Provenance |
 | --- | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | `b181822ae461315e0831cdb886f9e15f4210179893d0bb00539f882015d98e0e` | Unchanged from qafix; `src/` was not edited |
-| `runspecimen-0.2.0rc15.tar.gz` | `659c72cfa15c98e8af9f20c6f5d1a04b70267cd309a9539a2517138c2fbb197c` | Packed scripts/tests/CHANGELOG successor of `1ac1ca57…` |
-| `runspecimen-plugin-0.2.0-rc.15.zip` | `ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb` | Unchanged from qafix; plugin files were not edited |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix3/SHA256SUMS` | RS-04 `approve.py` successor of qafix2 `b181822a…` |
+| `runspecimen-0.2.0rc15.tar.gz` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix3/SHA256SUMS` | Packed approve.py/tests/CHANGELOG successor of `659c72cf…` |
+| `runspecimen-plugin-0.2.0-rc.15.zip` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix3/SHA256SUMS` | Expected to match qafix2 `ea38d5bc…` unless plugin files change |
 
 **OPEN-SDIST (closed).** Historical mismatch: committed `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname, so a rebuild produced `6979460d…`. `release_check.py` now pins `SOURCE_DATE_EPOCH`, gzip mtime 0, owner 0/0, empty uname/gname, sorted members, 0644/0755. Regression: `tests/test_release_archive_reproducibility.py`. The golden-master sdist `c001cb08…` stays in that directory. The `b3367eb` sdist `682fe989…` stays in `artifacts/rc15-2026-10-06-isolated-evidence/`. The `fb05284` sdist `de90ab7a…` stays in `artifacts/rc15-2026-10-06-qualification/`. The docfix sdist `5fd68a6f…` stays in `artifacts/rc15-2026-10-06-qualification-docfix/`. The bump pack sdist `886f90d0…` stays in `artifacts/0.2.0rc15-2026-10-06-bump/`. The qafix pack sdist `1ac1ca57…` stays in `artifacts/0.2.0rc15-2026-10-07-qafix/`. The current pack sdist is `659c72cf…`. Do not restore the older digests as current.
 

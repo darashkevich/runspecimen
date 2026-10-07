@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-07-qafix2/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-07-qafix3/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-07-qafix2/`,
 `artifacts/0.2.0rc15-2026-10-07-qafix/` and
 `artifacts/0.2.0rc15-2026-10-06-bump/`, were not overwritten.
 
@@ -36,7 +37,7 @@ on command lines.
 ## N1 — brand-new venv (abort if the target already exists)
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-07-qafix2"; export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"; export WORK=$(mktemp -d "${TMPDIR:-/tmp}/rs-ha-rc15.XXXXXX"); export VENV="$WORK/venv"; export RS="$VENV/bin/runspecimen"; export PY="$VENV/bin/python"; export WS="$WORK/ws-demo"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-07-qafix3"; export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"; export WORK=$(mktemp -d "${TMPDIR:-/tmp}/rs-ha-rc15.XXXXXX"); export VENV="$WORK/venv"; export RS="$VENV/bin/runspecimen"; export PY="$VENV/bin/python"; export WS="$WORK/ws-demo"
 ```
 
 ```
@@ -78,7 +79,7 @@ Abort (non-zero) unless every hashed RECORD member in the wheel, and every
 no extra installed `.py` modules. The script prints the installed dist-info
 `RECORD` and `direct_url.json`. `__version__ == 0.2.0rc15` is not sufficient:
 the 2026-10-06-bump wheel reports the same version and must fail this step
-when `$WHEEL` is the qafix2 pin.
+when `$WHEEL` is the qafix3 pin.
 
 Record the `command -v runspecimen` path; it must not be the binary you invoke.
 

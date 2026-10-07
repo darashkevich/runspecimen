@@ -28,8 +28,8 @@ README = ROOT / "README.md"
 HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
-PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-07-qafix2"
-QAFIX_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-07-qafix"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-07-qafix3"
+QAFIX_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-07-qafix2"
 BUMP_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-06-bump"
 WHEEL_NAME = "runspecimen-0.2.0rc15-py3-none-any.whl"
 
@@ -139,7 +139,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("command -v runspecimen", text)
         self.assertIn("mktemp -d", text)
         self.assertIn('test ! -e "$VENV"', text)
-        self.assertIn("0.2.0rc15-2026-10-07-qafix2", text)
+        self.assertIn("0.2.0rc15-2026-10-07-qafix3", text)
         self.assertIn("--no-index --no-deps --force-reinstall", text)
         self.assertIn("scripts/verify_installed_wheel.py", text)
         self.assertIn("wheel_sha256", text)
