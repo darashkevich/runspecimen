@@ -309,14 +309,6 @@ final class FullScreenSession: ObservableObject {
             guard let window = note.object as? NSWindow, WindowSanitizer.isMainWindow(window) else { return }
             self?.isFullScreen = false
         })
-        observers.append(center.addObserver(forName: NSWindow.didFailToEnterFullScreenNotification, object: nil, queue: .main) { [weak self] note in
-            guard let window = note.object as? NSWindow, WindowSanitizer.isMainWindow(window) else { return }
-            self?.isFullScreen = window.styleMask.contains(.fullScreen)
-        })
-        observers.append(center.addObserver(forName: NSWindow.didFailToExitFullScreenNotification, object: nil, queue: .main) { [weak self] note in
-            guard let window = note.object as? NSWindow, WindowSanitizer.isMainWindow(window) else { return }
-            self?.isFullScreen = window.styleMask.contains(.fullScreen)
-        })
         syncFromKeyWindow()
     }
 

@@ -48,34 +48,37 @@ enum WindowSanitizer {
     private static func observeFullScreenTransitions(_ center: NotificationCenter) {
         observers.append(center.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: nil, queue: .main) { note in
             guard let window = note.object as? NSWindow else { return }
-            fullscreenTransitionWindows.insert(ObjectIdentifier(window))
+            beginFullScreenTransition(window)
             enableFullScreen(window)
         })
         observers.append(center.addObserver(forName: NSWindow.willExitFullScreenNotification, object: nil, queue: .main) { note in
             guard let window = note.object as? NSWindow else { return }
-            fullscreenTransitionWindows.insert(ObjectIdentifier(window))
+            beginFullScreenTransition(window)
         })
         observers.append(center.addObserver(forName: NSWindow.didEnterFullScreenNotification, object: nil, queue: .main) { note in
             guard let window = note.object as? NSWindow else { return }
-            fullscreenTransitionWindows.remove(ObjectIdentifier(window))
+            endFullScreenTransition(window)
             enableFullScreen(window)
         })
         observers.append(center.addObserver(forName: NSWindow.didExitFullScreenNotification, object: nil, queue: .main) { note in
             guard let window = note.object as? NSWindow else { return }
-            fullscreenTransitionWindows.remove(ObjectIdentifier(window))
+            endFullScreenTransition(window)
             apply(window)
         })
-        let failed: [Notification.Name] = [
-            NSWindow.didFailToEnterFullScreenNotification,
-            NSWindow.didFailToExitFullScreenNotification,
-        ]
-        for name in failed {
-            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { note in
-                guard let window = note.object as? NSWindow else { return }
-                fullscreenTransitionWindows.remove(ObjectIdentifier(window))
-                apply(window)
-            })
+    }
+
+    private static func beginFullScreenTransition(_ window: NSWindow) {
+        let id = ObjectIdentifier(window)
+        fullscreenTransitionWindows.insert(id)
+        // AppKit has no did-fail-to-enter/exit notification. Drop the flag if
+        // didEnter/didExit never arrives so a failed transition cannot stick.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            fullscreenTransitionWindows.remove(id)
         }
+    }
+
+    private static func endFullScreenTransition(_ window: NSWindow) {
+        fullscreenTransitionWindows.remove(ObjectIdentifier(window))
     }
 
     static func apply() {
