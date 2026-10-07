@@ -23,11 +23,11 @@ Prior packs `artifacts/0.2.0rc15-2026-10-07-qafix/` (sdist `1ac1ca5711596c036742
 
 | File | SHA-256 |
 | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix2/SHA256SUMS` after that pack is built |
-| `runspecimen-0.2.0rc15.tar.gz` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix2/SHA256SUMS` after that pack is built |
-| `runspecimen-plugin-0.2.0-rc.15.zip` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix2/SHA256SUMS` after that pack is built |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | `b181822ae461315e0831cdb886f9e15f4210179893d0bb00539f882015d98e0e` |
+| `runspecimen-0.2.0rc15.tar.gz` | `659c72cfa15c98e8af9f20c6f5d1a04b70267cd309a9539a2517138c2fbb197c` |
+| `runspecimen-plugin-0.2.0-rc.15.zip` | `ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb` |
 
-The sdist moves because packed `scripts/verify_installed_wheel.py`, tests, CHANGELOG, and RELEASE_CANDIDATE_REPORT changed. `src/` and plugin README were not edited in this successor, so the wheel and plugin zip are expected to match the qafix pack until SHA256SUMS is recorded. Prior `artifacts/0.2.0rc15-*` and `artifacts/rc15-*` directories were not overwritten, including `artifacts/0.2.0rc15-2026-10-07-qafix/`, `artifacts/0.2.0rc15-2026-10-06-bump/`, `artifacts/rc15-2026-10-06-qualification-docfix/`, `artifacts/rc15-2026-10-06-qualification/`, `artifacts/rc15-2026-10-06-isolated-evidence/`, and `artifacts/rc15-2026-10-05-golden-master/` sdist `c001cb088f8710802a84149d32843667f36b8fb0dedd941abbbd9dd18137a2da`. There is no new holder stage tar. The prior sealed stage `5200682fec6d5cdeee72c81ea8a419b0b2d80022f648f77a75a783b4eee9cdc9` in `artifacts/rc15-2026-10-05-qa-py312-seal/` was not overwritten. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist.
+The sdist moves because packed `scripts/verify_installed_wheel.py`, tests, CHANGELOG, and RELEASE_CANDIDATE_REPORT changed. `src/` and plugin README were not edited in this successor, so the wheel and plugin zip match the qafix pack (`b181822a…` / `ea38d5bc…`). Prior `artifacts/0.2.0rc15-*` and `artifacts/rc15-*` directories were not overwritten, including `artifacts/0.2.0rc15-2026-10-07-qafix/`, `artifacts/0.2.0rc15-2026-10-06-bump/`, `artifacts/rc15-2026-10-06-qualification-docfix/`, `artifacts/rc15-2026-10-06-qualification/`, `artifacts/rc15-2026-10-06-isolated-evidence/`, and `artifacts/rc15-2026-10-05-golden-master/` sdist `c001cb088f8710802a84149d32843667f36b8fb0dedd941abbbd9dd18137a2da`. There is no new holder stage tar. The prior sealed stage `5200682fec6d5cdeee72c81ea8a419b0b2d80022f648f77a75a783b4eee9cdc9` in `artifacts/rc15-2026-10-05-qa-py312-seal/` was not overwritten. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist.
 
 ## Status
 
