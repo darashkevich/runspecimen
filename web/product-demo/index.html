@@ -164,8 +164,14 @@
               <div class="certificate" id="certificate">
                 <div class="certificate-mark" aria-hidden="true" id="cert-mark">
                   <svg viewBox="0 0 64 64" width="56" height="56" focusable="false">
-                    <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" stroke-width="3"/>
-                    <path id="cert-glyph" d="M18 33 l10 10 18-20" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                    <g class="glyph-ok">
+                      <circle cx="32" cy="32" r="28"/>
+                      <path d="M18 33 l10 10 18-20" fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                    </g>
+                    <g class="glyph-no">
+                      <circle cx="32" cy="32" r="28"/>
+                      <path d="M22 22 L42 42 M42 22 L22 42" fill="none" stroke-width="4" stroke-linecap="round"/>
+                    </g>
                   </svg>
                 </div>
                 <p class="certificate-kicker" id="cert-kicker">Verified receipt</p>

@@ -609,6 +609,26 @@ code {
   display: inline-block;
 }
 
+.certificate-mark circle {
+  fill: currentColor;
+}
+
+.certificate-mark path {
+  stroke: var(--forest-ink);
+}
+
+.glyph-no {
+  display: none;
+}
+
+.certificate.is-refused .glyph-ok {
+  display: none;
+}
+
+.certificate.is-refused .glyph-no {
+  display: inline;
+}
+
 .certificate h4 {
   margin: 0 0 0.45rem;
 }
@@ -850,15 +870,18 @@ html.embed .site-footer {
     transition: color 0.25s ease, transform 0.25s ease;
   }
 
-  .certificate-mark svg path {
-    stroke-dasharray: 48;
-    stroke-dashoffset: 48;
-    animation: draw-check 0.6s 0.15s ease forwards;
+  .certificate-mark svg {
+    animation: pop-mark 0.35s ease;
   }
 
-  @keyframes draw-check {
+  @keyframes pop-mark {
+    from {
+      transform: scale(0.82);
+      opacity: 0.4;
+    }
     to {
-      stroke-dashoffset: 0;
+      transform: scale(1);
+      opacity: 1;
     }
   }
 }

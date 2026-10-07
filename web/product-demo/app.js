@@ -55,7 +55,6 @@
   var certTitle = document.getElementById("cert-title");
   var certBody = document.getElementById("cert-body");
   var certFacts = document.getElementById("cert-facts");
-  var certGlyph = document.getElementById("cert-glyph");
 
   if (new URLSearchParams(window.location.search).get("embed") === "1") {
     document.documentElement.classList.add("embed");
@@ -194,7 +193,6 @@
     tamperToggle.setAttribute("aria-checked", on ? "true" : "false");
     if (on) {
       setStamp("refused");
-      certGlyph.setAttribute("d", "M22 22 L42 42 M42 22 L22 42");
       certKicker.textContent = "Verification refused";
       certTitle.textContent = "The output no longer matches the receipt";
       certBody.innerHTML = "Someone (in this simulation) changed <code>outputs/result.json</code> after the run. Live verify re-hashes the file on disk and refuses to call this certified.";
@@ -206,7 +204,6 @@
       live.textContent = "Verification refused: the result file was altered after the run.";
     } else {
       setStamp("verify");
-      certGlyph.setAttribute("d", "M18 33 l10 10 18-20");
       certKicker.textContent = "Verified receipt";
       certTitle.textContent = "This run matches the approval";
       certBody.innerHTML = "The command that was approved is the command that ran. The result file is present, the declared field is <code>ok</code>, and the event chain is intact.";
