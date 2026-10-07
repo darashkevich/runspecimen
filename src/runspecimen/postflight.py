@@ -198,6 +198,30 @@ def _postflight_under_lease(*, contract, workspace: Path) -> dict:
         "runtime": runtime,
     }
     assertions_rec = log.append("postflight_assertions_ok", assertions_body)
+    evidence_attestation = None
+    from runspecimen.requirements import attestation_path
+    from runspecimen.atomic import read_json as _read_json
+    from runspecimen.artifact import verify_artifact_digest as _verify_att
+
+    att_file = attestation_path(workspace, contract.campaign_id, contract.run_id)
+    if att_file.is_file():
+        try:
+            loaded_att = _read_json(att_file)
+            _verify_att(loaded_att)
+            from runspecimen.requirements import load_evidence_report
+
+            current = load_evidence_report(
+                workspace, contract.campaign_id, contract.run_id
+            )
+            # A digest-valid sidecar is not the current capture. Omit it
+            # rather than bind a stale evidence_report_digest.
+            if (
+                isinstance(loaded_att, dict)
+                and loaded_att.get("evidence_report_digest") == current.get("artifact_digest")
+            ):
+                evidence_attestation = loaded_att
+        except Exception:  # noqa: BLE001
+            evidence_attestation = None
     cert = build_certificate(
         contract=contract,
         state=state,
@@ -206,6 +230,7 @@ def _postflight_under_lease(*, contract, workspace: Path) -> dict:
         event_head=assertions_rec.event_hash,
         approval=approval,
         runtime=runtime,
+        evidence_attestation=evidence_attestation if isinstance(evidence_attestation, dict) else None,
     )
     write_certificate(state_dir, cert)
     log.append(

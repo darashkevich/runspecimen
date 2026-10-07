@@ -1,0 +1,27 @@
+{
+  "artifacts": {
+    "runspecimen-0.2.0rc15-py3-none-any.whl": "42ae8c70a57480460209f36758f60ce35ff6ab5ed1cc40bb84ca88ae196f6b08",
+    "runspecimen-0.2.0rc15.tar.gz": "835d8cd35833f8f84561511989c885071645a7116af4819b3b3a5a4281b27054",
+    "runspecimen-plugin-0.2.0-rc.15.zip": "692ef035b45b2a12e9a99c86583390badcad6bae5638e4267bfc8e876b0f0b2d"
+  },
+  "checks": [
+    "unit-tests",
+    "source-compile",
+    "source-archive-contents",
+    "sdist-distribution-artifact-tests",
+    "wheel-from-source-archive",
+    "wheel-contents",
+    "fresh-install-console-script",
+    "installed-cli-doctor-validate-status",
+    "installed-plugin-adapter",
+    "installed-dashboard-http",
+    "dashboard-write-refusal",
+    "installed-keygen-listkeys",
+    "installed-sign-verify-error-handling"
+  ],
+  "ok": true,
+  "platform": "darwin",
+  "plugin_version": "0.2.0-rc.15",
+  "python": "3.12.14",
+  "version": "0.2.0rc15"
+}

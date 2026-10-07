@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+These notes describe source on the unpublished candidate. They are not a public release.
+
+- Installed Secure Enclave admission is fail-closed, not undecided. The Store note in `docs/SUBMISSION.md` follows the 2026-09-28 Connect record (`READY_FOR_SALE` for **0.1.4 (9)**) and was not re-queried on 2026-10-06. `run_integration_complete` and `e2_closed` stay false.
+- Exact-run approval checks expiry and the pinned holder id before signing, and an authorize that loses its request keeps the uncertain lease. A holder execute that fails before any child exists keeps that uncertain lease. Root-daemon Secure Enclave creation is unsupported on current Apple guidance. Installed admission stays closed. `run_integration_complete` and `e2_closed` stay false.
+- `requirements_check` refuses a digest-valid passed report unless authenticity is receipt-bound and the final state is certifiable. Evidence pointers accept only a basename under `evidence_captures`. Postflight omits an attestation whose digest is not the current capture. The CLI does not claim a hardware human when it cannot collect a device signature. MCP `freshness_check` evaluates without writing `freshness_report.json`.
+- Developer ID packaging accepts bundle id `com.darashkevich.runspecimen.holder` and pins that designated requirement when a Developer ID identity is supplied. Ad-hoc `codesign --sign -` is local stage smoke, not the product signature. That bundle id is not `production_verifier_pin()`.
+- Usage import holds the workspace lease and refuses to replace a ledger whose digest changed. The dashboard evidence panel records a read-only load error instead of hiding a failed read. Unittest discovery copies the suite so it does not write `__init__.py` into the live tree. Packaged suites (`tests/__init__.py`) are imported from that sandbox copy; the live workspace stays importable for application code. ChatGPT independent re-QA at `6bb64d1`: 644 tests / 6 skip / 0 fail; R-01..R-06 closed. Installed Secure Enclave admission stays fail-closed. `run_integration_complete` and `e2_closed` stay false.
+- Release sdist rewrite now pins gzip mtime 0, numeric owner 0/0, empty uname/gname, sorted members, and 0644/0755 modes so archive bytes do not depend on the builder host. The wheel and plugin zip stay content-addressed separately. Installed Secure Enclave admission stays fail-closed. `run_integration_complete` and `e2_closed` stay false.
+
+### Evidence expansion (ADR-005) — review branch, not released
+
+Local-first expansion answering: what was authorized, what ran, which
+requirements were checked, what evidence supports results, and whether that
+evidence still applies. See `docs/ADR-005-evidence-expansion.md`.
+
+- Task manifests + provider-collected evidence reports (`unittest` / `pytest` /
+  `command_status`); never trust agent-written `passed`.
+- Freshness/applicability reports (separate from `verify`); stale marks, no
+  history rewrite.
+- Policy template fields + actionable refusals; NL notes stay visible;
+  ambiguous stays advisory.
+- Expanded `doctor` / `config inspect|preview|apply|export|rollback` (no silent
+  sync).
+- Decision registry with MCP/adapter search (no approve).
+- Local tar snapshot create/preview/restore-to-separate-dir.
+- Usage import/summarize (`local_json`); unknown ≠ zero; idempotent imports.
+- Two-repo coordination readiness; workflow eval suite compare.
+- `runspecimen scenes` ten-scene local demo (never types APPROVE).
+- `freshness show` reads a stored report and does not recompute or write one. The native pane uses that command.
+- Session restore keeps the last contract when it is a regular file inside the workspace, and the app stays running after the main window closes.
+- Native Workflows cover snapshot, coordination, evaluation, scenes, configuration apply/export/rollback, decision capture, and usage import. Writes require confirmation. The Store build still has no browser dashboard.
+- A confirmed workflow is claimed before its dialog dismisses, so cancellation cannot drop that claim, and a second confirm does not run it again. Engine output is read while the process is still running.
+
+## 0.2.0rc15 - not published
+
+Candidate identity for the integrated branch. Not tagged, not uploaded to PyPI, and not a replacement for the published `0.2.0rc14` bytes. Homebrew in this tree still pins the published sdist.
+
 ## 0.2.0rc14 - 2026-09-23
 
 GitHub pre-release `v0.2.0-rc.14` and PyPI `0.2.0rc14` (identical bytes, checksum-only, not SLSA-attested). Do not publish draft `v0.2.0-rc.11`. Do not move `v0.2.0-rc.12` or `v0.2.0-rc.13`. Stable `0.2.0` gate remains not met.
@@ -58,7 +95,7 @@ Published on GitHub as `v0.2.0-rc.12` and on PyPI as `0.2.0rc12` (identical byte
 - Fix `AppIcon.appiconset`: catalog filenames are real `icon_*@2x.png` files
   with matching pixel sizes (128@2x is 256px). `verify_app_icon.sh` checks
   Contents.json and a warning-free `actool` compile.
-- Mac App Store **0.1.3 (8)** is `WAITING_FOR_REVIEW` (submitted 2026-09-21). Builds 5 and 6 were rejected. Do not upload another binary while build 8 is waiting.
+- Mac App Store **0.1.3 (8)** was submitted 2026-09-21 and later rejected. The package recorded as waiting after that rejection is **0.1.4 (9)** (see `apps/macos/asc-kit/STATUS.md`). Do not upload a replacement from this changelog.
 
 ### Packaging
 

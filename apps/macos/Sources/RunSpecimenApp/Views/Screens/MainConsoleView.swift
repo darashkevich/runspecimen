@@ -10,7 +10,7 @@ struct MainConsoleView: View {
         VStack(spacing: 0) {
             TopBar()
             Divider().overlay(RSTheme.line)
-            if let issue = model.cliSetupIssue {
+            if let issue = model.cliSetupIssue ?? model.sessionNote {
                 Text(issue)
                     .font(.system(size: 12))
                     .foregroundStyle(RSTheme.danger)
@@ -65,16 +65,16 @@ struct TopBar: View {
             bar(showPath: false)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(RSTheme.bg.opacity(0.72))
+        .padding(.vertical, 12)
+        .background(RSTheme.bgElevated.opacity(0.92))
     }
 
     private func bar(showPath: Bool) -> some View {
         HStack(spacing: 10) {
             HStack(spacing: 8) {
-                SignalMark(animated: false)
+                SignalMark(animated: false, compact: true)
                 Text("RunSpecimen")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundStyle(RSTheme.ink)
                     .lineLimit(1)
             }
@@ -83,7 +83,7 @@ struct TopBar: View {
 
             CapsuleLabel(text: model.cliIdentity?.version ?? "CLI missing", tone: model.hasCLI ? .signal : .amber)
                 .accessibilityLabel(model.hasCLI ? "CLI version \(model.cliIdentity?.version ?? "")" : "CLI missing")
-                .help(model.cliSourceLabel.map { "Source: \($0)" } ?? (DistributionChannel.current.requiresBundledHelper ? "Bundled engine missing" : "Select or install runspecimen 0.2.0rc14+"))
+                .help(model.cliSourceLabel.map { "Source: \($0)" } ?? (DistributionChannel.current.requiresBundledHelper ? "Bundled engine missing" : "Select a runspecimen binary. This build's engine is unpublished 0.2.0rc15."))
                 .layoutPriority(1)
 
             if let source = model.cliSourceLabel ?? model.cliIdentity?.source.label {
@@ -92,14 +92,14 @@ struct TopBar: View {
                     .help("Discovery source (ADR-002). Prefer Bundled Helper forces Contents/Helpers.")
             }
             if model.dashboardRunning {
-                CapsuleLabel(text: "Dashboard", tone: .amber)
+                CapsuleLabel(text: "Timeline open", tone: .amber)
                     .accessibilityLabel("Dashboard child process running")
                     .help("Loopback dashboard is running; it stops on quit or Stop Dashboard")
             }
 
             if showPath, let path = model.workspaceURL?.path {
-                Text(path)
-                    .font(RSTheme.monoSmall)
+                Text(friendlyFolderName)
+                    .font(.system(size: 12))
                     .foregroundStyle(RSTheme.muted)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -109,8 +109,8 @@ struct TopBar: View {
 
             Spacer(minLength: 8)
 
-            Button("Contract…") { Task { await model.chooseContract() } }
-            Button("Workspace…") { Task { await model.chooseWorkspace() } }
+            Button("Run plan…") { Task { await model.chooseContract() } }
+            Button("Folder…") { Task { await model.chooseWorkspace() } }
             Button {
                 Task { await model.refreshAll() }
             } label: {
@@ -120,6 +120,10 @@ struct TopBar: View {
             .keyboardShortcut("r", modifiers: [.command])
         }
     }
+
+    private var friendlyFolderName: String {
+        model.workspaceURL?.lastPathComponent ?? ""
+    }
 }
 
 struct ContractPrompt: View {
@@ -128,10 +132,14 @@ struct ContractPrompt: View {
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
-            Text("Select a contract")
+            Image(systemName: "doc.badge.gearshape")
+                .font(.system(size: 36, weight: .medium))
+                .foregroundStyle(RSTheme.brand)
+                .accessibilityHidden(true)
+            Text("Choose a run plan")
                 .font(RSTheme.titleFont)
                 .foregroundStyle(RSTheme.ink)
-            Text("Contracts declare argv, caps, provenance roots, and postflight assertions. One composition — pick the JSON that bounds this run.")
+            Text("A run plan says what may run, which files count, and what must be true when it finishes. You’ll review it, then type APPROVE yourself.")
                 .font(.system(size: 14))
                 .foregroundStyle(RSTheme.muted)
                 .multilineTextAlignment(.center)
@@ -139,9 +147,17 @@ struct ContractPrompt: View {
             Button {
                 Task { await model.chooseContract() }
             } label: {
-                Label("Open Contract JSON", systemImage: "doc.text")
+                Label("Open a run plan", systemImage: "doc.text")
             }
             .buttonStyle(SignalButtonStyle(emphasized: true))
+            DetailsDisclosure(title: "Technical name") {
+                Text("This is the contract JSON. It declares argv, caps, provenance roots, and postflight assertions.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(RSTheme.soft)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: 460)
+            }
+            .frame(maxWidth: 460)
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -167,13 +183,13 @@ struct CapsuleLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(color)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(color.opacity(0.12))
             .overlay(
-                Capsule().stroke(color.opacity(0.35), lineWidth: 1)
+                Capsule().stroke(color.opacity(0.28), lineWidth: 1)
             )
             .clipShape(Capsule())
     }

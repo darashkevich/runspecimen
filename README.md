@@ -3,8 +3,9 @@
 RunSpecimen is a local safety and evidence layer for consequential agent-driven
 research and engineering commands.
 
-**Current package version (this branch):** `0.2.0rc14`  
-**Release:** [v0.2.0-rc.14](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.14) / PyPI `runspecimen==0.2.0rc14` (identical bytes; checksum-only, not SLSA-attested).  
+**Current package version (this branch):** `0.2.0rc15` (not published)  
+**Published release, unchanged:** [v0.2.0-rc.14](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.14) / PyPI `runspecimen==0.2.0rc14` (identical bytes; checksum-only, not SLSA-attested). Do not replace those artifacts.  
+**Mac App Store:** approved **0.1.4 (9)** freezes published engine `0.2.0rc14` and stays guarantee (1). The local label on this branch is **0.1.5 (13)** and is not an upload. Earlier **0.1.5 (10)**, **(11)**, and **(12)** are not this candidate.  
 Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `v0.2.0-rc.12`. See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
 
 ## Core promise
@@ -18,7 +19,7 @@ Exactly **one** approved, bounded run at a time, with:
 
 No watchers, no recurring scheduler, no parallel workers.
 
-`0.2.0rc14` includes opt-in `isolation` (`none` by default), a workspace `policy` file, `retain`, `digest`, and `diff`. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md). `none` does not confine the process. `sandbox-exec` and `bwrap` are not an OS sandbox. Published `0.2.0rc12` rejects `isolation` and `policy`.
+`0.2.0rc14` includes opt-in `isolation` (`none` by default), a workspace `policy` file, `retain`, `digest`, and `diff`. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md). `none` does not confine the process. `sandbox-exec` and `bwrap` are not an OS sandbox. Published `0.2.0rc12` rejects `isolation` and `policy`. Evidence-expansion commands (`requirements`, `freshness`, `scenes`, and the rest of ADR-005) are on this unpublished `0.2.0rc15` branch. Published rc14 does not include them.
 
 ## Requirements
 
@@ -35,7 +36,6 @@ No watchers, no recurring scheduler, no parallel workers.
 - [Market and distribution](docs/MARKET_AND_DISTRIBUTION.md) — wedge, channels, commercial sequence
 - [Integrations](docs/INTEGRATIONS.md) — adapter status ledger + frontier-lab research
 - [Marketing pitches](docs/MARKETING_PITCHES.md) — honest one-liners, elevators, CTAs
-- [Grok tandem](docs/GROK_TANDEM.md) — external xAI Grok review log (Composio `GROK_*`)
 - [Submission](docs/SUBMISSION.md) — marketplace submission checklist (Cursor/Codex/Claude/Grok)
 - [Release identity](docs/RELEASE_IDENTITY.md) — live vs draft vs next tag; checksum-only vs attested
 - [Threat model](docs/THREAT_MODEL.md) — trusted boundary and residual risks
@@ -134,9 +134,7 @@ runspecimen validate --workspace . --contract examples/demo_contract.json
 
 ## Typical sequence
 
-Prefer `init-demo` after a pip/Homebrew install. The block below uses the
-in-tree example path (git clone) or substitute `contract.json` inside an
-`init-demo` workspace:
+Prefer `init-demo` after a pip or Homebrew install. `examples/showcase/` exists in a git checkout only; create a workspace with `init-demo` before running commands that name those files. The block below uses the in-tree example path (git clone) or substitute `contract.json` inside an `init-demo` workspace:
 
 ```bash
 # 1) Bind approval on a real TTY (refuses pipes/CI without a TTY)

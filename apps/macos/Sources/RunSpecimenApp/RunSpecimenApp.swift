@@ -31,9 +31,11 @@ struct RunSpecimenApp: App {
         .defaultPosition(.center)
         .defaultSize(width: WindowPlacement.defaultSize.width, height: WindowPlacement.defaultSize.height)
         .commands {
-            CommandGroup(replacing: .newItem) {
+            CommandGroup(after: .newItem) {
                 Button("Show Main Window") {
-                    openWindow(id: "main")
+                    let open = { openWindow(id: "main") }
+                    appDelegate.openMainWindow = open
+                    open()
                 }
                 .keyboardShortcut("0", modifiers: [.command])
             }
@@ -48,64 +50,72 @@ struct RunSpecimenApp: App {
                 }
                 Divider()
             }
-            CommandMenu("Workspace") {
-                Button("Open Reviewer Demo") {
+            CommandMenu("Folder") {
+                Button("Try a sample run") {
                     Task { await model.openReviewerDemo() }
                 }
                 .keyboardShortcut("d", modifiers: [.command, .option, .shift])
-                Button("Open Workspace…") {
+                Button("Choose Folder…") {
                     Task { await model.chooseWorkspace() }
                 }
                 .keyboardShortcut("o", modifiers: [.command])
-                Button("Open Contract…") {
+                Button("Open Run Plan…") {
                     Task { await model.chooseContract() }
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
                 Divider()
-                Button("Refresh Status") {
+                Button("Refresh") {
                     Task { await model.refreshAll() }
                 }
                 .keyboardShortcut("r", modifiers: [.command])
+                Button("Refresh Receipt") {
+                    Task { await model.refreshEvidenceDetails() }
+                }
+                .disabled(model.isBusy || !model.hasWorkspace)
+                Button("Advanced Tools…") {
+                    model.showWorkflows = true
+                }
+                .disabled(!model.hasWorkspace)
             }
-            CommandMenu("Lifecycle") {
-                Button("Validate") {
+            CommandMenu("This Run") {
+                Button("Check the Plan") {
                     Task { await model.requestPerform(.validate) }
                 }
                 .keyboardShortcut("1", modifiers: [.command])
                 .disabled(!model.isActionEnabled(.validate))
-                Button("Approve…") {
+                Button("Review & Approve…") {
                     Task { await model.requestPerform(.approve) }
                 }
                 .keyboardShortcut("a", modifiers: [.command, .shift])
                 .disabled(!model.isActionEnabled(.approve))
-                Button("Preflight") {
+                Button("Get Ready") {
                     Task { await model.requestPerform(.preflight) }
                 }
                 .keyboardShortcut("2", modifiers: [.command])
                 .disabled(!model.isActionEnabled(.preflight))
-                Button("Run…") {
+                Button("Start the Run…") {
                     Task { await model.requestPerform(.run) }
                 }
                 .keyboardShortcut("3", modifiers: [.command])
                 .disabled(!model.isActionEnabled(.run))
-                Button("Postflight…") {
+                Button("Check Results…") {
                     Task { await model.requestPerform(.postflight) }
                 }
                 .keyboardShortcut("4", modifiers: [.command])
                 .disabled(!model.isActionEnabled(.postflight))
-                Button("Verify") {
+                Button("Get the Receipt") {
                     Task { await model.requestPerform(.verify) }
                 }
                 .keyboardShortcut("5", modifiers: [.command])
                 .disabled(!model.isActionEnabled(.verify))
                 Divider()
                 if DistributionChannel.current.allowsBrowserDashboard {
-                    Button("Open Dashboard") {
+                    Button("Open the Timeline") {
                         Task { await model.requestPerform(.dashboard) }
                     }
                     .keyboardShortcut("d", modifiers: [.command, .shift])
                     .disabled(!model.isActionEnabled(.dashboard))
-                    Button("Stop Dashboard") {
+                    Button("Close Timeline") {
                         Task { await model.stopDashboard() }
                     }
                     .keyboardShortcut("d", modifiers: [.command, .option])
@@ -156,6 +166,7 @@ struct RunSpecimenApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var model: AppModel?
+    var openMainWindow: (() -> Void)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if MasSandboxE2E.isRequested {
@@ -165,6 +176,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         WindowSanitizer.install()
+        DispatchQueue.main.async {
+            self.presentMainWindowIfNeeded()
+        }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        SessionRestore.quitWhenLastWindowCloses
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -178,8 +196,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            presentMainWindowIfNeeded()
+        }
         WindowSanitizer.apply()
         return true
+    }
+
+    /// SwiftUI remembers a closed main window. File → Show Main Window and a
+    /// later launch both need a visible window without resetting the workspace.
+    func presentMainWindowIfNeeded() {
+        if NSApp.windows.contains(where: { $0.isVisible && !$0.isSheet && $0.level == .normal }) {
+            return
+        }
+        if let openMainWindow {
+            openMainWindow()
+            return
+        }
+        guard let file = NSApp.mainMenu?.items.first(where: { $0.title == "File" })?.submenu,
+              let item = file.items.first(where: { $0.title == "Show Main Window" }),
+              let action = item.action else {
+            return
+        }
+        NSApp.sendAction(action, to: item.target, from: item)
     }
 }
 
@@ -195,12 +234,12 @@ struct RootView: View {
                 BrandEmptyState()
             }
         }
-        .preferredColorScheme(.dark)
+        // Follows the system appearance. Light is the consumer default.
         .alert(item: $model.error) { err in
             Alert(title: Text("RunSpecimen"), message: Text(err.message), dismissButton: .default(Text("OK")))
         }
         .confirmationDialog(
-            model.pendingConfirmAction?.confirmationTitle ?? "Confirm",
+            model.pendingConfirmAction?.consumerConfirmationTitle ?? "Confirm",
             isPresented: Binding(
                 get: { model.pendingConfirmAction != nil },
                 set: { if !$0 { model.cancelPendingAction() } }
@@ -208,7 +247,7 @@ struct RootView: View {
             titleVisibility: .visible
         ) {
             if let action = model.pendingConfirmAction {
-                Button(action.title, role: action == .run ? .destructive : nil) {
+                Button(action.consumerTitle, role: action == .run ? .destructive : nil) {
                     Task { await model.confirmPendingAction() }
                 }
                 Button("Cancel", role: .cancel) {
@@ -216,7 +255,7 @@ struct RootView: View {
                 }
             }
         } message: {
-            Text(model.pendingConfirmAction?.confirmationMessage ?? "")
+            Text(model.pendingConfirmAction?.consumerConfirmationMessage ?? "")
         }
         .sheet(isPresented: $model.showApproveSheet) {
             ApproveSheet()
@@ -227,6 +266,10 @@ struct RootView: View {
             AboutView()
                 .environmentObject(model)
                 .frame(minWidth: 420, minHeight: 360)
+        }
+        .sheet(isPresented: $model.showWorkflows, onDismiss: { model.cancelWorkflow() }) {
+            WorkflowSheet()
+                .environmentObject(model)
         }
         .sheet(isPresented: $model.showSettings) {
             SettingsView()

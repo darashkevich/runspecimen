@@ -16,7 +16,7 @@ from typing import Any
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "runspecimen"
-SERVER_VERSION = "0.2.0-rc.14"
+SERVER_VERSION = "0.2.0-rc.15"
 
 ALLOWED = frozenset({
     "about",
@@ -28,6 +28,9 @@ ALLOWED = frozenset({
     "run",
     "postflight",
     "verify",
+    "decisions_search",
+    "requirements_report",
+    "freshness_check",
 })
 
 TOOLS: list[dict[str, Any]] = [
@@ -146,6 +149,50 @@ TOOLS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "decisions_search",
+        "description": "Search the explicit decision provenance registry (read-only).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workspace": {"type": "string"},
+                "query": {"type": "string"},
+            },
+            "required": ["workspace", "query"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "requirements_report",
+        "description": "Read stored evidence report for a campaign/run (not verify).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workspace": {"type": "string"},
+                "campaign_id": {"type": "string"},
+                "run_id": {"type": "string"},
+            },
+            "required": ["workspace", "campaign_id", "run_id"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "freshness_check",
+        "description": (
+            "Evaluate evidence applicability without writing freshness_report.json "
+            "(not verify). The writing command is freshness check."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workspace": {"type": "string"},
+                "contract": {"type": "string"},
+                "manifest": {"type": "string"},
+            },
+            "required": ["workspace", "contract"],
+            "additionalProperties": False,
+        },
+    },
 ]
 
 
@@ -186,18 +233,53 @@ def _run_cli(action: str, arguments: dict[str, Any]) -> dict[str, Any]:
                 "isError": True,
                 "content": [{"type": "text", "text": "--workspace is required"}],
             }
-        command = [executable, action, "--workspace", str(workspace)]
-        contract = arguments.get("contract")
-        if contract is not None:
-            command.extend(["--contract", str(contract)])
-        campaign_id = arguments.get("campaign_id")
-        if campaign_id is not None:
-            command.extend(["--campaign-id", str(campaign_id)])
-        run_id = arguments.get("run_id")
-        if run_id is not None:
-            command.extend(["--run-id", str(run_id)])
-        if arguments.get("open") and action == "dashboard":
-            command.append("--open")
+        if action == "decisions_search":
+            command = [
+                executable,
+                "decisions",
+                "search",
+                "--workspace",
+                str(workspace),
+                "--query",
+                str(arguments.get("query") or ""),
+            ]
+        elif action == "requirements_report":
+            command = [
+                executable,
+                "requirements",
+                "report",
+                "--workspace",
+                str(workspace),
+                "--campaign-id",
+                str(arguments.get("campaign_id") or ""),
+                "--run-id",
+                str(arguments.get("run_id") or ""),
+            ]
+        elif action == "freshness_check":
+            command = [
+                executable,
+                "freshness",
+                "evaluate",
+                "--workspace",
+                str(workspace),
+                "--contract",
+                str(arguments.get("contract") or ""),
+            ]
+            if arguments.get("manifest"):
+                command.extend(["--manifest", str(arguments["manifest"])])
+        else:
+            command = [executable, action, "--workspace", str(workspace)]
+            contract = arguments.get("contract")
+            if contract is not None:
+                command.extend(["--contract", str(contract)])
+            campaign_id = arguments.get("campaign_id")
+            if campaign_id is not None:
+                command.extend(["--campaign-id", str(campaign_id)])
+            run_id = arguments.get("run_id")
+            if run_id is not None:
+                command.extend(["--run-id", str(run_id)])
+            if arguments.get("open") and action == "dashboard":
+                command.append("--open")
         completed = subprocess.run(command, check=False, capture_output=True, text=True)
     text = (completed.stdout or "") + (completed.stderr or "")
     if not text.strip():

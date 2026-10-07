@@ -351,22 +351,21 @@ Release assets** (wheel, sdist, plugin zip, SHA256SUMS), verifies SHA-256
 digests and filenames, and uploads **those same wheel/sdist bytes** to PyPI.
 It does **not** rebuild distributions at publish time.
 
-**rc12 provenance:** checksum-only. `SHA256SUMS` is the integrity contract.
+**rc14 provenance (same as rc12 and rc13):** checksum-only. `SHA256SUMS` is the integrity contract.
 `gh attestation verify` is expected to 404 until a future CI-built release
 attaches SLSA / GitHub Artifact Attestation provenance. Do not describe this
 candidate as attested.
 
 The GitHub `pypi` environment is restricted to `v*` tags.
 
-Public product/support/privacy/terms pages pin **rc12**. Do not retarget download links
+Public product and support pages pin **rc14** (website source last read 2026-10-06; see section 4). Do not retarget download links
 from a draft. Do not publish the rc11 draft.
 
 ---
 
 ## 3b. Mac App Store (`com.darashkevich.runspecimen`)
 
-**Status (App Store Connect, 2026-09-21):** macOS version **0.1.3 (8)** and
-App Info are **WAITING_FOR_REVIEW** (submission `9c19e1cd-ebd1-4705-b683-5a5fdc2671f6`, submitted 2026-09-21T05:36:49Z). Builds 5 and 6 were rejected. Not publicly available. Do not upload another build while this submission is waiting.
+**Status (Connect query recorded 2026-09-28; not re-queried on 2026-10-06):** macOS **0.1.4 (9)** was `READY_FOR_SALE` and `downloadable=true` on that query (build `51a18894-02e3-4846-86f5-29cc345567f0`). The 2026-09-24 `WAITING_FOR_REVIEW` note (submission `f0bb3ab1-c283-4463-8c27-e5702a35ac6a`) is historical. Package SHA-256 `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d`. It excludes evidence expansion and is guarantee (1). **0.1.3 (8)** was rejected on 2026-09-23. No public `apps.apple.com` URL is recorded in this file. This candidate was not submitted. Do not upload another build from this document.
 
 Do **not** add a MAS link to the marketing site until Apple provides a live
 `apps.apple.com` URL. Developer ID notarization is not a Store submission.
@@ -377,9 +376,9 @@ Details: `apps/macos/asc-kit/STATUS.md`.
 
 ## 4. Website (runspecimen.darashkevich.com)
 
-**Status:** Live (hexaflake mark + `runspecimen==0.2.0rc14`). Marketplace links stay pending until listings are accepted.
+**Status (in-repo note, not re-checked on 2026-10-06):** Live (hexaflake mark + `runspecimen==0.2.0rc14`). Marketplace links stay pending until listings are accepted. Website source is `sites/runspecimen/` in the `darashkevich.com` repo, which is not this repository.
 
-**Current content check:** Site mentions "Public marketplace availability is not yet confirmed."
+**Earlier content check, not repeated on 2026-10-06:** Site mentions "Public marketplace availability is not yet confirmed."
 
 ### Update required
 
@@ -409,7 +408,7 @@ listings are confirmed live (not pending review).
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
 | PyPI | ✅ | — | `0.2.0rc14` (same bytes as GitHub) | [runspecimen 0.2.0rc14](https://pypi.org/project/runspecimen/0.2.0rc14/) |
 | Homebrew tap | ✅ | — | `0.2.0rc14` sdist from GitHub Release | [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen) |
-| Mac App Store | ⏳ WAITING_FOR_REVIEW | Apple review of macOS **0.1.3 (8)** | not public | no `apps.apple.com` URL — see `apps/macos/asc-kit/STATUS.md` |
+| Mac App Store | ✅ submitted 2026-09-24 | — | **0.1.4 (9)** `READY_FOR_SALE` on the 2026-09-28 Connect query (package `584f6868…`); not re-queried on 2026-10-06. The 2026-09-24 `WAITING_FOR_REVIEW` state is historical. **0.1.3 (8)** was rejected | no `apps.apple.com` URL recorded — see `apps/macos/asc-kit/STATUS.md` |
 
 **Important:** Do not claim a listing is "public" or "available" until:
 1. Submission is accepted (not just submitted)

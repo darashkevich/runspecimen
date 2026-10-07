@@ -66,6 +66,8 @@ Allowed (read / non-mutating):
 - `GET /v1/status` — status snapshot (same family as CLI `status` / dashboard JSON)
 - `POST /v1/attention` — request Mac-side human attention (no lifecycle change)
 - `POST /v1/open-dashboard` — optional; only triggers local dashboard open on Mac
+- `POST /v1/phone-peer-challenge` and `GET /v1/phone-peer-challenge` — holder publishes a phone-peer challenge; Observe reads it. `can_approve` stays false. This does not enroll.
+- `POST /v1/phone-peer-signature` and `GET /v1/phone-peer-signature` — Observe returns a signature for the current challenge bytes. A mismatched or replaced challenge is stale. The holder accepts it only after `verify_native_p256`. The companion sets `verified` and `enrolled` false.
 
 Explicitly rejected without ADR-004 settle semantics (405 / 403):
 

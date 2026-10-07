@@ -70,7 +70,7 @@ def certificate_id_material(cert: dict[str, Any]) -> dict[str, Any]:
         material["schema_version"] = cert["schema_version"]
     # Optional Phase 2–5 fields. Omitted keys stay out of the hash so historical
     # receipts that never recorded them still verify.
-    for key in ("approver", "isolation", "policy"):
+    for key in ("approver", "isolation", "policy", "evidence_attestation"):
         if key in cert:
             material[key] = cert[key]
     return material
