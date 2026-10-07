@@ -8,6 +8,7 @@ import RunSpecimenCore
 struct RunSpecimenApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
+    @ObservedObject private var fullScreen = FullScreenSession.shared
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
@@ -31,6 +32,12 @@ struct RunSpecimenApp: App {
         .defaultPosition(.center)
         .defaultSize(width: WindowPlacement.defaultSize.width, height: WindowPlacement.defaultSize.height)
         .commands {
+            CommandGroup(replacing: .toolbar) {
+                Button(fullScreen.isFullScreen ? "Exit Full Screen" : "Enter Full Screen") {
+                    NSApp.sendAction(#selector(NSWindow.toggleFullScreen(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut("f", modifiers: [.control, .command])
+            }
             CommandGroup(after: .newItem) {
                 Button("Show Main Window") {
                     let open = { openWindow(id: "main") }
@@ -176,6 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         WindowSanitizer.install()
+        StandardWindowChrome.install()
         DispatchQueue.main.async {
             self.presentMainWindowIfNeeded()
         }
@@ -200,6 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             presentMainWindowIfNeeded()
         }
         WindowSanitizer.apply()
+        StandardWindowChrome.install()
         return true
     }
 
