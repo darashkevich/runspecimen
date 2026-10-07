@@ -1,9 +1,11 @@
 # RunSpecimen product demo
 
-A standalone, non-technical explainer of the core RunSpecimen story: a looping
+A standalone, everyday explainer of the core RunSpecimen story: a looping
 real-CLI clip, four short onboarding GIFs, then a simulated walkthrough
-(review a bounded contract, type `APPROVE`, watch one run, inspect a checkable
-receipt — and a refused check if the output was altered).
+(review a run plan, type `APPROVE` yourself, watch one run, inspect a receipt —
+and a refused check if the result was altered). Copy is written for a
+non-technical reader: review the plan, type APPROVE yourself, keep the receipt.
+Exact engine terms sit behind “Show details”.
 
 This folder is **additive marketing content**. It is not shipped in the Python
 package, does not talk to the CLI, and does not approve or execute anything.
@@ -41,7 +43,7 @@ page:
 ```html
 <iframe
   src="https://example.com/product-demo/index.html?embed=1"
-  title="RunSpecimen: approve a run, then prove what ran"
+  title="RunSpecimen: you approve what may run, then keep the receipt"
   style="width:100%;min-height:2400px;border:0;"
   loading="lazy"
 ></iframe>
