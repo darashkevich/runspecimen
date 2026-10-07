@@ -1,6 +1,6 @@
 # RunSpecimen release-candidate report (PRs #5 / #6 / #7)
 
-> **Historical (2026-09-16, rc10).** This is not the current candidate. Current identity: unpublished `0.2.0rc15`, source parent `311da6c`, pack `artifacts/0.2.0rc15-2026-10-07-qafix/`. Published: `0.2.0rc14`. The bump pack `artifacts/0.2.0rc15-2026-10-06-bump/` was not overwritten.
+> **Historical (2026-09-16, rc10).** This is not the current candidate. Current identity: unpublished `0.2.0rc15`, source parent `311da6c`, pack `artifacts/0.2.0rc15-2026-10-07-qafix2/`. Published: `0.2.0rc14`. Prior packs `artifacts/0.2.0rc15-2026-10-07-qafix/` and `artifacts/0.2.0rc15-2026-10-06-bump/` were not overwritten.
 
 **Date:** 2026-09-16  
 **Authoring branch:** `cursor/ed25519-pubkey-receipts`  

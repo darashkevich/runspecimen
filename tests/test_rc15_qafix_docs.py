@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import re
 import shlex
+import subprocess
 import sys
+import tempfile
 import unittest
+import venv
 from pathlib import Path
 
 from tests.helpers import SRC, ROOT
@@ -22,6 +27,11 @@ USER_GUIDE = ROOT / "docs" / "USER_GUIDE.md"
 README = ROOT / "README.md"
 HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
+VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-07-qafix2"
+QAFIX_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-07-qafix"
+BUMP_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-06-bump"
+WHEEL_NAME = "runspecimen-0.2.0rc15-py3-none-any.whl"
 
 DIGEST_HELP_NEEDLE = (
     "verify checks receipt integrity, the event chain, and live "
@@ -127,12 +137,19 @@ class Rc15QaDocfixTests(unittest.TestCase):
         text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
         self.assertIn("$VENV/bin/runspecimen", text)
         self.assertIn("command -v runspecimen", text)
+        self.assertIn("mktemp -d", text)
+        self.assertIn('test ! -e "$VENV"', text)
+        self.assertIn("0.2.0rc15-2026-10-07-qafix2", text)
+        self.assertIn("--no-index --no-deps --force-reinstall", text)
+        self.assertIn("scripts/verify_installed_wheel.py", text)
+        self.assertIn("wheel_sha256", text)
+        self.assertIn("direct_url.json", text)
+        self.assertNotIn("pip install --upgrade pip", text)
         self.assertIn("execution policy local has no typed-phrase fallback", text)
         self.assertIn("## N10 — protected-policy refusal", text)
         self.assertIn("## Schema-rejection check (not N10)", text)
         self.assertIn("not_a_real_contract_field", text)
         self.assertIn("Homebrew", text)
-        self.assertIn("d6c6c87f2d159ff5f64ffee0687034e829c5e5712b4738927fa237fdf84829e9", text)
         command_lines = [
             line.strip()
             for line in text.splitlines()
@@ -142,6 +159,71 @@ class Rc15QaDocfixTests(unittest.TestCase):
             self.assertNotIn(" #", line, f"trailing comment on command line: {line}")
             self.assertNotRegex(line, r"(^|\s)runspecimen\s", "bare runspecimen on a command line")
             self.assertNotRegex(line, r"(^|\s)python3\s")
+
+    def test_installed_wheel_provenance_rejects_same_version_older_rc15(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        self.assertNotEqual(pin.read_bytes(), older.read_bytes())
+        mismatch = _install_and_verify(older, pin)
+        self.assertNotEqual(mismatch.returncode, 0, mismatch.stdout + mismatch.stderr)
+        self.assertIn("does not match the pinned wheel", mismatch.stdout)
+        match = _install_and_verify(pin, pin)
+        self.assertEqual(match.returncode, 0, match.stdout + match.stderr)
+        payload = json.loads(match.stdout.split("---")[0])
+        self.assertTrue(payload["ok"])
+        self.assertGreater(payload["checked"], 0)
+        self.assertIn("direct_url.json", match.stdout)
+        self.assertIn("RECORD", match.stdout)
+
+
+def _pin_wheel() -> Path:
+    pin = PIN_PACK / WHEEL_NAME
+    if pin.is_file():
+        return pin
+    return QAFIX_PACK / WHEEL_NAME
+
+
+def _install_and_verify(install_wheel: Path, pin_wheel: Path) -> subprocess.CompletedProcess[str]:
+    with tempfile.TemporaryDirectory(prefix="rs-ha-prov-") as root:
+        venv_dir = Path(root) / "venv"
+        if venv_dir.exists():
+            raise AssertionError(f"venv target already exists: {venv_dir}")
+        venv.create(venv_dir, with_pip=True, symlinks=True)
+        py = venv_dir / "bin" / "python"
+        if os.name == "nt":
+            py = venv_dir / "Scripts" / "python.exe"
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env["PYTHONNOUSERSITE"] = "1"
+        install = subprocess.run(
+            [
+                str(py),
+                "-m",
+                "pip",
+                "install",
+                "--no-index",
+                "--no-deps",
+                "--force-reinstall",
+                str(install_wheel.resolve()),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        if install.returncode != 0:
+            raise AssertionError(f"pip install failed: {install.stderr}")
+        return subprocess.run(
+            [str(py), str(VERIFY_INSTALLED), "--wheel", str(pin_wheel.resolve())],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
 
 
 if __name__ == "__main__":
