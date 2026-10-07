@@ -4,7 +4,7 @@ An agent must not run these steps. Do not pass `--human-invoked`. Do not tap Tou
 
 The kit directory, when prepared, is `artifacts/human-device-kit/` next to the approved 0.1.4 (9) archive. It holds an unsigned iPhone build and the Mac diagnostic binary. Neither is installed. Neither is a Store package. Neither is this candidate. Diagnostic signing is not a bounded run. Phone approval is not physical presence at the Mac.
 
-Candidate under review: the docs-only successor of `c0812acda391e6729880d06d5177587d4ccec792`, which adds `artifacts/rc15-2026-10-06-qualification-docfix/`. Previous package tree `fb05284d897d165b6fab9ad544ff9a1116675294` (`artifacts/rc15-2026-10-06-qualification/`, not overwritten). Parent `b3367ebeff76a1ed0c6fd6ecda2f613e5e8e93a4`, on `cursor/evidence-expansion-coherence`. `main` remains `93f9b5708c1ba2d9b325ae2f9016d6a472fe6a20`. A merge to `main` is not a public release. Contracts with `execution_approval` of `local`, `companion`, or `dual` refuse a typed phrase. That refusal is not installed protection.
+Candidate under review: the bump-pack successor of `311da6c72e95721dac40c7466040898f6e5de83f`, which adds `artifacts/0.2.0rc15-2026-10-06-bump/`. Previous docs-only pack `d42fe583dc3dd04e3cd3315f50608045c144d818` (`artifacts/rc15-2026-10-06-qualification-docfix/`, not overwritten). Previous package tree `fb05284d897d165b6fab9ad544ff9a1116675294` (`artifacts/rc15-2026-10-06-qualification/`, not overwritten). Parent `b3367ebeff76a1ed0c6fd6ecda2f613e5e8e93a4`, on `cursor/evidence-expansion-coherence`. `main` remains `93f9b5708c1ba2d9b325ae2f9016d6a472fe6a20`. A merge to `main` is not a public release. Contracts with `execution_approval` of `local`, `companion`, or `dual` refuse a typed phrase. That refusal is not installed protection.
 
 The two hashes below were built from `5c3957a3a8ddf9fceacc3096b2208ee7757e6b72`. Holder, iOS companion, and macOS core sources have changed since that commit. Since `1873f42`, iOS and macOS core sources changed; the kit hashes do not identify this candidate. Do not use them to qualify any channel.
 
@@ -59,7 +59,7 @@ Pick one identity and write it down before you start. Do not mix them.
 | Identity | What it is | What to record |
 | --- | --- | --- |
 | Published CLI | `0.2.0rc14` from PyPI or the GitHub Release | `runspecimen --version` and the published wheel or sdist hash you installed |
-| This candidate | Unpublished `0.2.0rc15` from `artifacts/rc15-2026-10-06-qualification-docfix/` | `git rev-parse HEAD`, `runspecimen --version`, and the wheel and sdist hashes in that directory's `SHA256SUMS` |
+| This candidate | Unpublished `0.2.0rc15` from `artifacts/0.2.0rc15-2026-10-06-bump/` | `git rev-parse HEAD`, `runspecimen --version`, and the wheel and sdist hashes in that directory's `SHA256SUMS` |
 
 Prerequisites: an ordinary contract with no `execution_approval` field, a disposable workspace, and a harmless bounded command. `doctor`, `validate`, and `status` should exit 0 before you approve.
 
