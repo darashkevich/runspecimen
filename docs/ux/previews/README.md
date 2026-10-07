@@ -3,7 +3,8 @@
 Static HTML stand-ins for the B2C SwiftUI prototype. They exist because this
 change cannot render SwiftUI on Linux CI. They follow
 [B2C_DESIGN_DIRECTION.md](../B2C_DESIGN_DIRECTION.md) and are **not** the
-enforcement boundary.
+enforcement boundary. The product-page restyle lives on a separate branch
+so it can land on the combined GIF walkthrough without overlapping this tree.
 
 | File | Screen |
 | --- | --- |
