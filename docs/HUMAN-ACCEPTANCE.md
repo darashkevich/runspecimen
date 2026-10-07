@@ -65,7 +65,7 @@ must run before `venv`; a leftover directory is an abort, not an upgrade.
 "$PY" -m pip install --no-index --no-deps --force-reinstall "$WHEEL"
 ```
 
-Do not `pip install --upgrade pip`. Do not install from PyPI or another path.
+Do not upgrade pip in this venv. Do not install from PyPI or another path.
 
 ## N3 — provenance (installed bytes vs the pinned wheel zip)
 

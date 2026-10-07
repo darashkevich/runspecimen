@@ -144,7 +144,13 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("scripts/verify_installed_wheel.py", text)
         self.assertIn("wheel_sha256", text)
         self.assertIn("direct_url.json", text)
-        self.assertNotIn("pip install --upgrade pip", text)
+        self.assertNotRegex(
+            text,
+            r'(?m)^(?:\$PY|"\$PY"|python3).*(?:pip install --upgrade|pip install -U)',
+        )
+        for command in _bash_commands(text):
+            self.assertNotIn("pip install --upgrade", command)
+            self.assertNotIn("pip install -U", command)
         self.assertIn("execution policy local has no typed-phrase fallback", text)
         self.assertIn("## N10 — protected-policy refusal", text)
         self.assertIn("## Schema-rejection check (not N10)", text)
