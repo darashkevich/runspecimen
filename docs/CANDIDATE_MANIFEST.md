@@ -7,7 +7,7 @@ This file is not a Store submission plan and it is not packed into the sdist. A 
 | Branch | `cursor/qa-docfix-rc15-1c51` on `8015b6d` (`cursor/rc15-bump-pack-ced9`). Not rebased onto `cursor/evidence-expansion-coherence` |
 | Evidence-branch lineage | PR #39 merge `e2a32166662ec06a7b47a89df6ccabb3058263a8`, PR #47 merge `329e08bf83ecb3a512f880b5833cd90df46af23e`, PR #49 merge `18ef46180141bdd6ac02a0aa31299e5b52d85433`, PR #50 merge `dd85691e42e49df7a25caaddd27fa313e3fdf728`, PR #52 merge `32cd6a2907c347b050a8ab67bc9e3547a55f44f6`, PR #53 merge `ae6a07123150b7ad057c60bfaa188a59833c1bbc`, PR #54 merge `97c8704d1ac67e66776aa1c9fb1d1692e1da9fcf`. Source parent of the bump pack: `311da6c72e95721dac40c7466040898f6e5de83f`. Frozen QA candidate: `8015b6d8017e5566f7558cc916dc0ee470c653ad`. This qafix pack is a docs/help/acceptance successor of that SHA |
 | Historical IRC tip | `cursor/integrated-release-candidate` remains `a0dc23361856db8a68075471860bd4ab25af838c`. Do not retarget work there |
-| NEW-01 package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` (packaged-suite discovery). Last change to engine payload: `fb05284` (refusal string). Last change to plugin payload: `6023249` (2026-10-05); plugin zip unchanged since |
+| NEW-01 package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` (packaged-suite discovery). Last change to engine payload: `fb05284` (refusal string) plus this successor's `digest` help in `cli.py`. Last change to plugin payload: this successor (`plugins/runspecimen/README.md` Codex listing text) |
 | Engine / package | unpublished `0.2.0rc15` |
 | Plugin | unpublished `0.2.0-rc.15` |
 | App marketing version in the project | **0.1.5 (13)**. That label also appears on a different tree: source `ea21a7fa17140dc15dab74493d384b2a8b7a150c`, engine rc14, package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa`, report `runspecimen-candidates/0.1.5-13/QA-2026-09-29.md`. That report is not this candidate |
@@ -23,9 +23,9 @@ Prior packs `artifacts/0.2.0rc15-2026-10-06-bump/` (sdist `886f90d0e2d9532e9c5c1
 
 | File | SHA-256 |
 | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix/SHA256SUMS` after that pack is built |
-| `runspecimen-0.2.0rc15.tar.gz` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix/SHA256SUMS` after that pack is built |
-| `runspecimen-plugin-0.2.0-rc.15.zip` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix/SHA256SUMS` after that pack is built |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | `b181822ae461315e0831cdb886f9e15f4210179893d0bb00539f882015d98e0e` |
+| `runspecimen-0.2.0rc15.tar.gz` | `1ac1ca5711596c036742d60fb486230feada51e47b12f048869c99fa6cd71f2e` |
+| `runspecimen-plugin-0.2.0-rc.15.zip` | `ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb` |
 
 The wheel, sdist, and plugin zip move because packed help, README, USER_GUIDE, plugin README, tests, and CHANGELOG changed. Prior `artifacts/0.2.0rc15-*` and `artifacts/rc15-*` directories were not overwritten, including `artifacts/0.2.0rc15-2026-10-06-bump/`, `artifacts/rc15-2026-10-06-qualification-docfix/`, `artifacts/rc15-2026-10-06-qualification/`, `artifacts/rc15-2026-10-06-isolated-evidence/`, and `artifacts/rc15-2026-10-05-golden-master/` sdist `c001cb088f8710802a84149d32843667f36b8fb0dedd941abbbd9dd18137a2da`. There is no new holder stage tar. The prior sealed stage `5200682fec6d5cdeee72c81ea8a419b0b2d80022f648f77a75a783b4eee9cdc9` in `artifacts/rc15-2026-10-05-qa-py312-seal/` was not overwritten. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist.
 

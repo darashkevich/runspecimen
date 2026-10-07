@@ -27,11 +27,11 @@ Canonical table: [CANDIDATE_MANIFEST.md](CANDIDATE_MANIFEST.md). Checklist: [QUA
 
 | File | SHA-256 | Provenance |
 | --- | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix/SHA256SUMS` | Packed CLI help / README successor of `a68094f0…` |
-| `runspecimen-0.2.0rc15.tar.gz` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix/SHA256SUMS` | Packed docs/help/tests successor of `886f90d0…` |
-| `runspecimen-plugin-0.2.0-rc.15.zip` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix/SHA256SUMS` | Plugin README Codex-listing correction successor of `d27799f7…` |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | `b181822ae461315e0831cdb886f9e15f4210179893d0bb00539f882015d98e0e` | Packed CLI help / README successor of `a68094f0…` |
+| `runspecimen-0.2.0rc15.tar.gz` | `1ac1ca5711596c036742d60fb486230feada51e47b12f048869c99fa6cd71f2e` | Packed docs/help/tests successor of `886f90d0…` |
+| `runspecimen-plugin-0.2.0-rc.15.zip` | `ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb` | Plugin README Codex-listing correction successor of `d27799f7…` |
 
-**OPEN-SDIST (closed).** Historical mismatch: committed `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname, so a rebuild produced `6979460d…`. `release_check.py` now pins `SOURCE_DATE_EPOCH`, gzip mtime 0, owner 0/0, empty uname/gname, sorted members, 0644/0755. Regression: `tests/test_release_archive_reproducibility.py`. The golden-master sdist `c001cb08…` stays in that directory. The `b3367eb` sdist `682fe989…` stays in `artifacts/rc15-2026-10-06-isolated-evidence/`. The `fb05284` sdist `de90ab7a…` stays in `artifacts/rc15-2026-10-06-qualification/`. The docfix sdist `5fd68a6f…` stays in `artifacts/rc15-2026-10-06-qualification-docfix/`. The bump pack sdist `886f90d0…` stays in `artifacts/0.2.0rc15-2026-10-06-bump/`. The current pack sdist is recorded in `artifacts/0.2.0rc15-2026-10-07-qafix/SHA256SUMS`. Do not restore the older digests as current.
+**OPEN-SDIST (closed).** Historical mismatch: committed `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname, so a rebuild produced `6979460d…`. `release_check.py` now pins `SOURCE_DATE_EPOCH`, gzip mtime 0, owner 0/0, empty uname/gname, sorted members, 0644/0755. Regression: `tests/test_release_archive_reproducibility.py`. The golden-master sdist `c001cb08…` stays in that directory. The `b3367eb` sdist `682fe989…` stays in `artifacts/rc15-2026-10-06-isolated-evidence/`. The `fb05284` sdist `de90ab7a…` stays in `artifacts/rc15-2026-10-06-qualification/`. The docfix sdist `5fd68a6f…` stays in `artifacts/rc15-2026-10-06-qualification-docfix/`. The bump pack sdist `886f90d0…` stays in `artifacts/0.2.0rc15-2026-10-06-bump/`. The current pack sdist is `1ac1ca57…`. Do not restore the older digests as current.
 
 Published rc14 bytes are unchanged. Homebrew still pins rc14.
 
