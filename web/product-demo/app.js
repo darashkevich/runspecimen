@@ -3,26 +3,26 @@
 
   var ORDER = ["review", "approve", "run", "verify"];
   var STATUS = {
-    review: "Step 1 of 4 — review the contract.",
-    approve: "Step 2 of 4 — type APPROVE to bind this contract.",
-    run: "Step 3 of 4 — one bounded run is in progress.",
-    verify: "Step 4 of 4 — receipt issued. You can inspect a refused check."
+    review: "Step 1 of 4 — review the plan.",
+    approve: "Step 2 of 4 — type APPROVE yourself.",
+    run: "Step 3 of 4 — the approved command is running.",
+    verify: "Step 4 of 4 — receipt ready. You can inspect a refused check."
   };
   var STAMP = {
-    review: { className: "", label: "Pending", spoken: "Contract status: pending review." },
-    approve: { className: "", label: "Awaiting", spoken: "Contract status: waiting for APPROVE." },
-    run: { className: "is-running", label: "Running", spoken: "Contract status: running." },
-    bound: { className: "is-bound", label: "Approved", spoken: "Contract status: approved. Starting the bounded run." },
-    verify: { className: "is-certified", label: "Certified", spoken: "Contract status: certified and verified." },
-    refused: { className: "is-refused", label: "Refused", spoken: "Contract status: verification refused because the output no longer matches." }
+    review: { className: "", label: "Pending", spoken: "Run plan status: pending review." },
+    approve: { className: "", label: "Waiting on you", spoken: "Run plan status: waiting for APPROVE." },
+    run: { className: "is-running", label: "Running", spoken: "Run plan status: running." },
+    bound: { className: "is-bound", label: "Approved", spoken: "Run plan status: approved. Starting the run." },
+    verify: { className: "is-certified", label: "All good", spoken: "Run plan status: this run matches what you allowed." },
+    refused: { className: "is-refused", label: "Changed", spoken: "Run plan status: something changed — the result no longer matches." }
   };
   var RUN_LINES = [
-    "Checking that approval is still valid…",
-    "Checking that the command and source have not drifted…",
+    "Checking that your yes is still valid…",
+    "Checking that the command and files have not changed…",
     "Running python3 work/compute.py (30 second limit)…",
     "Writing outputs/result.json…",
-    "Checking exit, required output, and source unchanged…",
-    "Issuing a local certificate…"
+    "Checking the result and that the files did not change…",
+    "Saving a local receipt…"
   ];
 
   var state = "review";
@@ -193,25 +193,25 @@
     tamperToggle.setAttribute("aria-checked", on ? "true" : "false");
     if (on) {
       setStamp("refused");
-      certKicker.textContent = "Verification refused";
-      certTitle.textContent = "The output no longer matches the receipt";
-      certBody.innerHTML = "Someone (in this simulation) changed <code>outputs/result.json</code> after the run. Live verify re-hashes the file on disk and refuses to call this certified.";
+      certKicker.textContent = "Something changed";
+      certTitle.textContent = "The result no longer matches the receipt";
+      certBody.innerHTML = "Someone (in this simulation) changed <code>outputs/result.json</code> after the run. A real check re-reads the file on disk and will not call this all good.";
       certFacts.innerHTML =
-        "<div><dt>Contract fingerprint</dt><dd><code>sim-contract · demo only</code></dd></div>" +
-        "<div><dt>Source fingerprint</dt><dd><code>sim-source · work/</code></dd></div>" +
-        "<div><dt>Output</dt><dd>Mismatch — file bytes are not the certified digest</dd></div>" +
-        "<div><dt>Event chain</dt><dd>Receipt does not match live outputs</dd></div>";
-      live.textContent = "Verification refused: the result file was altered after the run.";
+        "<div><dt>Plan fingerprint</dt><dd><code>sim-contract · demo only</code></dd></div>" +
+        "<div><dt>Files fingerprint</dt><dd><code>sim-source · work/</code></dd></div>" +
+        "<div><dt>Output</dt><dd>Mismatch — the file is not the certified result</dd></div>" +
+        "<div><dt>History</dt><dd>Receipt does not match live files</dd></div>";
+      live.textContent = "Something changed: the result file was edited after the run.";
     } else {
       setStamp("verify");
-      certKicker.textContent = "Verified receipt";
-      certTitle.textContent = "This run matches the approval";
-      certBody.innerHTML = "The command that was approved is the command that ran. The result file is present, the declared field is <code>ok</code>, and the event chain is intact.";
+      certKicker.textContent = "All good";
+      certTitle.textContent = "This run matches what you allowed";
+      certBody.innerHTML = "The command you approved is the command that ran. The result file is present, the declared field is <code>ok</code>, and the history looks intact.";
       certFacts.innerHTML =
-        "<div><dt>Contract fingerprint</dt><dd><code>sim-contract · demo only</code></dd></div>" +
-        "<div><dt>Source fingerprint</dt><dd><code>sim-source · work/</code></dd></div>" +
+        "<div><dt>Plan fingerprint</dt><dd><code>sim-contract · demo only</code></dd></div>" +
+        "<div><dt>Files fingerprint</dt><dd><code>sim-source · work/</code></dd></div>" +
         "<div><dt>Output</dt><dd><code>outputs/result.json</code> · status ok</dd></div>" +
-        "<div><dt>Event chain</dt><dd>Intact (hash-chained log)</dd></div>";
+        "<div><dt>History</dt><dd>Looks intact (checkable log)</dd></div>";
       live.textContent = STATUS.verify;
     }
   }
