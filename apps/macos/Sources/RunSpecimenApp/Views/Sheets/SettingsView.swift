@@ -10,7 +10,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("CLI engine") {
+            Section("Engine") {
                 LabeledContent("Binary") {
                     Text(model.cliIdentity?.path.path ?? "Not selected")
                         .font(RSTheme.monoSmall)
@@ -58,10 +58,17 @@ struct SettingsView: View {
                         .foregroundStyle(RSTheme.amber)
                 }
                 Text(DistributionChannel.current.requiresBundledHelper
-                     ? "Mac App Store builds use the bundled frozen engine only. Do not pip install a host CLI. Prefer Bundled Helper if Source is not Bundled Helpers."
-                     : "Discovery order: Open-panel bookmark → Contents/Helpers/runspecimen → PATH/PyPI (PATH disabled for Mac App Store builds).")
+                     ? "This Mac App Store copy uses the engine bundled inside the app. Prefer Bundled Helper if Source is not Bundled Helpers."
+                     : "The engine is the program that enforces your yes. You can pick it once; RunSpecimen remembers that choice on this Mac.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                DetailsDisclosure(title: "How the engine is found") {
+                    Text(DistributionChannel.current.requiresBundledHelper
+                         ? "Mac App Store builds use the bundled frozen engine only. Do not pip install a host CLI. Prefer Bundled Helper if Source is not Bundled Helpers."
+                         : "Discovery order: Open-panel bookmark → Contents/Helpers/runspecimen → PATH/PyPI (PATH disabled for Mac App Store builds).")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Privacy") {
@@ -72,27 +79,39 @@ struct SettingsView: View {
                 LabeledContent("App Privacy") {
                     Text("Data Not Collected")
                 }
-                Link("Privacy policy (runspecimen.darashkevich.com)", destination: AppLinks.privacyPolicy)
+                Link("Privacy policy (runspecimen.darashkevich.com/privacy)", destination: AppLinks.privacyPolicy)
                 Link("Security policy on GitHub", destination: AppLinks.securityPolicy)
                 Text("No analytics SDKs. Docs links open in your browser. Workspace contents never leave this Mac via this app.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
 
-            Section("Product honesty") {
-                Text("Not an OS sandbox. Not a job scheduler. Not a compliance product. Certificates are locally verifiable hash-chained receipts — not digital signatures. HMAC / hash chains are not asymmetric signatures.")
+            Section("What this does not do") {
+                Text("It does not lock the rest of your Mac. It does not schedule jobs. It is not a compliance product. The receipt is a checkable history on this Mac, not a bank-style signature.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+                DetailsDisclosure(title: "Exact terms") {
+                    Text("Not an OS sandbox. Not a job scheduler. Not a compliance product. Certificates are locally verifiable hash-chained receipts — not digital signatures. HMAC / hash chains are not asymmetric signatures.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if !DistributionChannel.current.requiresBundledHelper {
                 Section("Install guidance") {
-                    Text("Published pin remains python3 -m pip install 'runspecimen==0.2.0rc14'. This build's engine is unpublished 0.2.0rc15.")
-                        .font(RSTheme.monoSmall)
-                        .textSelection(.enabled)
-                    Text("Or stage a helper: ./Scripts/stage_helper.sh --from-src && ./Scripts/build_app.sh")
-                        .font(RSTheme.monoSmall)
-                        .textSelection(.enabled)
+                    Text("Everyday use does not need these commands. They are here if you install the engine yourself.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                    DetailsDisclosure(title: "Version pins and helper scripts") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Published pin remains python3 -m pip install 'runspecimen==0.2.0rc14'. This build's engine is unpublished 0.2.0rc15.")
+                                .font(RSTheme.monoSmall)
+                                .textSelection(.enabled)
+                            Text("Or stage a helper: ./Scripts/stage_helper.sh --from-src && ./Scripts/build_app.sh")
+                                .font(RSTheme.monoSmall)
+                                .textSelection(.enabled)
+                        }
+                    }
                     Link("User guide", destination: AppLinks.userGuide)
                     Link("Notarization steps", destination: URL(string: "https://github.com/darashkevich/runspecimen/blob/main/apps/macos/NOTARIZATION.md")!)
                     Link("Helper packaging", destination: URL(string: "https://github.com/darashkevich/runspecimen/blob/main/apps/macos/Helpers/README.md")!)

@@ -5,16 +5,17 @@ struct EvidenceInspectorView: View {
     @EnvironmentObject private var model: AppModel
     @StateObject private var copyFlash = CopyFlashModel()
 
+    private var result: ConsumerResult { ConsumerResult.from(status: model.status) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("EVIDENCE")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    Text("Your receipt")
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(RSTheme.soft)
-                        .tracking(1.1)
-                    Text("Receipt inspector")
-                        .font(.system(size: 22, weight: .semibold))
+                    Text(result.title)
+                        .font(.system(size: 22, weight: .semibold, design: .rounded))
                         .foregroundStyle(RSTheme.ink)
                         .accessibilityAddTraits(.isHeader)
                 }
@@ -28,20 +29,18 @@ struct EvidenceInspectorView: View {
                         .accessibilityAddTraits(.updatesFrequently)
                 } else if let status = model.status {
                     CapsuleLabel(
-                        text: status.eventChainOK ? "Chain OK" : "Chain invalid",
+                        text: status.eventChainOK ? "History looks intact" : "History does not match",
                         tone: status.eventChainOK ? .signal : .danger
                     )
                 }
             }
 
-            Text("Local hash-chained certificate — not an asymmetric digital signature. Symmetric MAC labels apply only if an HMAC field is present.")
-                .font(.system(size: 12))
-                .foregroundStyle(RSTheme.amber.opacity(0.9))
+            ResultHeroCard(result: result)
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("Evidence expansion")
-                        .font(.system(size: 11, weight: .semibold))
+                    Text("More from this folder")
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(RSTheme.soft)
                     Spacer()
                     Button("Refresh read-only") {
@@ -51,20 +50,21 @@ struct EvidenceInspectorView: View {
                     .disabled(model.isBusy || !model.hasWorkspace)
                     .accessibilityHint("Reads stored requirements, freshness, decisions, config, and usage. Does not approve or run.")
                 }
-                Text("Read-only. Does not approve, run, apply configuration, restore a snapshot, or evaluate a suite.")
+                Text("Looking does not approve, run, apply configuration, restore a snapshot, or evaluate a suite.")
                     .font(.system(size: 12))
                     .foregroundStyle(RSTheme.muted)
                 if model.expansionReadout.isEmpty {
-                    Text("No expansion readout yet.")
+                    Text("Nothing extra to show yet.")
                         .font(.system(size: 12))
                         .foregroundStyle(RSTheme.muted)
                 } else {
-                    Text(model.expansionReadout)
-                        .font(RSTheme.monoSmall)
-                        .foregroundStyle(RSTheme.muted)
-                        .textSelection(.enabled)
-                        .lineLimit(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    DetailsDisclosure(title: "Show folder notes") {
+                        Text(model.expansionReadout)
+                            .font(RSTheme.monoSmall)
+                            .foregroundStyle(RSTheme.muted)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
 
@@ -72,70 +72,74 @@ struct EvidenceInspectorView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if let err = model.statusError {
                         ErrorStateCard(
-                            title: "Status unavailable",
+                            title: "Can’t read this run",
                             detail: err
                         )
                     } else if model.status == nil && model.lastOutput.isEmpty {
                         EmptyEvidenceCard()
                     } else if let status = model.status, !status.hasEvidenceFields {
-                        EmptyEvidenceCard(hint: "Run has phase “\(status.phaseLabel)” but no certificate fields yet. Complete postflight / verify when ready.")
+                        EmptyEvidenceCard(hint: "This run is at “\(ConsumerCopy.phaseHeadline(status.phase))” but has no receipt yet. Check the results when you are ready.")
                     }
 
                     if model.status != nil {
-                        evidenceRow("Certificate ID", model.status?.certificateID, copyable: true)
-                        evidenceRow("Event head", model.status?.eventHead, copyable: true)
-                        evidenceRow("Contract hash", model.status?.contractHash, copyable: true)
-                        evidenceRow("Source hash", model.status?.sourceHash, copyable: true)
-                        evidenceRow("Runtime ID", model.status?.runtimeID, copyable: true)
-                        evidenceRow("Events", model.status.map { "\($0.eventCount)" })
+                        evidenceRow("Receipt id", model.status?.certificateID, copyable: true)
+                        evidenceRow("History pointer", model.status?.eventHead, copyable: true)
+                        evidenceRow("Plan fingerprint", model.status?.contractHash, copyable: true)
+                        evidenceRow("Files fingerprint", model.status?.sourceHash, copyable: true)
+                        evidenceRow("Program fingerprint", model.status?.runtimeID, copyable: true)
+                        evidenceRow("History events", model.status.map { "\($0.eventCount)" })
                         if let code = model.status?.exitCode {
                             evidenceRow("Exit code", String(code))
                         }
                         if let ok = model.status?.postflightOK {
-                            evidenceRow("Postflight", ok ? "passed" : "failed")
+                            evidenceRow("Results check", ok ? "passed" : "failed")
                         }
                         if let msg = model.status?.eventChainMessage, !msg.isEmpty {
-                            evidenceRow("Chain note", msg)
+                            evidenceRow("History note", msg)
                         }
                     }
 
                     if let json = model.status?.rawJSON {
-                        HStack {
-                            Text("Status JSON")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(RSTheme.soft)
-                            Spacer()
-                            Button("Copy JSON") {
-                                copyFlash.copy(json, label: "Status JSON")
+                        DetailsDisclosure(title: "Show technical details") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("This receipt is a checkable history on this Mac, not a bank-style signature. Symmetric MAC labels apply only if an HMAC field is present.")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(RSTheme.muted)
+                                HStack {
+                                    Text("Status JSON")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(RSTheme.soft)
+                                    Spacer()
+                                    Button("Copy JSON") {
+                                        copyFlash.copy(json, label: "Status JSON")
+                                    }
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .accessibilityHint("Copies the full status JSON to the clipboard.")
+                                }
+                                Text(json)
+                                    .font(RSTheme.monoSmall)
+                                    .foregroundStyle(RSTheme.muted)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .font(.system(size: 11, weight: .semibold))
-                            .accessibilityHint("Copies the full status JSON to the clipboard.")
                         }
-                        .padding(.top, 8)
-                        Text(json)
-                            .font(RSTheme.monoSmall)
-                            .foregroundStyle(RSTheme.muted)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     if model.status == nil, !model.lastOutput.isEmpty, model.statusError == nil {
-                        Text("Last CLI note")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(RSTheme.soft)
-                            .padding(.top, 4)
-                        Text(model.lastOutput)
-                            .font(RSTheme.monoSmall)
-                            .foregroundStyle(RSTheme.muted)
-                            .textSelection(.enabled)
+                        DetailsDisclosure(title: "Last engine note") {
+                            Text(model.lastOutput)
+                                .font(RSTheme.monoSmall)
+                                .foregroundStyle(RSTheme.muted)
+                                .textSelection(.enabled)
+                        }
                     }
                 }
-                .padding(14)
+                .padding(16)
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(RSTheme.bgPanel.opacity(0.85))
+                    RoundedRectangle(cornerRadius: RSTheme.cardRadius, style: .continuous)
+                        .fill(RSTheme.bgPanel.opacity(0.94))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: RSTheme.cardRadius, style: .continuous)
                                 .stroke(RSTheme.line, lineWidth: 1)
                         )
                 )
@@ -173,6 +177,57 @@ struct EvidenceInspectorView: View {
     }
 }
 
+struct ResultHeroCard: View {
+    var result: ConsumerResult
+
+    private var tint: Color {
+        switch result.kind {
+        case .success: return RSTheme.signal
+        case .warning: return RSTheme.amber
+        case .problem: return RSTheme.danger
+        case .empty: return RSTheme.brand
+        }
+    }
+
+    private var symbol: String {
+        switch result.kind {
+        case .success: return "checkmark.seal.fill"
+        case .warning: return "clock.fill"
+        case .problem: return "exclamationmark.triangle.fill"
+        case .empty: return "tray"
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(result.title)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(RSTheme.ink)
+                Text(result.body)
+                    .font(.system(size: 13))
+                    .foregroundStyle(RSTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(tint.opacity(0.10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(tint.opacity(0.28), lineWidth: 1)
+                )
+        )
+        .accessibilityElement(children: .combine)
+    }
+}
+
 @MainActor
 final class CopyFlashModel: ObservableObject {
     @Published var message: String?
@@ -200,14 +255,13 @@ final class CopyFlashModel: ObservableObject {
 }
 
 struct EmptyEvidenceCard: View {
-    var hint: String = "No run state yet. Validate the contract, then approve on a real TTY. Receipts appear after the run records events."
+    var hint: String = "Nothing has run yet. Check the plan, then review and approve on this Mac. Receipts appear after the run records what happened."
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("NO RECEIPT YET")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            Text("Nothing has run yet")
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(RSTheme.soft)
-                .tracking(1.0)
             Text(hint)
                 .font(.system(size: 13))
                 .foregroundStyle(RSTheme.muted)
@@ -224,10 +278,9 @@ struct ErrorStateCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title.uppercased())
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(RSTheme.danger)
-                .tracking(1.0)
             Text(detail)
                 .font(.system(size: 13))
                 .foregroundStyle(RSTheme.ink)
@@ -237,11 +290,11 @@ struct ErrorStateCard: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(RSTheme.danger.opacity(0.1))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(RSTheme.danger.opacity(0.08))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(RSTheme.danger.opacity(0.35), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(RSTheme.danger.opacity(0.28), lineWidth: 1)
                 )
         )
         .accessibilityElement(children: .combine)
