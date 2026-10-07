@@ -26,6 +26,7 @@
     </div>
     <nav class="site-nav" aria-label="On this page">
       <a href="#why">Why it exists</a>
+      <a href="#onboarding">See the terminal</a>
       <a href="#demo">Try the flow</a>
       <a href="#catches">What it catches</a>
       <a href="#limits">Honest limits</a>
@@ -44,9 +45,13 @@
       </p>
       <div class="hero-actions">
         <a class="btn btn-primary" href="#demo">Walk through a sample run</a>
-        <a class="btn btn-ghost" href="#why">See what you get</a>
+        <a class="btn btn-ghost" href="#onboarding">Watch the real commands</a>
       </div>
-      <p class="hero-note">This page is a simulated walkthrough in your browser. It does not run commands or talk to a server.</p>
+      <p class="hero-note">The looping clip is real CLI text from <code>runspecimen init-demo</code>. The walkthrough further down is a simulation in your browser — it does not run commands or talk to a server.</p>
+      <figure class="clip-frame hero-clip">
+        <img src="../onboarding/assets/00-full-lifecycle.gif" width="960" height="600" alt="RunSpecimen in a real terminal: review the contract, type APPROVE, run once, verify the receipt.">
+        <figcaption>Real terminal, four beats: review → type APPROVE → run once → verify the receipt.</figcaption>
+      </figure>
     </section>
 
     <section id="why" class="benefits" aria-labelledby="benefits-title">
@@ -72,10 +77,38 @@
       </ul>
     </section>
 
+    <section id="onboarding" class="onboarding" aria-labelledby="onboarding-title">
+      <p class="eyebrow">Real CLI</p>
+      <h2 id="onboarding-title">The same four beats, in a few seconds each</h2>
+      <p class="section-lead">
+        These clips replay a live <code>init-demo</code> session — the actual approve prompt,
+        then <code>preflight</code>, <code>run</code>, <code>postflight</code>, and <code>verify</code>.
+        Assistants still cannot type <kbd>APPROVE</kbd> for you.
+      </p>
+      <div class="onboarding-grid">
+        <figure class="clip-frame">
+          <img src="../onboarding/assets/01-review-contract.gif" width="960" height="600" alt="Terminal showing runspecimen approve and the bounded-run contract summary.">
+          <figcaption>1 · Review the contract — command, sources, output, timeout, TTL.</figcaption>
+        </figure>
+        <figure class="clip-frame">
+          <img src="../onboarding/assets/02-type-approve.gif" width="960" height="600" alt="Typing APPROVE at the interactive TTY prompt.">
+          <figcaption>2 · Type APPROVE — interactive TTY only; agents cannot enter it.</figcaption>
+        </figure>
+        <figure class="clip-frame">
+          <img src="../onboarding/assets/03-run-execute.gif" width="960" height="600" alt="runspecimen preflight then run completing with exit code 0.">
+          <figcaption>3 · Run once — preflight re-checks, then the declared command runs once.</figcaption>
+        </figure>
+        <figure class="clip-frame">
+          <img src="../onboarding/assets/04-verify-receipt.gif" width="960" height="600" alt="runspecimen postflight issuing a certificate, then verify returning ok.">
+          <figcaption>4 · Verify the receipt — certificate issued, event chain ok.</figcaption>
+        </figure>
+      </div>
+    </section>
+
     <section id="demo" class="demo" aria-labelledby="demo-title">
       <div class="demo-intro">
         <p class="eyebrow">Interactive walkthrough</p>
-        <h2 id="demo-title">A bounded run, from review to receipt</h2>
+        <h2 id="demo-title">Try the same flow in your browser</h2>
         <p class="section-lead">
           This is a sample contract, the same shape as a real RunSpecimen work order:
           what will run, which files count as inputs, which output must appear, and how long it may take.
