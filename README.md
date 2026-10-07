@@ -254,10 +254,10 @@ runspecimen keygen --workspace .
 runspecimen list-keys --workspace .
 
 # Authenticate a certificate (creates .signed.json with MAC)
-runspecimen sign --workspace . --key-id <key-id> --certificate path/to/certificate.json
+runspecimen sign --workspace . --key-id <key-id> --certificate path/to/certificate.json --contract path/to/contract.json
 
 # Verify an authenticated certificate
-runspecimen verify-signature --workspace . --key-id <key-id> --signed path/to/certificate.signed.json
+runspecimen verify-signature --workspace . --key-id <key-id> --signed path/to/certificate.signed.json --contract path/to/contract.json
 ```
 
 **Shared-secret limitation**: HMAC-SHA256 uses the same key for authentication

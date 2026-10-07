@@ -287,7 +287,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print recorded receipt fields (does not live-verify)",
         description=(
             "Summarize a certificate already on disk. This does not check the "
-            "event chain, signatures, or current provenance. Use verify for that. "
+            "event chain, HMAC or Ed25519 signatures, or current provenance. "
+            "verify checks receipt integrity, the event chain, and live "
+            "provenance; it does not check HMAC or Ed25519 signatures. "
+            "verify-signature does that, with its required trust inputs. "
             "--live only compares output file bytes to output_digests."
         ),
     )

@@ -233,9 +233,13 @@ The approval receipt records the local OS user as `approver`. That is not an
 SSO identity.
 
 `runspecimen digest` prints recorded certificate fields. `runspecimen diff`
-compares two receipts in one workspace. Neither checks the event chain or
-signatures; `verify` does that. `digest --live` only compares output file
-bytes to `output_digests`. A diff that finds differences still exits 0.
+compares two receipts in one workspace. Neither checks the event chain,
+HMAC or Ed25519 signatures, or live provenance. `verify` checks receipt
+integrity, the event chain, and live provenance; it does not check HMAC or
+Ed25519 signatures. `verify-signature` does that, and requires its trust
+inputs (`--contract` for HMAC; `--public-key` or `--key-id` for Ed25519).
+`digest --live` only compares output file bytes to `output_digests`. A diff
+that finds differences still exits 0.
 
 These commands and fields ship in `0.2.0rc14`. Published `0.2.0rc12`
 rejects `isolation` and `policy` as unknown and does not provide `digest`,
@@ -339,8 +343,10 @@ Package root: `plugins/runspecimen`. The plugin is an **adapter**; the CLI on
 
 Install:
 
-- **Codex:** install the `runspecimen` plugin from the Codex plugin listing
-  (skill under `skills/runspecimen/`). Confirm `runspecimen` is on `PATH` in
+- **Codex:** not submitted and not listed. There is no public Codex plugin
+  listing. Install from this repository: symlink or copy `plugins/runspecimen`
+  (package root; skill under `skills/runspecimen/`) into the local Codex
+  plugins directory this host uses. Confirm `runspecimen` is on `PATH` in
   the environment Codex uses, and that `which runspecimen` is the intended
   install (Homebrew vs a shadowed `~/.local/bin` shim — see Install above).
 - **Cursor (local):** symlink `plugins/runspecimen` to

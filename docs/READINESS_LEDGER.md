@@ -8,9 +8,9 @@ This file is the live ledger. Golden-master notes are historical. Later commits 
 
 | Item | Value |
 | --- | --- |
-| Working branch | `cursor/evidence-expansion-coherence` |
-| Source SHA this ledger was written against | Source parent `311da6c72e95721dac40c7466040898f6e5de83f` on `cursor/evidence-expansion-coherence`. Engine payload still `fb05284`. Not `main` |
-| This follow-up | Bump-pack successor of `311da6c`. Pack `artifacts/0.2.0rc15-2026-10-06-bump/`. Wheel `a68094f0…` (unchanged from docfix), sdist `886f90d0…`, plugin unchanged. Prior packs not overwritten. Not production sign-off |
+| Working branch | `cursor/qa-docfix-rc15-1c51` (from `8015b6d` / `cursor/rc15-bump-pack-ced9`) |
+| Source SHA this ledger was written against | Frozen QA candidate `8015b6d8017e5566f7558cc916dc0ee470c653ad`. Engine payload still `fb05284` plus this docs/help/acceptance successor. Not `main` |
+| This follow-up | Qafix-pack successor of `8015b6d`. Pack `artifacts/0.2.0rc15-2026-10-07-qafix/`. Version stays `0.2.0rc15`. Prior packs, including `artifacts/0.2.0rc15-2026-10-06-bump/`, not overwritten. Not production sign-off |
 | Historical IRC tip | `a0dc23361856db8a68075471860bd4ab25af838c` |
 | NEW-01 package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` |
 | Engine | unpublished `0.2.0rc15` |
@@ -23,15 +23,15 @@ Draft operator merge to `main`: [#51](https://github.com/darashkevich/runspecime
 
 ## Artifact provenance
 
-Canonical table: [CANDIDATE_MANIFEST.md](CANDIDATE_MANIFEST.md). Checklist: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Pack: `artifacts/0.2.0rc15-2026-10-06-bump/`. Prior packs, including `artifacts/rc15-2026-10-06-qualification-docfix/` (`5fd68a6f…` / `a68094f0…`), `artifacts/rc15-2026-10-06-qualification/` (`de90ab7a…` / `68685be9…`), and `artifacts/rc15-2026-10-06-isolated-evidence/` (`682fe989…` / `809431ea…`), were not overwritten.
+Canonical table: [CANDIDATE_MANIFEST.md](CANDIDATE_MANIFEST.md). Checklist: [QUALIFICATION_CHECKLIST.md](QUALIFICATION_CHECKLIST.md). Pack: `artifacts/0.2.0rc15-2026-10-07-qafix/`. Prior packs, including `artifacts/0.2.0rc15-2026-10-06-bump/` (`886f90d0…` / `a68094f0…`), `artifacts/rc15-2026-10-06-qualification-docfix/` (`5fd68a6f…` / `a68094f0…`), `artifacts/rc15-2026-10-06-qualification/` (`de90ab7a…` / `68685be9…`), and `artifacts/rc15-2026-10-06-isolated-evidence/` (`682fe989…` / `809431ea…`), were not overwritten.
 
 | File | SHA-256 | Provenance |
 | --- | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | `a68094f0a4321b5ca19af047b48ecb6a7505c3b9b3d166b996775b1d0ebbfa9f` | Unchanged from the docfix pack |
-| `runspecimen-0.2.0rc15.tar.gz` | `886f90d0e2d9532e9c5c191f6d67095f72159fb7b6e019917a471f98b5f9f805` | Packed A17 banner + golden-pack pointer successor of `5fd68a6f…` |
-| `runspecimen-plugin-0.2.0-rc.15.zip` | `d27799f75c74aea92fdf9594235179caa1ed58d90ef39e9ccc5225b47c37dda6` | Unchanged |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix/SHA256SUMS` | Packed CLI help / README successor of `a68094f0…` |
+| `runspecimen-0.2.0rc15.tar.gz` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix/SHA256SUMS` | Packed docs/help/tests successor of `886f90d0…` |
+| `runspecimen-plugin-0.2.0-rc.15.zip` | recorded in `artifacts/0.2.0rc15-2026-10-07-qafix/SHA256SUMS` | Plugin README Codex-listing correction successor of `d27799f7…` |
 
-**OPEN-SDIST (closed).** Historical mismatch: committed `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname, so a rebuild produced `6979460d…`. `release_check.py` now pins `SOURCE_DATE_EPOCH`, gzip mtime 0, owner 0/0, empty uname/gname, sorted members, 0644/0755. Regression: `tests/test_release_archive_reproducibility.py`. The golden-master sdist `c001cb08…` stays in that directory. The `b3367eb` sdist `682fe989…` stays in `artifacts/rc15-2026-10-06-isolated-evidence/`. The `fb05284` sdist `de90ab7a…` stays in `artifacts/rc15-2026-10-06-qualification/`. The docfix sdist `5fd68a6f…` stays in `artifacts/rc15-2026-10-06-qualification-docfix/`. The current pack sdist is `886f90d0…`. Do not restore the older digests as current.
+**OPEN-SDIST (closed).** Historical mismatch: committed `b2db7b78cb742ab8934368d634f46e1fde02ba4cb5c1950b2986bd3e9b080cb9` kept builder uid/gid/uname, so a rebuild produced `6979460d…`. `release_check.py` now pins `SOURCE_DATE_EPOCH`, gzip mtime 0, owner 0/0, empty uname/gname, sorted members, 0644/0755. Regression: `tests/test_release_archive_reproducibility.py`. The golden-master sdist `c001cb08…` stays in that directory. The `b3367eb` sdist `682fe989…` stays in `artifacts/rc15-2026-10-06-isolated-evidence/`. The `fb05284` sdist `de90ab7a…` stays in `artifacts/rc15-2026-10-06-qualification/`. The docfix sdist `5fd68a6f…` stays in `artifacts/rc15-2026-10-06-qualification-docfix/`. The bump pack sdist `886f90d0…` stays in `artifacts/0.2.0rc15-2026-10-06-bump/`. The current pack sdist is recorded in `artifacts/0.2.0rc15-2026-10-07-qafix/SHA256SUMS`. Do not restore the older digests as current.
 
 Published rc14 bytes are unchanged. Homebrew still pins rc14.
 

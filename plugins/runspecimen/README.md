@@ -11,10 +11,12 @@ does not ship the enforcement binary.
 
 ## Install paths
 
-- **Codex marketplace / plugin directory:** install the `runspecimen` plugin from
-  the Codex plugin listing (package root `plugins/runspecimen`, skill under
-  `skills/runspecimen/`). After install, confirm `runspecimen` remains on `PATH`
-  in the environment Codex uses.
+- **Codex (local / repository only):** not submitted and not listed. There is
+  no public Codex plugin listing. Install from this repository: symlink or copy
+  this directory (package root `plugins/runspecimen`, skill under
+  `skills/runspecimen/`) into the local Codex plugins directory this host uses.
+  After install, confirm `runspecimen` remains on `PATH` in the environment
+  Codex uses.
 - **Cursor (local):** symlink this directory to
   `~/.cursor/plugins/local/runspecimen`, reload Cursor, and confirm that the
   RunSpecimen skill and rule appear in Customize. Repo marketplace metadata lives
