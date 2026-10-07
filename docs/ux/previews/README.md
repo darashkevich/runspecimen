@@ -16,7 +16,7 @@ enforcement boundary.
 PNG captures of those pages (1280×800 window chrome) sit beside the HTML:
 
 `welcome.png`, `review-approve.png`, `running.png`, `all-good.png`,
-`something-changed.png`, plus `product-demo.png` for the web page.
+`something-changed.png`.
 
 Open any file in a browser, or:
 

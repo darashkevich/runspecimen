@@ -1,9 +1,10 @@
 # RunSpecimen B2C design direction
 
-A presentation-only brief for the **macOS app** (primary consumer surface)
-and the standalone product page under `web/product-demo/`. It does not change
-approval, hashing, leases, certificates, admission, sandbox, signing, or CLI
-JSON/exit codes.
+A presentation-only brief for the **macOS app** (primary consumer surface).
+The standalone product page under `web/product-demo/` follows the same
+direction in a separate PR so it can land on the combined GIF + walkthrough
+page. It does not change approval, hashing, leases, certificates, admission,
+sandbox, signing, or CLI JSON/exit codes.
 
 Grounding: the CLI/macOS review in draft PR #60 stayed developer-facing. This
 document is a deliberate shift toward everyday people who want peace of mind,
@@ -382,9 +383,9 @@ Highest-value presentation work, in order:
 1. This document.
 2. macOS theme, empty/onboarding, next-step banner, result heroes, approve
    framing, receipt progressive disclosure, calmer action bar.
-3. Align `web/product-demo/` color, type, and copy with the same persona.
-4. HTML previews of key screens in `docs/ux/previews/` (Linux agents cannot
-   render SwiftUI).
+3. HTML previews of key screens in `docs/ux/previews/` (Linux agents cannot
+   render SwiftUI). Product-page restyle is a follow-up on the combined
+   onboarding-GIF tree, not this macOS PR.
 
 Out of scope here: CLI `--pretty` (PR #60), security, admission, helpers,
 versions, notarization, auto-approve, invoking biometrics.
