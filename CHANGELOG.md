@@ -4,7 +4,6 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
-- Presentation-only B2C macOS copy and layout: everyday labels, next-step banner, result heroes, and progressive disclosure of fingerprints. Approval, hashing, leases, admission, CLI JSON, and exit codes are unchanged. `run_integration_complete` and `e2_closed` stay false. See [docs/ux/B2C_DESIGN_DIRECTION.md](docs/ux/B2C_DESIGN_DIRECTION.md).
 - Installed Secure Enclave admission is fail-closed, not undecided. The Store note in `docs/SUBMISSION.md` follows the 2026-09-28 Connect record (`READY_FOR_SALE` for **0.1.4 (9)**) and was not re-queried on 2026-10-06. `run_integration_complete` and `e2_closed` stay false.
 - Exact-run approval checks expiry and the pinned holder id before signing, and an authorize that loses its request keeps the uncertain lease. A holder execute that fails before any child exists keeps that uncertain lease. Root-daemon Secure Enclave creation is unsupported on current Apple guidance. Installed admission stays closed. `run_integration_complete` and `e2_closed` stay false.
 - `requirements_check` refuses a digest-valid passed report unless authenticity is receipt-bound and the final state is certifiable. Evidence pointers accept only a basename under `evidence_captures`. Postflight omits an attestation whose digest is not the current capture. The CLI does not claim a hardware human when it cannot collect a device signature. MCP `freshness_check` evaluates without writing `freshness_report.json`.
