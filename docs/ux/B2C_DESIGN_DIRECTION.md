@@ -9,6 +9,9 @@ Grounding: the CLI/macOS review in draft PR #60 stayed developer-facing. This
 document is a deliberate shift toward everyday people who want peace of mind,
 not a denser instrument for scientists and power users.
 
+Packed `CHANGELOG.md` is left untouched so the unpublished rc15 sdist digest
+stays put. This brief is the record of the presentation change.
+
 ---
 
 ## 1. Target persona
