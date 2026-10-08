@@ -10,19 +10,28 @@ Engine source: PR #63 head that records this pack (not a self-referencing SHA).
 Base lineage: `8015b6d8017e5566f7558cc916dc0ee470c653ad`
 Engine/docs commit: `f4a226739217d54d536d7452675924f17db5f427`
 
+Post-pack-commit correction: `380757a` recorded sdist `d2c9239c…` built
+before `tests/test_rc15_qafix_docs.py` pin edits. Two rebuilds of that HEAD
+were `17c20c88…` (`cmp` identical). Only differing member:
+`tests/test_rc15_qafix_docs.py` (still had qafix9 pins). This directory
+replaces the tarball and SHA256SUMS in place. Wheel `89e4e3fd…` and plugin
+`ea38d5bc…` unchanged. `src/` unchanged. Unpublished; never passed CI.
+Packed tests do not contain the sdist hash (GOLDEN_PACK SHA256SUMS lives
+in `artifacts/`).
+
 | File | SHA-256 |
 | --- | --- |
 | `runspecimen-0.2.0rc15-py3-none-any.whl` | `89e4e3fd8e9012f9b71fe43dc201e95eb9861081e877459846df7d472f49a18a` |
-| `runspecimen-0.2.0rc15.tar.gz` | `d2c9239cd1a9b703c3070d5780f99ca7b848c6522fe4f628c75f6603c5be38e6` |
+| `runspecimen-0.2.0rc15.tar.gz` | `17c20c88f759337d2224349ed344c12ed61608b83a61b573d05108eaf73825c3` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb` (unchanged; does not embed the wheel) |
-| `release-report.json` | `a9c981fd873f0034292fe4c59276c7cf61557e6f81d9908dc09748f959592652` |
+| `release-report.json` | `082885b0376a76651bff37b55f40ccb9a2545ac7c1c99aec68a889a7577fb126` |
 
 Toolchain: CPython 3.12.3, venv `/tmp/rs-relprep-qafix5` (setuptools 84.0.0, wheel 0.48.0).
 `SOURCE_DATE_EPOCH` 1577836800 as in `scripts/release_check.py`.
-Two rebuilds (`/tmp/rs-qafix10-c` and `/tmp/rs-qafix10-d`) were byte-identical (`cmp`)
-for wheel, sdist, plugin zip, `release-report.json`, and `SHA256SUMS`.
-Copied into an absent directory (retain_artifacts refuses a non-empty dest).
-Prior packs, including qafix9 and earlier, were not overwritten.
+Two sdist-correction rebuilds (`/tmp/rs-qafix10-sdistfix-a-tm6vxbgp` and
+`/tmp/rs-qafix10-sdistfix-b-6gr5uw0v`) were byte-identical (`cmp`) for
+wheel, sdist, and plugin zip. Prior packs, including qafix9 and earlier,
+were not overwritten.
 
 This pack folds the four remaining P3 copy fixes (about JSON honesty, USER_GUIDE
 showcase order, receipt schema 2 in the compatibility matrix, and the
@@ -43,9 +52,10 @@ Unittest wall time: **175.486s** (cap 600s). Second rebuild: 759 tests, skipped=
 173.876s, then 4/4, exit 0. Skip list is unchanged from qafix9.
 
 `src/` changed (about JSON honesty wording), so **wheel `89e4e3fd…` is new**.
-Plugin `ea38d5bc…` is unchanged. Sdist rebuilt to `d2c9239c…` after packed
-docs/tests/CHANGELOG updates. Test count rose from 752 to 759 because this
-pass adds P3 copy pins (`tests/test_qafix10_p3.py` and extra methods).
+Plugin `ea38d5bc…` is unchanged. Sdist is `17c20c88…` after the
+post-pack-commit in-place rebuild of unpublished `d2c9239c…`. Test count
+rose from 752 to 759 because this pass adds P3 copy pins
+(`tests/test_qafix10_p3.py` and extra methods).
 
 ### Why ~78 here vs ChatGPT's earlier 6
 
