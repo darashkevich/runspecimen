@@ -4,6 +4,7 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
+- QA-HOOKS-01/02: installed-wheel provenance allows a `sys.meta_path` finder only by real class identity (stdlib importer, or `type(finder) is DistutilsMetaFinder` from the `_distutils_hack` module whose realpath is in the venv site-packages and whose bytes match setuptools RECORD). A finder that only claims `__module__ == '_distutils_hack'` is refused. Every `_virtualenv*` artifact is refused; HUMAN-ACCEPTANCE uses stdlib `python3 -m venv`, which creates none, and virtualenv hashes are not pinned. qafix7 pack.
 - QA4 pretty CLI: holder-policy `--pretty` hint no longer says "Use the holder". Pretty `verify` states that signature checks are a separate `verify-signature` step with its trust inputs. Pretty formatters treat missing or non-boolean `ok` as failure and never render a success banner. Default JSON, first `RunSpecimen error:` line, N10 text, and exit codes are unchanged. qafix6 pack.
 - HUMAN-ACCEPTANCE `rs_ok` now covers N8 (stop before N9 on failure). `rs_neg` requires the expected refusal as a complete line. Automated sheet execution covers N1–N7, N10, and the unknown-field check in bash and zsh; N3 failure still stops later steps. Linux CI installs zsh so those tests run (macOS 3.11 already has zsh).
 - Provenance additionally imports remaining `runspecimen.*` modules after the first bind and refuses a non-stdlib `sys.meta_path` finder injected through a startup hook.

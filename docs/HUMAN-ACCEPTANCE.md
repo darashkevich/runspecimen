@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-08-qafix6/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-08-qafix7/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-08-qafix6/`,
 `artifacts/0.2.0rc15-2026-10-08-qafix5/`,
 `artifacts/0.2.0rc15-2026-10-08-qafix4/`,
 `artifacts/0.2.0rc15-2026-10-07-qafix3/`,
@@ -58,7 +59,7 @@ Paste this first. It remembers the pack path and defines four tiny helpers.
 refusals later.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-08-qafix6"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-08-qafix7"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 export WORK=$(mktemp -d "${TMPDIR:-/tmp}/rs-ha-rc15.XXXXXX")
 export VENV="$WORK/venv"
@@ -126,10 +127,16 @@ launcher's own interpreter, every loaded `runspecimen.*` origin (including
 `runspecimen.approve`, `runspecimen.present`, and the CLI) is realpath-equal to the hashed installed
 member, the sanitized environment has no import overrides, sitecustomize is
 absent, and no site-packages `.pth` adds a path outside that install or an
-executable import that is not a known-safe exact body. The script prints the
+executable import that is not a known-safe exact body. `_virtualenv*` (pth or
+.py) is refused: this sheet uses stdlib `python3 -m venv`, which creates none,
+and the verifier does not pin virtualenv hashes. A `sys.meta_path` finder is
+allowed only by real class identity — a stdlib importer, or
+`type(finder) is DistutilsMetaFinder` from the `_distutils_hack` module whose
+realpath is in this venv's site-packages and whose bytes match setuptools'
+RECORD. A finder that only claims that module name is refused. The script prints the
 installed dist-info `RECORD` and `direct_url.json`. `__version__ ==
 0.2.0rc15` is not sufficient: the 2026-10-06-bump wheel reports the same
-version and must fail this step when `$WHEEL` is the qafix6 pin. A
+version and must fail this step when `$WHEEL` is the qafix7 pin. A
 same-version tree selected via inside-venv `PYTHONPATH`, a `.pth` prepend,
 sitecustomize, or an executable `.pth` import must also fail.
 
@@ -296,9 +303,9 @@ positive run. Capture a new labeled supplement instead, in a fresh Terminal,
 with a new workspace:
 
 ```
-Session: HUMAN-ACCEPTANCE supplement qafix6
+Session: HUMAN-ACCEPTANCE supplement qafix7
 Date:
-Pack: artifacts/0.2.0rc15-2026-10-08-qafix6/
+Pack: artifacts/0.2.0rc15-2026-10-08-qafix7/
 Paste N1 through N7, then N10 and the schema-rejection check.
 Copy every "STEP … exit=" line, plus PASS: N10 and PASS: UNK, into your notes.
 ```

@@ -30,7 +30,8 @@ HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 CANDIDATE_MANIFEST = ROOT / "docs" / "CANDIDATE_MANIFEST.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
-PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix6"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix7"
+QAFIX6_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix6"
 QAFIX5_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix5"
 QAFIX4_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix4"
 QAFIX3_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-07-qafix3"
@@ -149,7 +150,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("command -v runspecimen", text)
         self.assertIn("mktemp -d", text)
         self.assertIn('test ! -e "$VENV"', text)
-        self.assertIn("0.2.0rc15-2026-10-08-qafix6", text)
+        self.assertIn("0.2.0rc15-2026-10-08-qafix7", text)
         self.assertIn("--no-index --no-deps --force-reinstall", text)
         self.assertIn("scripts/verify_installed_wheel.py", text)
         self.assertIn("--launcher", text)
@@ -165,9 +166,12 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("rs_ok N3-verify", text)
         self.assertIn("realpath-equal", text)
         self.assertIn("trusted interpreter", text)
+        self.assertIn("_virtualenv*", text)
+        self.assertIn("DistutilsMetaFinder", text)
+        self.assertIn("stdlib `python3 -m venv`", text)
         self.assertIn("demo-campaign", text)
         self.assertIn("run-001", text)
-        self.assertIn("HUMAN-ACCEPTANCE supplement qafix6", text)
+        self.assertIn("HUMAN-ACCEPTANCE supplement qafix7", text)
         self.assertNotRegex(
             text,
             r'(?m)^(?:\$PY|"\$PY"|python3|py ).*(?:pip install --upgrade|pip install -U)',
@@ -193,9 +197,9 @@ class Rc15QaDocfixTests(unittest.TestCase):
         if CANDIDATE_MANIFEST.is_file():
             manifest = CANDIDATE_MANIFEST.read_text(encoding="utf-8")
             self.assertIn("| Candidate (this pass) |", manifest)
-            self.assertIn("PR #63 head that records the qafix6 pack", manifest)
+            self.assertIn("PR #63 head that records the qafix7 pack", manifest)
             self.assertIn("8015b6d8017e5566f7558cc916dc0ee470c653ad", manifest)
-            self.assertIn("artifacts/0.2.0rc15-2026-10-08-qafix6/", manifest)
+            self.assertIn("artifacts/0.2.0rc15-2026-10-08-qafix7/", manifest)
             self.assertIn("3b20ad6b179baab582ec97285dd7899f09f11574", manifest)
         self.assertIn("Homebrew", text)
         self.assertIn("STEP $1 exit=$2", text)
@@ -461,17 +465,22 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertTrue(payload["pth_findings"], payload)
 
-    def test_installed_wheel_provenance_accepts_standard_virtualenv_pth_body(self) -> None:
+    def test_installed_wheel_provenance_rejects_standard_virtualenv_pth_body(self) -> None:
         pin = _pin_wheel()
         if not pin.is_file():
             self.skipTest("pin wheel must be on disk")
         if not VERIFY_INSTALLED.is_file():
             self.skipTest("verify_installed_wheel.py is not packed into this tree")
         result = _install_and_verify(pin, pin, after_install=_write_standard_virtualenv_pth)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         payload = json.loads(result.stdout.split("---")[0])
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["pth_findings"], [])
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["pth_findings"], payload)
+        self.assertTrue(
+            any("_virtualenv" in item.get("reason", "") or "_virtualenv" in item.get("text", "")
+                for item in payload["pth_findings"]),
+            payload["pth_findings"],
+        )
 
     def test_installed_wheel_provenance_accepts_usercustomize_when_user_site_disabled(self) -> None:
         pin = _pin_wheel()
@@ -755,12 +764,88 @@ class Rc15QaDocfixTests(unittest.TestCase):
 
     def test_qa4_distutils_metafinder_is_not_treated_as_a_hijack(self) -> None:
         text = VERIFY_INSTALLED.read_text(encoding="utf-8")
-        self.assertIn("'_distutils_hack'", text)
         self.assertIn("DistutilsMetaFinder", text)
+        self.assertIn("type(finder) is not _real_dmf", text)
+        self.assertNotIn("if rec['module'] not in allowed_meta", text)
+        self.assertNotIn('"import _virtualenv"', text)
+        self.test_qa_hooks_01_clean_stdlib_venv_with_real_setuptools_shim_is_accepted()
+
+    def test_qa_hooks_01_spoofed_distutils_metafinder_via_virtualenv_is_rejected(self) -> None:
+        """Reviewer spoof: import _virtualenv + fake DistutilsMetaFinder + old signing.py."""
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        hijack = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            after_install=_write_reviewer_distutils_metafinder_spoof,
+        )
+        self.assertNotEqual(hijack.returncode, 0, hijack.stdout + hijack.stderr)
+        payload = json.loads(hijack.stdout.split("---")[0])
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload.get("pth_findings") or payload.get("meta_path_findings"), payload)
+
+    def test_qa_hooks_01_fake_named_finder_via_sitecustomize_is_rejected(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        hijack = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            after_install=_write_sitecustomize_named_distutils_finder,
+        )
+        self.assertNotEqual(hijack.returncode, 0, hijack.stdout + hijack.stderr)
+        payload = json.loads(hijack.stdout.split("---")[0])
+        self.assertFalse(payload["ok"])
+        self.assertTrue(
+            payload.get("startup_findings")
+            or payload.get("meta_path_findings")
+            or "sitecustomize" in str(payload.get("message", "")).lower()
+            or "unexpected sys.meta_path" in str(payload.get("message", "")),
+            payload,
+        )
+
+    def test_qa_hooks_01_clean_stdlib_venv_with_real_setuptools_shim_is_accepted(self) -> None:
+        pin = _pin_wheel()
+        if not pin.is_file():
+            self.skipTest("pin wheel must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        result = _install_and_verify(pin, pin)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout.split("---")[0])
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["origins_bound"])
+        self.assertEqual(payload["pth_findings"], [])
+        self.assertEqual(payload.get("meta_path_findings") or [], [])
+        self.assertEqual(payload.get("distutils_hack_findings") or [], [])
+
+    def test_qa_hooks_02_virtualenv_pth_and_module_are_rejected(self) -> None:
+        self.test_installed_wheel_provenance_rejects_standard_virtualenv_pth_body()
+
+    def test_known_safe_pth_does_not_trust_import_virtualenv(self) -> None:
+        module = _load_verify_module()
+        self.assertNotIn("import _virtualenv", module.KNOWN_SAFE_PTH_IMPORT_LINES)
+        with tempfile.TemporaryDirectory(prefix="rs-venv-art-") as root:
+            site = Path(root)
+            (site / "_virtualenv.pth").write_text("import _virtualenv\n", encoding="utf-8")
+            (site / "_virtualenv.py").write_text("# stub\n", encoding="utf-8")
+            findings = module.scan_pth_files(site) + module.scan_virtualenv_artifacts(site)
+            reasons = " ".join(item.get("reason", "") + " " + item.get("text", "") for item in findings)
+            self.assertTrue(findings)
+            self.assertIn("_virtualenv", reasons)
 
 
 def _pin_wheel() -> Path:
-    for pack in (PIN_PACK, QAFIX5_PACK, QAFIX4_PACK, QAFIX3_PACK, QAFIX_PACK):
+    for pack in (PIN_PACK, QAFIX6_PACK, QAFIX5_PACK, QAFIX4_PACK, QAFIX3_PACK, QAFIX_PACK):
         pin = pack / WHEEL_NAME
         if pin.is_file():
             return pin
@@ -825,7 +910,7 @@ def _acceptance_sheet_script(markdown: str, pack: Path) -> str:
         parts.append(block.rstrip() + "\n")
     script = "".join(parts)
     replaced, count = re.subn(
-        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-08-qafix6"',
+        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-08-qafix7"',
         f"export PACK={shlex.quote(str(pack))}",
         script,
         count=1,
@@ -1012,8 +1097,75 @@ def _write_standard_virtualenv_pth(hook: _ProvHook) -> None:
     (hook.site / "_virtualenv.pth").write_text("import _virtualenv\n", encoding="utf-8")
 
 
+def _write_reviewer_distutils_metafinder_spoof(hook: _ProvHook) -> None:
+    """QA-HOOKS-01: ``import _virtualenv`` plus a fake DistutilsMetaFinder.
+
+    The fake class claims ``__module__='_distutils_hack'``, execs an older
+    ``signing.py``, and spoofs ``__file__`` to the hashed installed member.
+    """
+    if hook.planted is None:
+        raise AssertionError("planted older tree is required")
+    old_signing = str((hook.planted / "runspecimen" / "signing.py").resolve())
+    hashed_signing = str((hook.site / "runspecimen" / "signing.py").resolve())
+    (hook.site / "_virtualenv.py").write_text(
+        "import sys\n"
+        "from importlib.abc import Loader, MetaPathFinder\n"
+        "from importlib.machinery import ModuleSpec\n"
+        "from pathlib import Path\n"
+        f"_OLD = {old_signing!r}\n"
+        f"_HASHED = {hashed_signing!r}\n"
+        "class DistutilsMetaFinder(MetaPathFinder):\n"
+        "    def find_spec(self, fullname, path, target=None):\n"
+        "        if fullname != 'runspecimen.signing':\n"
+        "            return None\n"
+        "        return ModuleSpec(fullname, _SpoofLoader(), origin=_HASHED)\n"
+        "class _SpoofLoader(Loader):\n"
+        "    def create_module(self, spec):\n"
+        "        return None\n"
+        "    def exec_module(self, module):\n"
+        "        module.__file__ = _HASHED\n"
+        "        code = Path(_OLD).read_text(encoding='utf-8')\n"
+        "        exec(compile(code, _HASHED, 'exec'), module.__dict__)\n"
+        "DistutilsMetaFinder.__module__ = '_distutils_hack'\n"
+        "sys.meta_path.insert(0, DistutilsMetaFinder())\n",
+        encoding="utf-8",
+    )
+    (hook.site / "_virtualenv.pth").write_text("import _virtualenv\n", encoding="utf-8")
+
+
+def _write_sitecustomize_named_distutils_finder(hook: _ProvHook) -> None:
+    """Fake DistutilsMetaFinder added by sitecustomize, claiming the real module name."""
+    if hook.planted is None:
+        raise AssertionError("planted older tree is required")
+    old_signing = str((hook.planted / "runspecimen" / "signing.py").resolve())
+    hashed_signing = str((hook.site / "runspecimen" / "signing.py").resolve())
+    (hook.site / "sitecustomize.py").write_text(
+        "import sys\n"
+        "from importlib.abc import Loader, MetaPathFinder\n"
+        "from importlib.machinery import ModuleSpec\n"
+        "from pathlib import Path\n"
+        f"_OLD = {old_signing!r}\n"
+        f"_HASHED = {hashed_signing!r}\n"
+        "class DistutilsMetaFinder(MetaPathFinder):\n"
+        "    def find_spec(self, fullname, path, target=None):\n"
+        "        if fullname != 'runspecimen.signing':\n"
+        "            return None\n"
+        "        return ModuleSpec(fullname, _SpoofLoader(), origin=_HASHED)\n"
+        "class _SpoofLoader(Loader):\n"
+        "    def create_module(self, spec):\n"
+        "        return None\n"
+        "    def exec_module(self, module):\n"
+        "        module.__file__ = _HASHED\n"
+        "        code = Path(_OLD).read_text(encoding='utf-8')\n"
+        "        exec(compile(code, _HASHED, 'exec'), module.__dict__)\n"
+        "DistutilsMetaFinder.__module__ = '_distutils_hack'\n"
+        "sys.meta_path.insert(0, DistutilsMetaFinder())\n",
+        encoding="utf-8",
+    )
+
+
 def _write_virtualenv_meta_path_hijack(hook: _ProvHook) -> None:
-    """Known-safe ``import _virtualenv`` pth with a custom meta_path finder."""
+    """``import _virtualenv`` pth with a custom meta_path finder."""
     if hook.planted is None:
         raise AssertionError("planted older tree is required")
     old_signing = str((hook.planted / "runspecimen" / "signing.py").resolve())
