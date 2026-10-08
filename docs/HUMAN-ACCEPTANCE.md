@@ -122,7 +122,7 @@ prints `FAIL` and stops; do not continue to N4.
 Abort unless every hashed RECORD member in the wheel, and every
 `runspecimen/*.py` in that zip, matches the file installed under the absolute
 launcher's own interpreter, every loaded `runspecimen.*` origin (including
-`runspecimen.approve` and the CLI) is realpath-equal to the hashed installed
+`runspecimen.approve`, `runspecimen.present`, and the CLI) is realpath-equal to the hashed installed
 member, the sanitized environment has no import overrides, sitecustomize is
 absent, and no site-packages `.pth` adds a path outside that install or an
 executable import that is not a known-safe exact body. The script prints the
@@ -142,6 +142,10 @@ rs_ok N4 $?
 ```
 
 ## N5 — doctor
+
+Use default JSON on this sheet (`rs doctor …`). `--pretty` is optional human
+view and must not be used for acceptance; JSON contracts and exit codes stay
+the default.
 
 ```
 rs doctor --workspace "$WS"

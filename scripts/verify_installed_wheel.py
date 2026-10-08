@@ -57,6 +57,10 @@ PROBE_SCRIPT = (
     "import runspecimen.cli\n"
     "import runspecimen.approve\n"
     "import runspecimen.run\n"
+    "try:\n"
+    "    import runspecimen.present\n"
+    "except ImportError:\n"
+    "    pass\n"
     "loaded = {}\n"
     "for name, mod in list(sys.modules.items()):\n"
     "    if name != 'runspecimen' and not name.startswith('runspecimen.'):\n"
@@ -87,6 +91,11 @@ PROBE_SCRIPT = (
     "    'runspecimen_file': str(Path(runspecimen.__file__).resolve()),\n"
     "    'cli_file': str(Path(runspecimen.cli.__file__).resolve()),\n"
     "    'approve_file': str(Path(runspecimen.approve.__file__).resolve()),\n"
+    "    'present_file': (\n"
+    "        str(Path(runspecimen.present.__file__).resolve())\n"
+    "        if 'runspecimen.present' in sys.modules\n"
+    "        else None\n"
+    "    ),\n"
     "    'prefix': str(Path(sys.prefix).resolve()),\n"
     "    'executable': str(Path(sys.executable).resolve()),\n"
     "    'version': getattr(runspecimen, '__version__', None),\n"
@@ -425,6 +434,19 @@ def origins_bound_to_package(
                     f"effective runspecimen.approve origin {got} "
                     f"!= hashed installed member {expected_approve.resolve()}"
                 )
+    if "runspecimen/present.py" in hashed:
+        expected_present = expected_pkg / "present.py"
+        if not loaded or not loaded.get("runspecimen.present"):
+            return False, (
+                "runspecimen.present was not loaded but is a hashed installed member "
+                f"{expected_present.resolve()}"
+            )
+        got = Path(str(loaded["runspecimen.present"])).resolve()
+        if got != expected_present.resolve():
+            return False, (
+                f"effective runspecimen.present origin {got} "
+                f"!= hashed installed member {expected_present.resolve()}"
+            )
     if loaded:
         for name in sorted(loaded):
             origin = loaded[name]
@@ -562,6 +584,7 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         "runspecimen_file": None,
         "cli_file": None,
         "approve_file": None,
+        "present_file": None,
         "loaded_runspecimen": {},
         "runspecimen_version": None,
     }
@@ -615,6 +638,8 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         report["cli_file"] = str(cli_file)
         if origins.get("approve_file"):
             report["approve_file"] = str(origins["approve_file"])
+        if origins.get("present_file"):
+            report["present_file"] = str(origins["present_file"])
         loaded = origins.get("loaded_runspecimen") or {}
         report["loaded_runspecimen"] = loaded
         report["runspecimen_version"] = origins.get("version")
@@ -708,6 +733,7 @@ def main(argv: list[str] | None = None) -> int:
             "runspecimen_file",
             "cli_file",
             "approve_file",
+            "present_file",
             "console_script_target",
             "origins_bound",
             "loaded_runspecimen",

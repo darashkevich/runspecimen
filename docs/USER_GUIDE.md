@@ -194,6 +194,7 @@ sh scripts/demo_rc.sh
 | Command | Role | Takes workspace lease? |
 | --- | --- | --- |
 | `about` | Product summary + documentation URLs | No |
+| `quickstart` | Copy-pasteable first-run command sequence (human text) | No |
 | `init-demo` | Create a new unapproved demo directory | N/A (new path) |
 | `doctor` | Host/workspace readiness JSON (includes docs URLs) | No (probes only) |
 | `validate` | Contract paths + runtime provenance | No |
@@ -205,9 +206,14 @@ sh scripts/demo_rc.sh
 | `status` | Phase, approval, lease, chain health (JSON) | No |
 | `dashboard` | Loopback read-only UI with About + docs links (blocking) | No |
 
-Global flag: `runspecimen --version`.
+Global flags: `runspecimen --version`. Opt-in human view: `--pretty` and
+`--color auto|always|never` (also accepted after the subcommand, e.g.
+`runspecimen status --pretty …`). JSON remains the **default** for every
+command so tests and agents keep a stable contract. `--pretty` never changes
+exit codes, hashes, or approval behavior.
 
-There is no `status --brief` flag. `status` prints a single JSON document.
+`status` without `--pretty` still prints a single JSON document. `status --pretty`
+is a human diagnosis view; it is not live `verify`.
 
 ## Contracts
 

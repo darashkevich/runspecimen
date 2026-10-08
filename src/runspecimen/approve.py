@@ -24,10 +24,21 @@ from runspecimen.paths import (
     resolve_workspace,
     run_state_dir,
 )
+from runspecimen.present import format_approve_prompt
 from runspecimen.state import load_state, update_state
 from runspecimen.runtime import runtime_provenance
 
 CONFIRM_PHRASE = "APPROVE"
+
+
+def typed_phrase_fallback_refusal(policy: str) -> str:
+    """Plain-English refusal when a holder policy has no TTY APPROVE path.
+
+    Used by approve, preflight, and postflight so piped and interactive
+    callers see the same sentence. N10 pins this exact text. This is not a
+    holder-receipt path.
+    """
+    return f"execution policy {policy} has no typed-phrase fallback"
 
 
 def local_approver() -> dict[str, Any]:
@@ -111,10 +122,7 @@ def approve_contract(
     workspace = resolve_workspace(workspace)
     contract = load_contract(contract_path)
     if contract.execution_approval is not None:
-        raise ApprovalError(
-            "execution policy "
-            f"{contract.execution_approval} has no typed-phrase fallback"
-        )
+        raise ApprovalError(typed_phrase_fallback_refusal(contract.execution_approval))
     if not skip_tty_check:
         require_interactive_tty(stdin, stdout)
 
@@ -196,33 +204,30 @@ def _approve_under_lease(
                 )
 
     stdout.write(
-        f"Approve bounded run?\n"
-        f"  campaign: {contract.campaign_id}\n"
-        f"  run_id:   {contract.run_id}\n"
-        f"  argv:     {list(contract.argv)!r}\n"
-        f"  cwd:      {contract.cwd}\n"
-        f"  sources:  {list(contract.source.roots)!r}\n"
-        f"  excludes: {list(contract.source.excludes)!r}\n"
-        f"  outputs:  {list(contract.asserted_output_paths)!r}\n"
-        f"  timeout:  {contract.caps.wall_timeout_sec}s\n"
-        f"  capture:  stdout={contract.caps.stdout_max_bytes}B "
-        f"stderr={contract.caps.stderr_max_bytes}B\n"
-        f"  prior:    {contract.predecessor!r}\n"
-        f"  isolation: {isolation['claim']}\n"
-        f"  policy:   {policy_line}\n"
-        f"  manifest: {manifest_line}\n"
-    )
-    if check_lines:
-        stdout.write("  checks (bound before approval):\n")
-        stdout.write("\n".join(check_lines) + "\n")
-    stdout.write(
-        f"  approver: {approver['user']} (local OS user)\n"
-        f"  contract: {contract.contract_hash}\n"
-        f"  source:   {source_hash}\n"
-        f"  runtime:  {runtime['resolved_executable']}\n"
-        f"  runtime#: {runtime['runtime_id']}\n"
-        f"  ttl_sec:  {contract.approval.ttl_sec}\n"
-        f"Type {confirm_phrase!r} to bind this approval: "
+        format_approve_prompt(
+            campaign_id=contract.campaign_id,
+            run_id=contract.run_id,
+            argv=list(contract.argv),
+            cwd=str(contract.cwd),
+            sources=list(contract.source.roots),
+            excludes=list(contract.source.excludes),
+            outputs=list(contract.asserted_output_paths),
+            timeout_sec=int(contract.caps.wall_timeout_sec),
+            stdout_max_bytes=int(contract.caps.stdout_max_bytes),
+            stderr_max_bytes=int(contract.caps.stderr_max_bytes),
+            predecessor=contract.predecessor,
+            isolation_claim=str(isolation["claim"]),
+            policy_line=policy_line,
+            manifest_line=manifest_line,
+            check_lines=check_lines,
+            approver_user=str(approver["user"]),
+            contract_hash=contract.contract_hash,
+            source_hash=source_hash,
+            runtime_path=str(runtime["resolved_executable"]),
+            runtime_id=str(runtime["runtime_id"]),
+            ttl_sec=int(contract.approval.ttl_sec),
+            confirm_phrase=confirm_phrase,
+        )
     )
     stdout.flush()
     line = stdin.readline()
@@ -239,7 +244,7 @@ def _approve_under_lease(
         confirm_evidence={
             "kind": "interactive_tty_phrase",
             "phrase": confirm_phrase,
-            "claim": "Interactive local TTY APPROVE on the Mac.",
+            "claim": "Interactive local TTY APPROVE on this computer.",
         },
         expected_source_hash=source_hash,
         expected_runtime=runtime,
@@ -265,10 +270,7 @@ def complete_approval_document(
     Caller must already hold the workspace lease. Re-checks phase and provenance.
     """
     if contract.execution_approval is not None:
-        raise ApprovalError(
-            "execution policy "
-            f"{contract.execution_approval} has no typed-phrase fallback"
-        )
+        raise ApprovalError(typed_phrase_fallback_refusal(contract.execution_approval))
     state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
     ensure_dir(state_dir)
     state = load_state(state_dir)

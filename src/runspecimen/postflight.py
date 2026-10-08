@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from runspecimen.approve import load_approval
+from runspecimen.approve import load_approval, typed_phrase_fallback_refusal
 from runspecimen.certificate import build_certificate, write_certificate
 from runspecimen.contract import check_contract_paths, load_contract
 from runspecimen.errors import LeaseError, PostflightError
@@ -82,6 +82,8 @@ def _postflight_under_lease(*, contract, workspace: Path) -> dict:
         )
 
     # Exact provenance gate before any outcome assertions.
+    if contract.execution_approval is not None:
+        raise PostflightError(typed_phrase_fallback_refusal(contract.execution_approval))
     if approval is None:
         raise PostflightError("no approval present; cannot verify contract provenance")
     if contract.contract_hash != approval.get("contract_hash"):

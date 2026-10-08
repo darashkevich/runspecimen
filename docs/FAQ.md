@@ -66,6 +66,20 @@ command without a human at the keyboard. `approve` requires interactive stdin
 (`skip_tty_check`) exist for regenerating demos; they are not the production
 path.
 
+## How do I get human-readable CLI output?
+
+JSON is the default for every command (agents, tests, and scripts depend on it).
+Pass `--pretty` for a table-style view of the same result:
+
+```bash
+runspecimen --pretty doctor --workspace .
+runspecimen status --pretty --workspace . --campaign-id demo-campaign --run-id run-001
+```
+
+`--pretty` does not change exit codes, hashes, or the approval gate. Color is
+`--color auto|always|never` (`NO_COLOR` disables auto). For a copy-paste first
+run: `runspecimen quickstart`.
+
 ## What is the eval fast path?
 
 An opt-in exact-match step on `runspecimen eval` that can finish a configured
