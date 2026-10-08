@@ -4,6 +4,9 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
+- QA4 pretty CLI: holder-policy `--pretty` hint no longer says "Use the holder". Pretty `verify` states that signature checks are a separate `verify-signature` step with its trust inputs. Pretty formatters treat missing or non-boolean `ok` as failure and never render a success banner. Default JSON, first `RunSpecimen error:` line, N10 text, and exit codes are unchanged. qafix6 pack.
+- HUMAN-ACCEPTANCE `rs_ok` now covers N8 (stop before N9 on failure). `rs_neg` requires the expected refusal as a complete line. Automated sheet execution covers N1–N7, N10, and the unknown-field check in bash and zsh; N3 failure still stops later steps. Linux CI installs zsh so those tests run (macOS 3.11 already has zsh).
+- Provenance additionally imports remaining `runspecimen.*` modules after the first bind and refuses a non-stdlib `sys.meta_path` finder injected through a startup hook.
 - Offline `release_check.py` unittest discovery timeout is 600s (was 300s). Darwin 3.11 with the packed suite plus two in-suite archive rebuilds was hitting the cap.
 - Opt-in human CLI: `runspecimen quickstart` and `--pretty` / `--color` (before or after the subcommand). Default stdout is still sorted indented JSON; exit codes, hashes, and the TTY APPROVE gate are unchanged. The bind line remains `Type 'APPROVE' to bind this approval:`. `--pretty` refusals keep `RunSpecimen error: …` and add a next-step hint.
 - Holder policies (`local` / `companion` / `dual`) share one typed-phrase refusal across approve, preflight, and postflight. N10 still prints `execution policy local has no typed-phrase fallback`. The TTY APPROVE claim is `on this computer`. Release-check compares a clean-venv install to the wheel RECORD. Linux CI runs Ed25519 tests with PyNaCl.

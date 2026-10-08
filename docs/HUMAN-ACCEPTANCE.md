@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-08-qafix5/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-08-qafix6/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-08-qafix5/`,
 `artifacts/0.2.0rc15-2026-10-08-qafix4/`,
 `artifacts/0.2.0rc15-2026-10-07-qafix3/`,
 `artifacts/0.2.0rc15-2026-10-07-qafix2/`,
@@ -57,7 +58,7 @@ Paste this first. It remembers the pack path and defines four tiny helpers.
 refusals later.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-08-qafix5"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-08-qafix6"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 export WORK=$(mktemp -d "${TMPDIR:-/tmp}/rs-ha-rc15.XXXXXX")
 export VENV="$WORK/venv"
@@ -67,7 +68,7 @@ export WS="$WORK/ws-demo"
 rs() { env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 "$RS" "$@"; }
 py() { env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 "$PY" "$@"; }
 rs_ok() { echo "STEP $1 exit=$2"; if [ "$2" -ne 0 ]; then echo "FAIL: step $1 expected exit 0, got $2. Stop here; do not continue."; exit 1; fi; }
-rs_neg() { echo "STEP $1 exit=$2"; echo "$3"; if [ "$2" -eq 0 ]; then echo "FAIL: step $1 expected a refusal (nonzero exit), got 0. Stop here."; exit 1; fi; case "$3" in *"$4"*) echo "PASS: $1" ;; *) echo "FAIL: step $1 did not print the expected message:"; echo "  $4"; exit 1 ;; esac; }
+rs_neg() { echo "STEP $1 exit=$2"; echo "$3"; if [ "$2" -eq 0 ]; then echo "FAIL: step $1 expected a refusal (nonzero exit), got 0. Stop here."; exit 1; fi; if printf '%s\n' "$3" | grep -Fqx -- "$4"; then echo "PASS: $1"; else echo "FAIL: step $1 did not print the expected message as a complete line:"; echo "  $4"; exit 1; fi; }
 ```
 
 ```
@@ -128,7 +129,7 @@ absent, and no site-packages `.pth` adds a path outside that install or an
 executable import that is not a known-safe exact body. The script prints the
 installed dist-info `RECORD` and `direct_url.json`. `__version__ ==
 0.2.0rc15` is not sufficient: the 2026-10-06-bump wheel reports the same
-version and must fail this step when `$WHEEL` is the qafix5 pin. A
+version and must fail this step when `$WHEEL` is the qafix6 pin. A
 same-version tree selected via inside-venv `PYTHONPATH`, a `.pth` prepend,
 sitecustomize, or an executable `.pth` import must also fail.
 
@@ -173,11 +174,11 @@ An agent must not type that phrase. Use the same `rs` helper as N3–N7.
 
 ```
 rs approve --workspace "$WS" --contract "$WS/contract.json"
-echo "STEP N8 exit=$?"
+rs_ok N8 $?
 ```
 
-Write down the `STEP N8 exit=` line. This sheet does not auto-pass N8, because
-only you may type the phrase.
+Write down the `STEP N8 exit=` line. `rs_ok` asserts exit 0 and stops before
+N9 on failure, same as the other positive steps. Only you may type the phrase.
 
 ## N9 — preflight, run, postflight, verify
 
@@ -225,7 +226,7 @@ rs_ok N10-edit $?
 ```
 _rs_n=0
 _rs_out=$(rs approve --workspace "$WS10" --contract "$WS10/contract.json" 2>&1) || _rs_n=$?
-rs_neg N10 "$_rs_n" "$_rs_out" "execution policy local has no typed-phrase fallback"
+rs_neg N10 "$_rs_n" "$_rs_out" "RunSpecimen error: execution policy local has no typed-phrase fallback"
 ```
 
 That approve must exit non-zero before any `APPROVE` prompt.
@@ -246,7 +247,7 @@ rs_ok UNK-edit $?
 ```
 _rs_n=0
 _rs_out=$(rs validate --workspace "$WSUNK" --contract "$WSUNK/contract.json" 2>&1) || _rs_n=$?
-rs_neg UNK "$_rs_n" "$_rs_out" "contract contains unknown field(s): not_a_real_contract_field"
+rs_neg UNK "$_rs_n" "$_rs_out" "RunSpecimen error: contract contains unknown field(s): not_a_real_contract_field"
 ```
 
 ## Record
@@ -273,11 +274,14 @@ N9 is sequential `preflight`, `run`, `postflight`, `verify` with matching
 
 N10 is unchanged: exact `execution policy local has no typed-phrase fallback`
 refusal, no prompt. Do not treat an unknown-field error as N10. The sheet
-prints `PASS: N10` only when the exit is nonzero and that exact message appears.
+prints `PASS: N10` only when the exit is nonzero and that exact refusal is
+present as a complete line
+(`RunSpecimen error: execution policy local has no typed-phrase fallback`).
 
 The schema-rejection check is separate and uses `not_a_real_contract_field`.
-It prints `PASS: UNK` only when the exit is nonzero and that exact message
-appears.
+It prints `PASS: UNK` only when the exit is nonzero and that exact unknown-field
+refusal is present as a complete line
+(`RunSpecimen error: contract contains unknown field(s): not_a_real_contract_field`).
 
 Do not install a holder. Do not close E2. `run_integration_complete` and
 `e2_closed` stay false.
@@ -292,9 +296,9 @@ positive run. Capture a new labeled supplement instead, in a fresh Terminal,
 with a new workspace:
 
 ```
-Session: HUMAN-ACCEPTANCE supplement qafix5
+Session: HUMAN-ACCEPTANCE supplement qafix6
 Date:
-Pack: artifacts/0.2.0rc15-2026-10-08-qafix5/
+Pack: artifacts/0.2.0rc15-2026-10-08-qafix6/
 Paste N1 through N7, then N10 and the schema-rejection check.
 Copy every "STEP … exit=" line, plus PASS: N10 and PASS: UNK, into your notes.
 ```

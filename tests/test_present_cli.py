@@ -14,7 +14,12 @@ from tests.helpers import RunSpecimenTestCase, approve, base_contract, write_con
 from runspecimen.approve import approve_contract
 from runspecimen.cli import main
 from runspecimen.errors import ApprovalError, PreflightError
-from runspecimen.present import APPROVE_BIND_PROMPT, format_error, format_quickstart
+from runspecimen.present import (
+    APPROVE_BIND_PROMPT,
+    format_error,
+    format_pretty,
+    format_quickstart,
+)
 from runspecimen.preflight import preflight
 from runspecimen.postflight import postflight
 from runspecimen.run import run_contract
@@ -224,7 +229,10 @@ class TestPresentCLI(RunSpecimenTestCase):
         )
         self.assertEqual(code_p, 0)
         self.assertEqual(err_p, "")
-        self.assertIn("Live receipt verification", out_p)
+        self.assertIn("Receipt verification (files/chain; not signatures)", out_p)
+        self.assertIn("verify-signature", out_p)
+        self.assertIn("trust inputs", out_p)
+        self.assertNotIn("OK  Live receipt verification", out_p)
         self.assertIn(doc["certificate_id"], out_p)
         with self.assertRaises(json.JSONDecodeError):
             json.loads(out_p)
@@ -301,6 +309,95 @@ class TestPresentCLI(RunSpecimenTestCase):
         )
         self.assertEqual(code_p, 1)
         self.assertIn("no approval present", err_p)
+
+    def test_pretty_holder_policy_hint_does_not_say_use_the_holder(self) -> None:
+        text = format_error(
+            "execution policy local has no typed-phrase fallback",
+            pretty=True,
+            color_mode="never",
+        )
+        first = text.splitlines()[0]
+        self.assertEqual(
+            first,
+            "RunSpecimen error: execution policy local has no typed-phrase fallback",
+        )
+        self.assertIn(
+            "Holder policies need a separately qualified holder; typed-phrase approval isn't available here.",
+            text,
+        )
+        self.assertNotIn("Use the holder", text)
+
+    def test_pretty_verify_incomplete_payload_is_not_success(self) -> None:
+        out = format_pretty(
+            {"campaign_id": "camp", "run_id": "run-a"},
+            kind="verify",
+            color_mode="never",
+        )
+        self.assertIn("REFUSED", out)
+        self.assertIn("Receipt verification failed", out)
+        self.assertNotIn("OK  ", out)
+        self.assertIn("verify-signature", out)
+
+    def test_pretty_verify_ok_false_is_not_success(self) -> None:
+        out = format_pretty(
+            {"ok": False, "campaign_id": "camp", "run_id": "run-a"},
+            kind="verify",
+            color_mode="never",
+        )
+        self.assertIn("REFUSED", out)
+        self.assertIn("Receipt verification failed", out)
+        self.assertNotIn("OK  ", out)
+
+    def test_pretty_verify_non_boolean_ok_is_not_success(self) -> None:
+        for value in ("true", 1, "yes", None):
+            with self.subTest(ok=value):
+                out = format_pretty(
+                    {"ok": value, "campaign_id": "camp"},
+                    kind="verify",
+                    color_mode="never",
+                )
+                self.assertIn("REFUSED", out)
+                self.assertNotIn("OK  ", out)
+
+    def test_pretty_never_defaults_ok_to_true_in_source(self) -> None:
+        from pathlib import Path
+
+        import runspecimen.present as present_mod
+
+        text = Path(present_mod.__file__).read_text(encoding="utf-8")
+        self.assertNotIn('get("ok", True)', text)
+        self.assertNotIn("get('ok', True)", text)
+        self.assertIn("def _strict_ok", text)
+
+    def test_pretty_verify_tampered_workspace_fails_nonzero(self) -> None:
+        cpath = write_contract(self.ws, "contract.json", base_contract())
+        approve(self.ws, cpath)
+        preflight(contract_path=cpath, workspace=self.ws)
+        run_contract(contract_path=cpath, workspace=self.ws)
+        postflight(contract_path=cpath, workspace=self.ws)
+        output = self.ws / "outputs" / "out.json"
+        output.write_text('{"status": "tampered"}\n', encoding="utf-8")
+
+        code, out, err = self._run(
+            [
+                "--pretty",
+                "--color",
+                "never",
+                "verify",
+                "--workspace",
+                str(self.ws),
+                "--contract",
+                str(cpath),
+                "--campaign-id",
+                "camp",
+                "--run-id",
+                "run-a",
+            ]
+        )
+        self.assertNotEqual(code, 0)
+        self.assertTrue(err.startswith("RunSpecimen error:"))
+        self.assertNotIn("OK  ", out)
+        self.assertNotIn("Receipt verification (files/chain; not signatures)", out)
 
     def test_no_color_env_disables_auto_color(self) -> None:
         env = os.environ.copy()

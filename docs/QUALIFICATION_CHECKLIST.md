@@ -19,7 +19,8 @@ Keep these identities apart. Do not cite one as another.
 | Previous qafix2 pack | `4a97450645ff561f06c876250551fd05fd9d7929` | Immutable pack `artifacts/0.2.0rc15-2026-10-07-qafix2/`. Wheel `b181822a…` (unchanged), sdist `659c72cf…`, plugin `ea38d5bc…` (unchanged). Not overwritten |
 | Previous qafix3 pack | `cc36a900c9311384c416ec01232991e439ff4660` | Immutable pack `artifacts/0.2.0rc15-2026-10-07-qafix3/`. Wheel `bd9e6520…`, sdist `cd09d72b…`, plugin `ea38d5bc…` (unchanged). RS-04 included. Not overwritten |
 | Previous qafix4 pack | `556500087a352ff27327979becf94784a3a90e65` | Immutable pack `artifacts/0.2.0rc15-2026-10-08-qafix4/`. Wheel `bd9e6520…`, sdist `e9e73401…`, plugin `ea38d5bc…`. Not overwritten |
-| This qafix5 pack | this successor | New immutable pack `artifacts/0.2.0rc15-2026-10-08-qafix5/`. Version stays `0.2.0rc15`. Wheel `583c208b…`, sdist `a53d0725…`, plugin `ea38d5bc…` (unchanged; does not embed the wheel). `src/` tree `9730fcbc5fcf94f1fbaf44c84f915e2cddb8974a`. QA3 provenance plus ported #60 `--pretty` and #64 holder-policy/wheel-identity. Packed `release_check.py` unittest timeout is 600s (Darwin 3.11 CI cap). Prior packs not overwritten. Not a release |
+| Previous qafix5 pack | `9a211fe11cb6e8cbaa90bb582bbf27a1b04ef9e7` | Immutable pack `artifacts/0.2.0rc15-2026-10-08-qafix5/`. Wheel `583c208b…`, sdist `a53d0725…`, plugin `ea38d5bc…`. `src/` tree `9730fcbc5fcf94f1fbaf44c84f915e2cddb8974a`. Not overwritten |
+| This qafix6 pack | the PR #63 head that records this pack | New immutable pack `artifacts/0.2.0rc15-2026-10-08-qafix6/`. Version stays `0.2.0rc15`. Archive hashes recorded with the pack. Engine source is that PR head (not a self-referencing SHA). Base lineage `8015b6d`. QA4 pretty holder-policy hint, strict pretty `ok`, verify vs signature wording, HUMAN-ACCEPTANCE complete-line `rs_neg` and N8 `rs_ok`. Prior packs not overwritten. Not a release |
 
 `main` is `93f9b5708c1ba2d9b325ae2f9016d6a472fe6a20`. Landing source on `main` is not a public release.
 
@@ -68,16 +69,16 @@ CI, all with conclusion `success` (10 jobs per event: 8 `release-check` matrix e
 
 | File | SHA-256 |
 | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | `583c208be84234e2e811acbb5715f9e361ba6bbce6ea229845d0aeedbc142290` |
-| `runspecimen-0.2.0rc15.tar.gz` | `a53d07253a64087c8dcd5cb2857b5879dd59ef1bf1423ac2dd0f56d1e3de195a` |
-| `runspecimen-plugin-0.2.0-rc.15.zip` | `ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb` |
-| `release-report.json` | `3af210fd7edaf3dbdc0644e020b332bfacf3085e367c2654a11eae636143f168` |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | recorded with the qafix6 pack |
+| `runspecimen-0.2.0rc15.tar.gz` | recorded with the qafix6 pack |
+| `runspecimen-plugin-0.2.0-rc.15.zip` | `ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb` if the zip still does not embed the wheel |
+| `release-report.json` | recorded with the qafix6 pack |
 
 The qafix3 pack hashes (`bd9e6520…` / `cd09d72b…` / `ea38d5bc…` / `90069595…`) stay in `artifacts/0.2.0rc15-2026-10-07-qafix3/` and are not this pack. The qafix2 pack hashes (`b181822a…` / `659c72cf…` / `ea38d5bc…` / `63c808dc…`) stay in `artifacts/0.2.0rc15-2026-10-07-qafix2/`. The qafix pack hashes (`b181822a…` / `1ac1ca57…` / `ea38d5bc…` / `10747ca1…`) stay in `artifacts/0.2.0rc15-2026-10-07-qafix/`. The bump pack hashes (`a68094f0…` / `886f90d0…` / `d27799f7…` / `529718ff…`) stay in `artifacts/0.2.0rc15-2026-10-06-bump/`. Archive bytes are the package identity.
 
 Prior packs `artifacts/0.2.0rc15-2026-10-07-qafix3/`, `artifacts/0.2.0rc15-2026-10-07-qafix2/`, `artifacts/0.2.0rc15-2026-10-07-qafix/`, `artifacts/0.2.0rc15-2026-10-06-bump/`, `artifacts/rc15-2026-10-06-qualification-docfix/`, `artifacts/rc15-2026-10-06-qualification/`, and `artifacts/rc15-2026-10-06-isolated-evidence/` were not modified.
 
-This successor is qafix5: QA3 fail-closed shebang/startup-hook provenance, HUMAN-ACCEPTANCE `rs()`/`py()`, ported #60 opt-in `--pretty`/`quickstart`, and ported #64 shared holder-policy refusal / wheel-identity / Linux Ed25519 CI. N10's expected string is unchanged (`execution policy local has no typed-phrase fallback`). Default CLI JSON is unchanged. The wheel moves to `583c208b…` because `src/` changed (`present.py`). Plugin zip stays `ea38d5bc…`. `docs/RELEASE_CANDIDATE_REPORT.md` names `artifacts/0.2.0rc15-2026-10-08-qafix5/`. `tests/test_release_archive_reproducibility.py` points at that directory. Prior packs were not overwritten.
+This successor is qafix6: QA4 pretty holder-policy hint, fail-closed pretty `ok`, verify vs `verify-signature` wording, HUMAN-ACCEPTANCE complete-line refusals and N8 `rs_ok`, bash+zsh sheet tests, and pretty-mode evidence vs qafix4 (`5565000`). N10's expected string is unchanged (`execution policy local has no typed-phrase fallback`). Default CLI JSON is unchanged. `docs/RELEASE_CANDIDATE_REPORT.md` names `artifacts/0.2.0rc15-2026-10-08-qafix6/`. `tests/test_release_archive_reproducibility.py` points at that directory. Prior packs were not overwritten.
 
 ## Release steps (apply to every channel)
 
@@ -91,10 +92,10 @@ Candidate selection, qualification, and release authorization are three distinct
 | --- | --- |
 | Supported | `doctor`, `validate`, `status`, receipts, and guarantee (1) typed approval in a real terminal on an ordinary contract with no `execution_approval`. Unpublished engine `0.2.0rc15` |
 | Excluded | PyPI listing of rc15. Installed holder. Secure Enclave admission. Contracts with `execution_approval` of `local`, `companion`, or `dual` (they refuse the phrase). Evidence-expansion commands are not in published rc14 |
-| Artifacts | This pack's wheel `583c208b…` and sdist `a53d0725…`. Published rc14 stays the public pin (wheel `d720bf51…`, sdist `6ffcfe2f…`; PyPI latest is still `0.2.0rc14` and has no rc15, checked 2026-10-06) |
+| Artifacts | This pack's wheel and sdist hashes are recorded with `artifacts/0.2.0rc15-2026-10-08-qafix6/`. Published rc14 stays the public pin (wheel `d720bf51…`, sdist `6ffcfe2f…`; PyPI latest is still `0.2.0rc14` and has no rc15, checked 2026-10-06) |
 | Completed evidence | Parent suite, reproducibility compare, and release-check rows above. CI green on `fb05284` and `c0812ac`. CI 20/20 success on `d42fe583dc3dd04e3cd3315f50608045c144d818`: push run 37487406807, pull request run 37487436430. That is not `c226b692f100eab0f5b288edc7d99369abadef16`. |
 | Missing (acceptance) | A human guarantee (1) session on this exact wheel (see [HUMAN-ACCEPTANCE.md](HUMAN-ACCEPTANCE.md): isolated venv, `$VENV/bin/runspecimen` only, provenance abort, N10 protected-policy refusal, separate unknown-field schema check). A post-upload byte compare after any upload |
-| Selection | Not made. Choose among published rc14, the `b3367eb` sdist, the `fb05284` sdist, the docfix sdist, the bump pack, the qafix pack, the qafix2 pack, the qafix3 pack, the qafix4 pack, or this qafix5 pack |
+| Selection | Not made. Choose among published rc14, the `b3367eb` sdist, the `fb05284` sdist, the docfix sdist, the bump pack, the qafix pack, the qafix2 pack, the qafix3 pack, the qafix4 pack, the qafix5 pack, or this qafix6 pack |
 | Authorization | Separate from selection and from qualification. Not granted here |
 
 ### Homebrew
@@ -156,9 +157,9 @@ Candidate selection, qualification, and release authorization are three distinct
 
 ## Smallest remaining actions
 
-1. Selection (Yahor): choose the CLI publish candidate. The options are published rc14, the `b3367eb` sdist, the `fb05284` sdist, the docfix sdist, the bump pack, the qafix pack, the qafix2 pack, the qafix3 pack, the qafix4 pack, or this qafix5 pack. Green CI does not make this choice. CI 20/20 success on `d42fe583dc3dd04e3cd3315f50608045c144d818`: push run 37487406807, pull request run 37487436430. That is not `c226b692f100eab0f5b288edc7d99369abadef16`.
+1. Selection (Yahor): choose the CLI publish candidate. The options are published rc14, the `b3367eb` sdist, the `fb05284` sdist, the docfix sdist, the bump pack, the qafix pack, the qafix2 pack, the qafix3 pack, the qafix4 pack, the qafix5 pack, or this qafix6 pack. Green CI does not make this choice. CI 20/20 success on `d42fe583dc3dd04e3cd3315f50608045c144d818`: push run 37487406807, pull request run 37487436430. That is not `c226b692f100eab0f5b288edc7d99369abadef16`.
 2. Qualification (Yahor, in person): run the guarantee (1) session on the chosen wheel using [HUMAN-ACCEPTANCE.md](HUMAN-ACCEPTANCE.md), and keep the identity row with the result. A human H1 diagnostic session ran 2026-10-06 on an `ae6a071` Release build (not this SHA). It found IOS-H1-01 through IOS-H1-09, including IOS-H1-08 (the Mac pinned a revoked key as active) and IOS-H1-02 (Rotate/Revoke do not prompt Face ID despite the hints). It is diagnostic and defect evidence. It is not candidate qualification, and it is not E2 acceptance.
 3. Authorization (Yahor): a separate, explicit release decision. After any upload, compare the published bytes with the selected pack.
 4. Leave E2 fail-closed. Do not schedule installed local, companion, or dual runs.
-5. Keep the CLI and plugin bytes at `artifacts/0.2.0rc15-2026-10-08-qafix5/` unless a packed defect is reproduced. Swift-only fixes after this pack do not get another pack. The qafix4, qafix3, qafix2, qafix, and bump packs stay on disk and are not overwritten.
+5. Keep the CLI and plugin bytes at `artifacts/0.2.0rc15-2026-10-08-qafix6/` unless a packed defect is reproduced. Swift-only fixes after this pack do not get another pack. The qafix5, qafix4, qafix3, qafix2, qafix, and bump packs stay on disk and are not overwritten.
 6. Leave installed local, companion, and dual acceptance blocked. The carried-import fix does not close E2.

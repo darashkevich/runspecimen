@@ -132,8 +132,7 @@ _ERROR_HINTS: tuple[tuple[str, str], ...] = (
     ),
     (
         "no typed-phrase fallback",
-        "Holder policies (local / companion / dual) have no TTY APPROVE path. "
-        "Use the holder, or author an ordinary contract without execution_approval.",
+        "Holder policies need a separately qualified holder; typed-phrase approval isn't available here.",
     ),
 )
 
@@ -542,6 +541,16 @@ def _banner(ok: bool | None, title: str, *, enabled: bool) -> str:
     return f"{tag}  {_heading(title, enabled=enabled)}"
 
 
+def _strict_ok(payload: Any) -> bool:
+    """Security-relevant pretty banners: only an explicit boolean True is success.
+
+    Missing, null, or non-boolean ``ok`` must not render as a success banner.
+    """
+    if not isinstance(payload, dict):
+        return False
+    return payload.get("ok") is True
+
+
 def _format_about(payload: dict[str, Any], *, enabled: bool, context: dict[str, Any]) -> str:
     del context
     lines = [
@@ -566,7 +575,7 @@ def _format_about(payload: dict[str, Any], *, enabled: bool, context: dict[str, 
 
 def _format_doctor(payload: dict[str, Any], *, enabled: bool, context: dict[str, Any]) -> str:
     del context
-    ok = bool(payload.get("ok"))
+    ok = _strict_ok(payload)
     lines = [
         _banner(ok, "Host and workspace readiness", enabled=enabled),
         "",
@@ -621,7 +630,7 @@ def _format_validate(payload: dict[str, Any], *, enabled: bool, context: dict[st
     runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
     isolation = payload.get("isolation") if isinstance(payload.get("isolation"), dict) else {}
     lines = [
-        _banner(bool(payload.get("ok", True)), "Contract is well-formed", enabled=enabled),
+        _banner(_strict_ok(payload), "Contract is well-formed", enabled=enabled),
         "",
         *kv_block(
             [
@@ -755,25 +764,38 @@ def _format_postflight(payload: dict[str, Any], *, enabled: bool, context: dict[
 
 def _format_verify(payload: dict[str, Any], *, enabled: bool, context: dict[str, Any]) -> str:
     del context
-    ok = bool(payload.get("ok", True))
+    doc = payload if isinstance(payload, dict) else {}
+    ok = _strict_ok(doc)
+    title = (
+        "Receipt verification (files/chain; not signatures)"
+        if ok
+        else "Receipt verification failed"
+    )
     lines = [
-        _banner(ok, "Live receipt verification" if ok else "Receipt verification failed", enabled=enabled),
+        _banner(ok, title, enabled=enabled),
         "",
         *kv_block(
             [
-                ("Campaign", payload.get("campaign_id")),
-                ("Run", payload.get("run_id")),
-                ("Certificate", payload.get("certificate_id")),
-                ("Event chain", payload.get("event_chain")),
-                ("Event head", payload.get("event_head")),
-                ("Confirm", payload.get("confirm_channel")),
+                ("Campaign", doc.get("campaign_id")),
+                ("Run", doc.get("run_id")),
+                ("Certificate", doc.get("certificate_id")),
+                ("Event chain", doc.get("event_chain")),
+                ("Event head", doc.get("event_head")),
+                ("Confirm", doc.get("confirm_channel")),
             ]
         ),
     ]
-    note = payload.get("confirm_channel_note")
+    note = doc.get("confirm_channel_note")
     if note:
         lines.append("")
         lines.append(str(note))
+    lines.extend(
+        [
+            "",
+            "This is live receipt verification of the certificate, event chain, and current files.",
+            "It does not check HMAC or Ed25519 signatures. verify-signature does that, with its required trust inputs.",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -1016,7 +1038,7 @@ def _format_list_keys(payload: dict[str, Any], *, enabled: bool, context: dict[s
 def _format_keygen(payload: dict[str, Any], *, enabled: bool, context: dict[str, Any]) -> str:
     del context
     lines = [
-        _banner(bool(payload.get("ok", True)), f"Key generated ({payload.get('scheme')})", enabled=enabled),
+        _banner(_strict_ok(payload), f"Key generated ({payload.get('scheme')})", enabled=enabled),
         "",
         *kv_block(
             [
@@ -1038,7 +1060,7 @@ def _format_sign(payload: dict[str, Any], *, enabled: bool, context: dict[str, A
     return (
         "\n".join(
             [
-                _banner(bool(payload.get("ok", True)), f"Certificate authenticated ({payload.get('scheme')})", enabled=enabled),
+                _banner(_strict_ok(payload), f"Certificate authenticated ({payload.get('scheme')})", enabled=enabled),
                 "",
                 *kv_block(
                     [
@@ -1057,7 +1079,7 @@ def _format_sign(payload: dict[str, Any], *, enabled: bool, context: dict[str, A
 
 def _format_verify_signature(payload: dict[str, Any], *, enabled: bool, context: dict[str, Any]) -> str:
     del context
-    ok = bool(payload.get("ok"))
+    ok = _strict_ok(payload)
     lines = [
         _banner(ok, "Signature / MAC check", enabled=enabled),
         "",

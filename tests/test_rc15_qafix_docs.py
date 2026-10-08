@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -26,9 +27,11 @@ CLI_PATH = ROOT / "src" / "runspecimen" / "cli.py"
 USER_GUIDE = ROOT / "docs" / "USER_GUIDE.md"
 README = ROOT / "README.md"
 HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
+CANDIDATE_MANIFEST = ROOT / "docs" / "CANDIDATE_MANIFEST.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
-PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix5"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix6"
+QAFIX5_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix5"
 QAFIX4_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix4"
 QAFIX3_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-07-qafix3"
 QAFIX_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-07-qafix2"
@@ -36,7 +39,9 @@ BUMP_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-06-bump"
 WHEEL_NAME = "runspecimen-0.2.0rc15-py3-none-any.whl"
 N3_VERSION_NEEDLE = "rs_ok N3-version"
 N10_EXPECTED = "execution policy local has no typed-phrase fallback"
+N10_ERROR_LINE = "RunSpecimen error: execution policy local has no typed-phrase fallback"
 UNK_EXPECTED = "contract contains unknown field(s): not_a_real_contract_field"
+UNK_ERROR_LINE = "RunSpecimen error: contract contains unknown field(s): not_a_real_contract_field"
 
 DIGEST_HELP_NEEDLE = (
     "verify checks receipt integrity, the event chain, and live "
@@ -144,7 +149,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("command -v runspecimen", text)
         self.assertIn("mktemp -d", text)
         self.assertIn('test ! -e "$VENV"', text)
-        self.assertIn("0.2.0rc15-2026-10-08-qafix5", text)
+        self.assertIn("0.2.0rc15-2026-10-08-qafix6", text)
         self.assertIn("--no-index --no-deps --force-reinstall", text)
         self.assertIn("scripts/verify_installed_wheel.py", text)
         self.assertIn("--launcher", text)
@@ -162,7 +167,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("trusted interpreter", text)
         self.assertIn("demo-campaign", text)
         self.assertIn("run-001", text)
-        self.assertIn("HUMAN-ACCEPTANCE supplement qafix5", text)
+        self.assertIn("HUMAN-ACCEPTANCE supplement qafix6", text)
         self.assertNotRegex(
             text,
             r'(?m)^(?:\$PY|"\$PY"|python3|py ).*(?:pip install --upgrade|pip install -U)',
@@ -181,6 +186,17 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("not_a_real_contract_field", text)
         self.assertIn("rs_neg N10", text)
         self.assertIn("rs_neg UNK", text)
+        self.assertIn("rs_ok N8 $?", text)
+        self.assertIn('grep -Fqx -- "$4"', text)
+        self.assertIn(N10_ERROR_LINE, text)
+        self.assertIn(UNK_ERROR_LINE, text)
+        if CANDIDATE_MANIFEST.is_file():
+            manifest = CANDIDATE_MANIFEST.read_text(encoding="utf-8")
+            self.assertIn("| Candidate (this pass) |", manifest)
+            self.assertIn("PR #63 head that records the qafix6 pack", manifest)
+            self.assertIn("8015b6d8017e5566f7558cc916dc0ee470c653ad", manifest)
+            self.assertIn("artifacts/0.2.0rc15-2026-10-08-qafix6/", manifest)
+            self.assertIn("3b20ad6b179baab582ec97285dd7899f09f11574", manifest)
         self.assertIn("Homebrew", text)
         self.assertIn("STEP $1 exit=$2", text)
         command_lines = [
@@ -210,10 +226,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
     def test_human_acceptance_n3_missing_launcher_stops_in_zsh(self) -> None:
         if not HUMAN_ACCEPTANCE.is_file():
             self.skipTest("HUMAN-ACCEPTANCE is not packed into the sdist")
-        zsh = _zsh_path()
-        if zsh is None:
-            self.skipTest("zsh is not available")
-        self._assert_n3_missing_launcher_stops(zsh)
+        self._assert_n3_missing_launcher_stops(_require_zsh())
 
     def _assert_n3_missing_launcher_stops(self, shell: str) -> None:
         text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
@@ -252,10 +265,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
             self.skipTest("HUMAN-ACCEPTANCE is not packed into the sdist")
         helpers = _helper_functions(HUMAN_ACCEPTANCE.read_text(encoding="utf-8"))
         script = helpers + "\nrs_ok demo 0\nrs_ok shouldfail 1\necho REACHED\n"
-        shells = ["bash"]
-        zsh = _zsh_path()
-        if zsh is not None:
-            shells.append(zsh)
+        shells = ["bash", _require_zsh()]
         for shell in shells:
             result = subprocess.run(
                 [shell, "-c", script],
@@ -594,9 +604,158 @@ class Rc15QaDocfixTests(unittest.TestCase):
             got = module.interpreter_from_launcher(launcher)
             self.assertEqual(got, python)
 
+    def test_human_acceptance_rs_neg_requires_complete_line(self) -> None:
+        if not HUMAN_ACCEPTANCE.is_file():
+            self.skipTest("HUMAN-ACCEPTANCE is not packed into the sdist")
+        helpers = _helper_functions(HUMAN_ACCEPTANCE.read_text(encoding="utf-8"))
+        substring = helpers + (
+            f"\nrs_neg N10 1 'prefix {N10_EXPECTED} suffix' {shlex.quote(N10_ERROR_LINE)}\n"
+            "echo REACHED\n"
+        )
+        complete = helpers + (
+            f"\nrs_neg N10 1 {shlex.quote(N10_ERROR_LINE)} {shlex.quote(N10_ERROR_LINE)}\n"
+            "echo REACHED\n"
+        )
+        for shell in ("bash", _require_zsh()):
+            with self.subTest(shell=shell, kind="substring"):
+                result = subprocess.run(
+                    [shell, "-c", substring],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                output = result.stdout + result.stderr
+                self.assertNotEqual(result.returncode, 0, output)
+                self.assertIn("complete line", output)
+                self.assertNotIn("REACHED", output)
+            with self.subTest(shell=shell, kind="complete"):
+                result = subprocess.run(
+                    [shell, "-c", complete],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                output = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0, output)
+                self.assertIn("PASS: N10", output)
+                self.assertIn("REACHED", output)
+
+    def test_human_acceptance_sheet_n1_n7_n10_unk_in_bash(self) -> None:
+        if not HUMAN_ACCEPTANCE.is_file():
+            self.skipTest("HUMAN-ACCEPTANCE is not packed into the sdist")
+        self._assert_acceptance_sheet("bash")
+
+    def test_human_acceptance_sheet_n1_n7_n10_unk_in_zsh(self) -> None:
+        if not HUMAN_ACCEPTANCE.is_file():
+            self.skipTest("HUMAN-ACCEPTANCE is not packed into the sdist")
+        self._assert_acceptance_sheet(_require_zsh())
+
+    def _assert_acceptance_sheet(self, shell: str) -> None:
+        text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory(prefix="rs-ha-sheet-") as root:
+            pack = Path(root) / "pack"
+            _build_sheet_pack(pack)
+            script = _acceptance_sheet_script(text, pack)
+            result = subprocess.run(
+                [shell, "-c", script],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=str(ROOT),
+                env=_sanitized_env(),
+                timeout=180,
+            )
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, output)
+            for step in (
+                "N1-wheel",
+                "N1-venv-absent",
+                "N1-venv",
+                "N2-hash",
+                "N2-install",
+                "N3-version",
+                "N3-verify",
+                "N4",
+                "N5",
+                "N6",
+                "N7",
+                "N10-init",
+                "N10-edit",
+                "UNK-init",
+                "UNK-edit",
+            ):
+                self.assertIn(f"STEP {step} exit=0", output)
+            self.assertIn("PASS: N10", output)
+            self.assertIn("PASS: UNK", output)
+            self.assertNotIn("FAIL:", output)
+            self.assertNotIn("STEP N8 ", output)
+            self.assertNotIn("STEP N9-", output)
+
+    def test_qa3_01_env_shebang_is_refused(self) -> None:
+        self.test_interpreter_from_launcher_rejects_env_shebang()
+
+    def test_qa3_02_sitecustomize_approve_preload_is_refused(self) -> None:
+        self.test_installed_wheel_provenance_rejects_sitecustomize_approve_preload()
+
+    def test_qa3_03_sheet_n3_failure_stops_later_steps(self) -> None:
+        self.test_human_acceptance_n3_fails_when_launcher_is_missing()
+        self.test_human_acceptance_n3_missing_launcher_stops_in_zsh()
+
+    def test_qa3_control_matrix_named_outcomes(self) -> None:
+        """QA #3 control matrix: shebang, origins, startup hooks, sheet stop."""
+        self.test_qa3_01_env_shebang_is_refused()
+        self.test_installed_wheel_provenance_accepts_absolute_shebang_with_old_python_on_path()
+        self.test_qa3_02_sitecustomize_approve_preload_is_refused()
+        self.test_installed_wheel_provenance_rejects_pth_prepend()
+        self.test_human_acceptance_helpers_stop_in_bash_and_zsh()
+
+    def test_qa4_lazy_import_after_verification_is_bound(self) -> None:
+        pin = _pin_wheel()
+        if not pin.is_file():
+            self.skipTest("pin wheel must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        result = _install_and_verify(pin, pin)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout.split("---")[0])
+        self.assertTrue(payload["ok"])
+        lazy = payload.get("lazy_loaded_runspecimen") or {}
+        self.assertTrue(lazy, payload)
+        verified = Path(payload["verified_package_dir"]).resolve()
+        for name, origin in lazy.items():
+            self.assertIsNotNone(origin, name)
+            got = Path(str(origin)).resolve()
+            self.assertTrue(
+                verified == got.parent or verified in got.parents,
+                (name, got, verified),
+            )
+
+    def test_qa4_meta_path_finder_via_startup_hook_is_rejected(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        hijack = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            after_install=_write_virtualenv_meta_path_hijack,
+        )
+        self.assertNotEqual(hijack.returncode, 0, hijack.stdout + hijack.stderr)
+        payload = json.loads(hijack.stdout.split("---")[0])
+        self.assertFalse(payload["ok"])
+        findings = payload.get("meta_path_findings") or []
+        self.assertTrue(
+            findings
+            or "unexpected sys.meta_path" in str(payload.get("message", "")),
+            payload,
+        )
+
 
 def _pin_wheel() -> Path:
-    for pack in (PIN_PACK, QAFIX4_PACK, QAFIX3_PACK, QAFIX_PACK):
+    for pack in (PIN_PACK, QAFIX5_PACK, QAFIX4_PACK, QAFIX3_PACK, QAFIX_PACK):
         pin = pack / WHEEL_NAME
         if pin.is_file():
             return pin
@@ -607,6 +766,68 @@ def _zsh_path() -> str | None:
     from shutil import which
 
     return which("zsh")
+
+
+def _require_zsh() -> str:
+    zsh = _zsh_path()
+    if zsh is None:
+        raise AssertionError(
+            "zsh must be installed on this job; a skip for missing zsh is not a pass"
+        )
+    return zsh
+
+
+def _build_sheet_pack(dest: Path) -> Path:
+    dest.mkdir(parents=True, exist_ok=True)
+    env = _sanitized_env()
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "wheel",
+            "--no-deps",
+            "--no-build-isolation",
+            "-w",
+            str(dest),
+            str(ROOT),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(ROOT),
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"pip wheel failed: {result.stdout}\n{result.stderr}")
+    wheels = list(dest.glob("runspecimen-0.2.0rc15-*.whl"))
+    if len(wheels) != 1:
+        raise AssertionError(f"expected one freshly built wheel in {dest}, got {wheels}")
+    wheel = wheels[0]
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    (dest / "SHA256SUMS").write_text(f"{digest}  {wheel.name}\n", encoding="utf-8")
+    return wheel
+
+
+def _acceptance_sheet_script(markdown: str, pack: Path) -> str:
+    blocks = re.findall(r"```(?:bash|sh)?\n(.*?)```", markdown, flags=re.S)
+    parts: list[str] = []
+    for block in blocks:
+        if "rs_ok N8" in block or "rs_ok N9-" in block:
+            continue
+        if "Session: HUMAN-ACCEPTANCE" in block:
+            continue
+        parts.append(block.rstrip() + "\n")
+    script = "".join(parts)
+    replaced, count = re.subn(
+        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-08-qafix6"',
+        f"export PACK={shlex.quote(str(pack))}",
+        script,
+        count=1,
+    )
+    if count != 1:
+        raise AssertionError("could not rewrite PACK export in HUMAN-ACCEPTANCE sheet")
+    return replaced
 
 
 def _fence_containing(markdown: str, needle: str) -> str:
@@ -783,6 +1004,35 @@ def _write_virtualenv_pth_qa_compat(hook: _ProvHook) -> None:
 
 def _write_standard_virtualenv_pth(hook: _ProvHook) -> None:
     (hook.site / "_virtualenv.py").write_text("# standard virtualenv bootstrap stub\n", encoding="utf-8")
+    (hook.site / "_virtualenv.pth").write_text("import _virtualenv\n", encoding="utf-8")
+
+
+def _write_virtualenv_meta_path_hijack(hook: _ProvHook) -> None:
+    """Known-safe ``import _virtualenv`` pth with a custom meta_path finder."""
+    if hook.planted is None:
+        raise AssertionError("planted older tree is required")
+    old_signing = str((hook.planted / "runspecimen" / "signing.py").resolve())
+    (hook.site / "_virtualenv.py").write_text(
+        "import sys\n"
+        "from importlib.abc import Loader, MetaPathFinder\n"
+        "from importlib.machinery import ModuleSpec\n"
+        "from pathlib import Path\n"
+        f"_TARGET = {old_signing!r}\n"
+        "class _HijackLoader(Loader):\n"
+        "    def create_module(self, spec):\n"
+        "        return None\n"
+        "    def exec_module(self, module):\n"
+        "        module.__file__ = _TARGET\n"
+        "        code = Path(_TARGET).read_text(encoding='utf-8')\n"
+        "        exec(compile(code, _TARGET, 'exec'), module.__dict__)\n"
+        "class _HijackFinder(MetaPathFinder):\n"
+        "    def find_spec(self, fullname, path, target=None):\n"
+        "        if fullname != 'runspecimen.signing':\n"
+        "            return None\n"
+        "        return ModuleSpec(fullname, _HijackLoader(), origin=_TARGET)\n"
+        "sys.meta_path.insert(0, _HijackFinder())\n",
+        encoding="utf-8",
+    )
     (hook.site / "_virtualenv.pth").write_text("import _virtualenv\n", encoding="utf-8")
 
 

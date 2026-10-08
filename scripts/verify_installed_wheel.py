@@ -50,61 +50,119 @@ KNOWN_SAFE_PTH_IMPORT_LINES = frozenset({
     "import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os.environ.get(var, 'local') == 'local'; enabled and __import__('_distutils_hack').add_shim()",
 })
 CONSOLE_FROM = re.compile(r"from\s+([\w.]+)\s+import\s+(\w+)")
-PROBE_SCRIPT = (
-    "import json, sys, site\n"
-    "from pathlib import Path\n"
-    "import runspecimen\n"
-    "import runspecimen.cli\n"
-    "import runspecimen.approve\n"
-    "import runspecimen.run\n"
-    "try:\n"
-    "    import runspecimen.present\n"
-    "except ImportError:\n"
-    "    pass\n"
-    "loaded = {}\n"
-    "for name, mod in list(sys.modules.items()):\n"
-    "    if name != 'runspecimen' and not name.startswith('runspecimen.'):\n"
-    "        continue\n"
-    "    path = getattr(mod, '__file__', None)\n"
-    "    loaded[name] = None if path is None else str(Path(path).resolve())\n"
-    "\n"
-    "def _find(modname):\n"
-    "    if modname in sys.modules:\n"
-    "        mod = sys.modules[modname]\n"
-    "        path = getattr(mod, '__file__', None)\n"
-    "        if path:\n"
-    "            return str(Path(path).resolve())\n"
-    "    for entry in list(sys.path):\n"
-    "        if not entry:\n"
-    "            continue\n"
-    "        base = Path(entry)\n"
-    "        for suffix in ('.py', '.pyc'):\n"
-    "            cand = base / (modname + suffix)\n"
-    "            if cand.is_file():\n"
-    "                return str(cand.resolve())\n"
-    "        init = base / modname / '__init__.py'\n"
-    "        if init.is_file():\n"
-    "            return str(init.resolve())\n"
-    "    return None\n"
-    "\n"
-    "print(json.dumps({\n"
-    "    'runspecimen_file': str(Path(runspecimen.__file__).resolve()),\n"
-    "    'cli_file': str(Path(runspecimen.cli.__file__).resolve()),\n"
-    "    'approve_file': str(Path(runspecimen.approve.__file__).resolve()),\n"
-    "    'present_file': (\n"
-    "        str(Path(runspecimen.present.__file__).resolve())\n"
-    "        if 'runspecimen.present' in sys.modules\n"
-    "        else None\n"
-    "    ),\n"
-    "    'prefix': str(Path(sys.prefix).resolve()),\n"
-    "    'executable': str(Path(sys.executable).resolve()),\n"
-    "    'version': getattr(runspecimen, '__version__', None),\n"
-    "    'loaded_runspecimen': loaded,\n"
-    "    'sitecustomize': _find('sitecustomize'),\n"
-    "    'usercustomize': _find('usercustomize'),\n"
-    "    'enable_user_site': bool(getattr(site, 'ENABLE_USER_SITE', False)),\n"
-    "}))\n"
-)
+PROBE_SCRIPT = r"""
+import json, sys, site, pkgutil
+from pathlib import Path
+import runspecimen
+import runspecimen.cli
+import runspecimen.approve
+import runspecimen.run
+try:
+    import runspecimen.present
+except ImportError:
+    pass
+
+def _find(modname):
+    if modname in sys.modules:
+        mod = sys.modules[modname]
+        path = getattr(mod, '__file__', None)
+        if path:
+            return str(Path(path).resolve())
+    for entry in list(sys.path):
+        if not entry:
+            continue
+        base = Path(entry)
+        for suffix in ('.py', '.pyc'):
+            cand = base / (modname + suffix)
+            if cand.is_file():
+                return str(cand.resolve())
+        init = base / modname / '__init__.py'
+        if init.is_file():
+            return str(init.resolve())
+    return None
+
+def _origin(mod):
+    path = getattr(mod, '__file__', None)
+    return None if path is None else str(Path(path).resolve())
+
+loaded = {}
+for name, mod in list(sys.modules.items()):
+    if name != 'runspecimen' and not name.startswith('runspecimen.'):
+        continue
+    loaded[name] = _origin(mod)
+
+lazy_loaded = {}
+lazy_errors = {}
+try:
+    for info in pkgutil.walk_packages(runspecimen.__path__, prefix='runspecimen.'):
+        name = info.name
+        if name in sys.modules:
+            continue
+        try:
+            __import__(name)
+        except Exception as exc:
+            lazy_errors[name] = type(exc).__name__
+            continue
+        mod = sys.modules.get(name)
+        lazy_loaded[name] = None if mod is None else _origin(mod)
+except Exception as exc:
+    lazy_errors['<walk>'] = type(exc).__name__ + ':' + str(exc)
+
+allowed_meta = {
+    '_frozen_importlib',
+    '_frozen_importlib_external',
+    'zipimport',
+    'importlib',
+    'importlib.abc',
+    'importlib.machinery',
+    'importlib.util',
+    'importlib._bootstrap',
+    'importlib._bootstrap_external',
+}
+meta_path = []
+unexpected_meta_path = []
+for finder in sys.meta_path:
+    if finder is None:
+        unexpected_meta_path.append({'type': None, 'module': None})
+        continue
+    # BuiltinImporter / FrozenImporter sit on meta_path as classes, not instances.
+    if isinstance(finder, type):
+        rec = {
+            'type': getattr(finder, '__name__', None),
+            'module': getattr(finder, '__module__', None),
+        }
+    else:
+        cls = type(finder)
+        rec = {
+            'type': getattr(cls, '__name__', None),
+            'module': getattr(cls, '__module__', None),
+        }
+    meta_path.append(rec)
+    if rec['module'] not in allowed_meta:
+        unexpected_meta_path.append(rec)
+
+print(json.dumps({
+    'runspecimen_file': str(Path(runspecimen.__file__).resolve()),
+    'cli_file': str(Path(runspecimen.cli.__file__).resolve()),
+    'approve_file': str(Path(runspecimen.approve.__file__).resolve()),
+    'present_file': (
+        str(Path(runspecimen.present.__file__).resolve())
+        if 'runspecimen.present' in sys.modules
+        else None
+    ),
+    'prefix': str(Path(sys.prefix).resolve()),
+    'executable': str(Path(sys.executable).resolve()),
+    'version': getattr(runspecimen, '__version__', None),
+    'loaded_runspecimen': loaded,
+    'lazy_loaded_runspecimen': lazy_loaded,
+    'lazy_import_errors': lazy_errors,
+    'meta_path': meta_path,
+    'unexpected_meta_path': unexpected_meta_path,
+    'sitecustomize': _find('sitecustomize'),
+    'usercustomize': _find('usercustomize'),
+    'enable_user_site': bool(getattr(site, 'ENABLE_USER_SITE', False)),
+}))
+"""
 
 
 class UnsupportedShebangError(ValueError):
@@ -575,6 +633,8 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         "import_overrides": incoming_overrides,
         "pth_findings": [],
         "startup_findings": [],
+        "meta_path_findings": [],
+        "lazy_loaded_runspecimen": {},
         "origins_bound": False,
         "launcher": None,
         "interpreter": None,
@@ -640,15 +700,20 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
             report["approve_file"] = str(origins["approve_file"])
         if origins.get("present_file"):
             report["present_file"] = str(origins["present_file"])
-        loaded = origins.get("loaded_runspecimen") or {}
+        loaded = dict(origins.get("loaded_runspecimen") or {})
+        lazy_loaded = dict(origins.get("lazy_loaded_runspecimen") or {})
         report["loaded_runspecimen"] = loaded
+        report["lazy_loaded_runspecimen"] = lazy_loaded
+        report["meta_path_findings"] = list(origins.get("unexpected_meta_path") or [])
+        merged = dict(loaded)
+        merged.update(lazy_loaded)
         report["runspecimen_version"] = origins.get("version")
         bound, bind_error = origins_bound_to_package(
             runspecimen_file=rs_file,
             cli_file=cli_file,
             package_dir=package_dir,
             site_packages=site,
-            loaded=loaded,
+            loaded=merged,
             hashed_py_members=hashed_py_members,
         )
         report["origins_bound"] = bound
@@ -684,6 +749,17 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         )
     if startup_findings:
         failures.append("; ".join(startup_findings))
+    meta_path_findings = list(report.get("meta_path_findings") or [])
+    if meta_path_findings:
+        failures.append(
+            "unexpected sys.meta_path finder/loader: "
+            + "; ".join(
+                f"{item.get('module')}.{item.get('type')}"
+                if isinstance(item, dict)
+                else str(item)
+                for item in meta_path_findings
+            )
+        )
     if not bound:
         failures.append(bind_error or "effective origins are not bound to the verified package directory")
     if not report.get("ok"):
@@ -740,6 +816,8 @@ def main(argv: list[str] | None = None) -> int:
             "import_overrides",
             "pth_findings",
             "startup_findings",
+            "meta_path_findings",
+            "lazy_loaded_runspecimen",
             "runspecimen_version",
             "checked",
             "missing",

@@ -27,9 +27,12 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
-      - name: Install bubblewrap (Linux bwrap integration tests)
+      # HUMAN-ACCEPTANCE zsh sheet tests run on every release-check job.
+      # Linux installs zsh here (a skip for missing zsh is not a pass).
+      # macOS jobs (including macos-latest / Python 3.11) already have zsh.
+      - name: Install bubblewrap and zsh (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap zsh
       - run: python -m pip install --upgrade pip setuptools wheel
       - name: iOS Release symbol gate fixtures
         run: sh apps/ios/Scripts/verify_ios_release_symbols.sh

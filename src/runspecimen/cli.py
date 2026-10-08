@@ -656,7 +656,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_live_provenance=True,
             )
             _emit(result, args, kind="verify")
-            return 0
+            return 0 if isinstance(result, dict) and result.get("ok") is True else 1
         if args.command == "status":
             if args.contract is not None:
                 c = load_contract(args.contract)
