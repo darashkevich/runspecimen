@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-08-qafix9/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-08-qafix10/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-08-qafix9/`,
 `artifacts/0.2.0rc15-2026-10-08-qafix8/`,
 `artifacts/0.2.0rc15-2026-10-08-qafix7/`,
 `artifacts/0.2.0rc15-2026-10-08-qafix6/`,
@@ -63,7 +64,7 @@ Paste this first. It remembers the pack path and defines four tiny helpers.
 refusals later.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-08-qafix9"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-08-qafix10"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 export WORK=$(mktemp -d "${TMPDIR:-/tmp}/rs-ha-rc15.XXXXXX")
 export VENV="$WORK/venv"
@@ -150,7 +151,7 @@ realpath is under the interpreter's stdlib dir, not by name.
 There is no RECORD-based trust of `_distutils_hack`. The script prints the
 installed dist-info `RECORD` and `direct_url.json`. `__version__ ==
 0.2.0rc15` is not sufficient: the 2026-10-06-bump wheel reports the same
-version and must fail this step when `$WHEEL` is the qafix9 pin. A
+version and must fail this step when `$WHEEL` is the qafix10 pin. A
 same-version tree selected via inside-venv `PYTHONPATH`, a `.pth` prepend,
 sitecustomize, or an executable `.pth` import must also fail.
 
@@ -318,9 +319,9 @@ positive run. Capture a new labeled supplement instead, in a fresh Terminal,
 with a new workspace:
 
 ```
-Session: HUMAN-ACCEPTANCE supplement qafix9
+Session: HUMAN-ACCEPTANCE supplement qafix10
 Date:
-Pack: artifacts/0.2.0rc15-2026-10-08-qafix9/
+Pack: artifacts/0.2.0rc15-2026-10-08-qafix10/
 Paste N1 through N7, then N10 and the schema-rejection check.
 Copy every "STEP … exit=" line, plus PASS: N10 and PASS: UNK, into your notes.
 ```
