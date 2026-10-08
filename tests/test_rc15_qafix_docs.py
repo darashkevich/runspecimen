@@ -28,10 +28,12 @@ README = ROOT / "README.md"
 HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
-PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-07-qafix3"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix4"
+QAFIX3_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-07-qafix3"
 QAFIX_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-07-qafix2"
 BUMP_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-06-bump"
 WHEEL_NAME = "runspecimen-0.2.0rc15-py3-none-any.whl"
+N3_GATING_NEEDLE = '"$RS" --version &&'
 
 DIGEST_HELP_NEEDLE = (
     "verify checks receipt integrity, the event chain, and live "
@@ -139,11 +141,20 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("command -v runspecimen", text)
         self.assertIn("mktemp -d", text)
         self.assertIn('test ! -e "$VENV"', text)
-        self.assertIn("0.2.0rc15-2026-10-07-qafix3", text)
+        self.assertIn("0.2.0rc15-2026-10-08-qafix4", text)
         self.assertIn("--no-index --no-deps --force-reinstall", text)
         self.assertIn("scripts/verify_installed_wheel.py", text)
+        self.assertIn("--launcher", text)
         self.assertIn("wheel_sha256", text)
         self.assertIn("direct_url.json", text)
+        self.assertIn("env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP", text)
+        self.assertIn("PYTHONNOUSERSITE=1", text)
+        self.assertIn("set -euo pipefail", text)
+        self.assertIn(N3_GATING_NEEDLE, text)
+        self.assertIn("realpath-equal to the verified package directory", text)
+        self.assertIn("same absolute launcher and sanitized environment", text)
+        self.assertIn("demo-campaign", text)
+        self.assertIn("run-001", text)
         self.assertNotRegex(
             text,
             r'(?m)^(?:\$PY|"\$PY"|python3).*(?:pip install --upgrade|pip install -U)',
@@ -151,6 +162,10 @@ class Rc15QaDocfixTests(unittest.TestCase):
         for command in _bash_commands(text):
             self.assertNotIn("pip install --upgrade", command)
             self.assertNotIn("pip install -U", command)
+            if "verify_installed_wheel.py" in command:
+                self.assertIn("&&", command)
+                self.assertIn('"$RS" --version', command)
+                self.assertNotRegex(command, r'"\$RS" --version\s*;')
         self.assertIn("execution policy local has no typed-phrase fallback", text)
         self.assertIn("## N10 — protected-policy refusal", text)
         self.assertIn("## Schema-rejection check (not N10)", text)
@@ -159,12 +174,52 @@ class Rc15QaDocfixTests(unittest.TestCase):
         command_lines = [
             line.strip()
             for line in text.splitlines()
-            if line.startswith("$VENV/") or line.startswith('"$RS"') or line.startswith('"$PY"')
+            if line.startswith("$VENV/")
+            or line.startswith('"$RS"')
+            or line.startswith('"$PY"')
+            or line.startswith("$RS_SANITIZE")
+            or line.startswith("set -euo")
+            or line.startswith("env -u")
+            or line.startswith("test ")
         ]
         for line in command_lines:
             self.assertNotIn(" #", line, f"trailing comment on command line: {line}")
             self.assertNotRegex(line, r"(^|\s)runspecimen\s", "bare runspecimen on a command line")
             self.assertNotRegex(line, r"(^|\s)python3\s")
+
+    def test_human_acceptance_n3_fails_when_launcher_is_missing(self) -> None:
+        if not HUMAN_ACCEPTANCE.is_file():
+            self.skipTest("HUMAN-ACCEPTANCE is not packed into the sdist")
+        text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
+        gating = [
+            command
+            for command in _bash_commands(text)
+            if "verify_installed_wheel.py" in command and '"$RS" --version' in command
+        ]
+        self.assertEqual(len(gating), 1, "N3 must have one launcher-then-verifier command")
+        command = gating[0]
+        self.assertIn("&&", command)
+        self.assertIn("set -euo pipefail", command)
+        pin = _pin_wheel()
+        with tempfile.TemporaryDirectory(prefix="rs-ha-n3-missing-") as root:
+            missing = Path(root) / "missing-runspecimen"
+            env = os.environ.copy()
+            env["RS"] = str(missing)
+            env["PY"] = sys.executable
+            env["WHEEL"] = str(pin.resolve()) if pin.is_file() else str(Path(root) / "no.whl")
+            env["RS_SANITIZE"] = (
+                "env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1"
+            )
+            env["PWD"] = str(ROOT)
+            result = subprocess.run(
+                ["bash", "-c", command],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=str(ROOT),
+            )
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_installed_wheel_provenance_rejects_same_version_older_rc15(self) -> None:
         pin = _pin_wheel()
@@ -181,30 +236,141 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertEqual(match.returncode, 0, match.stdout + match.stderr)
         payload = json.loads(match.stdout.split("---")[0])
         self.assertTrue(payload["ok"])
+        self.assertTrue(payload["origins_bound"])
+        self.assertEqual(payload["import_overrides"], [])
+        self.assertEqual(payload["pth_findings"], [])
         self.assertGreater(payload["checked"], 0)
+        verified = Path(payload["verified_package_dir"]).resolve()
+        self.assertEqual(Path(payload["runspecimen_file"]).resolve().parent, verified)
+        self.assertEqual(Path(payload["cli_file"]).resolve().parent, verified)
         self.assertIn("direct_url.json", match.stdout)
         self.assertIn("RECORD", match.stdout)
 
+    def test_installed_wheel_provenance_rejects_pythonpath_override(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        hijack = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            extra_env_factory=_pythonpath_to_planted,
+        )
+        self.assertNotEqual(hijack.returncode, 0, hijack.stdout + hijack.stderr)
+        payload = json.loads(hijack.stdout.split("---")[0])
+        self.assertFalse(payload["ok"])
+        self.assertTrue(
+            any(item.startswith("PYTHONPATH=") for item in payload["import_overrides"]),
+            payload["import_overrides"],
+        )
+
+    def test_installed_wheel_provenance_rejects_pth_prepend(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        hijack = _install_and_verify(pin, pin, plant_older=older, write_pth=True)
+        self.assertNotEqual(hijack.returncode, 0, hijack.stdout + hijack.stderr)
+        payload = json.loads(hijack.stdout.split("---")[0])
+        self.assertFalse(payload["ok"])
+        self.assertFalse(payload["origins_bound"])
+        self.assertTrue(payload["pth_findings"], payload)
+        self.assertTrue(
+            any("outside the verified install" in item.get("reason", "") for item in payload["pth_findings"]),
+            payload["pth_findings"],
+        )
+
 
 def _pin_wheel() -> Path:
-    pin = PIN_PACK / WHEEL_NAME
-    if pin.is_file():
-        return pin
-    return QAFIX_PACK / WHEEL_NAME
+    for pack in (PIN_PACK, QAFIX3_PACK, QAFIX_PACK):
+        pin = pack / WHEEL_NAME
+        if pin.is_file():
+            return pin
+    return PIN_PACK / WHEEL_NAME
 
 
-def _install_and_verify(install_wheel: Path, pin_wheel: Path) -> subprocess.CompletedProcess[str]:
+def _venv_python(venv_dir: Path) -> Path:
+    if os.name == "nt":
+        return venv_dir / "Scripts" / "python.exe"
+    return venv_dir / "bin" / "python"
+
+
+def _venv_launcher(venv_dir: Path) -> Path:
+    if os.name == "nt":
+        return venv_dir / "Scripts" / "runspecimen.exe"
+    return venv_dir / "bin" / "runspecimen"
+
+
+def _sanitized_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env.pop("PYTHONHOME", None)
+    env.pop("PYTHONSTARTUP", None)
+    env["PYTHONNOUSERSITE"] = "1"
+    return env
+
+
+def _plant_older_tree(py: Path, venv_dir: Path, older_wheel: Path, env: dict[str, str]) -> Path:
+    target = venv_dir / "older"
+    planted = subprocess.run(
+        [
+            str(py),
+            "-m",
+            "pip",
+            "install",
+            "--no-index",
+            "--no-deps",
+            "--target",
+            str(target),
+            str(older_wheel.resolve()),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if planted.returncode != 0:
+        raise AssertionError(f"pip --target older failed: {planted.stderr}")
+    return target.resolve()
+
+
+def _pythonpath_to_planted(venv_dir: Path, planted: Path) -> dict[str, str]:
+    env = _sanitized_env()
+    env["PYTHONPATH"] = str(planted)
+    return env
+
+
+def _site_packages(py: Path, env: dict[str, str]) -> Path:
+    result = subprocess.run(
+        [str(py), "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    return Path(result.stdout.strip()).resolve()
+
+
+def _install_and_verify(
+    install_wheel: Path,
+    pin_wheel: Path,
+    *,
+    plant_older: Path | None = None,
+    write_pth: bool = False,
+    extra_env_factory=None,
+) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix="rs-ha-prov-") as root:
         venv_dir = Path(root) / "venv"
         if venv_dir.exists():
             raise AssertionError(f"venv target already exists: {venv_dir}")
         venv.create(venv_dir, with_pip=True, symlinks=True)
-        py = venv_dir / "bin" / "python"
-        if os.name == "nt":
-            py = venv_dir / "Scripts" / "python.exe"
-        env = os.environ.copy()
-        env.pop("PYTHONPATH", None)
-        env["PYTHONNOUSERSITE"] = "1"
+        py = _venv_python(venv_dir)
+        env = _sanitized_env()
         install = subprocess.run(
             [
                 str(py),
@@ -223,12 +389,30 @@ def _install_and_verify(install_wheel: Path, pin_wheel: Path) -> subprocess.Comp
         )
         if install.returncode != 0:
             raise AssertionError(f"pip install failed: {install.stderr}")
+        planted = None
+        if plant_older is not None:
+            planted = _plant_older_tree(py, venv_dir, plant_older, env)
+            if write_pth:
+                pth = _site_packages(py, env) / "zz_older_prepend.pth"
+                pth.write_text(
+                    f"import sys; sys.path.insert(0, {str(planted)!r})\n",
+                    encoding="utf-8",
+                )
+        verify_env = extra_env_factory(venv_dir, planted) if extra_env_factory else env
+        launcher = _venv_launcher(venv_dir)
         return subprocess.run(
-            [str(py), str(VERIFY_INSTALLED), "--wheel", str(pin_wheel.resolve())],
+            [
+                str(py),
+                str(VERIFY_INSTALLED),
+                "--wheel",
+                str(pin_wheel.resolve()),
+                "--launcher",
+                str(launcher),
+            ],
             check=False,
             capture_output=True,
             text=True,
-            env=env,
+            env=verify_env,
         )
 
 

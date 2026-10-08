@@ -3,12 +3,17 @@
 
 Version strings are not proof. Two unpublished 0.2.0rc15 wheels can differ.
 Exit 0 only when every hashed RECORD member (and every runspecimen/*.py in the
-zip) matches the file installed under this interpreter, and the installed
-package has no extra .py modules. Prints the installed dist-info RECORD and
-direct_url.json when present.
+zip) matches the file installed under the absolute launcher's interpreter, the
+effective runspecimen and CLI module origins realpath-equal that verified
+package directory, the environment has no import overrides, and no site-packages
+.pth adds a path outside that install.
 
-Run with the venv interpreter that owns the install:
-  "$VENV/bin/python" scripts/verify_installed_wheel.py --wheel /abs/path.whl
+Run with the venv interpreter that owns the install, under the same sanitized
+environment the acceptance sheet uses for every launcher call:
+
+  env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 \\
+    "$VENV/bin/python" scripts/verify_installed_wheel.py \\
+    --wheel /abs/path.whl --launcher "$VENV/bin/runspecimen"
 """
 
 from __future__ import annotations
@@ -16,11 +21,34 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import re
+import subprocess
 import sys
-import sysconfig
-import zipfile
 from pathlib import Path
 from typing import Any
+import zipfile
+
+
+IMPORT_OVERRIDE_VARS = ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP")
+BENIGN_IMPORT_PTH_NAMES = frozenset({
+    "_virtualenv.pth",
+    "distutils-precedence.pth",
+})
+CONSOLE_FROM = re.compile(r"from\s+([\w.]+)\s+import\s+(\w+)")
+PROBE_SCRIPT = (
+    "import json, sys\n"
+    "from pathlib import Path\n"
+    "import runspecimen\n"
+    "import runspecimen.cli\n"
+    "print(json.dumps({\n"
+    "    'runspecimen_file': str(Path(runspecimen.__file__).resolve()),\n"
+    "    'cli_file': str(Path(runspecimen.cli.__file__).resolve()),\n"
+    "    'prefix': str(Path(sys.prefix).resolve()),\n"
+    "    'executable': str(Path(sys.executable).resolve()),\n"
+    "    'version': getattr(runspecimen, '__version__', None),\n"
+    "}))\n"
+)
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -51,7 +79,7 @@ def verify_site_against_wheel(*, site_packages: Path, wheel: Path) -> dict[str, 
     report: dict[str, Any] = {
         "ok": False,
         "wheel": str(wheel),
-        "wheel_sha256": sha256_file(wheel),
+        "wheel_sha256": sha256_file(wheel) if wheel.is_file() else None,
         "site_packages": str(site_packages),
         "mismatches": [],
         "missing": [],
@@ -153,35 +181,322 @@ def verify_site_against_wheel(*, site_packages: Path, wheel: Path) -> dict[str, 
     return report
 
 
-def verify_current_interpreter(wheel: Path) -> dict[str, Any]:
-    site = Path(sysconfig.get_path("purelib")).resolve()
-    report = verify_site_against_wheel(site_packages=site, wheel=wheel)
+def sanitized_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    env = dict(base if base is not None else os.environ)
+    for key in IMPORT_OVERRIDE_VARS:
+        env.pop(key, None)
+    env["PYTHONNOUSERSITE"] = "1"
+    return env
+
+
+def import_overrides(env: dict[str, str] | None = None) -> list[str]:
+    source = env if env is not None else os.environ
+    found = [f"{key}={source[key]}" for key in IMPORT_OVERRIDE_VARS if source.get(key)]
+    usersite = source.get("PYTHONNOUSERSITE", "")
+    if usersite not in {"1", "true", "True", "yes"}:
+        found.append("PYTHONNOUSERSITE is not 1")
+    return found
+
+
+def discover_launcher(prefix: Path | None = None) -> Path | None:
+    root = (prefix or Path(sys.prefix)).resolve()
+    for parts in (("bin", "runspecimen"), ("Scripts", "runspecimen.exe"), ("Scripts", "runspecimen")):
+        candidate = root.joinpath(*parts)
+        if candidate.is_file():
+            return candidate.resolve()
+    return None
+
+
+def _launcher_sibling_python(launcher: Path) -> Path:
+    return launcher.parent / ("python.exe" if os.name == "nt" else "python")
+
+
+def interpreter_from_launcher(launcher: Path) -> Path:
+    """Return the venv interpreter the console script actually execs.
+
+    Do not realpath the shebang: ``$VENV/bin/python`` is usually a symlink to
+    the system interpreter, and resolving it drops ``pyvenv.cfg``.
+    """
+    sibling = _launcher_sibling_python(launcher)
+    data = launcher.read_bytes()
+    if data.startswith(b"#!"):
+        first = data.splitlines()[0][2:].decode("utf-8", "replace").strip()
+        parts = first.split()
+        if parts and Path(parts[0]).name not in {"env", "env.exe"}:
+            shebang = Path(parts[0])
+            if shebang.exists():
+                return shebang
+        if sibling.exists():
+            return sibling
+        if parts and Path(parts[0]).name in {"env", "env.exe"} and len(parts) >= 2:
+            found = shutil_which(parts[1])
+            if found:
+                return Path(found)
+    if sibling.exists():
+        return sibling
+    return Path(sys.executable)
+
+
+def shutil_which(name: str) -> str | None:
+    from shutil import which
+
+    return which(name)
+
+
+def console_script_target(launcher: Path) -> str | None:
     try:
-        import runspecimen  # noqa: WPS433
-    except ImportError as exc:
-        report["ok"] = False
-        report["message"] = f"runspecimen import failed: {exc}"
+        text = launcher.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return None
+    match = CONSOLE_FROM.search(text)
+    if match:
+        return f"{match.group(1)}:{match.group(2)}"
+    return None
+
+
+def launcher_sysconfig(interpreter: Path, env: dict[str, str]) -> dict[str, str]:
+    script = (
+        "import json, sys, sysconfig\n"
+        "from pathlib import Path\n"
+        "print(json.dumps({\n"
+        "    'purelib': str(Path(sysconfig.get_path('purelib')).resolve()),\n"
+        "    'prefix': str(Path(sys.prefix).resolve()),\n"
+        "    'executable': str(Path(sys.executable).resolve()),\n"
+        "}))\n"
+    )
+    result = subprocess.run(
+        [str(interpreter), "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"launcher interpreter sysconfig failed: {result.stderr.strip() or result.stdout.strip()}"
+        )
+    payload = json.loads(result.stdout)
+    return {key: str(payload[key]) for key in ("purelib", "prefix", "executable")}
+
+
+def probe_effective_origins(interpreter: Path, env: dict[str, str]) -> dict[str, str]:
+    result = subprocess.run(
+        [str(interpreter), "-c", PROBE_SCRIPT],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"launcher origin probe failed: {result.stderr.strip() or result.stdout.strip()}"
+        )
+    payload = json.loads(result.stdout)
+    return {key: str(payload[key]) for key in payload}
+
+
+def package_origin(module_file: Path) -> Path:
+    resolved = module_file.resolve()
+    if resolved.name == "__init__.py":
+        return resolved.parent
+    return resolved.parent
+
+
+def origins_bound_to_package(
+    *,
+    runspecimen_file: Path,
+    cli_file: Path,
+    package_dir: Path,
+) -> tuple[bool, str | None]:
+    expected_pkg = package_dir.resolve()
+    rs_origin = package_origin(runspecimen_file)
+    cli_origin = package_origin(cli_file)
+    expected_init = expected_pkg / "__init__.py"
+    expected_cli = expected_pkg / "cli.py"
+    if rs_origin != expected_pkg:
+        return False, (
+            f"effective runspecimen origin {rs_origin} != verified package directory {expected_pkg}"
+        )
+    if runspecimen_file.resolve() != expected_init.resolve():
+        return False, (
+            f"effective runspecimen.__file__ {runspecimen_file.resolve()} "
+            f"!= {expected_init.resolve()}"
+        )
+    if cli_origin != expected_pkg:
+        return False, (
+            f"effective CLI module origin {cli_origin} != verified package directory {expected_pkg}"
+        )
+    if cli_file.resolve() != expected_cli.resolve():
+        return False, (
+            f"effective runspecimen.cli.__file__ {cli_file.resolve()} "
+            f"!= {expected_cli.resolve()}"
+        )
+    return True, None
+
+
+def scan_pth_files(site_packages: Path) -> list[dict[str, Any]]:
+    """Reject .pth entries that add a path outside the verified install."""
+    findings: list[dict[str, Any]] = []
+    site_packages = site_packages.resolve()
+    for pth in sorted(site_packages.glob("*.pth")):
+        text = pth.read_text(encoding="utf-8", errors="replace")
+        for lineno, raw in enumerate(text.splitlines(), 1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("import ") or line.startswith("import\t"):
+                if pth.name in BENIGN_IMPORT_PTH_NAMES and "sys.path" not in line:
+                    continue
+                reason = "import-style .pth is not on the allow-list or mutates sys.path"
+                if "sys.path" in line:
+                    reason = "pth prepends or mutates sys.path outside the verified install"
+                findings.append({
+                    "path": str(pth),
+                    "line": lineno,
+                    "reason": reason,
+                    "text": line,
+                })
+                continue
+            candidate = Path(line)
+            if not candidate.is_absolute():
+                candidate = site_packages / candidate
+            resolved = candidate.resolve()
+            try:
+                resolved.relative_to(site_packages)
+            except ValueError:
+                findings.append({
+                    "path": str(pth),
+                    "line": lineno,
+                    "reason": f"pth adds path outside the verified install: {resolved}",
+                    "text": line,
+                })
+    return findings
+
+
+def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, Any]:
+    incoming_overrides = import_overrides()
+    env = sanitized_env()
+    report: dict[str, Any] = {
+        "ok": False,
+        "wheel": str(wheel.resolve()) if wheel else None,
+        "import_overrides": incoming_overrides,
+        "pth_findings": [],
+        "origins_bound": False,
+        "launcher": None,
+        "interpreter": None,
+        "prefix": None,
+        "console_script_target": None,
+        "verified_package_dir": None,
+        "runspecimen_file": None,
+        "cli_file": None,
+        "runspecimen_version": None,
+    }
+    resolved_launcher = launcher.resolve() if launcher is not None else discover_launcher()
+    if resolved_launcher is None or not resolved_launcher.is_file():
+        report["message"] = f"absolute launcher not found: {launcher or '(discovered)'}"
         return report
-    report["runspecimen_file"] = str(Path(runspecimen.__file__).resolve())
-    report["runspecimen_version"] = getattr(runspecimen, "__version__", None)
-    venv_root = Path(sys.prefix).resolve()
-    installed_file = Path(runspecimen.__file__).resolve()
+    report["launcher"] = str(resolved_launcher)
+    report["console_script_target"] = console_script_target(resolved_launcher)
     try:
-        installed_file.relative_to(venv_root)
-    except ValueError:
+        interpreter = interpreter_from_launcher(resolved_launcher)
+    except OSError as exc:
+        report["message"] = f"launcher interpreter unread: {exc}"
+        return report
+    report["interpreter"] = str(interpreter)
+    if not interpreter.exists():
+        report["message"] = f"launcher interpreter not found: {interpreter}"
+        return report
+    try:
+        cfg = launcher_sysconfig(interpreter, env)
+    except (RuntimeError, json.JSONDecodeError, KeyError) as exc:
+        report["message"] = str(exc)
+        return report
+    report["prefix"] = cfg["prefix"]
+    site = Path(cfg["purelib"]).resolve()
+    package_dir = (site / "runspecimen").resolve()
+    report["verified_package_dir"] = str(package_dir)
+    report.update(verify_site_against_wheel(site_packages=site, wheel=wheel))
+    report["import_overrides"] = incoming_overrides
+    report["launcher"] = str(resolved_launcher)
+    report["interpreter"] = str(interpreter)
+    report["prefix"] = cfg["prefix"]
+    report["console_script_target"] = console_script_target(resolved_launcher)
+    report["verified_package_dir"] = str(package_dir)
+
+    pth_findings = scan_pth_files(site)
+    report["pth_findings"] = pth_findings
+
+    bind_error: str | None = "effective origins were not probed"
+    try:
+        origins = probe_effective_origins(interpreter, env)
+    except (RuntimeError, json.JSONDecodeError, KeyError) as exc:
+        origins = None
+        bind_error = str(exc)
+    if origins is not None:
+        rs_file = Path(origins["runspecimen_file"])
+        cli_file = Path(origins["cli_file"])
+        report["runspecimen_file"] = str(rs_file)
+        report["cli_file"] = str(cli_file)
+        report["runspecimen_version"] = origins.get("version")
+        bound, bind_error = origins_bound_to_package(
+            runspecimen_file=rs_file,
+            cli_file=cli_file,
+            package_dir=package_dir,
+        )
+        report["origins_bound"] = bound
+    else:
+        bound = False
+        report["origins_bound"] = False
+    expected_target = "runspecimen.cli:main"
+    target = report.get("console_script_target")
+    if target not in {None, expected_target}:
         report["ok"] = False
         report["message"] = (
-            f"imported runspecimen is not under this interpreter prefix: "
-            f"{installed_file} vs {venv_root}"
+            f"console-script target {target} is not {expected_target}"
         )
+        return report
+
+    failures: list[str] = []
+    if incoming_overrides:
+        failures.append("import overrides: " + "; ".join(incoming_overrides))
+    if pth_findings:
+        failures.append(
+            f"{len(pth_findings)} .pth path(s) outside the verified install"
+        )
+    if not bound:
+        failures.append(bind_error or "effective origins are not bound to the verified package directory")
+    if not report.get("ok"):
+        failures.append(str(report.get("message") or "installed tree does not match the pinned wheel"))
+
+    if failures:
+        report["ok"] = False
+        report["message"] = "; ".join(failures)
+        return report
+    report["ok"] = True
+    report["message"] = (
+        f"installed tree matches wheel {report['wheel_sha256']} "
+        f"({report['checked']} files); origins bound to {package_dir}; "
+        "no import overrides"
+    )
     return report
+
+
+def verify_current_interpreter(wheel: Path, launcher: Path | None = None) -> dict[str, Any]:
+    """Backward-compatible wrapper used by tests and the CLI."""
+    return verify_launcher_install(wheel=wheel, launcher=launcher)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wheel", type=Path, required=True, help="Absolute path to the pinned wheel")
+    parser.add_argument(
+        "--launcher",
+        type=Path,
+        default=None,
+        help="Absolute path to the venv console script (default: $prefix/bin/runspecimen)",
+    )
     args = parser.parse_args(argv)
-    report = verify_current_interpreter(args.wheel)
+    report = verify_launcher_install(wheel=args.wheel, launcher=args.launcher)
     printable = {
         key: report[key]
         for key in (
@@ -190,7 +505,16 @@ def main(argv: list[str] | None = None) -> int:
             "wheel",
             "wheel_sha256",
             "site_packages",
+            "verified_package_dir",
+            "launcher",
+            "interpreter",
+            "prefix",
             "runspecimen_file",
+            "cli_file",
+            "console_script_target",
+            "origins_bound",
+            "import_overrides",
+            "pth_findings",
             "runspecimen_version",
             "checked",
             "missing",
