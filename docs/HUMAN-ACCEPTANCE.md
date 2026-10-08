@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-08-qafix7/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-08-qafix8/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-08-qafix7/`,
 `artifacts/0.2.0rc15-2026-10-08-qafix6/`,
 `artifacts/0.2.0rc15-2026-10-08-qafix5/`,
 `artifacts/0.2.0rc15-2026-10-08-qafix4/`,
@@ -40,9 +41,11 @@ import can load old approval code while the top-level package still looks
 right. The provenance step therefore binds every loaded `runspecimen.*`
 module (including `runspecimen.approve`) to the hashed installed files, using
 the absolute launcher's own interpreter. That interpreter must be named by an
-absolute shebang; `#!/usr/bin/env python3` is refused. The check assumes a
-trusted interpreter — it does not claim to resist someone replacing Python
-itself.
+absolute shebang; `#!/usr/bin/env python3` is refused. The trusted interpreter
+assumption: the check trusts **only the Python interpreter and its stdlib**.
+It does not claim to resist someone replacing Python itself. Venv-local
+metadata (setuptools RECORD, `_distutils_hack`) is not trust: RECORD does not
+hash itself and is writable by the same attacker.
 
 Do not use Homebrew, user site-packages, another checkout, or a shadowed
 `~/.local/bin` shim for this sheet. `command -v runspecimen` may still print
@@ -59,7 +62,7 @@ Paste this first. It remembers the pack path and defines four tiny helpers.
 refusals later.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-08-qafix7"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-08-qafix8"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 export WORK=$(mktemp -d "${TMPDIR:-/tmp}/rs-ha-rc15.XXXXXX")
 export VENV="$WORK/venv"
@@ -87,9 +90,17 @@ python3 -m venv "$VENV"
 rs_ok N1-venv $?
 ```
 
-The only bare `python3` on this sheet is the line above, which creates the
-venv. After it, do not call `python3` or `runspecimen`. `test ! -e "$VENV"`
+```
+"$PY" -m pip uninstall -y setuptools
+rs_ok N1-setuptools $?
+```
+
+The only bare `python3` on this sheet is the `venv` line above, which creates
+the venv. After it, do not call `python3` or `runspecimen`. `test ! -e "$VENV"`
 must run before `venv`; a leftover directory is an abort, not an upgrade.
+Uninstall setuptools before the wheel so `distutils-precedence.pth` and the
+`_distutils_hack` shim are gone. Python 3.12+ venvs do not ship setuptools;
+the uninstall is then a no-op and still prints `STEP N1-setuptools exit=0`.
 
 ## N2 — hash the pinned wheel, then install only that file
 
@@ -125,18 +136,20 @@ Abort unless every hashed RECORD member in the wheel, and every
 `runspecimen/*.py` in that zip, matches the file installed under the absolute
 launcher's own interpreter, every loaded `runspecimen.*` origin (including
 `runspecimen.approve`, `runspecimen.present`, and the CLI) is realpath-equal to the hashed installed
-member, the sanitized environment has no import overrides, sitecustomize is
-absent, and no site-packages `.pth` adds a path outside that install or an
-executable import that is not a known-safe exact body. `_virtualenv*` (pth or
-.py) is refused: this sheet uses stdlib `python3 -m venv`, which creates none,
-and the verifier does not pin virtualenv hashes. A `sys.meta_path` finder is
-allowed only by real class identity — a stdlib importer, or
-`type(finder) is DistutilsMetaFinder` from the `_distutils_hack` module whose
-realpath is in this venv's site-packages and whose bytes match setuptools'
-RECORD. A finder that only claims that module name is refused. The script prints the
+member, the sanitized environment has no import overrides, and the target
+venv has no extra startup code. The verifier trusts **only the Python
+interpreter and its stdlib**. In that venv it refuses: any `.pth` with an
+executable `import` line (any name or owner, including leftover setuptools
+`distutils-precedence.pth` / DistutilsMetaFinder), any importable
+sitecustomize or usercustomize that is not the interpreter's own stdlib, any
+non-stdlib `sys.meta_path` or `sys.path_hooks` entry after startup, and any
+`_virtualenv*`. This sheet uses stdlib `python3 -m venv`, which creates none.
+A stdlib finder is identified by its class living in a stdlib module whose
+realpath is under the interpreter's stdlib dir, not by name.
+There is no RECORD-based trust of `_distutils_hack`. The script prints the
 installed dist-info `RECORD` and `direct_url.json`. `__version__ ==
 0.2.0rc15` is not sufficient: the 2026-10-06-bump wheel reports the same
-version and must fail this step when `$WHEEL` is the qafix7 pin. A
+version and must fail this step when `$WHEEL` is the qafix8 pin. A
 same-version tree selected via inside-venv `PYTHONPATH`, a `.pth` prepend,
 sitecustomize, or an executable `.pth` import must also fail.
 
@@ -270,7 +283,8 @@ every loaded `runspecimen.*` origin bound to the hashed installed member
 installed-file comparison, installed `RECORD` and `direct_url.json`,
 `STEP N3-version exit=0`, `STEP N3-verify exit=0`, and no import overrides
 (`PYTHONPATH` / `PYTHONHOME` / `PYTHONSTARTUP` unset, `PYTHONNOUSERSITE=1`,
-no outside-install `.pth`, no sitecustomize).
+no executable `.pth` import, no leftover setuptools shim, no sitecustomize
+outside the interpreter stdlib).
 
 N4–N7 use the same `rs` helper.
 
@@ -303,9 +317,9 @@ positive run. Capture a new labeled supplement instead, in a fresh Terminal,
 with a new workspace:
 
 ```
-Session: HUMAN-ACCEPTANCE supplement qafix7
+Session: HUMAN-ACCEPTANCE supplement qafix8
 Date:
-Pack: artifacts/0.2.0rc15-2026-10-08-qafix7/
+Pack: artifacts/0.2.0rc15-2026-10-08-qafix8/
 Paste N1 through N7, then N10 and the schema-rejection check.
 Copy every "STEP … exit=" line, plus PASS: N10 and PASS: UNK, into your notes.
 ```

@@ -30,7 +30,8 @@ HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 CANDIDATE_MANIFEST = ROOT / "docs" / "CANDIDATE_MANIFEST.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
-PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix7"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix8"
+QAFIX7_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix7"
 QAFIX6_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix6"
 QAFIX5_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix5"
 QAFIX4_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix4"
@@ -150,7 +151,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("command -v runspecimen", text)
         self.assertIn("mktemp -d", text)
         self.assertIn('test ! -e "$VENV"', text)
-        self.assertIn("0.2.0rc15-2026-10-08-qafix7", text)
+        self.assertIn("0.2.0rc15-2026-10-08-qafix8", text)
         self.assertIn("--no-index --no-deps --force-reinstall", text)
         self.assertIn("scripts/verify_installed_wheel.py", text)
         self.assertIn("--launcher", text)
@@ -166,12 +167,16 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("rs_ok N3-verify", text)
         self.assertIn("realpath-equal", text)
         self.assertIn("trusted interpreter", text)
+        self.assertIn("only the Python interpreter and its stdlib", text)
         self.assertIn("_virtualenv*", text)
         self.assertIn("DistutilsMetaFinder", text)
+        self.assertIn("distutils-precedence.pth", text)
+        self.assertIn('"$PY" -m pip uninstall -y setuptools', text)
+        self.assertIn("N1-setuptools", text)
         self.assertIn("stdlib `python3 -m venv`", text)
         self.assertIn("demo-campaign", text)
         self.assertIn("run-001", text)
-        self.assertIn("HUMAN-ACCEPTANCE supplement qafix7", text)
+        self.assertIn("HUMAN-ACCEPTANCE supplement qafix8", text)
         self.assertNotRegex(
             text,
             r'(?m)^(?:\$PY|"\$PY"|python3|py ).*(?:pip install --upgrade|pip install -U)',
@@ -197,9 +202,9 @@ class Rc15QaDocfixTests(unittest.TestCase):
         if CANDIDATE_MANIFEST.is_file():
             manifest = CANDIDATE_MANIFEST.read_text(encoding="utf-8")
             self.assertIn("| Candidate (this pass) |", manifest)
-            self.assertIn("PR #63 head that records the qafix7 pack", manifest)
+            self.assertIn("PR #63 head that records the qafix8 pack", manifest)
             self.assertIn("8015b6d8017e5566f7558cc916dc0ee470c653ad", manifest)
-            self.assertIn("artifacts/0.2.0rc15-2026-10-08-qafix7/", manifest)
+            self.assertIn("artifacts/0.2.0rc15-2026-10-08-qafix8/", manifest)
             self.assertIn("3b20ad6b179baab582ec97285dd7899f09f11574", manifest)
         self.assertIn("Homebrew", text)
         self.assertIn("STEP $1 exit=$2", text)
@@ -680,6 +685,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
                 "N1-wheel",
                 "N1-venv-absent",
                 "N1-venv",
+                "N1-setuptools",
                 "N2-hash",
                 "N2-install",
                 "N3-version",
@@ -756,19 +762,30 @@ class Rc15QaDocfixTests(unittest.TestCase):
         payload = json.loads(hijack.stdout.split("---")[0])
         self.assertFalse(payload["ok"])
         findings = payload.get("meta_path_findings") or []
+        message = str(payload.get("message", ""))
         self.assertTrue(
             findings
-            or "unexpected sys.meta_path" in str(payload.get("message", "")),
+            or payload.get("pth_findings")
+            or "unexpected sys.meta_path" in message
+            or "acceptance sheet" in message,
             payload,
         )
 
     def test_qa4_distutils_metafinder_is_not_treated_as_a_hijack(self) -> None:
+        """Changed in QA-HOOKS-03: leftover DistutilsMetaFinder is extra startup.
+
+        The previous allowlist (real class identity + setuptools RECORD) is
+        gone. A venv that still has setuptools' distutils-precedence.pth is
+        refused. Clean acceptance is the sheet-prepared venv without setuptools.
+        """
         text = VERIFY_INSTALLED.read_text(encoding="utf-8")
         self.assertIn("DistutilsMetaFinder", text)
-        self.assertIn("type(finder) is not _real_dmf", text)
+        self.assertNotIn("KNOWN_SAFE_PTH_IMPORT_LINES", text)
+        self.assertNotIn("setuptools_distutils_hack_findings", text)
+        self.assertNotIn("type(finder) is not _real_dmf", text)
         self.assertNotIn("if rec['module'] not in allowed_meta", text)
         self.assertNotIn('"import _virtualenv"', text)
-        self.test_qa_hooks_01_clean_stdlib_venv_with_real_setuptools_shim_is_accepted()
+        self.test_qa_hooks_03_leftover_setuptools_pth_is_rejected()
 
     def test_qa_hooks_01_spoofed_distutils_metafinder_via_virtualenv_is_rejected(self) -> None:
         """Reviewer spoof: import _virtualenv + fake DistutilsMetaFinder + old signing.py."""
@@ -814,6 +831,35 @@ class Rc15QaDocfixTests(unittest.TestCase):
         )
 
     def test_qa_hooks_01_clean_stdlib_venv_with_real_setuptools_shim_is_accepted(self) -> None:
+        """Changed in QA-HOOKS-03: leftover setuptools shim is no longer accepted.
+
+        Clean sheet venv acceptance is test_qa_hooks_03_clean_sheet_venv_is_accepted.
+        """
+        self.test_qa_hooks_03_leftover_setuptools_pth_is_rejected()
+
+    def test_qa_hooks_02_virtualenv_pth_and_module_are_rejected(self) -> None:
+        self.test_installed_wheel_provenance_rejects_standard_virtualenv_pth_body()
+
+    def test_qa_hooks_03_leftover_setuptools_pth_is_rejected(self) -> None:
+        pin = _pin_wheel()
+        if not pin.is_file():
+            self.skipTest("pin wheel must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        result = _install_and_verify(pin, pin, after_install=_write_leftover_setuptools_pth)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout.split("---")[0])
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["pth_findings"], payload)
+        message = str(payload.get("message", ""))
+        self.assertIn("acceptance sheet", message)
+        self.assertIn("extra startup code", message)
+        self.assertTrue(
+            any("distutils-precedence.pth" in item.get("path", "") for item in payload["pth_findings"]),
+            payload["pth_findings"],
+        )
+
+    def test_qa_hooks_03_clean_sheet_venv_is_accepted(self) -> None:
         pin = _pin_wheel()
         if not pin.is_file():
             self.skipTest("pin wheel must be on disk")
@@ -826,14 +872,47 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertTrue(payload["origins_bound"])
         self.assertEqual(payload["pth_findings"], [])
         self.assertEqual(payload.get("meta_path_findings") or [], [])
-        self.assertEqual(payload.get("distutils_hack_findings") or [], [])
+        self.assertEqual(payload.get("path_hook_findings") or [], [])
 
-    def test_qa_hooks_02_virtualenv_pth_and_module_are_rejected(self) -> None:
-        self.test_installed_wheel_provenance_rejects_standard_virtualenv_pth_body()
+    def test_qa_hooks_03_file_and_record_tamper_class_find_spec_is_rejected(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        hijack = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            after_install=_write_reviewer_file_record_tamper_class,
+        )
+        self.assertNotEqual(hijack.returncode, 0, hijack.stdout + hijack.stderr)
+        payload = json.loads(hijack.stdout.split("---")[0])
+        self.assertFalse(payload["ok"])
+        self.assertIn("acceptance sheet", str(payload.get("message", "")))
+
+    def test_qa_hooks_03_file_and_record_tamper_instance_find_spec_is_rejected(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        hijack = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            after_install=_write_reviewer_file_record_tamper_instance,
+        )
+        self.assertNotEqual(hijack.returncode, 0, hijack.stdout + hijack.stderr)
+        payload = json.loads(hijack.stdout.split("---")[0])
+        self.assertFalse(payload["ok"])
+        self.assertIn("acceptance sheet", str(payload.get("message", "")))
 
     def test_known_safe_pth_does_not_trust_import_virtualenv(self) -> None:
         module = _load_verify_module()
-        self.assertNotIn("import _virtualenv", module.KNOWN_SAFE_PTH_IMPORT_LINES)
+        self.assertFalse(getattr(module, "KNOWN_SAFE_PTH_IMPORT_LINES", None))
         with tempfile.TemporaryDirectory(prefix="rs-venv-art-") as root:
             site = Path(root)
             (site / "_virtualenv.pth").write_text("import _virtualenv\n", encoding="utf-8")
@@ -845,7 +924,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
 
 
 def _pin_wheel() -> Path:
-    for pack in (PIN_PACK, QAFIX6_PACK, QAFIX5_PACK, QAFIX4_PACK, QAFIX3_PACK, QAFIX_PACK):
+    for pack in (PIN_PACK, QAFIX7_PACK, QAFIX6_PACK, QAFIX5_PACK, QAFIX4_PACK, QAFIX3_PACK, QAFIX_PACK):
         pin = pack / WHEEL_NAME
         if pin.is_file():
             return pin
@@ -910,7 +989,7 @@ def _acceptance_sheet_script(markdown: str, pack: Path) -> str:
         parts.append(block.rstrip() + "\n")
     script = "".join(parts)
     replaced, count = re.subn(
-        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-08-qafix7"',
+        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-08-qafix8"',
         f"export PACK={shlex.quote(str(pack))}",
         script,
         count=1,
@@ -1164,6 +1243,122 @@ def _write_sitecustomize_named_distutils_finder(hook: _ProvHook) -> None:
     )
 
 
+def _setuptools_pth_body() -> str:
+    return (
+        "import os; var = 'SETUPTOOLS_USE_DISTUTILS'; "
+        "enabled = os.environ.get(var, 'local') == 'local'; "
+        "enabled and __import__('_distutils_hack').add_shim();\n"
+    )
+
+
+def _record_sha256_field(data: bytes) -> str:
+    import base64
+
+    digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode("ascii").rstrip("=")
+    return f"sha256={digest}"
+
+
+def _write_matching_setuptools_record(site: Path, members: dict[str, bytes]) -> None:
+    dist_info = site / "setuptools-84.0.0.dist-info"
+    dist_info.mkdir(parents=True, exist_ok=True)
+    lines = []
+    for name, data in members.items():
+        lines.append(f"{name},{_record_sha256_field(data)},{len(data)}")
+    lines.append("setuptools-84.0.0.dist-info/RECORD,,")
+    (dist_info / "RECORD").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _hijack_distutils_hack_source(
+    *,
+    old_signing: str,
+    hashed_signing: str,
+    as_class: bool,
+) -> str:
+    insert = "DistutilsMetaFinder()" if not as_class else "DistutilsMetaFinder"
+    return (
+        "import sys\n"
+        "from importlib.abc import Loader, MetaPathFinder\n"
+        "from importlib.machinery import ModuleSpec\n"
+        "from pathlib import Path\n"
+        f"_OLD = {old_signing!r}\n"
+        f"_HASHED = {hashed_signing!r}\n"
+        "class DistutilsMetaFinder(MetaPathFinder):\n"
+        "    def find_spec(self, fullname, path, target=None):\n"
+        "        if fullname != 'runspecimen.signing':\n"
+        "            return None\n"
+        "        return ModuleSpec(fullname, _SpoofLoader(), origin=_HASHED)\n"
+        "class _SpoofLoader(Loader):\n"
+        "    def create_module(self, spec):\n"
+        "        return None\n"
+        "    def exec_module(self, module):\n"
+        "        module.__file__ = _HASHED\n"
+        "        code = Path(_OLD).read_text(encoding='utf-8')\n"
+        "        exec(compile(code, _HASHED, 'exec'), module.__dict__)\n"
+        "def add_shim():\n"
+        f"    sys.meta_path.insert(0, {insert})\n"
+        "add_shim()\n"
+    )
+
+
+def _write_leftover_setuptools_pth(hook: _ProvHook) -> None:
+    """A venv that still has setuptools' distutils-precedence.pth."""
+    pth = _setuptools_pth_body()
+    shim = (
+        "class DistutilsMetaFinder:\n"
+        "    def find_spec(self, fullname, path, target=None):\n"
+        "        return None\n"
+        "def add_shim():\n"
+        "    import sys\n"
+        "    sys.meta_path.insert(0, DistutilsMetaFinder())\n"
+    )
+    hack_dir = hook.site / "_distutils_hack"
+    hack_dir.mkdir(parents=True, exist_ok=True)
+    init = hack_dir / "__init__.py"
+    init.write_text(shim, encoding="utf-8")
+    (hook.site / "distutils-precedence.pth").write_text(pth, encoding="utf-8")
+    _write_matching_setuptools_record(
+        hook.site,
+        {
+            "_distutils_hack/__init__.py": init.read_bytes(),
+            "distutils-precedence.pth": pth.encode("utf-8"),
+        },
+    )
+
+
+def _write_reviewer_file_record_tamper(hook: _ProvHook, *, as_class: bool) -> None:
+    """QA-HOOKS-03: replace _distutils_hack and rewrite the matching RECORD line."""
+    if hook.planted is None:
+        raise AssertionError("planted older tree is required")
+    old_signing = str((hook.planted / "runspecimen" / "signing.py").resolve())
+    hashed_signing = str((hook.site / "runspecimen" / "signing.py").resolve())
+    source = _hijack_distutils_hack_source(
+        old_signing=old_signing,
+        hashed_signing=hashed_signing,
+        as_class=as_class,
+    )
+    hack_dir = hook.site / "_distutils_hack"
+    hack_dir.mkdir(parents=True, exist_ok=True)
+    init = hack_dir / "__init__.py"
+    init.write_text(source, encoding="utf-8")
+    pth = _setuptools_pth_body()
+    (hook.site / "distutils-precedence.pth").write_text(pth, encoding="utf-8")
+    _write_matching_setuptools_record(
+        hook.site,
+        {
+            "_distutils_hack/__init__.py": init.read_bytes(),
+            "distutils-precedence.pth": pth.encode("utf-8"),
+        },
+    )
+
+
+def _write_reviewer_file_record_tamper_class(hook: _ProvHook) -> None:
+    _write_reviewer_file_record_tamper(hook, as_class=True)
+
+
+def _write_reviewer_file_record_tamper_instance(hook: _ProvHook) -> None:
+    _write_reviewer_file_record_tamper(hook, as_class=False)
+
+
 def _write_virtualenv_meta_path_hijack(hook: _ProvHook) -> None:
     """``import _virtualenv`` pth with a custom meta_path finder."""
     if hook.planted is None:
@@ -1243,11 +1438,24 @@ def _site_packages(py: Path, env: dict[str, str]) -> Path:
     return Path(result.stdout.strip()).resolve()
 
 
+def _uninstall_setuptools(py: Path, env: dict[str, str]) -> None:
+    result = subprocess.run(
+        [str(py), "-m", "pip", "uninstall", "-y", "setuptools"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"pip uninstall setuptools failed: {result.stderr}")
+
+
 def _create_venv_and_install(venv_dir: Path, wheel: Path, env: dict[str, str]) -> Path:
     if venv_dir.exists():
         raise AssertionError(f"venv target already exists: {venv_dir}")
     venv.create(venv_dir, with_pip=True, symlinks=True)
     py = _venv_python(venv_dir)
+    _uninstall_setuptools(py, env)
     install = subprocess.run(
         [
             str(py),

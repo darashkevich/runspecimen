@@ -6,21 +6,32 @@ Exit 0 only when every hashed RECORD member (and every runspecimen/*.py in the
 zip) matches the file installed under the absolute launcher's interpreter, the
 effective origins of runspecimen, runspecimen.cli, runspecimen.approve, and
 every other loaded runspecimen.* module realpath-equal the hashed installed
-members, the environment has no import overrides, no unvetted startup
-customization is on the import path, and no site-packages .pth adds a foreign
-path or an executable import that is not a known-safe exact body.
+members, the environment has no import overrides, and the target venv has no
+extra startup code.
 
-Trusted-interpreter assumption: this helper is not a promise to resist
-arbitrary replacement of Python, of this verifier script, or of the operator's
-own decision to run a different interpreter. It does refuse env-based and
-unsupported launcher shebangs instead of guessing a sibling, and it does
-refuse unvetted sitecustomize/usercustomize, every ``_virtualenv*`` artifact,
-and executable .pth hooks that are not the setuptools distutils-precedence
-body. A ``sys.meta_path`` finder is allowed only by real class identity
-(stdlib importer, or ``type(finder) is DistutilsMetaFinder`` from the
-``_distutils_hack`` module whose realpath is in this venv's site-packages and
-whose bytes match setuptools' own RECORD). A finder that merely *claims*
-``__module__ == '_distutils_hack'`` is refused.
+Trusted-interpreter assumption: this helper trusts **only the Python
+interpreter and its stdlib**. It is not a promise to resist arbitrary
+replacement of Python, of this verifier script, or of the operator's own
+decision to run a different interpreter. Venv-local metadata is not trust:
+setuptools RECORD does not hash itself (``RECORD,,``) and is writable by the
+same attacker who can replace ``_distutils_hack``. Any trust anchored in
+venv-local metadata is attacker-controlled.
+
+In the **target venv** it REJECTS:
+
+- any ``.pth`` file with an executable (``import``) line, whatever its name
+  or owner (including setuptools' ``distutils-precedence.pth``)
+- any sitecustomize or usercustomize that is importable from a path that is
+  not the interpreter's own stdlib
+- any non-stdlib ``sys.meta_path`` or ``sys.path_hooks`` entry present after
+  startup
+- any ``_virtualenv*`` artifact
+
+A stdlib finder or path hook is identified by its **class (or defining
+function) living in a stdlib module whose realpath is under the interpreter's
+stdlib dir**, not by claimed ``__name__`` / ``__module__``. Frozen/built-in
+interpreter modules count as the interpreter. There is no DistutilsMetaFinder
+allowlist and no RECORD-based trust of ``_distutils_hack``.
 
 Run with the venv interpreter that owns the install, under the same sanitized
 environment the acceptance sheet uses for every launcher call:
@@ -33,8 +44,6 @@ environment the acceptance sheet uses for every launcher call:
 from __future__ import annotations
 
 import argparse
-import base64
-import binascii
 import hashlib
 import json
 import os
@@ -47,22 +56,10 @@ import zipfile
 
 
 IMPORT_OVERRIDE_VARS = ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP")
-# Content-matched only. Filename is not trust. The only executable .pth body
-# accepted is setuptools' ``distutils-precedence.pth`` distutils shim. It does
-# not add paths and does not import runspecimen. ``import _virtualenv`` is
-# refused: HUMAN-ACCEPTANCE uses stdlib ``python3 -m venv``, which creates no
-# ``_virtualenv*`` files, and pinning virtualenv hashes is fragile. Any other
-# import line, including ``import qa_compat`` inside ``_virtualenv.pth``, is
-# refused.
-KNOWN_SAFE_PTH_IMPORT_LINES = frozenset({
-    "import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os.environ.get(var, 'local') == 'local'; enabled and __import__('_distutils_hack').add_shim();",
-    "import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os.environ.get(var, 'local') == 'local'; enabled and __import__('_distutils_hack').add_shim()",
-})
-SETUPTOOLS_SHIM_RECORD_NAMES = frozenset({
-    "_distutils_hack.py",
-    "distutils-precedence.pth",
-})
-SETUPTOOLS_SHIM_RECORD_PREFIXES = ("_distutils_hack/",)
+HOOK_REFUSAL = (
+    "This environment runs extra startup code we can't vouch for (file: {file}). "
+    "Create a fresh one by following the acceptance sheet."
+)
 CONSOLE_FROM = re.compile(r"from\s+([\w.]+)\s+import\s+(\w+)")
 PROBE_SCRIPT = r"""
 import json, sys, site, pkgutil, sysconfig
@@ -122,112 +119,128 @@ try:
 except Exception as exc:
     lazy_errors['<walk>'] = type(exc).__name__ + ':' + str(exc)
 
-def _stdlib_finder_types():
-    found = set()
-    for modname, attr in (
-        ('_frozen_importlib', 'BuiltinImporter'),
-        ('_frozen_importlib', 'FrozenImporter'),
-        ('_frozen_importlib_external', 'PathFinder'),
-        ('_frozen_importlib_external', 'WindowsRegistryFinder'),
-        ('importlib.machinery', 'BuiltinImporter'),
-        ('importlib.machinery', 'FrozenImporter'),
-        ('importlib.machinery', 'PathFinder'),
-        ('importlib.machinery', 'WindowsRegistryFinder'),
-        ('zipimport', 'zipimporter'),
-        ('importlib._bootstrap', 'BuiltinImporter'),
-        ('importlib._bootstrap', 'FrozenImporter'),
-        ('importlib._bootstrap_external', 'PathFinder'),
-        ('importlib._bootstrap_external', 'WindowsRegistryFinder'),
-    ):
-        try:
-            mod = sys.modules.get(modname)
-            if mod is None:
-                mod = __import__(modname, fromlist=[attr])
-            cls = getattr(mod, attr, None)
-            if isinstance(cls, type):
-                found.add(cls)
-        except Exception:
-            pass
-    return found
+def _stdlib_roots():
+    roots = []
+    for key in ('stdlib', 'platstdlib'):
+        p = sysconfig.get_path(key)
+        if p:
+            roots.append(Path(p).resolve())
+    return roots
 
-def _method_codes(cls):
-    items = []
-    for name in sorted(cls.__dict__):
-        val = cls.__dict__[name]
-        code = getattr(val, '__code__', None)
-        if code is not None:
-            items.append(name + ':' + code.co_code.hex())
-    return tuple(items)
+_STDLIB_ROOTS = _stdlib_roots()
+
+def _under_stdlib(path):
+    try:
+        resolved = Path(path).resolve()
+    except Exception:
+        return False
+    for root in _STDLIB_ROOTS:
+        try:
+            resolved.relative_to(root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+def _load_module(modname):
+    if not modname:
+        return None
+    mod = sys.modules.get(modname)
+    if mod is not None:
+        return mod
+    try:
+        return __import__(modname, fromlist=['*'])
+    except Exception:
+        return None
+
+def _module_is_interpreter_or_stdlib(mod):
+    if mod is None:
+        return False
+    spec = getattr(mod, '__spec__', None)
+    origin = getattr(spec, 'origin', None) if spec is not None else None
+    if origin in ('frozen', 'built-in'):
+        return True
+    path = getattr(mod, '__file__', None)
+    if not path:
+        return False
+    return _under_stdlib(path)
+
+def _class_lives_in_stdlib(cls):
+    if not isinstance(cls, type):
+        return False
+    modname = getattr(cls, '__module__', None)
+    mod = _load_module(modname)
+    if mod is None:
+        return False
+    name = getattr(cls, '__name__', None)
+    if getattr(mod, name, None) is not cls and cls not in vars(mod).values():
+        return False
+    return _module_is_interpreter_or_stdlib(mod)
+
+def _callable_is_stdlib(obj):
+    if obj is None:
+        return False
+    if isinstance(obj, type):
+        return _class_lives_in_stdlib(obj)
+    code = getattr(obj, '__code__', None)
+    if code is not None:
+        filename = getattr(code, 'co_filename', '') or ''
+        if filename.startswith('<frozen ') or filename.startswith('<built-in'):
+            return _module_is_interpreter_or_stdlib(_load_module(getattr(obj, '__module__', None)))
+        if filename and _under_stdlib(filename):
+            return True
+        return False
+    return _class_lives_in_stdlib(type(obj))
+
+def _is_stdlib_finder(finder):
+    if finder is None:
+        return False
+    if isinstance(finder, type):
+        return _class_lives_in_stdlib(finder)
+    return _class_lives_in_stdlib(type(finder))
+
+def _object_file(obj):
+    if obj is None:
+        return None
+    cls = obj if isinstance(obj, type) else type(obj)
+    mod = _load_module(getattr(cls, '__module__', None))
+    path = getattr(mod, '__file__', None) if mod is not None else None
+    if path:
+        try:
+            return str(Path(path).resolve())
+        except Exception:
+            return str(path)
+    code = getattr(obj, '__code__', None)
+    if code is not None and getattr(code, 'co_filename', None):
+        return str(code.co_filename)
+    return None
 
 def _finder_rec(finder):
-    if isinstance(finder, type):
-        return {
-            'type': getattr(finder, '__name__', None),
-            'module': getattr(finder, '__module__', None),
-        }
-    cls = type(finder)
+    if finder is None:
+        return {'type': None, 'module': None, 'file': None}
+    cls = finder if isinstance(finder, type) else type(finder)
     return {
         'type': getattr(cls, '__name__', None),
         'module': getattr(cls, '__module__', None),
+        'file': _object_file(finder),
     }
-
-_STDLIB_FINDERS = _stdlib_finder_types()
-_site = Path(sysconfig.get_path('purelib')).resolve()
-_hack_canonical = (_site / '_distutils_hack' / '__init__.py').resolve()
-if not _hack_canonical.is_file():
-    _alt = (_site / '_distutils_hack.py').resolve()
-    _hack_canonical = _alt if _alt.is_file() else None
-_verified_dmf_codes = None
-if _hack_canonical is not None:
-    try:
-        ns = {}
-        exec(compile(_hack_canonical.read_bytes(), str(_hack_canonical), 'exec'), ns)
-        _verified_cls = ns.get('DistutilsMetaFinder')
-        if isinstance(_verified_cls, type):
-            _verified_dmf_codes = _method_codes(_verified_cls)
-    except Exception:
-        _verified_dmf_codes = None
-_real_hack = sys.modules.get('_distutils_hack')
-_real_dmf = getattr(_real_hack, 'DistutilsMetaFinder', None) if _real_hack is not None else None
-_hack_file = None
-if _real_hack is not None and getattr(_real_hack, '__file__', None):
-    _hack_file = str(Path(_real_hack.__file__).resolve())
-
-def _is_real_distutils_finder(finder):
-    if finder is None or isinstance(finder, type) or _real_dmf is None:
-        return False
-    if type(finder) is not _real_dmf:
-        return False
-    if _hack_canonical is None or _hack_file is None:
-        return False
-    if Path(_hack_file) != _hack_canonical:
-        return False
-    if _verified_dmf_codes is None or _method_codes(type(finder)) != _verified_dmf_codes:
-        return False
-    return True
 
 meta_path = []
 unexpected_meta_path = []
-distutils_identity_ok = False
 for finder in sys.meta_path:
-    if finder is None:
-        unexpected_meta_path.append({'type': None, 'module': None})
-        continue
     rec = _finder_rec(finder)
     meta_path.append(rec)
-    # BuiltinImporter / FrozenImporter sit on meta_path as classes, not instances.
-    # Identity is the class object, not __module__ / __name__.
-    if isinstance(finder, type):
-        if finder in _STDLIB_FINDERS:
-            continue
+    if not _is_stdlib_finder(finder):
         unexpected_meta_path.append(rec)
-        continue
-    if type(finder) in _STDLIB_FINDERS:
-        continue
-    if _is_real_distutils_finder(finder):
-        distutils_identity_ok = True
-        continue
-    unexpected_meta_path.append(rec)
+
+path_hooks = []
+unexpected_path_hooks = []
+for hook in sys.path_hooks:
+    rec = _finder_rec(hook)
+    rec['repr'] = type(hook).__name__ if not isinstance(hook, type) else hook.__name__
+    path_hooks.append(rec)
+    if not _callable_is_stdlib(hook):
+        unexpected_path_hooks.append(rec)
 
 print(json.dumps({
     'runspecimen_file': str(Path(runspecimen.__file__).resolve()),
@@ -246,14 +259,12 @@ print(json.dumps({
     'lazy_import_errors': lazy_errors,
     'meta_path': meta_path,
     'unexpected_meta_path': unexpected_meta_path,
-    'distutils_hack': {
-        'identity_ok': distutils_identity_ok,
-        'file': _hack_file,
-        'canonical': None if _hack_canonical is None else str(_hack_canonical),
-    },
+    'path_hooks': path_hooks,
+    'unexpected_path_hooks': unexpected_path_hooks,
     'sitecustomize': _find('sitecustomize'),
     'usercustomize': _find('usercustomize'),
     'enable_user_site': bool(getattr(site, 'ENABLE_USER_SITE', False)),
+    'stdlib': [str(p) for p in _STDLIB_ROOTS],
 }))
 """
 
@@ -270,96 +281,41 @@ def sha256_file(path: Path) -> str:
     return sha256_bytes(path.read_bytes())
 
 
-def record_sha256_to_hex(field: str) -> str | None:
-    """Decode a PEP 376 RECORD ``sha256=`` urlsafe-b64 digest to hex."""
-    if not field.startswith("sha256="):
-        return None
-    raw = field[7:]
-    pad = "=" * ((4 - len(raw) % 4) % 4)
-    try:
-        digest = base64.urlsafe_b64decode(raw + pad)
-    except (ValueError, binascii.Error):
-        return None
-    if len(digest) != 32:
-        return None
-    return digest.hex()
+def hook_refusal_message(file_hint: str) -> str:
+    return HOOK_REFUSAL.format(file=file_hint)
 
 
-def parse_dist_record(record_path: Path) -> dict[str, str]:
-    """Map relative path -> hex SHA-256 for hashed RECORD members."""
-    mapping: dict[str, str] = {}
-    text = record_path.read_text(encoding="utf-8")
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        parts = line.split(",")
-        if len(parts) < 2 or not parts[1]:
-            continue
-        hex_digest = record_sha256_to_hex(parts[1])
-        if hex_digest:
-            mapping[parts[0]] = hex_digest
-    return mapping
-
-
-def _is_setuptools_shim_member(name: str) -> bool:
-    if name in SETUPTOOLS_SHIM_RECORD_NAMES:
-        return True
-    return any(name.startswith(prefix) for prefix in SETUPTOOLS_SHIM_RECORD_PREFIXES)
-
-
-def setuptools_distutils_hack_findings(site_packages: Path) -> list[str]:
-    """Refuse a setuptools distutils shim whose on-disk bytes are not RECORD-backed.
-
-    The live ``DistutilsMetaFinder`` identity check happens in the origin probe.
-    This host-side pass hashes ``_distutils_hack`` and ``distutils-precedence.pth``
-    against the unique setuptools dist-info RECORD so a replaced shim cannot
-    hide behind a known-safe .pth body.
-    """
-    site_packages = site_packages.resolve()
-    hack_dir = site_packages / "_distutils_hack"
-    hack_py = site_packages / "_distutils_hack.py"
-    pth = site_packages / "distutils-precedence.pth"
-    if not hack_dir.is_dir() and not hack_py.is_file() and not pth.is_file():
-        return []
-    dist_infos = sorted(
-        path for path in site_packages.glob("setuptools-*.dist-info") if path.is_dir()
-    )
-    record_files = [info / "RECORD" for info in dist_infos if (info / "RECORD").is_file()]
-    if len(record_files) != 1:
-        return [
-            "setuptools distutils shim is present but setuptools RECORD is not unique "
-            f"(count={len(record_files)})"
-        ]
-    mapping = parse_dist_record(record_files[0])
-    members = [name for name in mapping if _is_setuptools_shim_member(name)]
-    findings: list[str] = []
-    if not members:
-        return [
-            "setuptools RECORD does not list _distutils_hack or distutils-precedence.pth"
-        ]
-    for name in members:
-        if name.endswith(".pyc") or "/__pycache__/" in name:
-            continue
-        installed = site_packages / name
-        if not installed.is_file():
-            findings.append(f"setuptools RECORD member missing: {name}")
-            continue
-        got = sha256_file(installed)
-        if got != mapping[name]:
-            findings.append(
-                f"setuptools shim {name}: installed {got} != RECORD {mapping[name]}"
-            )
-    if hack_dir.is_dir():
-        for path in sorted(hack_dir.rglob("*")):
-            if not path.is_file():
-                continue
-            if "__pycache__" in path.parts or path.suffix == ".pyc":
-                continue
-            rel = path.relative_to(site_packages).as_posix()
-            if rel not in mapping:
-                findings.append(f"unrecorded setuptools shim file: {rel}")
-    return findings
+def _first_hook_file(
+    pth_findings: list[dict[str, Any]],
+    startup_findings: list[str],
+    meta_path_findings: list[Any],
+    path_hook_findings: list[Any],
+) -> str | None:
+    for item in pth_findings:
+        path = item.get("path")
+        if path:
+            return str(path)
+    for item in startup_findings:
+        text = str(item)
+        marker = ": "
+        if marker in text:
+            candidate = text.rsplit(marker, 1)[-1].strip()
+            if candidate:
+                return candidate
+        return text
+    for group in (meta_path_findings, path_hook_findings):
+        for item in group:
+            if isinstance(item, dict):
+                path = item.get("file") or item.get("path")
+                if path:
+                    return str(path)
+                module = item.get("module")
+                kind = item.get("type")
+                if module or kind:
+                    return f"{module}.{kind}".strip(".")
+            else:
+                return str(item)
+    return None
 
 
 def scan_virtualenv_artifacts(site_packages: Path) -> list[dict[str, Any]]:
@@ -757,11 +713,10 @@ def _normalize_pth_import_line(line: str) -> str:
 
 
 def scan_pth_files(site_packages: Path) -> list[dict[str, Any]]:
-    """Reject .pth entries that add a path outside the verified install.
+    """Reject .pth path prepends and every executable ``import`` line.
 
-    Executable ``import`` lines are allowed only when the stripped line is one
-    of ``KNOWN_SAFE_PTH_IMPORT_LINES`` (setuptools distutils-precedence only).
-    Filename is not trust. ``import _virtualenv`` is not a known-safe body.
+    Filename and owner are not trust. setuptools' ``distutils-precedence.pth``
+    is refused the same as any other import hook. There is no known-safe body.
     """
     findings: list[dict[str, Any]] = []
     site_packages = site_packages.resolve()
@@ -772,17 +727,19 @@ def scan_pth_files(site_packages: Path) -> list[dict[str, Any]]:
             if not line or line.startswith("#"):
                 continue
             if line.startswith("import ") or line.startswith("import\t"):
-                normalized = _normalize_pth_import_line(line)
-                if normalized in KNOWN_SAFE_PTH_IMPORT_LINES:
-                    continue
-                reason = "executable import .pth line is not a known-safe body"
+                reason = "executable import .pth line"
+                if pth.name == "distutils-precedence.pth" or "_distutils_hack" in line:
+                    reason = (
+                        "setuptools distutils-precedence.pth runs extra startup code; "
+                        "follow the acceptance sheet"
+                    )
                 if "sys.path" in line:
                     reason = "pth prepends or mutates sys.path outside the verified install"
                 findings.append({
                     "path": str(pth),
                     "line": lineno,
                     "reason": reason,
-                    "text": line,
+                    "text": _normalize_pth_import_line(line),
                 })
                 continue
             candidate = Path(line)
@@ -809,22 +766,51 @@ def _under(path: Path, root: Path) -> bool:
         return False
 
 
+def _stdlib_roots_from_origins(origins: dict[str, Any] | None) -> list[Path]:
+    roots: list[Path] = []
+    if origins:
+        for item in origins.get("stdlib") or []:
+            roots.append(Path(str(item)).resolve())
+    if not roots:
+        try:
+            import sysconfig as _sysconfig
+            for key in ("stdlib", "platstdlib"):
+                value = _sysconfig.get_path(key)
+                if value:
+                    roots.append(Path(value).resolve())
+        except Exception:
+            pass
+    return roots
+
+
+def _path_is_interpreter_stdlib(path: Path, stdlib_roots: list[Path]) -> bool:
+    resolved = path.resolve()
+    for root in stdlib_roots:
+        try:
+            resolved.relative_to(root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
 def startup_customization_findings(
     origins: dict[str, Any] | None,
     *,
     prefix: Path,
     site_packages: Path,
 ) -> list[str]:
-    """Reject unvetted sitecustomize/usercustomize under this install.
+    """Reject sitecustomize/usercustomize that is importable from the target venv.
 
-    A distro sitecustomize such as Debian/Ubuntu ``/etc/pythonX.Y/sitecustomize.py``
-    is part of the trusted interpreter and is not refused. A sitecustomize.py
-    inside the venv prefix or site-packages is unvetted and is refused.
-    usercustomize is refused only when user site is enabled.
+    The trusted interpreter includes its own stdlib and distro sitecustomize
+    (Debian/Ubuntu ``/etc/pythonX.Y/sitecustomize.py``). A sitecustomize.py
+    inside the venv prefix or site-packages is extra startup and is refused.
+    usercustomize is refused when it is importable (user site enabled).
     """
     findings: list[str] = []
     prefix = prefix.resolve()
     site_packages = site_packages.resolve()
+    stdlib_roots = _stdlib_roots_from_origins(origins)
     for name in ("sitecustomize.py", "sitecustomize.pyc"):
         cand = site_packages / name
         if cand.is_file():
@@ -833,7 +819,10 @@ def startup_customization_findings(
         sitecustomize = origins.get("sitecustomize")
         if sitecustomize:
             loaded = Path(str(sitecustomize)).resolve()
-            if _under(loaded, prefix) and not any(loaded.as_posix() in item for item in findings):
+            already = any(loaded.as_posix() in item for item in findings)
+            in_venv = _under(loaded, prefix)
+            interpreter_owned = _path_is_interpreter_stdlib(loaded, stdlib_roots)
+            if not already and in_venv and not interpreter_owned:
                 findings.append(f"unvetted sitecustomize on the import path: {loaded}")
         enable_user_site = bool(origins.get("enable_user_site"))
         usercustomize = origins.get("usercustomize")
@@ -855,7 +844,7 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         "pth_findings": [],
         "startup_findings": [],
         "meta_path_findings": [],
-        "distutils_hack_findings": [],
+        "path_hook_findings": [],
         "lazy_loaded_runspecimen": {},
         "origins_bound": False,
         "launcher": None,
@@ -904,8 +893,6 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
 
     pth_findings = scan_pth_files(site) + scan_virtualenv_artifacts(site)
     report["pth_findings"] = pth_findings
-    hack_findings = setuptools_distutils_hack_findings(site)
-    report["distutils_hack_findings"] = hack_findings
 
     hashed_py_members = list(report.get("hashed_py_members") or [])
     bind_error: str | None = "effective origins were not probed"
@@ -929,29 +916,7 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         report["loaded_runspecimen"] = loaded
         report["lazy_loaded_runspecimen"] = lazy_loaded
         report["meta_path_findings"] = list(origins.get("unexpected_meta_path") or [])
-        distutils_hack = dict(origins.get("distutils_hack") or {})
-        report["distutils_hack"] = distutils_hack
-        identity_ok = bool(distutils_hack.get("identity_ok"))
-        claimed_file = distutils_hack.get("file")
-        canonical = distutils_hack.get("canonical")
-        if identity_ok:
-            if not claimed_file or not canonical:
-                hack_findings.append(
-                    "DistutilsMetaFinder identity matched but _distutils_hack "
-                    "__file__/canonical path was missing"
-                )
-            else:
-                claimed = Path(str(claimed_file)).resolve()
-                canon = Path(str(canonical)).resolve()
-                if claimed != canon:
-                    hack_findings.append(
-                        f"_distutils_hack __file__ {claimed} != canonical {canon}"
-                    )
-                elif not _under(claimed, site):
-                    hack_findings.append(
-                        f"_distutils_hack __file__ {claimed} is not under site-packages"
-                    )
-        report["distutils_hack_findings"] = hack_findings
+        report["path_hook_findings"] = list(origins.get("unexpected_path_hooks") or [])
         merged = dict(loaded)
         merged.update(lazy_loaded)
         report["runspecimen_version"] = origins.get("version")
@@ -990,26 +955,14 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
     failures: list[str] = []
     if incoming_overrides:
         failures.append("import overrides: " + "; ".join(incoming_overrides))
-    if pth_findings:
-        failures.append(
-            f"{len(pth_findings)} .pth path(s) outside the verified install"
-        )
-    hack_findings = list(report.get("distutils_hack_findings") or [])
-    if hack_findings:
-        failures.append("; ".join(hack_findings))
-    if startup_findings:
-        failures.append("; ".join(startup_findings))
-    meta_path_findings = list(report.get("meta_path_findings") or [])
-    if meta_path_findings:
-        failures.append(
-            "unexpected sys.meta_path finder/loader: "
-            + "; ".join(
-                f"{item.get('module')}.{item.get('type')}"
-                if isinstance(item, dict)
-                else str(item)
-                for item in meta_path_findings
-            )
-        )
+    hook_file = _first_hook_file(
+        pth_findings,
+        startup_findings,
+        list(report.get("meta_path_findings") or []),
+        list(report.get("path_hook_findings") or []),
+    )
+    if hook_file:
+        failures.append(hook_refusal_message(hook_file))
     if not bound:
         failures.append(bind_error or "effective origins are not bound to the verified package directory")
     if not report.get("ok"):
@@ -1067,7 +1020,7 @@ def main(argv: list[str] | None = None) -> int:
             "pth_findings",
             "startup_findings",
             "meta_path_findings",
-            "distutils_hack_findings",
+            "path_hook_findings",
             "lazy_loaded_runspecimen",
             "runspecimen_version",
             "checked",
