@@ -753,6 +753,11 @@ class Rc15QaDocfixTests(unittest.TestCase):
             payload,
         )
 
+    def test_qa4_distutils_metafinder_is_not_treated_as_a_hijack(self) -> None:
+        text = VERIFY_INSTALLED.read_text(encoding="utf-8")
+        self.assertIn("'_distutils_hack'", text)
+        self.assertIn("DistutilsMetaFinder", text)
+
 
 def _pin_wheel() -> Path:
     for pack in (PIN_PACK, QAFIX5_PACK, QAFIX4_PACK, QAFIX3_PACK, QAFIX_PACK):

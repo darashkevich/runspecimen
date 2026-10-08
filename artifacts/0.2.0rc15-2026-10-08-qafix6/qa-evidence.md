@@ -13,9 +13,9 @@ Engine/docs commit: `aafb6415fc9ec5e76321bca61c82f349b26ecdb0`
 | File | SHA-256 |
 | --- | --- |
 | `runspecimen-0.2.0rc15-py3-none-any.whl` | `68d5a98b5bc26b0afe14982bf77c39212707629a1f3befed327e34bd53021951` |
-| `runspecimen-0.2.0rc15.tar.gz` | `a92b754faa936ed45d944785b676a700b4ef65d989143b5c7046ab5b9c5b014b` |
+| `runspecimen-0.2.0rc15.tar.gz` | `7bb9f811780864a18c959e7b7bfc1051d6e303bf42ca08e218a69e402cf97d38` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb` (unchanged; does not embed the wheel) |
-| `release-report.json` | `771174ff3ef47ba3a7a53f7010f0d6dbcd409eebb61b9b899554cd64f0c37d6c` |
+| `release-report.json` | `019c8a04fd5bf54e731a7060f2d12c035a6b98d216704cf8c9b87706440c0ba3` |
 
 Toolchain: CPython 3.12.3, venv `/tmp/rs-relprep-qafix5` (setuptools 84.0.0, wheel 0.48.0).
 `SOURCE_DATE_EPOCH` 1577836800 as in `scripts/release_check.py`.
@@ -27,8 +27,15 @@ Prior packs, including qafix5 and earlier, were not overwritten.
 ## 1. Full skip list from local `release_check.py`
 
 Command: `/tmp/rs-relprep-qafix5/bin/python scripts/release_check.py --output-dir /tmp/rs-qafix6-a`
-Result: **728 tests, skipped=78, 0 failed**, then 4/4 distribution tests, exit 0.
-Unittest wall time: **131.134s** (cap 600s).
+Result: **729 tests, skipped=78, 0 failed**, then 4/4 distribution tests, exit 0.
+Unittest wall time: **127.686s** (cap 600s).
+
+Third commit (stated clearly): CPython 3.9/3.10 CI failed because setuptools'
+`_distutils_hack.DistutilsMetaFinder` was treated as an unexpected `sys.meta_path`
+finder. The probe now allowlists `_distutils_hack` (the distutils shim, not a
+startup-hook hijack). `src/` was not edited; **wheel `68d5a98b…` and plugin
+`ea38d5bc…` are unchanged**. Sdist rebuilt to `7bb9f811…` (scripts + tests).
+The first qafix6 sdist `a92b754f…` is superseded in the same directory.
 
 ### Why ~78 here vs ChatGPT's earlier 6
 

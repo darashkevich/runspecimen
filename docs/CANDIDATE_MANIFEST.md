@@ -25,7 +25,7 @@ Prior packs `artifacts/0.2.0rc15-2026-10-08-qafix5/` (sdist `a53d07253a64087c8dc
 | File | SHA-256 |
 | --- | --- |
 | `runspecimen-0.2.0rc15-py3-none-any.whl` | `68d5a98b5bc26b0afe14982bf77c39212707629a1f3befed327e34bd53021951` |
-| `runspecimen-0.2.0rc15.tar.gz` | `a92b754faa936ed45d944785b676a700b4ef65d989143b5c7046ab5b9c5b014b` |
+| `runspecimen-0.2.0rc15.tar.gz` | `7bb9f811780864a18c959e7b7bfc1051d6e303bf42ca08e218a69e402cf97d38` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb` (unchanged from qafix/qafix2/qafix3/qafix4/qafix5; does not embed the wheel) |
 
 The wheel moves because `src/` changed (pretty holder-policy hint, strict pretty `ok`, verify vs signature wording). Plugin zip stays `ea38d5bc…`. Prior `artifacts/0.2.0rc15-*` and `artifacts/rc15-*` directories were not overwritten, including `artifacts/0.2.0rc15-2026-10-08-qafix5/`, `artifacts/0.2.0rc15-2026-10-08-qafix4/`, `artifacts/0.2.0rc15-2026-10-07-qafix3/`, `artifacts/0.2.0rc15-2026-10-07-qafix2/`, `artifacts/0.2.0rc15-2026-10-07-qafix/`, `artifacts/0.2.0rc15-2026-10-06-bump/`, `artifacts/rc15-2026-10-06-qualification-docfix/`, `artifacts/rc15-2026-10-06-qualification/`, `artifacts/rc15-2026-10-06-isolated-evidence/`, and `artifacts/rc15-2026-10-05-golden-master/` sdist `c001cb088f8710802a84149d32843667f36b8fb0dedd941abbbd9dd18137a2da`. There is no new holder stage tar. The prior sealed stage `5200682fec6d5cdeee72c81ea8a419b0b2d80022f648f77a75a783b4eee9cdc9` in `artifacts/rc15-2026-10-05-qa-py312-seal/` was not overwritten. The 0.1.5 (13) package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa` is source `ea21a7fa17140dc15dab74493d384b2a8b7a150c` and engine rc14. It is not this wheel or this sdist.

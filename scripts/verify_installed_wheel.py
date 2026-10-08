@@ -118,6 +118,10 @@ allowed_meta = {
     'importlib.util',
     'importlib._bootstrap',
     'importlib._bootstrap_external',
+    # setuptools 82 on CPython 3.9/3.10 inserts DistutilsMetaFinder into
+    # every venv. That is the distutils compatibility shim, not a startup-hook
+    # hijack (those use _virtualenv / sitecustomize / a custom module).
+    '_distutils_hack',
 }
 meta_path = []
 unexpected_meta_path = []
