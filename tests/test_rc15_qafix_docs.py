@@ -30,7 +30,8 @@ HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 CANDIDATE_MANIFEST = ROOT / "docs" / "CANDIDATE_MANIFEST.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
-PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix8"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix9"
+QAFIX8_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix8"
 QAFIX7_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix7"
 QAFIX6_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix6"
 QAFIX5_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix5"
@@ -151,7 +152,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("command -v runspecimen", text)
         self.assertIn("mktemp -d", text)
         self.assertIn('test ! -e "$VENV"', text)
-        self.assertIn("0.2.0rc15-2026-10-08-qafix8", text)
+        self.assertIn("0.2.0rc15-2026-10-08-qafix9", text)
         self.assertIn("--no-index --no-deps --force-reinstall", text)
         self.assertIn("scripts/verify_installed_wheel.py", text)
         self.assertIn("--launcher", text)
@@ -176,7 +177,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("stdlib `python3 -m venv`", text)
         self.assertIn("demo-campaign", text)
         self.assertIn("run-001", text)
-        self.assertIn("HUMAN-ACCEPTANCE supplement qafix8", text)
+        self.assertIn("HUMAN-ACCEPTANCE supplement qafix9", text)
         self.assertNotRegex(
             text,
             r'(?m)^(?:\$PY|"\$PY"|python3|py ).*(?:pip install --upgrade|pip install -U)',
@@ -202,10 +203,10 @@ class Rc15QaDocfixTests(unittest.TestCase):
         if CANDIDATE_MANIFEST.is_file():
             manifest = CANDIDATE_MANIFEST.read_text(encoding="utf-8")
             self.assertIn("| Candidate (this pass) |", manifest)
-            self.assertIn("PR #63 head that records the qafix8 pack", manifest)
+            self.assertIn("PR #63 head that records the qafix9 pack", manifest)
             self.assertIn("8015b6d8017e5566f7558cc916dc0ee470c653ad", manifest)
-            self.assertIn("artifacts/0.2.0rc15-2026-10-08-qafix8/", manifest)
-            self.assertIn("3b20ad6b179baab582ec97285dd7899f09f11574", manifest)
+            self.assertIn("artifacts/0.2.0rc15-2026-10-08-qafix9/", manifest)
+            self.assertIn("f2c05c18b5a0156b616b0733f7653c45acf02b47", manifest)
         self.assertIn("Homebrew", text)
         self.assertIn("STEP $1 exit=$2", text)
         command_lines = [
@@ -924,7 +925,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
 
 
 def _pin_wheel() -> Path:
-    for pack in (PIN_PACK, QAFIX7_PACK, QAFIX6_PACK, QAFIX5_PACK, QAFIX4_PACK, QAFIX3_PACK, QAFIX_PACK):
+    for pack in (PIN_PACK, QAFIX8_PACK, QAFIX7_PACK, QAFIX6_PACK, QAFIX5_PACK, QAFIX4_PACK, QAFIX3_PACK, QAFIX_PACK):
         pin = pack / WHEEL_NAME
         if pin.is_file():
             return pin
@@ -989,7 +990,7 @@ def _acceptance_sheet_script(markdown: str, pack: Path) -> str:
         parts.append(block.rstrip() + "\n")
     script = "".join(parts)
     replaced, count = re.subn(
-        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-08-qafix8"',
+        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-08-qafix9"',
         f"export PACK={shlex.quote(str(pack))}",
         script,
         count=1,
