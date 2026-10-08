@@ -187,8 +187,9 @@ while making the workflow visible in the browser. Docs links open the published
 About, User guide, and FAQ on GitHub. CLI shortcut: `runspecimen about`.
 
 RunSpecimen stops agents from approving through the app and makes planted or
-edited approvals show up as broken receipts; for protection against a program
-that rewrites the whole record, sign receipts with a key the agent can't access.
+edited approvals show up as broken receipts. A program running as you that can
+edit RunSpecimen's files can still add a fake approval to the record. To protect
+against that, sign receipts with a key the agent can't access.
 
 ### Showcase receipt
 

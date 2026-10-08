@@ -38,8 +38,9 @@ shows an enforced isolation backend, and only to the degree `isolation.residual`
 `runspecimen dashboard` opens a **loopback-only, read-only** guide for one
 contract. It shows phase, evidence, and copyable CLI commands. It cannot
 approve or execute a run through the app. Approval stays a terminal action; the CLI remains
-the enforcement boundary. The hash chain is unkeyed: sign receipts with a key
-the agent can't access if you need protection against a full record rewrite.
+the enforcement boundary. The hash chain is unkeyed: a program running as you
+that can edit RunSpecimen's files can still add a fake approval to the record.
+To protect against that, sign receipts with a key the agent can't access.
 
 ## Learn more
 

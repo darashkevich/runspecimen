@@ -53,12 +53,14 @@ _ERROR_HINTS: tuple[tuple[str, str], ...] = (
     (
         "Planted or edited approval files cannot launch",
         "This approval file is not bound to the event log. Approve again on a real TTY. "
-        "A program that rewrites the whole record still needs a signature from a key the agent cannot access.",
+        "A program running as you that can edit RunSpecimen's files can still add a fake approval to the record. "
+        "To protect against that, sign receipts with a key the agent can't access.",
     ),
     (
         "This receipt has no authentic chained approval",
         "This receipt is not bound to a real approve step. Planted or edited approvals cannot verify. "
-        "For protection against a program that rewrites the whole record, sign receipts with a key the agent cannot access.",
+        "A program running as you that can edit RunSpecimen's files can still add a fake approval to the record. "
+        "To protect against that, sign receipts with a key the agent can't access.",
     ),
     (
         "certificate contains unknown field",

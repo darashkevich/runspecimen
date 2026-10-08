@@ -44,8 +44,11 @@ _ABOUT_SUMMARY = (
     "run → postflight → verify. Safety model: local TTY APPROVE (primary), optional "
     "Mac-armed remote human confirm via paired companion (not TTY-equivalent), "
     "workspace lease, hash-chained events, and certificates — evidence controls, "
-    "not an OS sandbox. Plugins/agents cannot approve. The dashboard is "
-    "loopback-only and read-only; it cannot approve or execute."
+    "not an OS sandbox. Plugins/agents cannot approve through the app. A program "
+    "running as you that can edit RunSpecimen's files can still add a fake "
+    "approval to the record. To protect against that, sign receipts with a key "
+    "the agent can't access. The dashboard is loopback-only and read-only; it "
+    "cannot approve or execute through the app."
 )
 
 

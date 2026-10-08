@@ -24,6 +24,7 @@ from runspecimen.schema import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+COMPAT_DOC = ROOT / "docs" / "SCHEMA_COMPATIBILITY.md"
 SHOWCASE_CERT = (
     ROOT
     / "examples"
@@ -114,3 +115,13 @@ class TestGoldenLegacyReceipt(unittest.TestCase):
         self.assertIn("schema_version", certificate_id_material(cert))
         self.assertEqual(cert.get("confirm_channel"), "local_tty_approve")
         self.assertIn("confirm_channel", certificate_id_material(cert))
+
+
+class TestSchemaCompatibilityDoc(unittest.TestCase):
+    def test_compatibility_matrix_lists_receipt_schema_2(self) -> None:
+        text = COMPAT_DOC.read_text(encoding="utf-8")
+        self.assertIn("## Compatibility matrix (engine ↔ schemas)", text)
+        matrix = text.split("## Compatibility matrix (engine ↔ schemas)", 1)[1]
+        self.assertIn("`schema_version: 2` (current)", matrix)
+        self.assertIn("Schema `1` and legacy still parse, then fail closed without a bound approval.", matrix)
+        self.assertEqual(CURRENT_RECEIPT_SCHEMA_VERSION, 2)

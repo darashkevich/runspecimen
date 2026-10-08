@@ -150,8 +150,9 @@ class TestPrettyModeEvidence(unittest.TestCase):
             current_wheel = _wheel_current_tree(root / "cur-wheel")
             cur_rs = _install_wheel(cur_venv, current_wheel)
 
+            # about JSON is the documented qafix10 exception (honesty wording).
+            # Every other covered command stays byte-exact vs qafix4 / 5565000.
             commands: list[tuple[str, list[str]]] = [
-                ("about", ["about"]),
                 (
                     "missing-contract",
                     [
@@ -197,6 +198,43 @@ class TestPrettyModeEvidence(unittest.TestCase):
                     if name == "n10-local":
                         self.assertIn(N10_LINE, pretty.stderr.splitlines())
                         self.assertIn(N10_LINE, default.stderr.splitlines())
+
+    def test_about_default_json_uses_through_the_app_honesty(self) -> None:
+        baseline_wheel = QAFIX4_PACK / WHEEL_NAME
+        if not baseline_wheel.is_file():
+            self.skipTest("qafix4 wheel must be on disk for 5565000 byte compare")
+        with tempfile.TemporaryDirectory(prefix="rs-about-ev-") as raw:
+            root = Path(raw)
+            ws = root / "ws"
+            ws.mkdir()
+            base_rs = _install_wheel(root / "base", baseline_wheel)
+            current_wheel = _wheel_current_tree(root / "cur-wheel")
+            cur_rs = _install_wheel(root / "cur", current_wheel)
+            left = _run_rs(base_rs, ["about"], ws)
+            right = _run_rs(cur_rs, ["about"], ws)
+            self.assertEqual(left.returncode, 0)
+            self.assertEqual(right.returncode, 0)
+            self.assertNotEqual(
+                left.stdout,
+                right.stdout,
+                "about JSON must change from the qafix4 unqualified cannot-approve line",
+            )
+            payload = json.loads(right.stdout)
+            summary = payload["summary"]
+            self.assertIn("Plugins/agents cannot approve through the app.", summary)
+            self.assertIn(
+                "A program running as you that can edit RunSpecimen's files "
+                "can still add a fake approval to the record.",
+                summary,
+            )
+            self.assertIn(
+                "To protect against that, sign receipts with a key the agent can't access.",
+                summary,
+            )
+            self.assertNotIn("Plugins/agents cannot approve.", summary)
+            pretty = _run_rs(cur_rs, ["--pretty", "--color", "never", "about"], ws)
+            self.assertEqual(pretty.returncode, right.returncode)
+            self.assertIn("cannot approve through the app", pretty.stdout)
 
     def test_holder_policy_allow_refuse_matrix_matches_qafix4(self) -> None:
         baseline_wheel = QAFIX4_PACK / WHEEL_NAME

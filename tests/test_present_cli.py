@@ -181,7 +181,7 @@ class TestPresentCLI(RunSpecimenTestCase):
         self.assertTrue(prompt.endswith("Type 'APPROVE' to bind this approval: "))
         self.assertIn("Command", prompt)
         self.assertIn("Fingerprints", prompt)
-        self.assertIn("Agents and plugins cannot approve", prompt)
+        self.assertIn("Agents and plugins cannot approve through the app", prompt)
         self.assertIn("confirmation phrase mismatch", str(ctx.exception))
 
     def test_default_verify_json_and_pretty_receipt(self) -> None:

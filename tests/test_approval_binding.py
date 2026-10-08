@@ -400,6 +400,19 @@ class TestShowcaseHonesty(unittest.TestCase):
             "README showcase must lead with scripts/refresh_showcase.py",
         )
 
+    def test_user_guide_showcase_leads_with_refresh_script(self) -> None:
+        guide = (
+            Path(__file__).resolve().parents[1] / "docs" / "USER_GUIDE.md"
+        ).read_text(encoding="utf-8")
+        showcase = guide.split("## Showcase refresh (host-bound)", 1)[1]
+        verify_idx = showcase.find("runspecimen verify --workspace examples/showcase")
+        refresh_idx = showcase.find("scripts/refresh_showcase.py")
+        self.assertGreaterEqual(refresh_idx, 0)
+        self.assertTrue(
+            refresh_idx < verify_idx or verify_idx < 0,
+            "USER_GUIDE showcase must lead with scripts/refresh_showcase.py",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

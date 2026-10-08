@@ -39,8 +39,9 @@ mandatory postflight before a successor; tamper-evident hash-chained receipts.
 
 Approval always requires an interactive TTY. Agents and adapters cannot
 approve through the app. Planted or edited `approval.json` files fail preflight,
-run, and verify. The hash chain is unkeyed: for protection against a program
-that rewrites the whole record, sign receipts with a key the agent can't access.
+run, and verify. The hash chain is unkeyed: a program running as you that can
+edit RunSpecimen's files can still add a fake approval to the record. To protect
+against that, sign receipts with a key the agent can't access.
 
 ## Requirements, evidence, and freshness (ADR-005)
 
@@ -380,25 +381,22 @@ Adapter limits (`scripts/runspecimen_adapter.py` and `scripts/runspecimen_mcp.py
 
 ## Showcase refresh (host-bound)
 
-`examples/showcase/` holds a regeneratable postflight receipt. Verify:
+`examples/showcase/` holds a regeneratable postflight receipt with
+`outputs/result.json`. Live `verify` binds this machine's interpreter hash, so
+lead with a refresh (or treat the committed receipt as host-specific):
 
 ```bash
+python3 scripts/refresh_showcase.py
 runspecimen verify --workspace examples/showcase \
   --contract examples/showcase/contract.json \
   --campaign-id showcase-campaign --run-id run-001
 ```
 
-Refresh without a TTY (library test hook `skip_tty_check` — **not** for
-production approvals):
-
-```bash
-python3 scripts/refresh_showcase.py
-```
-
-Live verify binds this machine’s resolved interpreter hash. After cloning onto
-another host, re-run `refresh_showcase.py` (or an interactive approve/run path)
-before expecting verify to pass. Historical pre-`runtime` certificates from
-earlier RCs are not verifiable on current builds.
+`refresh_showcase.py` uses the library test hook `skip_tty_check` — **not** for
+production approvals. After cloning onto another host, re-run
+`refresh_showcase.py` (or an interactive approve/run path) before expecting
+verify to pass. Historical pre-`runtime` certificates from earlier RCs are
+not verifiable on current builds.
 
 ## Integrating a research script
 

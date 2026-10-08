@@ -4,12 +4,16 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
-- BH-01/BH-02: `approval.json` is no longer a bearer token. Approve (and remote-confirm settle) append an `approval` event that carries a canonical hash of the approval document, covering every field `approval_is_valid` trusts plus `confirm_channel`, `confirm_evidence`, and `expires_at_unix`. Preflight and run recompute that hash and refuse unless it equals the latest chained approval event; expiry is taken from that event. `verify` is `ok:true` only with an authentic approval event or a consistent holder receipt. `confirm_channel` is bound into `certificate_id` and is never displayed from an unbound side file. Only `local_tty_approve` and `remote_human_confirm` are accepted. Old receipts without a bound approval never verify silently. Receipt schema is now `2` (schema `1` still parses, then fails closed). The hash chain remains unkeyed: a same-user process that rewrites the whole log can still forge a receipt. Sign with a key the agent cannot access to close that. qafix9 pack.
+- P3 about JSON: `runspecimen about` summary says plugins/agents cannot approve through the app, and that a program running as you that can edit RunSpecimen's files can still add a fake approval to the record. Default JSON for every other command is unchanged. qafix10 pack.
+- P3 USER_GUIDE showcase: the showcase section leads with `scripts/refresh_showcase.py`, matching README. qafix10 pack.
+- P3 schema matrix: receipt `schema_version: 2` is current; schema `1` still parses, then fails closed without a bound approval. qafix10 pack.
+- P3 honesty: a program running as you that can edit RunSpecimen's files can still add a fake approval to the record. To protect against that, sign receipts with a key the agent can't access. qafix10 pack.
+- BH-01/BH-02: `approval.json` is no longer a bearer token. Approve (and remote-confirm settle) append an `approval` event that carries a canonical hash of the approval document, covering every field `approval_is_valid` trusts plus `confirm_channel`, `confirm_evidence`, and `expires_at_unix`. Preflight and run recompute that hash and refuse unless it equals the latest chained approval event; expiry is taken from that event. `verify` is `ok:true` only with an authentic approval event or a consistent holder receipt. `confirm_channel` is bound into `certificate_id` and is never displayed from an unbound side file. Only `local_tty_approve` and `remote_human_confirm` are accepted. Old receipts without a bound approval never verify silently. Receipt schema is now `2` (schema `1` still parses, then fails closed). The hash chain remains unkeyed: a program running as you that can edit RunSpecimen's files can still add a fake approval to the record. To protect against that, sign receipts with a key the agent can't access. qafix9 pack; honesty wording qafix10.
 - BH-03: TTY re-approve while `phase=approved` (or `preflighted`) is a TTL refresh. Each refresh appends a new approval event; the latest governs. Remote confirm cannot refresh. qafix9 pack.
 - BH-04: `--pretty run` does not show green OK or "Run completed" when `exit_code != 0`. It prints a yellow/neutral "Process finished with exit code N". Default JSON and CLI exit codes are unchanged. qafix9 pack.
 - BH-05: `certificate.json` unknown top-level fields fail verify. qafix9 pack.
-- BH-06: README showcase `verify` example leads with `scripts/refresh_showcase.py`. qafix9 pack.
-- Docs honesty: RunSpecimen stops agents from approving through the app and makes planted or edited approvals show up as broken receipts; for protection against a program that rewrites the whole record, sign receipts with a key the agent can't access. qafix9 pack.
+- BH-06: README showcase `verify` example leads with `scripts/refresh_showcase.py`. USER_GUIDE matches that order. qafix9 pack; USER_GUIDE qafix10.
+- Docs honesty: RunSpecimen stops agents from approving through the app and makes planted or edited approvals show up as broken receipts. A program running as you that can edit RunSpecimen's files can still add a fake approval to the record. To protect against that, sign receipts with a key the agent can't access. qafix9 pack; honesty wording qafix10.
 - QA-HOOKS-03: installed-wheel provenance trusts only the Python interpreter and its stdlib. Venv-local metadata is not trust (setuptools RECORD does not hash itself and is writable by the same attacker). The target venv refuses every executable `.pth` import (including leftover `distutils-precedence.pth`), importable sitecustomize/usercustomize outside stdlib, any non-stdlib `sys.meta_path` or `sys.path_hooks` entry, and every `_virtualenv*`. A stdlib finder is identified by its class living in a stdlib module whose realpath is under the interpreter's stdlib dir, not by name. HUMAN-ACCEPTANCE uninstalls setuptools after `python3 -m venv` and before the wheel. qafix8 pack (kept in qafix9).
 - QA-HOOKS-01/02: installed-wheel provenance allows a `sys.meta_path` finder only by real class identity (stdlib importer, or `type(finder) is DistutilsMetaFinder` from the `_distutils_hack` module whose realpath is in the venv site-packages and whose bytes match setuptools RECORD). A finder that only claims `__module__ == '_distutils_hack'` is refused. Every `_virtualenv*` artifact is refused; HUMAN-ACCEPTANCE uses stdlib `python3 -m venv`, which creates none, and virtualenv hashes are not pinned. qafix7 pack.
 - QA4 pretty CLI: holder-policy `--pretty` hint no longer says "Use the holder". Pretty `verify` states that signature checks are a separate `verify-signature` step with its trust inputs. Pretty formatters treat missing or non-boolean `ok` as failure and never render a success banner. Default JSON, first `RunSpecimen error:` line, N10 text, and exit codes are unchanged. qafix6 pack.
@@ -142,7 +146,7 @@ Published on GitHub as `v0.2.0-rc.12` and on PyPI as `0.2.0rc12` (identical byte
   `remote_human_confirm`) so phone confirm is not claimed TTY-equivalent.
 - Quiet hours (`RUNSPECIMEN_QUIET_HOURS=HH-HH`) block **arm only** — never
   auto-APPROVE. Companion iOS card shows who/what/expiry/lease/isolation/
-  predecessor chips. Plugins still cannot approve, settle, or refuse.
+  predecessor chips. Plugins still cannot approve, settle, or refuse through the app.
 - Docs: `docs/SPEC_INCIDENT_BUNDLE.md`, `docs/SPEC_REMOTE_CONFIRM_CARD.md`.
   RS price book stays Community / Pro / Team — not Veto SKUs.
 
@@ -311,7 +315,7 @@ Published on GitHub as `v0.2.0-rc.12` and on PyPI as `0.2.0rc12` (identical byte
 
 - Add a contract-scoped, loopback-only local dashboard that renders phase,
   evidence, and the exact lifecycle commands for Codex and Cursor users.
-- Keep the dashboard read-only: it cannot approve or execute commands, so the
+- Keep the dashboard read-only: it cannot approve or execute commands through the app, so the
   real-TTY approval and CLI enforcement boundaries remain intact.
 - Teach the Codex and Cursor adapters to launch the dashboard on request.
 

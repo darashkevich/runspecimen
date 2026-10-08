@@ -20,8 +20,9 @@ this boundary; they call the
 same CLI and cannot approve through the app.
 
 RunSpecimen stops agents from approving through the app and makes planted or
-edited approvals show up as broken receipts; for protection against a program
-that rewrites the whole record, sign receipts with a key the agent can't access.
+edited approvals show up as broken receipts. A program running as you that can
+edit RunSpecimen's files can still add a fake approval to the record. To protect
+against that, sign receipts with a key the agent can't access.
 
 A native macOS (or other) companion UI that shells to the CLI does not move the
 enforcement boundary into the UI process. App Sandbox entitlements on a companion
@@ -70,7 +71,9 @@ and it does not replace the contract backend.
 - **Hash-chained events + certificate_id** — integrity of recorded local evidence.
   The chain is unkeyed. An `approval` event must carry a canonical hash of
   `approval.json`; preflight, run, and verify refuse a planted or edited file.
-  A same-user process that rewrites the whole log can still forge a receipt.
+  A program running as you that can edit RunSpecimen's files can still add a
+  fake approval to the record. To protect against that, sign receipts with a
+  key the agent can't access.
 - **HMAC-SHA256** (optional) — shared-secret MAC; verifiers who hold the key can
   also forge; useful for controlled sharing, not independent third-party trust.
 - **Ed25519** (optional extra, shipped) — offline public-key verification without

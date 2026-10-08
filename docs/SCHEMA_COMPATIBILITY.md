@@ -95,3 +95,4 @@ without the field, then fails closed if approval is not bound to the chain.
 | 0.2.0-rc.10 and earlier | `version: 1` | Legacy (no `schema_version`) |
 | Phase 0+ (this roadmap) | `version: 1` | Legacy **or** `schema_version: 1` |
 | Evidence expansion (ADR-005) | `version: 1` + sidecar kinds | Receipt optional `evidence_attestation` |
+| 0.2.0rc15 approval binding | `version: 1` | `schema_version: 2` (current). Schema `1` and legacy still parse, then fail closed without a bound approval. |
