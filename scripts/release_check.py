@@ -75,11 +75,11 @@ FORBIDDEN_PARTS = frozenset({".git", ".runspecimen", ".tools", "__pycache__"})
 
 
 def run(*args: str, cwd: Path = ROOT, env: dict[str, str] | None = None,
-        capture: bool = False) -> subprocess.CompletedProcess[str]:
+        capture: bool = False, timeout: int = 300) -> subprocess.CompletedProcess[str]:
     print("+", " ".join(args), flush=True)
     return subprocess.run(
         args, cwd=cwd, env=env, check=True, text=True,
-        stdin=subprocess.DEVNULL, capture_output=capture, timeout=300,
+        stdin=subprocess.DEVNULL, capture_output=capture, timeout=timeout,
     )
 
 
@@ -867,7 +867,12 @@ def main(argv: list[str] | None = None) -> int:
     check_versions()
     ensure_build_backend()
     env = offline_env()
-    run(sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v", env=env)
+    # Darwin 3.11 with ~711 tests plus two in-suite archive rebuilds can
+    # exceed 300s (PR run 37781319560 timed out on that matrix cell).
+    run(
+        sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v",
+        env=env, timeout=600,
+    )
     with tempfile.TemporaryDirectory(prefix="runspecimen-release-") as directory:
         temp = Path(directory)
         sdist, wheel, extracted = build_release_archives(temp, env)

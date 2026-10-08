@@ -4,6 +4,7 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
+- Offline `release_check.py` unittest discovery timeout is 600s (was 300s). Darwin 3.11 with the packed suite plus two in-suite archive rebuilds was hitting the cap.
 - Opt-in human CLI: `runspecimen quickstart` and `--pretty` / `--color` (before or after the subcommand). Default stdout is still sorted indented JSON; exit codes, hashes, and the TTY APPROVE gate are unchanged. The bind line remains `Type 'APPROVE' to bind this approval:`. `--pretty` refusals keep `RunSpecimen error: …` and add a next-step hint.
 - Holder policies (`local` / `companion` / `dual`) share one typed-phrase refusal across approve, preflight, and postflight. N10 still prints `execution policy local has no typed-phrase fallback`. The TTY APPROVE claim is `on this computer`. Release-check compares a clean-venv install to the wheel RECORD. Linux CI runs Ed25519 tests with PyNaCl.
 - `digest` help and the user guide no longer say ordinary `verify` checks HMAC/Ed25519 signatures. `verify` checks receipt integrity, the event chain, and live provenance. `verify-signature` checks those signatures with its required trust inputs. README `sign` / HMAC `verify-signature` examples include `--contract`. Codex install text is the local repository route; there is no public listing.
