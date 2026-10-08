@@ -28,12 +28,15 @@ README = ROOT / "README.md"
 HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
-PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix4"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix5"
+QAFIX4_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix4"
 QAFIX3_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-07-qafix3"
 QAFIX_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-07-qafix2"
 BUMP_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-06-bump"
 WHEEL_NAME = "runspecimen-0.2.0rc15-py3-none-any.whl"
-N3_GATING_NEEDLE = '"$RS" --version &&'
+N3_VERSION_NEEDLE = "rs_ok N3-version"
+N10_EXPECTED = "execution policy local has no typed-phrase fallback"
+UNK_EXPECTED = "contract contains unknown field(s): not_a_real_contract_field"
 
 DIGEST_HELP_NEEDLE = (
     "verify checks receipt integrity, the event chain, and live "
@@ -141,7 +144,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("command -v runspecimen", text)
         self.assertIn("mktemp -d", text)
         self.assertIn('test ! -e "$VENV"', text)
-        self.assertIn("0.2.0rc15-2026-10-08-qafix4", text)
+        self.assertIn("0.2.0rc15-2026-10-08-qafix5", text)
         self.assertIn("--no-index --no-deps --force-reinstall", text)
         self.assertIn("scripts/verify_installed_wheel.py", text)
         self.assertIn("--launcher", text)
@@ -149,77 +152,122 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("direct_url.json", text)
         self.assertIn("env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP", text)
         self.assertIn("PYTHONNOUSERSITE=1", text)
-        self.assertIn("set -euo pipefail", text)
-        self.assertIn(N3_GATING_NEEDLE, text)
-        self.assertIn("realpath-equal to the verified package directory", text)
-        self.assertIn("same absolute launcher and sanitized environment", text)
+        self.assertIn("rs() { env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 \"$RS\" \"$@\"; }", text)
+        self.assertNotIn("set -euo pipefail", text)
+        self.assertNotIn("set -e", text)
+        self.assertNotIn("$RS_SANITIZE", text)
+        self.assertIn(N3_VERSION_NEEDLE, text)
+        self.assertIn("rs_ok N3-verify", text)
+        self.assertIn("realpath-equal", text)
+        self.assertIn("trusted interpreter", text)
         self.assertIn("demo-campaign", text)
         self.assertIn("run-001", text)
+        self.assertIn("HUMAN-ACCEPTANCE supplement qafix5", text)
         self.assertNotRegex(
             text,
-            r'(?m)^(?:\$PY|"\$PY"|python3).*(?:pip install --upgrade|pip install -U)',
+            r'(?m)^(?:\$PY|"\$PY"|python3|py ).*(?:pip install --upgrade|pip install -U)',
         )
         for command in _bash_commands(text):
             self.assertNotIn("pip install --upgrade", command)
             self.assertNotIn("pip install -U", command)
-            if "verify_installed_wheel.py" in command:
-                self.assertIn("&&", command)
-                self.assertIn('"$RS" --version', command)
-                self.assertNotRegex(command, r'"\$RS" --version\s*;')
-        self.assertIn("execution policy local has no typed-phrase fallback", text)
+        n3 = _fence_containing(text, "rs_ok N3-version")
+        self.assertIn("rs --version", n3)
+        self.assertIn("verify_installed_wheel.py", n3)
+        self.assertIn("rs_ok N3-verify", n3)
+        self.assertNotIn("&&", n3)
+        self.assertIn(N10_EXPECTED, text)
         self.assertIn("## N10 — protected-policy refusal", text)
         self.assertIn("## Schema-rejection check (not N10)", text)
         self.assertIn("not_a_real_contract_field", text)
+        self.assertIn("rs_neg N10", text)
+        self.assertIn("rs_neg UNK", text)
         self.assertIn("Homebrew", text)
+        self.assertIn("STEP $1 exit=$2", text)
         command_lines = [
             line.strip()
             for line in text.splitlines()
             if line.startswith("$VENV/")
             or line.startswith('"$RS"')
             or line.startswith('"$PY"')
-            or line.startswith("$RS_SANITIZE")
-            or line.startswith("set -euo")
-            or line.startswith("env -u")
+            or line.startswith("rs ")
+            or line.startswith("py ")
+            or line.startswith("rs_ok ")
+            or line.startswith("rs_neg ")
             or line.startswith("test ")
+            or line.startswith("python3 ")
         ]
         for line in command_lines:
             self.assertNotIn(" #", line, f"trailing comment on command line: {line}")
             self.assertNotRegex(line, r"(^|\s)runspecimen\s", "bare runspecimen on a command line")
-            self.assertNotRegex(line, r"(^|\s)python3\s")
+            if "python3" in line:
+                self.assertIn("python3 -m venv", line)
 
     def test_human_acceptance_n3_fails_when_launcher_is_missing(self) -> None:
         if not HUMAN_ACCEPTANCE.is_file():
             self.skipTest("HUMAN-ACCEPTANCE is not packed into the sdist")
+        self._assert_n3_missing_launcher_stops("bash")
+
+    def test_human_acceptance_n3_missing_launcher_stops_in_zsh(self) -> None:
+        if not HUMAN_ACCEPTANCE.is_file():
+            self.skipTest("HUMAN-ACCEPTANCE is not packed into the sdist")
+        zsh = _zsh_path()
+        if zsh is None:
+            self.skipTest("zsh is not available")
+        self._assert_n3_missing_launcher_stops(zsh)
+
+    def _assert_n3_missing_launcher_stops(self, shell: str) -> None:
         text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
-        gating = [
-            command
-            for command in _bash_commands(text)
-            if "verify_installed_wheel.py" in command and '"$RS" --version' in command
-        ]
-        self.assertEqual(len(gating), 1, "N3 must have one launcher-then-verifier command")
-        command = gating[0]
-        self.assertIn("&&", command)
-        self.assertIn("set -euo pipefail", command)
+        helpers = _helper_functions(text)
+        n3 = _fence_containing(text, "rs_ok N3-version")
         pin = _pin_wheel()
         with tempfile.TemporaryDirectory(prefix="rs-ha-n3-missing-") as root:
             missing = Path(root) / "missing-runspecimen"
-            env = os.environ.copy()
-            env["RS"] = str(missing)
-            env["PY"] = sys.executable
-            env["WHEEL"] = str(pin.resolve()) if pin.is_file() else str(Path(root) / "no.whl")
-            env["RS_SANITIZE"] = (
-                "env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1"
+            script = (
+                f"export PACK={shlex.quote(str(PIN_PACK))}\n"
+                f"export WHEEL={shlex.quote(str(pin.resolve()) if pin.is_file() else str(Path(root) / 'no.whl'))}\n"
+                f"export RS={shlex.quote(str(missing))}\n"
+                f"export PY={shlex.quote(sys.executable)}\n"
+                f"{helpers}\n"
+                f"{n3}\n"
+                "echo REACHED_NEXT_STEP\n"
             )
+            env = os.environ.copy()
             env["PWD"] = str(ROOT)
             result = subprocess.run(
-                ["bash", "-c", command],
+                [shell, "-c", script],
                 check=False,
                 capture_output=True,
                 text=True,
                 env=env,
                 cwd=str(ROOT),
             )
-            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            output = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, output)
+            self.assertIn("STEP N3-version exit=", output)
+            self.assertIn("FAIL:", output)
+            self.assertNotIn("REACHED_NEXT_STEP", output)
+
+    def test_human_acceptance_helpers_stop_in_bash_and_zsh(self) -> None:
+        if not HUMAN_ACCEPTANCE.is_file():
+            self.skipTest("HUMAN-ACCEPTANCE is not packed into the sdist")
+        helpers = _helper_functions(HUMAN_ACCEPTANCE.read_text(encoding="utf-8"))
+        script = helpers + "\nrs_ok demo 0\nrs_ok shouldfail 1\necho REACHED\n"
+        shells = ["bash"]
+        zsh = _zsh_path()
+        if zsh is not None:
+            shells.append(zsh)
+        for shell in shells:
+            result = subprocess.run(
+                [shell, "-c", script],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            output = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, output)
+            self.assertIn("STEP demo exit=0", output)
+            self.assertIn("FAIL: step shouldfail", output)
+            self.assertNotIn("REACHED", output)
 
     def test_installed_wheel_provenance_rejects_same_version_older_rc15(self) -> None:
         pin = _pin_wheel()
@@ -285,13 +333,308 @@ class Rc15QaDocfixTests(unittest.TestCase):
             payload["pth_findings"],
         )
 
+    def test_installed_wheel_provenance_rejects_env_shebang_with_old_python_on_path(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        result = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            make_old_venv=True,
+            after_install=_rewrite_launcher_env_shebang,
+            extra_env_factory=_path_with_old_venv_first,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertRegex(
+            result.stdout + result.stderr,
+            r"unsupported shebang|env-based|/usr/bin/env",
+        )
+
+    def test_installed_wheel_provenance_accepts_absolute_shebang_with_old_python_on_path(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        result = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            make_old_venv=True,
+            extra_env_factory=_path_with_old_venv_first,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout.split("---")[0])
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["origins_bound"])
+
+    def test_installed_wheel_provenance_rejects_absolute_shebang_to_old_interpreter(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        result = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            make_old_venv=True,
+            after_install=_rewrite_launcher_old_absolute_shebang,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("not this venv's own Python", result.stdout + result.stderr)
+
+    def test_installed_wheel_provenance_rejects_sitecustomize_approve_preload(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        hijack = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            after_install=_write_sitecustomize_approve_preload,
+        )
+        self.assertNotEqual(hijack.returncode, 0, hijack.stdout + hijack.stderr)
+        payload = json.loads(hijack.stdout.split("---")[0])
+        self.assertFalse(payload["ok"])
+        self.assertTrue(
+            payload.get("startup_findings")
+            or "sitecustomize" in str(payload.get("message", "")).lower()
+            or (
+                payload.get("loaded_runspecimen")
+                and "approve" in str(payload.get("loaded_runspecimen"))
+            ),
+            payload,
+        )
+
+    def test_installed_wheel_provenance_rejects_sitecustomize_whole_package(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        hijack = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            after_install=_write_sitecustomize_whole_package,
+        )
+        self.assertNotEqual(hijack.returncode, 0, hijack.stdout + hijack.stderr)
+        payload = json.loads(hijack.stdout.split("---")[0])
+        self.assertFalse(payload["ok"])
+
+    def test_installed_wheel_provenance_rejects_virtualenv_pth_qa_compat(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        hijack = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            after_install=_write_virtualenv_pth_qa_compat,
+        )
+        self.assertNotEqual(hijack.returncode, 0, hijack.stdout + hijack.stderr)
+        payload = json.loads(hijack.stdout.split("---")[0])
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["pth_findings"], payload)
+
+    def test_installed_wheel_provenance_accepts_standard_virtualenv_pth_body(self) -> None:
+        pin = _pin_wheel()
+        if not pin.is_file():
+            self.skipTest("pin wheel must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        result = _install_and_verify(pin, pin, after_install=_write_standard_virtualenv_pth)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout.split("---")[0])
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["pth_findings"], [])
+
+    def test_installed_wheel_provenance_accepts_usercustomize_when_user_site_disabled(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        result = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            after_install=_write_usercustomize_under_userbase,
+            extra_env_factory=_env_with_userbase,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout.split("---")[0])
+        self.assertTrue(payload["ok"])
+
+    def test_installed_wheel_provenance_accepts_inert_egg_link(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        result = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            after_install=_write_inert_egg_link,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_installed_wheel_provenance_rejects_egg_link_with_easy_install_pth(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        hijack = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            after_install=_write_egg_link_and_easy_install_pth,
+        )
+        self.assertNotEqual(hijack.returncode, 0, hijack.stdout + hijack.stderr)
+        payload = json.loads(hijack.stdout.split("---")[0])
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["pth_findings"], payload)
+
+    def test_installed_wheel_provenance_symlink_identical_bytes_accepted(self) -> None:
+        pin = _pin_wheel()
+        if not pin.is_file():
+            self.skipTest("pin wheel must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        result = _install_and_verify(pin, pin, after_install=_symlink_approve_identical_bytes)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_installed_wheel_provenance_symlink_older_bytes_rejected(self) -> None:
+        pin = _pin_wheel()
+        older = BUMP_PACK / WHEEL_NAME
+        if not pin.is_file() or not older.is_file():
+            self.skipTest("pin and 2026-10-06-bump wheels must be on disk")
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        result = _install_and_verify(
+            pin,
+            pin,
+            plant_older=older,
+            after_install=_symlink_approve_older_bytes,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("does not match the pinned wheel", result.stdout)
+
+    def test_verify_installed_wheel_rejects_missing_launcher(self) -> None:
+        if not VERIFY_INSTALLED.is_file():
+            self.skipTest("verify_installed_wheel.py is not packed into this tree")
+        pin = _pin_wheel()
+        wheel = str(pin.resolve()) if pin.is_file() else str(ROOT / "no.whl")
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(VERIFY_INSTALLED),
+                "--wheel",
+                wheel,
+                "--launcher",
+                "/no/such/runspecimen",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=_sanitized_env(),
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("absolute launcher not found", result.stdout)
+
+    def test_interpreter_from_launcher_rejects_env_shebang(self) -> None:
+        module = _load_verify_module()
+        with tempfile.TemporaryDirectory(prefix="rs-shebang-") as root:
+            bindir = Path(root) / "bin"
+            bindir.mkdir()
+            python = bindir / "python"
+            python.write_text("#!/bin/sh\n", encoding="utf-8")
+            python.chmod(0o755)
+            launcher = bindir / "runspecimen"
+            launcher.write_text(
+                "#!/usr/bin/env python3\nfrom runspecimen.cli import main\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(module.UnsupportedShebangError) as ctx:
+                module.interpreter_from_launcher(launcher)
+            self.assertIn("unsupported shebang", str(ctx.exception))
+
+    def test_interpreter_from_launcher_accepts_venv_absolute_shebang(self) -> None:
+        module = _load_verify_module()
+        with tempfile.TemporaryDirectory(prefix="rs-shebang-ok-") as root:
+            bindir = Path(root) / "bin"
+            bindir.mkdir()
+            python = bindir / "python"
+            python.write_text("#!/bin/sh\n", encoding="utf-8")
+            python.chmod(0o755)
+            launcher = bindir / "runspecimen"
+            launcher.write_text(
+                f"#!{python}\nfrom runspecimen.cli import main\n",
+                encoding="utf-8",
+            )
+            got = module.interpreter_from_launcher(launcher)
+            self.assertEqual(got, python)
+
 
 def _pin_wheel() -> Path:
-    for pack in (PIN_PACK, QAFIX3_PACK, QAFIX_PACK):
+    for pack in (PIN_PACK, QAFIX4_PACK, QAFIX3_PACK, QAFIX_PACK):
         pin = pack / WHEEL_NAME
         if pin.is_file():
             return pin
     return PIN_PACK / WHEEL_NAME
+
+
+def _zsh_path() -> str | None:
+    from shutil import which
+
+    return which("zsh")
+
+
+def _fence_containing(markdown: str, needle: str) -> str:
+    blocks = re.findall(r"```(?:bash|sh)?\n(.*?)```", markdown, flags=re.S)
+    hits = [block for block in blocks if needle in block]
+    if len(hits) != 1:
+        raise AssertionError(f"expected one fence containing {needle!r}, got {len(hits)}")
+    return hits[0]
+
+
+def _helper_functions(markdown: str) -> str:
+    block = _fence_containing(markdown, "rs() {")
+    lines = [
+        line
+        for line in block.splitlines()
+        if not line.strip().startswith("export ")
+    ]
+    return "\n".join(lines)
+
+
+def _load_verify_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("verify_installed_wheel", VERIFY_INSTALLED)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _venv_python(venv_dir: Path) -> Path:
@@ -339,10 +682,147 @@ def _plant_older_tree(py: Path, venv_dir: Path, older_wheel: Path, env: dict[str
     return target.resolve()
 
 
-def _pythonpath_to_planted(venv_dir: Path, planted: Path) -> dict[str, str]:
+def _pythonpath_to_planted(venv_dir: Path, planted: Path, old_venv: Path | None = None) -> dict[str, str]:
     env = _sanitized_env()
     env["PYTHONPATH"] = str(planted)
     return env
+
+
+def _path_with_old_venv_first(venv_dir: Path, planted: Path, old_venv: Path | None = None) -> dict[str, str]:
+    env = _sanitized_env()
+    if old_venv is None:
+        raise AssertionError("old venv is required to prepend PATH")
+    old_bin = old_venv / ("Scripts" if os.name == "nt" else "bin")
+    env["PATH"] = str(old_bin) + os.pathsep + env.get("PATH", "")
+    return env
+
+
+def _env_with_userbase(venv_dir: Path, planted: Path, old_venv: Path | None = None) -> dict[str, str]:
+    env = _sanitized_env()
+    env["PYTHONUSERBASE"] = str(venv_dir / "userbase")
+    env["PYTHONNOUSERSITE"] = "1"
+    return env
+
+
+class _ProvHook:
+    def __init__(
+        self,
+        *,
+        venv_dir: Path,
+        py: Path,
+        launcher: Path,
+        site: Path,
+        planted: Path | None,
+        old_venv: Path | None,
+        env: dict[str, str],
+    ) -> None:
+        self.venv_dir = venv_dir
+        self.py = py
+        self.launcher = launcher
+        self.site = site
+        self.planted = planted
+        self.old_venv = old_venv
+        self.env = env
+
+
+def _rewrite_launcher_env_shebang(hook: _ProvHook) -> None:
+    text = hook.launcher.read_text(encoding="utf-8")
+    lines = text.splitlines(True)
+    if not lines:
+        raise AssertionError("empty launcher")
+    lines[0] = "#!/usr/bin/env python3\n"
+    hook.launcher.write_text("".join(lines), encoding="utf-8")
+
+
+def _rewrite_launcher_old_absolute_shebang(hook: _ProvHook) -> None:
+    if hook.old_venv is None:
+        raise AssertionError("old venv is required for an old absolute shebang")
+    old_py = _venv_python(hook.old_venv)
+    text = hook.launcher.read_text(encoding="utf-8")
+    lines = text.splitlines(True)
+    lines[0] = f"#!{old_py}\n"
+    hook.launcher.write_text("".join(lines), encoding="utf-8")
+
+
+def _approve_preload_source(planted: Path) -> str:
+    old_pkg = (planted / "runspecimen").resolve()
+    return (
+        "import sys\n"
+        "import runspecimen\n"
+        f"_old = {str(old_pkg)!r}\n"
+        "_orig = list(runspecimen.__path__)\n"
+        "runspecimen.__path__.insert(0, _old)\n"
+        "sys.modules.pop('runspecimen.approve', None)\n"
+        "import runspecimen.approve as _approve\n"
+        "runspecimen.__path__[:] = _orig\n"
+    )
+
+
+def _write_sitecustomize_approve_preload(hook: _ProvHook) -> None:
+    if hook.planted is None:
+        raise AssertionError("planted older tree is required")
+    (hook.site / "sitecustomize.py").write_text(_approve_preload_source(hook.planted), encoding="utf-8")
+
+
+def _write_sitecustomize_whole_package(hook: _ProvHook) -> None:
+    if hook.planted is None:
+        raise AssertionError("planted older tree is required")
+    (hook.site / "sitecustomize.py").write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {str(hook.planted)!r})\n",
+        encoding="utf-8",
+    )
+
+
+def _write_virtualenv_pth_qa_compat(hook: _ProvHook) -> None:
+    if hook.planted is None:
+        raise AssertionError("planted older tree is required")
+    (hook.site / "qa_compat.py").write_text(_approve_preload_source(hook.planted), encoding="utf-8")
+    (hook.site / "_virtualenv.pth").write_text("import qa_compat\n", encoding="utf-8")
+
+
+def _write_standard_virtualenv_pth(hook: _ProvHook) -> None:
+    (hook.site / "_virtualenv.py").write_text("# standard virtualenv bootstrap stub\n", encoding="utf-8")
+    (hook.site / "_virtualenv.pth").write_text("import _virtualenv\n", encoding="utf-8")
+
+
+def _write_usercustomize_under_userbase(hook: _ProvHook) -> None:
+    if hook.planted is None:
+        raise AssertionError("planted older tree is required")
+    version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    user_site = hook.venv_dir / "userbase" / "lib" / f"python{version}" / "site-packages"
+    user_site.mkdir(parents=True, exist_ok=True)
+    (user_site / "usercustomize.py").write_text(
+        _approve_preload_source(hook.planted),
+        encoding="utf-8",
+    )
+
+
+def _write_inert_egg_link(hook: _ProvHook) -> None:
+    if hook.planted is None:
+        raise AssertionError("planted older tree is required")
+    (hook.site / "runspecimen.egg-link").write_text(str(hook.planted) + "\n", encoding="utf-8")
+
+
+def _write_egg_link_and_easy_install_pth(hook: _ProvHook) -> None:
+    _write_inert_egg_link(hook)
+    (hook.site / "easy-install.pth").write_text(str(hook.planted) + "\n", encoding="utf-8")
+
+
+def _symlink_approve_identical_bytes(hook: _ProvHook) -> None:
+    approve = hook.site / "runspecimen" / "approve.py"
+    backup = hook.site / "approve_identical.py"
+    backup.write_bytes(approve.read_bytes())
+    approve.unlink()
+    approve.symlink_to(backup)
+
+
+def _symlink_approve_older_bytes(hook: _ProvHook) -> None:
+    if hook.planted is None:
+        raise AssertionError("planted older tree is required")
+    approve = hook.site / "runspecimen" / "approve.py"
+    approve.unlink()
+    approve.symlink_to(hook.planted / "runspecimen" / "approve.py")
 
 
 def _site_packages(py: Path, env: dict[str, str]) -> Path:
@@ -356,6 +836,32 @@ def _site_packages(py: Path, env: dict[str, str]) -> Path:
     return Path(result.stdout.strip()).resolve()
 
 
+def _create_venv_and_install(venv_dir: Path, wheel: Path, env: dict[str, str]) -> Path:
+    if venv_dir.exists():
+        raise AssertionError(f"venv target already exists: {venv_dir}")
+    venv.create(venv_dir, with_pip=True, symlinks=True)
+    py = _venv_python(venv_dir)
+    install = subprocess.run(
+        [
+            str(py),
+            "-m",
+            "pip",
+            "install",
+            "--no-index",
+            "--no-deps",
+            "--force-reinstall",
+            str(wheel.resolve()),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if install.returncode != 0:
+        raise AssertionError(f"pip install failed: {install.stderr}")
+    return py
+
+
 def _install_and_verify(
     install_wheel: Path,
     pin_wheel: Path,
@@ -363,33 +869,15 @@ def _install_and_verify(
     plant_older: Path | None = None,
     write_pth: bool = False,
     extra_env_factory=None,
+    after_install=None,
+    make_old_venv: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix="rs-ha-prov-") as root:
         venv_dir = Path(root) / "venv"
-        if venv_dir.exists():
-            raise AssertionError(f"venv target already exists: {venv_dir}")
-        venv.create(venv_dir, with_pip=True, symlinks=True)
-        py = _venv_python(venv_dir)
         env = _sanitized_env()
-        install = subprocess.run(
-            [
-                str(py),
-                "-m",
-                "pip",
-                "install",
-                "--no-index",
-                "--no-deps",
-                "--force-reinstall",
-                str(install_wheel.resolve()),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-        if install.returncode != 0:
-            raise AssertionError(f"pip install failed: {install.stderr}")
+        py = _create_venv_and_install(venv_dir, install_wheel, env)
         planted = None
+        old_venv = None
         if plant_older is not None:
             planted = _plant_older_tree(py, venv_dir, plant_older, env)
             if write_pth:
@@ -398,8 +886,29 @@ def _install_and_verify(
                     f"import sys; sys.path.insert(0, {str(planted)!r})\n",
                     encoding="utf-8",
                 )
-        verify_env = extra_env_factory(venv_dir, planted) if extra_env_factory else env
+        if make_old_venv:
+            if plant_older is None:
+                raise AssertionError("make_old_venv requires plant_older")
+            old_venv = Path(root) / "oldvenv"
+            _create_venv_and_install(old_venv, plant_older, env)
         launcher = _venv_launcher(venv_dir)
+        site = _site_packages(py, env)
+        if after_install is not None:
+            after_install(
+                _ProvHook(
+                    venv_dir=venv_dir,
+                    py=py,
+                    launcher=launcher,
+                    site=site,
+                    planted=planted,
+                    old_venv=old_venv,
+                    env=env,
+                )
+            )
+        if extra_env_factory:
+            verify_env = extra_env_factory(venv_dir, planted, old_venv)
+        else:
+            verify_env = env
         return subprocess.run(
             [
                 str(py),

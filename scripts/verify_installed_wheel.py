@@ -4,9 +4,17 @@
 Version strings are not proof. Two unpublished 0.2.0rc15 wheels can differ.
 Exit 0 only when every hashed RECORD member (and every runspecimen/*.py in the
 zip) matches the file installed under the absolute launcher's interpreter, the
-effective runspecimen and CLI module origins realpath-equal that verified
-package directory, the environment has no import overrides, and no site-packages
-.pth adds a path outside that install.
+effective origins of runspecimen, runspecimen.cli, runspecimen.approve, and
+every other loaded runspecimen.* module realpath-equal the hashed installed
+members, the environment has no import overrides, no unvetted startup
+customization is on the import path, and no site-packages .pth adds a foreign
+path or an executable import that is not a known-safe exact body.
+
+Trusted-interpreter assumption: this helper is not a promise to resist
+arbitrary replacement of Python, of this verifier script, or of the operator's
+own decision to run a different interpreter. It does refuse env-based and
+unsupported launcher shebangs instead of guessing a sibling, and it does
+refuse unvetted sitecustomize/usercustomize and executable .pth hooks.
 
 Run with the venv interpreter that owns the install, under the same sanitized
 environment the acceptance sheet uses for every launcher call:
@@ -31,24 +39,67 @@ import zipfile
 
 
 IMPORT_OVERRIDE_VARS = ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP")
-BENIGN_IMPORT_PTH_NAMES = frozenset({
-    "_virtualenv.pth",
-    "distutils-precedence.pth",
+# Content-matched only. Filename is not trust. These are the exact bodies of
+# virtualenv's ``_virtualenv.pth`` (``import _virtualenv``) and setuptools'
+# ``distutils-precedence.pth`` distutils shim. They do not add paths and do
+# not import runspecimen. Any other import line, including ``import qa_compat``
+# inside ``_virtualenv.pth``, is refused.
+KNOWN_SAFE_PTH_IMPORT_LINES = frozenset({
+    "import _virtualenv",
+    "import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os.environ.get(var, 'local') == 'local'; enabled and __import__('_distutils_hack').add_shim();",
+    "import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os.environ.get(var, 'local') == 'local'; enabled and __import__('_distutils_hack').add_shim()",
 })
 CONSOLE_FROM = re.compile(r"from\s+([\w.]+)\s+import\s+(\w+)")
 PROBE_SCRIPT = (
-    "import json, sys\n"
+    "import json, sys, site\n"
     "from pathlib import Path\n"
     "import runspecimen\n"
     "import runspecimen.cli\n"
+    "import runspecimen.approve\n"
+    "import runspecimen.run\n"
+    "loaded = {}\n"
+    "for name, mod in list(sys.modules.items()):\n"
+    "    if name != 'runspecimen' and not name.startswith('runspecimen.'):\n"
+    "        continue\n"
+    "    path = getattr(mod, '__file__', None)\n"
+    "    loaded[name] = None if path is None else str(Path(path).resolve())\n"
+    "\n"
+    "def _find(modname):\n"
+    "    if modname in sys.modules:\n"
+    "        mod = sys.modules[modname]\n"
+    "        path = getattr(mod, '__file__', None)\n"
+    "        if path:\n"
+    "            return str(Path(path).resolve())\n"
+    "    for entry in list(sys.path):\n"
+    "        if not entry:\n"
+    "            continue\n"
+    "        base = Path(entry)\n"
+    "        for suffix in ('.py', '.pyc'):\n"
+    "            cand = base / (modname + suffix)\n"
+    "            if cand.is_file():\n"
+    "                return str(cand.resolve())\n"
+    "        init = base / modname / '__init__.py'\n"
+    "        if init.is_file():\n"
+    "            return str(init.resolve())\n"
+    "    return None\n"
+    "\n"
     "print(json.dumps({\n"
     "    'runspecimen_file': str(Path(runspecimen.__file__).resolve()),\n"
     "    'cli_file': str(Path(runspecimen.cli.__file__).resolve()),\n"
+    "    'approve_file': str(Path(runspecimen.approve.__file__).resolve()),\n"
     "    'prefix': str(Path(sys.prefix).resolve()),\n"
     "    'executable': str(Path(sys.executable).resolve()),\n"
     "    'version': getattr(runspecimen, '__version__', None),\n"
+    "    'loaded_runspecimen': loaded,\n"
+    "    'sitecustomize': _find('sitecustomize'),\n"
+    "    'usercustomize': _find('usercustomize'),\n"
+    "    'enable_user_site': bool(getattr(site, 'ENABLE_USER_SITE', False)),\n"
     "}))\n"
 )
+
+
+class UnsupportedShebangError(ValueError):
+    """Launcher shebang is env-based, missing, or not this venv's Python."""
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -87,6 +138,7 @@ def verify_site_against_wheel(*, site_packages: Path, wheel: Path) -> dict[str, 
         "checked": 0,
         "dist_info_record": None,
         "direct_url_json": None,
+        "hashed_py_members": [],
     }
     if not wheel.is_file():
         report["message"] = f"wheel not found: {wheel}"
@@ -147,6 +199,7 @@ def verify_site_against_wheel(*, site_packages: Path, wheel: Path) -> dict[str, 
         report["mismatches"] = mismatches
         report["missing"] = missing + missing_py
         report["extra_py"] = extra_py
+        report["hashed_py_members"] = sorted(wheel_py)
 
     dist_infos = sorted(site_packages.glob("runspecimen-*.dist-info"))
     if dist_infos:
@@ -207,40 +260,57 @@ def discover_launcher(prefix: Path | None = None) -> Path | None:
     return None
 
 
-def _launcher_sibling_python(launcher: Path) -> Path:
-    return launcher.parent / ("python.exe" if os.name == "nt" else "python")
+def _is_venv_own_python(shebang: Path, launcher: Path) -> bool:
+    """True when the shebang names this venv's Python, not another prefix.
+
+    Compare bin directories without following the ``python`` symlink: two
+    venvs can realpath to the same system interpreter.
+    """
+    shebang_dir = os.path.normpath(os.path.abspath(str(shebang.parent)))
+    launcher_dir = os.path.normpath(os.path.abspath(str(launcher.parent)))
+    if shebang_dir != launcher_dir:
+        return False
+    name = shebang.name.lower()
+    return name == "python.exe" or name.startswith("python")
 
 
 def interpreter_from_launcher(launcher: Path) -> Path:
-    """Return the venv interpreter the console script actually execs.
+    """Return the venv interpreter named by an absolute shebang.
 
     Do not realpath the shebang: ``$VENV/bin/python`` is usually a symlink to
-    the system interpreter, and resolving it drops ``pyvenv.cfg``.
+    the system interpreter, and resolving it drops ``pyvenv.cfg``. Do not
+    guess a sibling for ``#!/usr/bin/env ...``, a missing shebang, or any
+    interpreter that is not this venv's own Python. Pip's normal
+    console-script shebang is an absolute path to ``$VENV/bin/python``.
     """
-    sibling = _launcher_sibling_python(launcher)
     data = launcher.read_bytes()
-    if data.startswith(b"#!"):
-        first = data.splitlines()[0][2:].decode("utf-8", "replace").strip()
-        parts = first.split()
-        if parts and Path(parts[0]).name not in {"env", "env.exe"}:
-            shebang = Path(parts[0])
-            if shebang.exists():
-                return shebang
-        if sibling.exists():
-            return sibling
-        if parts and Path(parts[0]).name in {"env", "env.exe"} and len(parts) >= 2:
-            found = shutil_which(parts[1])
-            if found:
-                return Path(found)
-    if sibling.exists():
-        return sibling
-    return Path(sys.executable)
-
-
-def shutil_which(name: str) -> str | None:
-    from shutil import which
-
-    return which(name)
+    if not data.startswith(b"#!"):
+        raise UnsupportedShebangError(
+            f"launcher {launcher} has no shebang; "
+            "env-based and missing shebangs are not accepted"
+        )
+    first = data.splitlines()[0][2:].decode("utf-8", "replace").strip()
+    if not first:
+        raise UnsupportedShebangError(
+            f"launcher {launcher} has an empty shebang; "
+            "env-based and missing shebangs are not accepted"
+        )
+    parts = first.split()
+    shebang = Path(parts[0])
+    if shebang.name in {"env", "env.exe"} or not shebang.is_absolute():
+        raise UnsupportedShebangError(
+            f"launcher {launcher} uses unsupported shebang {first!r}; "
+            "only an absolute path to the venv's own Python is accepted"
+        )
+    if not shebang.exists():
+        raise UnsupportedShebangError(
+            f"launcher shebang interpreter not found: {shebang}"
+        )
+    if not _is_venv_own_python(shebang, launcher):
+        raise UnsupportedShebangError(
+            f"launcher {launcher} shebang {first!r} is not this venv's own Python"
+        )
+    return shebang
 
 
 def console_script_target(launcher: Path) -> str | None:
@@ -279,7 +349,7 @@ def launcher_sysconfig(interpreter: Path, env: dict[str, str]) -> dict[str, str]
     return {key: str(payload[key]) for key in ("purelib", "prefix", "executable")}
 
 
-def probe_effective_origins(interpreter: Path, env: dict[str, str]) -> dict[str, str]:
+def probe_effective_origins(interpreter: Path, env: dict[str, str]) -> dict[str, Any]:
     result = subprocess.run(
         [str(interpreter), "-c", PROBE_SCRIPT],
         check=False,
@@ -292,7 +362,7 @@ def probe_effective_origins(interpreter: Path, env: dict[str, str]) -> dict[str,
             f"launcher origin probe failed: {result.stderr.strip() or result.stdout.strip()}"
         )
     payload = json.loads(result.stdout)
-    return {key: str(payload[key]) for key in payload}
+    return payload
 
 
 def package_origin(module_file: Path) -> Path:
@@ -302,13 +372,27 @@ def package_origin(module_file: Path) -> Path:
     return resolved.parent
 
 
+def _member_candidates(modname: str) -> list[str]:
+    if modname == "runspecimen":
+        return ["runspecimen/__init__.py"]
+    if not modname.startswith("runspecimen."):
+        return []
+    rest = modname.split(".", 1)[1]
+    rel = rest.replace(".", "/")
+    return [f"runspecimen/{rel}.py", f"runspecimen/{rel}/__init__.py"]
+
+
 def origins_bound_to_package(
     *,
     runspecimen_file: Path,
     cli_file: Path,
     package_dir: Path,
+    site_packages: Path,
+    loaded: dict[str, Any] | None = None,
+    hashed_py_members: list[str] | None = None,
 ) -> tuple[bool, str | None]:
     expected_pkg = package_dir.resolve()
+    site_packages = site_packages.resolve()
     rs_origin = package_origin(runspecimen_file)
     cli_origin = package_origin(cli_file)
     expected_init = expected_pkg / "__init__.py"
@@ -331,11 +415,53 @@ def origins_bound_to_package(
             f"effective runspecimen.cli.__file__ {cli_file.resolve()} "
             f"!= {expected_cli.resolve()}"
         )
+    hashed = set(hashed_py_members or [])
+    if "runspecimen/approve.py" in hashed:
+        expected_approve = expected_pkg / "approve.py"
+        if loaded and loaded.get("runspecimen.approve"):
+            got = Path(str(loaded["runspecimen.approve"])).resolve()
+            if got != expected_approve.resolve():
+                return False, (
+                    f"effective runspecimen.approve origin {got} "
+                    f"!= hashed installed member {expected_approve.resolve()}"
+                )
+    if loaded:
+        for name in sorted(loaded):
+            origin = loaded[name]
+            if origin is None:
+                return False, f"loaded {name} has no __file__"
+            got = Path(str(origin)).resolve()
+            candidates = _member_candidates(name)
+            if not candidates:
+                return False, f"loaded module {name} is not a runspecimen.* member"
+            matched = None
+            for member in candidates:
+                installed = (site_packages / member).resolve()
+                if installed.is_file() and installed == got:
+                    matched = member
+                    break
+            if matched is None:
+                return False, (
+                    f"effective {name} origin {got} is not a hashed installed "
+                    f"runspecimen member under {site_packages}"
+                )
+            if hashed and matched not in hashed:
+                return False, (
+                    f"effective {name} origin {got} member {matched} is not a hashed wheel member"
+                )
     return True, None
 
 
+def _normalize_pth_import_line(line: str) -> str:
+    return line.replace("\t", " ").strip()
+
+
 def scan_pth_files(site_packages: Path) -> list[dict[str, Any]]:
-    """Reject .pth entries that add a path outside the verified install."""
+    """Reject .pth entries that add a path outside the verified install.
+
+    Executable ``import`` lines are allowed only when the stripped line is one
+    of ``KNOWN_SAFE_PTH_IMPORT_LINES``. Filename is not trust.
+    """
     findings: list[dict[str, Any]] = []
     site_packages = site_packages.resolve()
     for pth in sorted(site_packages.glob("*.pth")):
@@ -345,9 +471,10 @@ def scan_pth_files(site_packages: Path) -> list[dict[str, Any]]:
             if not line or line.startswith("#"):
                 continue
             if line.startswith("import ") or line.startswith("import\t"):
-                if pth.name in BENIGN_IMPORT_PTH_NAMES and "sys.path" not in line:
+                normalized = _normalize_pth_import_line(line)
+                if normalized in KNOWN_SAFE_PTH_IMPORT_LINES:
                     continue
-                reason = "import-style .pth is not on the allow-list or mutates sys.path"
+                reason = "executable import .pth line is not a known-safe body"
                 if "sys.path" in line:
                     reason = "pth prepends or mutates sys.path outside the verified install"
                 findings.append({
@@ -373,6 +500,50 @@ def scan_pth_files(site_packages: Path) -> list[dict[str, Any]]:
     return findings
 
 
+def _under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def startup_customization_findings(
+    origins: dict[str, Any] | None,
+    *,
+    prefix: Path,
+    site_packages: Path,
+) -> list[str]:
+    """Reject unvetted sitecustomize/usercustomize under this install.
+
+    A distro sitecustomize such as Debian/Ubuntu ``/etc/pythonX.Y/sitecustomize.py``
+    is part of the trusted interpreter and is not refused. A sitecustomize.py
+    inside the venv prefix or site-packages is unvetted and is refused.
+    usercustomize is refused only when user site is enabled.
+    """
+    findings: list[str] = []
+    prefix = prefix.resolve()
+    site_packages = site_packages.resolve()
+    for name in ("sitecustomize.py", "sitecustomize.pyc"):
+        cand = site_packages / name
+        if cand.is_file():
+            findings.append(f"unvetted sitecustomize on the import path: {cand.resolve()}")
+    if origins is not None:
+        sitecustomize = origins.get("sitecustomize")
+        if sitecustomize:
+            loaded = Path(str(sitecustomize)).resolve()
+            if _under(loaded, prefix) and not any(loaded.as_posix() in item for item in findings):
+                findings.append(f"unvetted sitecustomize on the import path: {loaded}")
+        enable_user_site = bool(origins.get("enable_user_site"))
+        usercustomize = origins.get("usercustomize")
+        if usercustomize and enable_user_site:
+            findings.append(
+                "unvetted usercustomize on the import path while user site is enabled: "
+                f"{usercustomize}"
+            )
+    return findings
+
+
 def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, Any]:
     incoming_overrides = import_overrides()
     env = sanitized_env()
@@ -381,6 +552,7 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         "wheel": str(wheel.resolve()) if wheel else None,
         "import_overrides": incoming_overrides,
         "pth_findings": [],
+        "startup_findings": [],
         "origins_bound": False,
         "launcher": None,
         "interpreter": None,
@@ -389,6 +561,8 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         "verified_package_dir": None,
         "runspecimen_file": None,
         "cli_file": None,
+        "approve_file": None,
+        "loaded_runspecimen": {},
         "runspecimen_version": None,
     }
     resolved_launcher = launcher.resolve() if launcher is not None else discover_launcher()
@@ -399,8 +573,8 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
     report["console_script_target"] = console_script_target(resolved_launcher)
     try:
         interpreter = interpreter_from_launcher(resolved_launcher)
-    except OSError as exc:
-        report["message"] = f"launcher interpreter unread: {exc}"
+    except (OSError, UnsupportedShebangError) as exc:
+        report["message"] = str(exc)
         return report
     report["interpreter"] = str(interpreter)
     if not interpreter.exists():
@@ -426,7 +600,9 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
     pth_findings = scan_pth_files(site)
     report["pth_findings"] = pth_findings
 
+    hashed_py_members = list(report.get("hashed_py_members") or [])
     bind_error: str | None = "effective origins were not probed"
+    startup_findings: list[str] = []
     try:
         origins = probe_effective_origins(interpreter, env)
     except (RuntimeError, json.JSONDecodeError, KeyError) as exc:
@@ -437,16 +613,34 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         cli_file = Path(origins["cli_file"])
         report["runspecimen_file"] = str(rs_file)
         report["cli_file"] = str(cli_file)
+        if origins.get("approve_file"):
+            report["approve_file"] = str(origins["approve_file"])
+        loaded = origins.get("loaded_runspecimen") or {}
+        report["loaded_runspecimen"] = loaded
         report["runspecimen_version"] = origins.get("version")
         bound, bind_error = origins_bound_to_package(
             runspecimen_file=rs_file,
             cli_file=cli_file,
             package_dir=package_dir,
+            site_packages=site,
+            loaded=loaded,
+            hashed_py_members=hashed_py_members,
         )
         report["origins_bound"] = bound
+        startup_findings = startup_customization_findings(
+            origins,
+            prefix=Path(cfg["prefix"]),
+            site_packages=site,
+        )
     else:
         bound = False
         report["origins_bound"] = False
+        startup_findings = startup_customization_findings(
+            None,
+            prefix=Path(cfg["prefix"]),
+            site_packages=site,
+        )
+    report["startup_findings"] = startup_findings
     expected_target = "runspecimen.cli:main"
     target = report.get("console_script_target")
     if target not in {None, expected_target}:
@@ -463,6 +657,8 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         failures.append(
             f"{len(pth_findings)} .pth path(s) outside the verified install"
         )
+    if startup_findings:
+        failures.append("; ".join(startup_findings))
     if not bound:
         failures.append(bind_error or "effective origins are not bound to the verified package directory")
     if not report.get("ok"):
@@ -511,10 +707,13 @@ def main(argv: list[str] | None = None) -> int:
             "prefix",
             "runspecimen_file",
             "cli_file",
+            "approve_file",
             "console_script_target",
             "origins_bound",
+            "loaded_runspecimen",
             "import_overrides",
             "pth_findings",
+            "startup_findings",
             "runspecimen_version",
             "checked",
             "missing",
