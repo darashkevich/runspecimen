@@ -17,7 +17,11 @@ The human invoking the TTY approval, the local operating-system account, the
 RunSpecimen installation, Python runtime, workspace filesystem, and workload are
 trusted. The Codex, Cursor, Claude Code, and Grok Build adapters do not expand
 this boundary; they call the
-same CLI and cannot manufacture an approval.
+same CLI and cannot approve through the app.
+
+RunSpecimen stops agents from approving through the app and makes planted or
+edited approvals show up as broken receipts; for protection against a program
+that rewrites the whole record, sign receipts with a key the agent can't access.
 
 A native macOS (or other) companion UI that shells to the CLI does not move the
 enforcement boundary into the UI process. App Sandbox entitlements on a companion
@@ -64,6 +68,9 @@ and it does not replace the contract backend.
 ## Receipt authentication vs signatures
 
 - **Hash-chained events + certificate_id** — integrity of recorded local evidence.
+  The chain is unkeyed. An `approval` event must carry a canonical hash of
+  `approval.json`; preflight, run, and verify refuse a planted or edited file.
+  A same-user process that rewrites the whole log can still forge a receipt.
 - **HMAC-SHA256** (optional) — shared-secret MAC; verifiers who hold the key can
   also forge; useful for controlled sharing, not independent third-party trust.
 - **Ed25519** (optional extra, shipped) — offline public-key verification without

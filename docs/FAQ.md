@@ -91,10 +91,14 @@ run, or count a model call unless the skipped task was a model judgment. See
 
 ## Can agents approve runs?
 
-**No.** Codex/Cursor plugins and the narrow adapter
+**Not through the app.** Codex/Cursor plugins and the narrow adapter
 (`about`, `dashboard`, `doctor`, `validate`, `status`, `preflight`, `run`, `postflight`,
 `verify`) deliberately exclude `approve`. A human must run
 `runspecimen approve --workspace … --contract …` in a real terminal.
+
+RunSpecimen stops agents from approving through the app and makes planted or
+edited approvals show up as broken receipts; for protection against a program
+that rewrites the whole record, sign receipts with a key the agent can't access.
 
 ## Why does verify fail after I clone the repo?
 
@@ -115,9 +119,11 @@ you need concurrency. There is no built-in worker pool or scheduler.
 ## Is the hash chain a signature?
 
 **No.** Events and certificates are SHA-256 hash-chained and locally
-recomputable. They detect casual tampering of the evidence set, but a
-privileged attacker who can rewrite the whole workspace can fabricate a new
-history.
+recomputable. They detect planted or edited `approval.json` files and casual
+tampering of the evidence set. The chain is unkeyed: a same-user process that
+rewrites the entire event log consistently can still forge a receipt. Only a
+signing key the agent can't read (`verify-signature` with an out-of-reach key,
+or an installed holder — fail-closed under D1/D2) closes that.
 
 The default `sign` command provides HMAC-SHA256 authentication (a shared-secret
 Message Authentication Code), not digital signatures. Anyone with the key

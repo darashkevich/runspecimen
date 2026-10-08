@@ -14,6 +14,7 @@ from runspecimen.paths import CERTIFICATE_FILENAME, STATE_FILENAME, ensure_withi
 from runspecimen.runtime import runtime_provenance
 from runspecimen.schema import (
     CURRENT_RECEIPT_SCHEMA_VERSION,
+    assert_certificate_known_keys,
     assert_supported_receipt_schema,
     certificate_id_material,
 )
@@ -80,6 +81,9 @@ def build_certificate(
             "aggregate_outcome": evidence_attestation.get("aggregate_outcome"),
             "manifest_hash": evidence_attestation.get("manifest_hash"),
         }
+    confirm_channel = (approval or {}).get("confirm_channel")
+    if confirm_channel is not None:
+        body["confirm_channel"] = confirm_channel
     certificate_id = sha256_bytes(canonical_json_bytes(certificate_id_material(body)))
     return {"certificate_id": certificate_id, **body}
 
@@ -148,6 +152,72 @@ def _verify_live_outputs(workspace: Path, cert: dict[str, Any]) -> None:
             )
 
 
+MISSING_BOUND_APPROVAL = (
+    "This receipt has no authentic chained approval matching approval.json. "
+    "Planted or edited approvals cannot verify."
+)
+HOLDER_RECEIPT_INCONSISTENT = (
+    "This receipt's holder record is not consistent with the certificate."
+)
+
+
+def _require_bound_approval_or_holder(
+    *,
+    state_dir: Path,
+    cert: dict[str, Any],
+    state: dict[str, Any],
+    log: EventLog,
+) -> str | None:
+    """ok:true only with a chained approval event or a consistent holder receipt.
+
+    confirm_channel is taken from the certificate (bound into certificate_id)
+    and cross-checked against the latest approval event. It is never displayed
+    from an unbound approval.json side file.
+    """
+    from runspecimen.approve import (
+        ALLOWED_CONFIRM_CHANNELS,
+        UNKNOWN_CONFIRM_CHANNEL,
+        approval_matches_latest_event,
+        latest_approval_event,
+        load_approval,
+    )
+
+    approval = load_approval(state_dir)
+    holder = state.get("execution_holder")
+    rec = latest_approval_event(state_dir)
+
+    if rec is not None:
+        if not isinstance(approval, dict):
+            raise CertificateError(MISSING_BOUND_APPROVAL)
+        bound_ok, bound_reason = approval_matches_latest_event(approval, state_dir)
+        if not bound_ok:
+            raise CertificateError(bound_reason)
+        event_channel = rec.body.get("confirm_channel")
+        if event_channel not in ALLOWED_CONFIRM_CHANNELS:
+            raise CertificateError(UNKNOWN_CONFIRM_CHANNEL)
+        cert_channel = cert.get("confirm_channel")
+        if cert_channel != event_channel:
+            raise CertificateError(
+                "certificate confirm_channel does not match the chained approval event"
+            )
+        if cert.get("approval_expires_at_unix") != rec.body.get("expires_at_unix"):
+            raise CertificateError(
+                "certificate approval expiry does not match the chained approval event"
+            )
+        return str(event_channel)
+
+    if isinstance(holder, dict) and holder.get("holder_id"):
+        if isinstance(approval, dict):
+            raise CertificateError(
+                "a workspace approval cannot replace the execution holder"
+            )
+        if cert.get("confirm_channel") not in (None,):
+            raise CertificateError(HOLDER_RECEIPT_INCONSISTENT)
+        return None
+
+    raise CertificateError(MISSING_BOUND_APPROVAL)
+
+
 def verify_run_receipt(
     *,
     workspace: Path,
@@ -174,6 +244,7 @@ def verify_run_receipt(
     if cert is None:
         raise CertificateError("certificate not found")
 
+    assert_certificate_known_keys(cert)
     assert_supported_receipt_schema(cert)
 
     required = [
@@ -216,17 +287,12 @@ def verify_run_receipt(
     _verify_issuance_ordering(log, cert)
     _verify_live_outputs(workspace, cert)
 
-    confirm_channel = None
-    from runspecimen.approve import load_approval
-
-    approval = load_approval(state_dir)
-    if isinstance(approval, dict) and approval.get("confirm_channel"):
-        confirm_channel = str(approval["confirm_channel"])
-    else:
-        for rec in reversed(log.read_all()):
-            if rec.type == "approval" and rec.body.get("confirm_channel"):
-                confirm_channel = str(rec.body["confirm_channel"])
-                break
+    confirm_channel = _require_bound_approval_or_holder(
+        state_dir=state_dir,
+        cert=cert,
+        state=state,
+        log=log,
+    )
 
     # When a receipt binds evidence_attestation, verify the associated report digest.
     evidence_binding = None

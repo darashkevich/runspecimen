@@ -97,6 +97,10 @@ def _preflight_under_lease(
     now: float | None,
 ) -> dict:
     state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
+    state = load_state(state_dir)
+    phase = state.get("phase")
+    if phase in {"running", "completed", "failed", "postflighted", "abandoned"}:
+        raise PreflightError(f"run already in phase={phase!r}; refuse re-entry")
     if contract.execution_approval is not None:
         raise PreflightError(typed_phrase_fallback_refusal(contract.execution_approval))
     approval = load_approval(state_dir)
@@ -106,7 +110,9 @@ def _preflight_under_lease(
     source_hash, _ = hash_source(
         workspace, list(contract.source.roots), list(contract.source.excludes)
     )
-    ok, reason = approval_is_valid(approval, contract, source_hash, now=now)
+    ok, reason = approval_is_valid(
+        approval, contract, source_hash, now=now, state_dir=state_dir
+    )
     if not ok:
         raise PreflightError(reason)
     runtime = runtime_provenance(contract, workspace)
@@ -122,11 +128,6 @@ def _preflight_under_lease(
     check_outputs_absent(workspace, contract)
     check_predecessor(workspace, contract)
 
-    state = load_state(state_dir)
-    phase = state.get("phase")
-    if phase in {"running", "completed", "failed", "postflighted", "abandoned"}:
-        raise PreflightError(f"run already in phase={phase!r}; refuse re-entry")
-
     isolation, policy = execution_constraints(contract, workspace)
     if not plans_match(approval.get("isolation"), isolation):
         raise PreflightError("isolation backend does not match the approval")
@@ -134,7 +135,9 @@ def _preflight_under_lease(
         raise PreflightError("shared policy does not match the approval")
 
     ts = time.time() if now is None else now
-    ok, reason = approval_is_valid(approval, contract, source_hash, now=ts)
+    ok, reason = approval_is_valid(
+        approval, contract, source_hash, now=ts, state_dir=state_dir
+    )
     if not ok:
         raise PreflightError(reason)
 

@@ -50,15 +50,17 @@ def _refusal_extract(state_dir: Path) -> list[dict[str, Any]]:
 
 
 def confirm_channel_from_state_dir(state_dir: Path) -> str | None:
-    approval = load_approval(state_dir)
-    if isinstance(approval, dict) and approval.get("confirm_channel"):
-        return str(approval["confirm_channel"])
-    log = EventLog.for_state_dir(state_dir)
-    if not log.path.exists():
-        return None
-    for rec in reversed(log.read_all()):
-        if rec.type == "approval" and rec.body.get("confirm_channel"):
-            return str(rec.body["confirm_channel"])
+    from runspecimen.approve import ALLOWED_CONFIRM_CHANNELS, latest_approval_event
+    from runspecimen.certificate import load_certificate
+
+    cert = load_certificate(state_dir)
+    if isinstance(cert, dict) and cert.get("confirm_channel") in ALLOWED_CONFIRM_CHANNELS:
+        return str(cert["confirm_channel"])
+    rec = latest_approval_event(state_dir)
+    if rec is not None and rec.body.get("approval_document_hash"):
+        channel = rec.body.get("confirm_channel")
+        if channel in ALLOWED_CONFIRM_CHANNELS:
+            return str(channel)
     return None
 
 

@@ -37,8 +37,10 @@ mandatory postflight before a successor; tamper-evident hash-chained receipts.
   means the approved contract ran under recorded provenance and assertions
   passed.
 
-Approval always requires an interactive TTY. Agents and adapters must not
-enter `APPROVE` for you.
+Approval always requires an interactive TTY. Agents and adapters cannot
+approve through the app. Planted or edited `approval.json` files fail preflight,
+run, and verify. The hash chain is unkeyed: for protection against a program
+that rewrites the whole record, sign receipts with a key the agent can't access.
 
 ## Requirements, evidence, and freshness (ADR-005)
 
@@ -227,7 +229,7 @@ Start from `examples/demo_contract.json`. Minimal surface (version 1):
 | `source.roots` / `excludes` | Deterministic source hashing / provenance |
 | `outputs.required` | Must be absent at preflight; present at postflight when required |
 | `caps.*` | Wall timeout + bounded stdout/stderr capture |
-| `approval.ttl_sec` | Approval expiry bound into the approval document |
+| `approval.ttl_sec` | Approval expiry bound into the approval document and the latest chained `approval` event. A TTY re-approve while `phase=approved` (or `preflighted`) is a TTL refresh: it appends a new approval event and the latest event governs. Remote confirm cannot refresh. |
 | `predecessor` | Gate on a prior run’s postflight / failure, or `null` |
 | `postflight.*` | Exit code, output existence/SHA, JSON field equality, source unchanged |
 | `isolation` | Optional. `backend`: `none` (default), `sandbox-exec`, or `bwrap`. `network: true` is refused when backend is `none` |
@@ -335,7 +337,7 @@ runspecimen dashboard --workspace . --contract path/to/contract.json --open
 - **Read-only**: first viewport answers what the run is, what happened, whether
   it is safe to continue, and the next CLI step; shows contract review, a trust
   ladder (recorded history ≠ live verification), and exact lifecycle commands.
-  It cannot approve or execute.
+  It cannot approve or execute through the app.
 - **Blocks** in the foreground (`serve_forever`). Background it (`&`), detach
   it, or use another terminal if you still need the shell for `approve` /
   lifecycle commands. Agents must not wait on it in the main turn.
@@ -434,7 +436,7 @@ advice in the artifact (`## Grok evaluation`).
 
 **Hard stop:** Grok (and ChatGPT, Gemini, Cursor agents) must **not** type
 `APPROVE`. RunSpecimen approval stays an interactive TTY action; adapters
-exclude `approve`.
+exclude `approve` and cannot approve through the app.
 
 ## Store approval and the Developer ID holder
 

@@ -261,7 +261,7 @@ def make_handler(
             if token is None:
                 token = self.headers.get("X-RunSpecimen-Pairing-Token")
             if not _constant_time_token_ok(token, pairing_token):
-                self._error(401, "Pairing token required. Companion cannot approve via plugins.")
+                self._error(401, "Pairing token required. Companion cannot approve through the app via plugins.")
                 return False
             return True
 
@@ -464,7 +464,7 @@ def make_handler(
                         "can_remote_confirm": bool(view.get("can_remote_confirm")),
                         "remote_confirm": view,
                         "note": (
-                            "Plugins cannot approve. Remote human confirm requires a Mac-armed "
+                            "Plugins cannot approve through the app. Remote human confirm requires a Mac-armed "
                             "challenge typed with APPROVE on the paired companion; not TTY-equivalent."
                         ),
                     }
@@ -903,7 +903,7 @@ def make_handler(
                 405,
                 "Use POST /v1/remote-confirm (paired + Mac challenge + APPROVE), "
                 "POST /v1/remote-confirm-refuse (challenge + reason), "
-                "or Mac TTY approve. Plugins cannot approve.",
+                "or Mac TTY approve. Plugins cannot approve through the app.",
             )
 
         do_PUT = do_POST

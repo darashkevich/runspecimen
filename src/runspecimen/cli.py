@@ -111,7 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
             "and tamper-evident receipts.\n\n"
             "JSON is the default output for every command (stable for tests and "
             "agents). Pass --pretty for a human view. Approval still requires a "
-            "real TTY; plugins cannot approve."
+            "real TTY; plugins cannot approve through the app."
         ),
         epilog=HELP_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -138,7 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  runspecimen approve --workspace . --contract contract.json\n"
-            "  # Type APPROVE exactly on a real TTY. Plugins cannot approve.\n"
+            "  # Type APPROVE exactly on a real TTY. Plugins cannot approve through the app.\n"
             "  runspecimen --pretty approve --workspace . --contract contract.json"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -209,7 +209,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_companion = sub.add_parser(
         "companion",
-        help="Opt-in observe + remote-human-confirm endpoint (plugins cannot approve)",
+        help="Opt-in observe + remote-human-confirm endpoint (plugins cannot approve through the app)",
         description=(
             "Start a fail-closed companion listener for remote observation and optional "
             "Mac-armed remote human confirm (ADR-004). Requires an explicit pairing token. "

@@ -1,20 +1,40 @@
 {
-  "approved_at": "2026-09-04T09:12:01Z",
-  "approved_at_unix": 1788513121.388525,
+  "approved_at": "2026-10-08T17:16:52Z",
+  "approved_at_unix": 1791479812.540776,
+  "approver": {
+    "kind": "local_os_user",
+    "uid": 1000,
+    "user": "ubuntu"
+  },
   "argv": [
     "python3",
     "work/compute.py"
   ],
   "campaign_id": "showcase-campaign",
+  "confirm_channel": "local_tty_approve",
+  "confirm_evidence": {
+    "claim": "Interactive local TTY APPROVE on this computer.",
+    "kind": "interactive_tty_phrase",
+    "phrase": "APPROVE"
+  },
   "contract_hash": "b3ab510287d2465d80f7dca19c5d1f66c4fa5a1f24308ecddab75b6b28afef8e",
-  "contract_path": "/Users/yahor/Documents/Codex/2026-08-24/how-x20/examples/showcase/contract.json",
-  "expires_at_unix": 1788516721.388525,
+  "contract_path": "/workspace/examples/showcase/contract.json",
+  "expires_at_unix": 1791483412.540776,
+  "isolation": {
+    "backend": "none",
+    "claim": "No isolation backend. The workload is not confined by RunSpecimen.",
+    "enforced": false,
+    "network": "not-enforced",
+    "residual": "Orchestration limits only: one workspace lease, wall clock, capture bounds, and process-group stop. Writes and network are not confined.",
+    "tool": null,
+    "tool_sha256": null
+  },
   "run_id": "run-001",
   "runtime": {
     "argv0": "python3",
-    "executable_sha256": "b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9",
-    "resolved_executable": "/usr/bin/python3",
-    "runtime_id": "25dd47daa79ae2e09683c3ccf63d2452fae5ae3dda5aa19856b396f1cacf7cee"
+    "executable_sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f",
+    "resolved_executable": "/usr/bin/python3.12",
+    "runtime_id": "08a33ede0fae43ec27ffd61c576289d539bec13285b2c76ded202a25ae603db6"
   },
   "source_hash": "98eeee7ab1a88a631c6f928815e9c02c9dfe409461cbe867f47eaa7230881d93",
   "ttl_sec": 3600

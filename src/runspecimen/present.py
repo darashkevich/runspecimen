@@ -47,8 +47,22 @@ _STYLES = {
 _ERROR_HINTS: tuple[tuple[str, str], ...] = (
     (
         "no approval present",
-        "Approve on a real TTY first (agents cannot type APPROVE):\n"
+        "Approve on a real TTY first (agents cannot type APPROVE through the app):\n"
         "  runspecimen approve --workspace <dir> --contract <file>",
+    ),
+    (
+        "Planted or edited approval files cannot launch",
+        "This approval file is not bound to the event log. Approve again on a real TTY. "
+        "A program that rewrites the whole record still needs a signature from a key the agent cannot access.",
+    ),
+    (
+        "This receipt has no authentic chained approval",
+        "This receipt is not bound to a real approve step. Planted or edited approvals cannot verify. "
+        "For protection against a program that rewrites the whole record, sign receipts with a key the agent cannot access.",
+    ),
+    (
+        "certificate contains unknown field",
+        "certificate.json has extra fields this engine does not bind. The receipt cannot verify.",
     ),
     (
         "approval expired",
@@ -77,7 +91,7 @@ _ERROR_HINTS: tuple[tuple[str, str], ...] = (
     ),
     (
         "interactive TTY",
-        "Open a real terminal (not a pipe, not CI). Plugins and agents cannot approve or abandon.",
+        "Open a real terminal (not a pipe, not CI). Plugins and agents cannot approve through the app. Planted or edited approvals show up as broken receipts.",
     ),
     (
         "refuse re-entry",
@@ -301,7 +315,7 @@ def format_error(message: str, *, pretty: bool, color_mode: str = "auto") -> str
 def format_quickstart() -> str:
     return f"""{PRODUCT_NAME} {__version__}
 One human-approved bounded run at a time, with a tamper-evident receipt.
-Not an OS sandbox. Plugins and agents cannot approve.
+Not an OS sandbox. Plugins and agents cannot approve through the app.
 
 Quick start (fresh directory; pip or Homebrew install):
 
@@ -325,7 +339,7 @@ Human-readable view (opt-in). JSON is still the default:
   runspecimen doctor --pretty --workspace .
   runspecimen --pretty status --workspace . --campaign-id demo-campaign --run-id run-001
 
-Read-only dashboard (cannot approve or run):
+Read-only dashboard (cannot approve or run through the app):
 
   runspecimen dashboard --workspace . --contract contract.json --open
 
@@ -351,7 +365,7 @@ Human-readable output (opt-in; JSON remains the default for every command):
   runspecimen doctor --pretty --workspace .
 
 Core lifecycle: approve → preflight → run → postflight → verify
-Plugins/agents cannot approve. The dashboard is loopback-only and read-only.
+Plugins/agents cannot approve through the app. The dashboard is loopback-only and read-only.
 
 Docs: About {DOCS_URLS['about']}
       User guide {DOCS_URLS['user_guide']}
@@ -419,7 +433,7 @@ def format_approve_prompt(
     ]
     body = [
         "Review this bounded run. Typing APPROVE binds the contract, source tree,",
-        "and resolved executable below. Agents and plugins cannot approve for you.",
+        "and resolved executable below. Agents and plugins cannot approve through the app.",
         "",
         *kv_block(first_rows),
     ]
@@ -697,25 +711,34 @@ def _format_preflight(payload: dict[str, Any], *, enabled: bool, context: dict[s
 def _format_run(payload: dict[str, Any], *, enabled: bool, context: dict[str, Any]) -> str:
     del context
     result = payload.get("run_result")
-    ok = result == "completed"
-    title = "Run completed" if ok else f"Run {result or 'finished'}"
-    lines = [
-        _banner(ok, title, enabled=enabled),
-        "",
-        *kv_block(
-            [
-                ("Result", result),
-                ("Exit code", payload.get("exit_code")),
-                ("Timed out", payload.get("timed_out")),
-                ("Stdout", format_bytes(int(payload["stdout_bytes"])) if isinstance(payload.get("stdout_bytes"), int) else payload.get("stdout_bytes")),
-                ("Stderr", format_bytes(int(payload["stderr_bytes"])) if isinstance(payload.get("stderr_bytes"), int) else payload.get("stderr_bytes")),
-                ("Stdout cut", payload.get("stdout_truncated")),
-                ("Stderr cut", payload.get("stderr_truncated")),
-            ]
-        ),
-        "",
-        "Outcomes are not certified until postflight succeeds.",
-    ]
+    exit_code = payload.get("exit_code")
+    nonzero = isinstance(exit_code, int) and exit_code != 0
+    if nonzero:
+        title = f"Process finished with exit code {exit_code}"
+        tag = paint("DONE", "yellow", enabled=enabled)
+        heading = _heading(title, enabled=enabled)
+        lines = [f"{tag}  {heading}", ""]
+    else:
+        ok = result == "completed"
+        title = "Run completed" if ok else f"Run {result or 'finished'}"
+        lines = [_banner(ok, title, enabled=enabled), ""]
+    lines.extend(
+        [
+            *kv_block(
+                [
+                    ("Result", result),
+                    ("Exit code", payload.get("exit_code")),
+                    ("Timed out", payload.get("timed_out")),
+                    ("Stdout", format_bytes(int(payload["stdout_bytes"])) if isinstance(payload.get("stdout_bytes"), int) else payload.get("stdout_bytes")),
+                    ("Stderr", format_bytes(int(payload["stderr_bytes"])) if isinstance(payload.get("stderr_bytes"), int) else payload.get("stderr_bytes")),
+                    ("Stdout cut", payload.get("stdout_truncated")),
+                    ("Stderr cut", payload.get("stderr_truncated")),
+                ]
+            ),
+            "",
+            "Outcomes are not certified until postflight succeeds.",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 

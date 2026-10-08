@@ -526,7 +526,7 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
     <div class="compose-hero">
       <p class="brand-line">RunSpecimen</p>
       <h1 class="run-title" id="run-identity">{_escape(view['run_identity'])}</h1>
-      <p class="run-meta">Local oversight for one bounded, human-approved run. This page inspects evidence; it cannot approve or execute.</p>
+      <p class="run-meta">Local oversight for one bounded, human-approved run. This page inspects evidence; it cannot approve or execute through the app.</p>
       <div class="phase-row"><span id="phase-badge" class="phase-badge {phase_tone}" data-phase="{_escape(phase)}">{_escape(phase_label)}</span></div>
     </div>
     <div class="answer-grid">
@@ -536,7 +536,7 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
     <div class="next-action"><h2>What do I do next?</h2><p id="next-action">{_escape(view['next_action'])}</p></div>
   </section>
 
-  <aside class="notice"><span class="notice-icon" aria-hidden="true">!</span><div><strong>Safety boundary</strong><p>This dashboard can inspect evidence and copy commands, but it cannot approve or execute a run. Approval must be typed by a human in a real terminal.</p></div></aside>
+  <aside class="notice"><span class="notice-icon" aria-hidden="true">!</span><div><strong>Safety boundary</strong><p>This dashboard can inspect evidence and copy commands, but it cannot approve or execute a run through the app. Approval must be typed by a human in a real terminal. Planted or edited approvals show up as broken receipts.</p></div></aside>
 
   <ol class="trust-ladder" id="trust-ladder" aria-label="Evidence trust ladder">{trust_html}</ol>
 
@@ -632,7 +632,7 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
         </div>
         <div>
           <h3>This dashboard</h3>
-          <p>Loopback-only and read-only: a guide for phase, evidence, and copyable CLI commands. It cannot approve or execute. Use the CLI in a terminal for every mutating step.</p>
+          <p>Loopback-only and read-only: a guide for phase, evidence, and copyable CLI commands. It cannot approve or execute through the app. Use the CLI in a terminal for every mutating step.</p>
         </div>
       </div>
       <nav class="about-docs" aria-label="Learn more">

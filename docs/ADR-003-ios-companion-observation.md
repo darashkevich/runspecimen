@@ -11,7 +11,7 @@ Operators want phone-side awareness of RunSpecimen lifecycle state while away fr
 
 - Local-only CLI enforcement; no product telemetry / phone-home by default
 - Human approval is real-TTY `APPROVE` on the Mac; **agents/plugins must never approve**
-- Loopback dashboard is read-only and cannot approve/execute
+- Loopback dashboard is read-only and cannot approve/execute through the app
 - Remote control must **not** be misrepresented as OS sandboxing
 - HMAC / Ed25519 claims stay honest (shared-secret ≠ non-repudiation; signatures ≠ scientific truth)
 
