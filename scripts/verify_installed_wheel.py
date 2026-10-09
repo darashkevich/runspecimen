@@ -830,7 +830,11 @@ def _under_roots(path: Path, roots: list[Path]) -> bool:
         return False
     for root in roots:
         try:
-            resolved.relative_to(root)
+            resolved_root = root.resolve()
+        except OSError:
+            resolved_root = root
+        try:
+            resolved.relative_to(resolved_root)
             return True
         except ValueError:
             continue
