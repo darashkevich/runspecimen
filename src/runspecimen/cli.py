@@ -46,8 +46,8 @@ _ABOUT_SUMMARY = (
     "workspace lease, hash-chained events, and certificates — evidence controls, "
     "not an OS sandbox. Plugins/agents cannot approve through the app. A program "
     "running as you that can edit RunSpecimen's files can still add a fake "
-    "approval to the record. To protect against that, sign receipts with a key "
-    "the agent can't access. The dashboard is loopback-only and read-only; it "
+    "approval to the record. Signing with a key the agent can't access lets you check afterwards that a receipt is authentic, when a signature is required and checked; it does not stop a program running as you from adding a fake approval or running the job. "
+    "The dashboard is loopback-only and read-only; it "
     "cannot approve or execute through the app."
 )
 

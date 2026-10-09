@@ -98,8 +98,10 @@ run, or count a model call unless the skipped task was a model judgment. See
 
 RunSpecimen stops agents from approving through the app and makes planted or
 edited approvals show up as broken receipts. A program running as you that can
-edit RunSpecimen's files can still add a fake approval to the record. To protect
-against that, sign receipts with a key the agent can't access.
+edit RunSpecimen's files can still add a fake approval to the record. Signing
+with a key the agent can't access lets you check afterwards that a receipt is
+authentic, when a signature is required and checked; it does not stop a program
+running as you from adding a fake approval or running the job.
 
 ## Why does verify fail after I clone the repo?
 
@@ -123,9 +125,11 @@ you need concurrency. There is no built-in worker pool or scheduler.
 recomputable. They detect planted or edited `approval.json` files and casual
 tampering of the evidence set. The chain is unkeyed: a program running as you
 that can edit RunSpecimen's files can still add a fake approval to the record.
-To protect against that, sign receipts with a key the agent can't access
+Signing with a key the agent can't access lets you check afterwards that a
+receipt is authentic, when a signature is required and checked
 (`verify-signature` with an out-of-reach key, or an installed holder —
-fail-closed under D1/D2).
+fail-closed under D1/D2); it does not stop a program running as you from
+adding a fake approval or running the job.
 
 The default `sign` command provides HMAC-SHA256 authentication (a shared-secret
 Message Authentication Code), not digital signatures. Anyone with the key

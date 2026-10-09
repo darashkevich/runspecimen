@@ -30,7 +30,8 @@ HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 CANDIDATE_MANIFEST = ROOT / "docs" / "CANDIDATE_MANIFEST.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
-PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix10"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-09-qafix11"
+QAFIX10_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix10"
 QAFIX9_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix9"
 QAFIX8_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix8"
 QAFIX7_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix7"
@@ -153,15 +154,19 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("command -v runspecimen", text)
         self.assertIn("mktemp -d", text)
         self.assertIn('test ! -e "$VENV"', text)
-        self.assertIn("0.2.0rc15-2026-10-08-qafix10", text)
-        self.assertIn("--no-index --no-deps --force-reinstall", text)
+        self.assertIn("0.2.0rc15-2026-10-09-qafix11", text)
+        self.assertIn("--no-index --no-deps --force-reinstall --no-compile", text)
         self.assertIn("scripts/verify_installed_wheel.py", text)
         self.assertIn("--launcher", text)
         self.assertIn("wheel_sha256", text)
         self.assertIn("direct_url.json", text)
         self.assertIn("env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP", text)
         self.assertIn("PYTHONNOUSERSITE=1", text)
-        self.assertIn("rs() { env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 \"$RS\" \"$@\"; }", text)
+        self.assertIn("PYTHONDONTWRITEBYTECODE=1", text)
+        self.assertIn(
+            "rs() { env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 \"$RS\" \"$@\"; }",
+            text,
+        )
         self.assertNotIn("set -euo pipefail", text)
         self.assertNotIn("set -e", text)
         self.assertNotIn("$RS_SANITIZE", text)
@@ -176,9 +181,16 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn('"$PY" -m pip uninstall -y setuptools', text)
         self.assertIn("N1-setuptools", text)
         self.assertIn("stdlib `python3 -m venv`", text)
-        self.assertIn("demo-campaign", text)
-        self.assertIn("run-001", text)
-        self.assertIn("HUMAN-ACCEPTANCE supplement qafix10", text)
+        self.assertIn("CAMPAIGN_ID", text)
+        self.assertIn("RUN_ID", text)
+        self.assertIn("cannot qualify this changed lifecycle", text)
+        self.assertIn("SUP-pretty-doctor", text)
+        self.assertIn("N4-ids", text)
+        self.assertIn("N9-cert-fields", text)
+        self.assertIn("certificate_id", text)
+        self.assertIn("schema_version", text)
+        self.assertIn("pinned pip console-script template", text)
+        self.assertIn("__pycache__", text)
         self.assertNotRegex(
             text,
             r'(?m)^(?:\$PY|"\$PY"|python3|py ).*(?:pip install --upgrade|pip install -U)',
@@ -204,10 +216,9 @@ class Rc15QaDocfixTests(unittest.TestCase):
         if CANDIDATE_MANIFEST.is_file():
             manifest = CANDIDATE_MANIFEST.read_text(encoding="utf-8")
             self.assertIn("| Candidate (this pass) |", manifest)
-            self.assertIn("PR #63 head that records the qafix10 pack", manifest)
+            self.assertIn("PR #63 head that records the qafix11 pack", manifest)
             self.assertIn("8015b6d8017e5566f7558cc916dc0ee470c653ad", manifest)
-            self.assertIn("artifacts/0.2.0rc15-2026-10-08-qafix10/", manifest)
-            self.assertIn("f83d15df2394c93f6aa5c4f94508fc7f03a2befd", manifest)
+            self.assertIn("artifacts/0.2.0rc15-2026-10-09-qafix11/", manifest)
         self.assertIn("Homebrew", text)
         self.assertIn("STEP $1 exit=$2", text)
         command_lines = [
@@ -693,6 +704,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
                 "N3-version",
                 "N3-verify",
                 "N4",
+                "N4-ids",
                 "N5",
                 "N6",
                 "N7",
@@ -700,6 +712,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
                 "N10-edit",
                 "UNK-init",
                 "UNK-edit",
+                "SUP-pretty-doctor",
             ):
                 self.assertIn(f"STEP {step} exit=0", output)
             self.assertIn("PASS: N10", output)
@@ -926,7 +939,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
 
 
 def _pin_wheel() -> Path:
-    for pack in (PIN_PACK, QAFIX9_PACK, QAFIX8_PACK, QAFIX7_PACK, QAFIX6_PACK, QAFIX5_PACK, QAFIX4_PACK, QAFIX3_PACK, QAFIX_PACK):
+    for pack in (PIN_PACK, QAFIX10_PACK, QAFIX9_PACK, QAFIX8_PACK, QAFIX7_PACK, QAFIX6_PACK, QAFIX5_PACK, QAFIX4_PACK, QAFIX3_PACK, QAFIX_PACK):
         pin = pack / WHEEL_NAME
         if pin.is_file():
             return pin
@@ -991,7 +1004,7 @@ def _acceptance_sheet_script(markdown: str, pack: Path) -> str:
         parts.append(block.rstrip() + "\n")
     script = "".join(parts)
     replaced, count = re.subn(
-        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-08-qafix10"',
+        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-09-qafix11"',
         f"export PACK={shlex.quote(str(pack))}",
         script,
         count=1,
@@ -1046,7 +1059,9 @@ def _sanitized_env() -> dict[str, str]:
     env.pop("PYTHONPATH", None)
     env.pop("PYTHONHOME", None)
     env.pop("PYTHONSTARTUP", None)
+    env.pop("PYTHONPYCACHEPREFIX", None)
     env["PYTHONNOUSERSITE"] = "1"
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     return env
 
 
@@ -1466,6 +1481,7 @@ def _create_venv_and_install(venv_dir: Path, wheel: Path, env: dict[str, str]) -
             "install",
             "--no-index",
             "--no-deps",
+            "--no-compile",
             "--force-reinstall",
             str(wheel.resolve()),
         ],

@@ -40,7 +40,9 @@ contract. It shows phase, evidence, and copyable CLI commands. It cannot
 approve or execute a run through the app. Approval stays a terminal action; the CLI remains
 the enforcement boundary. The hash chain is unkeyed: a program running as you
 that can edit RunSpecimen's files can still add a fake approval to the record.
-To protect against that, sign receipts with a key the agent can't access.
+Signing with a key the agent can't access lets you check afterwards that a
+receipt is authentic, when a signature is required and checked; it does not
+stop a program running as you from adding a fake approval or running the job.
 
 ## Learn more
 

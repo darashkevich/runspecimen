@@ -22,7 +22,11 @@ HONESTY_ADD = (
     "add a fake approval to the record."
 )
 HONESTY_PROTECT = (
-    "To protect against that, sign receipts with a key the agent can't access."
+    "Signing with a key the agent can't access lets you check afterwards that a "
+    "receipt is authentic, when a signature is required and checked"
+)
+HONESTY_LIMIT = (
+    "it does not stop a program running as you from adding a fake approval or running the job"
 )
 FORBIDDEN_REWRITE = (
     "rewrites the whole record",
@@ -55,6 +59,7 @@ class TestQafix10P3Copy(unittest.TestCase):
         self.assertIn("Plugins/agents cannot approve through the app.", _ABOUT_SUMMARY)
         self.assertIn(HONESTY_ADD, _ABOUT_SUMMARY)
         self.assertIn(HONESTY_PROTECT, _ABOUT_SUMMARY)
+        self.assertIn(HONESTY_LIMIT, _ABOUT_SUMMARY)
         self.assertNotIn("Plugins/agents cannot approve.", _ABOUT_SUMMARY)
 
     def test_about_cli_json_matches_summary_constant(self) -> None:
@@ -82,6 +87,7 @@ class TestQafix10P3Copy(unittest.TestCase):
             with self.subTest(path=str(path.relative_to(ROOT))):
                 self.assertIn(HONESTY_ADD, collapsed)
                 self.assertIn(HONESTY_PROTECT, collapsed)
+                self.assertIn(HONESTY_LIMIT, collapsed)
 
     def test_src_and_docs_have_no_unqualified_or_inaccurate_honesty_claims(self) -> None:
         hits: list[str] = []

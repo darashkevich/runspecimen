@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-08-qafix10/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-09-qafix11/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-08-qafix10/`,
 `artifacts/0.2.0rc15-2026-10-08-qafix9/`,
 `artifacts/0.2.0rc15-2026-10-08-qafix8/`,
 `artifacts/0.2.0rc15-2026-10-08-qafix7/`,
@@ -17,6 +18,15 @@ Candidate pack: `artifacts/0.2.0rc15-2026-10-08-qafix10/`. Engine identity:
 `artifacts/0.2.0rc15-2026-10-07-qafix2/`,
 `artifacts/0.2.0rc15-2026-10-07-qafix/` and
 `artifacts/0.2.0rc15-2026-10-06-bump/`, were not overwritten.
+
+Record these identities at the top of your notes before N1 (fill in from this
+machine; N2 prints the full wheel digest):
+
+- Candidate SHA: `git rev-parse HEAD` of this checkout
+- Pack: `artifacts/0.2.0rc15-2026-10-09-qafix11/`
+- Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
+- python3: `command -v python3` and `python3 --version`
+- Wheel SHA-256: the `wheel_sha256` line from N2 (full 64 hex chars)
 
 You can paste this whole sheet into a fresh macOS Terminal (zsh, the default)
 or into bash. You do not need extra wrappers, and you do not need to turn
@@ -43,11 +53,12 @@ import can load old approval code while the top-level package still looks
 right. The provenance step therefore binds every loaded `runspecimen.*`
 module (including `runspecimen.approve`) to the hashed installed files, using
 the absolute launcher's own interpreter. That interpreter must be named by an
-absolute shebang; `#!/usr/bin/env python3` is refused. The trusted interpreter
-assumption: the check trusts **only the Python interpreter and its stdlib**.
-It does not claim to resist someone replacing Python itself. Venv-local
-metadata (setuptools RECORD, `_distutils_hack`) is not trust: RECORD does not
-hash itself and is writable by the same attacker.
+absolute shebang; `#!/usr/bin/env python3` is refused. The launcher body after
+the shebang must byte-match the pinned pip console-script template. The
+trusted interpreter assumption: the check trusts **only the Python interpreter and its stdlib**. It does not claim to resist someone replacing Python itself.
+Venv-local metadata (setuptools RECORD, `_distutils_hack`) is not trust:
+RECORD does not hash itself and is writable by the same attacker. Bytecode is
+not trust: any `__pycache__` / `.pyc` under the installed package is refused.
 
 Do not use Homebrew, user site-packages, another checkout, or a shadowed
 `~/.local/bin` shim for this sheet. `command -v runspecimen` may still print
@@ -61,18 +72,21 @@ as they are; do not go back and invent exit codes that were not printed then.
 Paste this first. It remembers the pack path and defines four tiny helpers.
 `rs` and `py` always use the venv copies, with a clean Python environment.
 `rs_ok` is for steps that must succeed. `rs_neg` is for the two expected
-refusals later.
+refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
+Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-08-qafix10"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-09-qafix11"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 export WORK=$(mktemp -d "${TMPDIR:-/tmp}/rs-ha-rc15.XXXXXX")
 export VENV="$WORK/venv"
 export RS="$VENV/bin/runspecimen"
 export PY="$VENV/bin/python"
 export WS="$WORK/ws-demo"
-rs() { env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 "$RS" "$@"; }
-py() { env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 "$PY" "$@"; }
+export CAMPAIGN_ID="ha-campaign"
+export RUN_ID="ha-$(date +%Y%m%d-%H%M%S)-$$"
+rs() { env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 "$RS" "$@"; }
+py() { env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 "$PY" "$@"; }
 rs_ok() { echo "STEP $1 exit=$2"; if [ "$2" -ne 0 ]; then echo "FAIL: step $1 expected exit 0, got $2. Stop here; do not continue."; exit 1; fi; }
 rs_neg() { echo "STEP $1 exit=$2"; echo "$3"; if [ "$2" -eq 0 ]; then echo "FAIL: step $1 expected a refusal (nonzero exit), got 0. Stop here."; exit 1; fi; if printf '%s\n' "$3" | grep -Fqx -- "$4"; then echo "PASS: $1"; else echo "FAIL: step $1 did not print the expected message as a complete line:"; echo "  $4"; exit 1; fi; }
 ```
@@ -112,11 +126,14 @@ rs_ok N2-hash $?
 ```
 
 ```
-py -m pip install --no-index --no-deps --force-reinstall "$WHEEL"
+py -m pip install --no-index --no-deps --force-reinstall --no-compile "$WHEEL"
 rs_ok N2-install $?
 ```
 
 Do not upgrade pip in this venv. Do not install from PyPI or another path.
+`--no-compile` and `PYTHONDONTWRITEBYTECODE=1` keep bytecode off the hashed
+sources. The verifier refuses any `__pycache__` / `.pyc` under the installed
+package.
 
 ## N3 — provenance (installed bytes vs the pinned wheel zip)
 
@@ -139,9 +156,12 @@ Abort unless every hashed RECORD member in the wheel, and every
 launcher's own interpreter, every loaded `runspecimen.*` origin (including
 `runspecimen.approve`, `runspecimen.present`, and the CLI) is realpath-equal to the hashed installed
 member, the sanitized environment has no import overrides, and the target
-venv has no extra startup code. The verifier trusts **only the Python
-interpreter and its stdlib**. In that venv it refuses: any `.pth` with an
-executable `import` line (any name or owner, including leftover setuptools
+venv has no extra startup code. The launcher body after the shebang must
+byte-match the pinned pip console-script template (shebang checked
+separately). The verifier's probe runs with `-I -B` and refuses any
+`.pyc` / `__pycache__` under the installed package, `PYTHONPYCACHEPREFIX` /
+`sys.pycache_prefix`, and sourceless bytecode. The verifier trusts **only the Python interpreter and its stdlib**. In that venv it refuses: any `.pth` with
+an executable `import` line (any name or owner, including leftover setuptools
 `distutils-precedence.pth` / DistutilsMetaFinder), any importable
 sitecustomize or usercustomize that is not the interpreter's own stdlib, any
 non-stdlib `sys.meta_path` or `sys.path_hooks` entry after startup, and any
@@ -151,7 +171,7 @@ realpath is under the interpreter's stdlib dir, not by name.
 There is no RECORD-based trust of `_distutils_hack`. The script prints the
 installed dist-info `RECORD` and `direct_url.json`. `__version__ ==
 0.2.0rc15` is not sufficient: the 2026-10-06-bump wheel reports the same
-version and must fail this step when `$WHEEL` is the qafix10 pin. A
+version and must fail this step when `$WHEEL` is the qafix11 pin. A
 same-version tree selected via inside-venv `PYTHONPATH`, a `.pth` prepend,
 sitecustomize, or an executable `.pth` import must also fail.
 
@@ -163,6 +183,14 @@ Record the `command -v runspecimen` path; it must not be the binary you invoke.
 rs init-demo --workspace "$WS"
 rs_ok N4 $?
 ```
+
+```
+py -c "import json, os, pathlib; p=pathlib.Path(os.environ['WS'])/'contract.json'; doc=json.loads(p.read_text()); doc['campaign_id']=os.environ['CAMPAIGN_ID']; doc['run_id']=os.environ['RUN_ID']; p.write_text(json.dumps(doc, indent=2)+'\n')"
+rs_ok N4-ids $?
+```
+
+init-demo writes demo identities. N4-ids replaces them with the `CAMPAIGN_ID`
+and `RUN_ID` exported in N1. Use those same values for N7–N9.
 
 ## N5 — doctor
 
@@ -185,7 +213,7 @@ rs_ok N6 $?
 ## N7 — status
 
 ```
-rs status --workspace "$WS" --campaign-id demo-campaign --run-id run-001
+rs status --workspace "$WS" --campaign-id "$CAMPAIGN_ID" --run-id "$RUN_ID"
 rs_ok N7 $?
 ```
 
@@ -205,7 +233,7 @@ N9 on failure, same as the other positive steps. Only you may type the phrase.
 ## N9 — preflight, run, postflight, verify
 
 Sequential. Use the same `rs` helper. The campaign and run identities must
-stay `demo-campaign` / `run-001`.
+stay the `CAMPAIGN_ID` / `RUN_ID` exported in N1.
 
 ```
 rs preflight --workspace "$WS" --contract "$WS/contract.json"
@@ -223,12 +251,19 @@ rs_ok N9-postflight $?
 ```
 
 ```
-rs verify --workspace "$WS" --contract "$WS/contract.json" --campaign-id demo-campaign --run-id run-001
-rs_ok N9-verify $?
+_rs_n=0
+_rs_out=$(rs verify --workspace "$WS" --contract "$WS/contract.json" --campaign-id "$CAMPAIGN_ID" --run-id "$RUN_ID" 2>&1) || _rs_n=$?
+printf '%s\n' "$_rs_out"
+rs_ok N9-verify "$_rs_n"
+printf '%s\n' "$_rs_out" > "$WORK/verify.json"
+py -c "import json, os, pathlib; v=json.loads(pathlib.Path(os.environ['WORK']).joinpath('verify.json').read_text()); c=json.loads((pathlib.Path(os.environ['WS'])/'.runspecimen'/'runs'/os.environ['CAMPAIGN_ID']/os.environ['RUN_ID']/'certificate.json').read_text()); print('certificate_id', v.get('certificate_id')); print('event_chain', v.get('event_chain')); print('confirm_channel', v.get('confirm_channel')); print('approval_expires_at_unix', c.get('approval_expires_at_unix')); print('schema_version', c.get('schema_version')); print('live_ok', v.get('ok'))"
+rs_ok N9-cert-fields $?
 ```
 
 `verify` checks receipt integrity, the event chain, and live provenance. It
-does not check HMAC or Ed25519 signatures.
+does not check HMAC or Ed25519 signatures. The `N9-cert-fields` lines must
+show schema `2`, a `certificate_id`, the event-chain result, the bound
+`confirm_channel`, `approval_expires_at_unix`, and `live_ok True`.
 
 ## N10 — protected-policy refusal (not an unknown-field error)
 
@@ -283,17 +318,20 @@ N3 must show: the absolute launcher (`$RS`) run, its interpreter and prefix,
 every loaded `runspecimen.*` origin bound to the hashed installed member
 (realpath-equal, including `runspecimen.approve` and the CLI), the
 installed-file comparison, installed `RECORD` and `direct_url.json`,
-`STEP N3-version exit=0`, `STEP N3-verify exit=0`, and no import overrides
-(`PYTHONPATH` / `PYTHONHOME` / `PYTHONSTARTUP` unset, `PYTHONNOUSERSITE=1`,
+the pinned launcher template (`console_script_target` `runspecimen.cli:main`),
+no bytecode under the installed package, `STEP N3-version exit=0`,
+`STEP N3-verify exit=0`, and no import overrides
+(`PYTHONPATH` / `PYTHONHOME` / `PYTHONSTARTUP` / `PYTHONPYCACHEPREFIX` unset,
+`PYTHONNOUSERSITE=1`, `PYTHONDONTWRITEBYTECODE=1`,
 no executable `.pth` import, no leftover setuptools shim, no sitecustomize
 outside the interpreter stdlib).
 
-N4–N7 use the same `rs` helper.
+N4–N7 use the same `rs` helper and the `CAMPAIGN_ID` / `RUN_ID` from N1.
 
 N8 is a real human approval in a real terminal. An agent must not type `APPROVE`.
 
-N9 is sequential `preflight`, `run`, `postflight`, `verify` with matching
-`demo-campaign` / `run-001` identities.
+N9 is sequential `preflight`, `run`, `postflight`, `verify` with those same
+identities, plus the schema-2 certificate field printout.
 
 N10 is unchanged: exact `execution policy local has no typed-phrase fallback`
 refusal, no prompt. Do not treat an unknown-field error as N10. The sheet
@@ -309,21 +347,36 @@ refusal is present as a complete line
 Do not install a holder. Do not close E2. `run_integration_complete` and
 `e2_closed` stay false.
 
-## Labeled supplement transcript
+## Disposable N3-failure check (does not qualify the lifecycle)
 
-The original human transcript from the earlier session stays as-is. Do not
-edit it. Do not fill in missing `STEP` lines for that older run.
+A missing launcher at N3 must print `FAIL` and must not reach N4. That check
+lives in the packed tests (`test_human_acceptance_n3_fails_when_launcher_is_missing`
+and the zsh twin). Do not treat it as a substitute for N8 or N9.
 
-If you already completed N8–N9 under that earlier run ID, do not replay the
-positive run. Capture a new labeled supplement instead, in a fresh Terminal,
-with a new workspace:
+## Non-approval default-vs-pretty supplement (does not qualify N8/N9)
+
+Optional. Default JSON is the acceptance record. `--pretty` is human view
+only. Do not use `--pretty` for N5–N7 or N9. After N5, this only checks that
+`--pretty doctor` still exits 0. It does not replace N8 or N9.
 
 ```
-Session: HUMAN-ACCEPTANCE supplement qafix10
-Date:
-Pack: artifacts/0.2.0rc15-2026-10-08-qafix10/
-Paste N1 through N7, then N10 and the schema-rejection check.
-Copy every "STEP … exit=" line, plus PASS: N10 and PASS: UNK, into your notes.
+rs --pretty --color never doctor --workspace "$WS"
+rs_ok SUP-pretty-doctor $?
+```
+
+## Historical transcript (does not qualify this pack)
+
+The original human transcript from an earlier session stays as-is. It used
+hardcoded `demo-campaign` / `run-001` and a supplement that omitted N8/N9 on a
+reused run ID. That omission cannot qualify this changed lifecycle. For this
+pack, complete N1 through N10 and the schema-rejection check in one fresh
+session with the `RUN_ID` exported above. Do not treat an N1–N7+N10-only paste
+as acceptance of this pack.
+
+```
+Session: HUMAN-ACCEPTANCE historical note (not qualification)
+Pack: artifacts/0.2.0rc15-2026-10-09-qafix11/
+Do not paste N1–N7+N10 as a substitute for N8/N9 on this lifecycle.
 ```
 
 A new N8 is a new approval. An agent must not type `APPROVE`.

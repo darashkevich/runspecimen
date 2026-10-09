@@ -15,6 +15,7 @@ import sys
 from typing import Any, Iterable, Sequence, TextIO
 
 from runspecimen import DOCS_URLS, PRODUCT_NAME, __version__
+from runspecimen.terminaltext import escape_for_terminal
 
 
 # Exact last line of the TTY approve prompt. The macOS MAS e2e harness
@@ -53,14 +54,13 @@ _ERROR_HINTS: tuple[tuple[str, str], ...] = (
     (
         "Planted or edited approval files cannot launch",
         "This approval file is not bound to the event log. Approve again on a real TTY. "
-        "A program running as you that can edit RunSpecimen's files can still add a fake approval to the record. "
-        "To protect against that, sign receipts with a key the agent can't access.",
+        "A program running as you that can edit RunSpecimen's files can still add a fake approval to the record. Signing with a key the agent can't access lets you check afterwards that a receipt is authentic, when a signature is required and checked; it does not stop a program running as you from adding a fake approval or running the job.",
     ),
     (
-        "This receipt has no authentic chained approval",
-        "This receipt is not bound to a real approve step. Planted or edited approvals cannot verify. "
-        "A program running as you that can edit RunSpecimen's files can still add a fake approval to the record. "
-        "To protect against that, sign receipts with a key the agent can't access.",
+        "This receipt has no bound approval event",
+        "This receipt is not bound to a recorded approve step. Planted or edited approvals cannot verify. "
+        "A bound approval event is a recorded local step, not cryptographic proof of a human. "
+        "A program running as you that can edit RunSpecimen's files can still add a fake approval to the record. Signing with a key the agent can't access lets you check afterwards that a receipt is authentic, when a signature is required and checked; it does not stop a program running as you from adding a fake approval or running the job.",
     ),
     (
         "certificate contains unknown field",
@@ -217,18 +217,21 @@ def _scalar(value: Any) -> str:
     if isinstance(value, dict):
         if not value:
             return "(empty)"
-        return ", ".join(f"{key}={_scalar(item)}" for key, item in value.items())
+        return ", ".join(
+            f"{escape_for_terminal(str(key))}={_scalar(item)}"
+            for key, item in value.items()
+        )
     if isinstance(value, (list, tuple)):
         if not value:
             return "(none)"
         return ", ".join(_scalar(item) for item in value)
-    return str(value)
+    return escape_for_terminal(str(value))
 
 
 def _join_paths(items: Sequence[Any] | None) -> str:
     if not items:
         return "(none)"
-    return ", ".join(str(item) for item in items)
+    return ", ".join(escape_for_terminal(str(item)) for item in items)
 
 
 def kv_block(rows: Iterable[tuple[str, Any]], *, width: int = 14) -> list[str]:
@@ -301,7 +304,7 @@ def format_error(message: str, *, pretty: bool, color_mode: str = "auto") -> str
     Default (pretty=False) is exactly ``RunSpecimen error: {message}`` so
     existing tests and scrapers keep working. Pretty adds a hint block.
     """
-    first = f"{PRODUCT_NAME} error: {message}"
+    first = f"{PRODUCT_NAME} error: {escape_for_terminal(message)}"
     if not pretty:
         return first
     enabled = color_enabled(color_mode, sys.stderr)
@@ -402,16 +405,22 @@ def format_approve_prompt(
     check_lines: Sequence[str] | None = None,
 ) -> str:
     """TTY review text. Last line stays the historical bind prompt."""
+    # Escape each argv element before join so ESC/CSI/OSC/CR/BS/bidi cannot
+    # rewrite the review, while shlex still keeps argument boundaries.
+    escaped_argv = [escape_for_terminal(str(part)) for part in argv]
     try:
-        command = shlex.join(list(argv))
+        command = shlex.join(escaped_argv)
     except (TypeError, ValueError):
-        command = " ".join(str(part) for part in argv)
+        command = " ".join(escaped_argv)
     if predecessor is None:
         pred = "none"
     elif hasattr(predecessor, "campaign_id") and hasattr(predecessor, "run_id"):
-        pred = f"{predecessor.campaign_id}/{predecessor.run_id}"
+        pred = (
+            f"{escape_for_terminal(str(predecessor.campaign_id))}/"
+            f"{escape_for_terminal(str(predecessor.run_id))}"
+        )
     else:
-        pred = repr(predecessor)
+        pred = escape_for_terminal(repr(predecessor))
     first_rows: list[tuple[str, Any]] = [
         ("Campaign", campaign_id),
         ("Run", run_id),
@@ -441,7 +450,7 @@ def format_approve_prompt(
     ]
     if check_lines:
         body.append("  Checks bound before approval:")
-        body.extend(list(check_lines))
+        body.extend(escape_for_terminal(str(line)) for line in check_lines)
     body.extend(
         [
             "",
@@ -1105,24 +1114,38 @@ def _format_sign(payload: dict[str, Any], *, enabled: bool, context: dict[str, A
 def _format_verify_signature(payload: dict[str, Any], *, enabled: bool, context: dict[str, Any]) -> str:
     del context
     ok = _strict_ok(payload)
-    lines = [
-        _banner(ok, "Signature / MAC check", enabled=enabled),
-        "",
-        *kv_block(
+    receipt_error = payload.get("receipt_verification_error")
+    title = "Signature / MAC check" if ok else "Signature / MAC check failed"
+    lines = [_banner(ok, title, enabled=enabled), ""]
+    # Never lead with a positive MAC/schema line when overall ok is false.
+    if not ok and receipt_error:
+        lines.extend(
             [
-                ("Scheme", payload.get("scheme")),
-                ("Trusted", payload.get("trusted")),
-                ("MAC valid", payload.get("mac_valid")),
-                ("Signature", payload.get("signature_valid")),
-                ("Receipt", payload.get("receipt_valid")),
-                ("Canonical", payload.get("canonical_match")),
-                ("Key id", payload.get("key_id")),
-                ("Message", payload.get("message")),
+                paint("Receipt error", "red", enabled=enabled),
+                f"  {escape_for_terminal(str(receipt_error))}",
+                "",
             ]
-        ),
+        )
+    message = payload.get("message")
+    show_message = message
+    if not ok and receipt_error:
+        show_message = None
+    elif not ok and isinstance(message, str) and "mac valid" in message.lower():
+        show_message = None
+    rows: list[tuple[str, Any]] = [
+        ("Scheme", payload.get("scheme")),
+        ("Trusted", payload.get("trusted")),
+        ("MAC valid", payload.get("mac_valid")),
+        ("Signature", payload.get("signature_valid")),
+        ("Receipt", payload.get("receipt_valid")),
+        ("Canonical", payload.get("canonical_match")),
+        ("Key id", payload.get("key_id")),
     ]
+    if show_message is not None:
+        rows.append(("Message", show_message))
+    lines.extend(kv_block(rows))
     if payload.get("note"):
-        lines.extend(["", str(payload["note"])])
+        lines.extend(["", escape_for_terminal(str(payload["note"]))])
     return "\n".join(lines) + "\n"
 
 

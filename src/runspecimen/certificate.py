@@ -153,8 +153,9 @@ def _verify_live_outputs(workspace: Path, cert: dict[str, Any]) -> None:
 
 
 MISSING_BOUND_APPROVAL = (
-    "This receipt has no authentic chained approval matching approval.json. "
-    "Planted or edited approvals cannot verify."
+    "This receipt has no bound approval event matching approval.json. "
+    "Planted or edited approvals cannot verify. "
+    "A bound approval event is a recorded local step, not cryptographic proof of a human."
 )
 HOLDER_RECEIPT_INCONSISTENT = (
     "This receipt's holder record is not consistent with the certificate."

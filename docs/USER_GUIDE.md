@@ -40,8 +40,10 @@ mandatory postflight before a successor; tamper-evident hash-chained receipts.
 Approval always requires an interactive TTY. Agents and adapters cannot
 approve through the app. Planted or edited `approval.json` files fail preflight,
 run, and verify. The hash chain is unkeyed: a program running as you that can
-edit RunSpecimen's files can still add a fake approval to the record. To protect
-against that, sign receipts with a key the agent can't access.
+edit RunSpecimen's files can still add a fake approval to the record. Signing
+with a key the agent can't access lets you check afterwards that a receipt is
+authentic, when a signature is required and checked; it does not stop a program
+running as you from adding a fake approval or running the job.
 
 ## Requirements, evidence, and freshness (ADR-005)
 

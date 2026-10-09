@@ -228,7 +228,8 @@ class TestPrettyModeEvidence(unittest.TestCase):
                 summary,
             )
             self.assertIn(
-                "To protect against that, sign receipts with a key the agent can't access.",
+                "Signing with a key the agent can't access lets you check afterwards "
+                "that a receipt is authentic, when a signature is required and checked",
                 summary,
             )
             self.assertNotIn("Plugins/agents cannot approve.", summary)

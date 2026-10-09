@@ -33,10 +33,17 @@ stdlib dir**, not by claimed ``__name__`` / ``__module__``. Frozen/built-in
 interpreter modules count as the interpreter. There is no DistutilsMetaFinder
 allowlist and no RECORD-based trust of ``_distutils_hack``.
 
+The probe runs with ``-I -B``. Any ``.pyc`` / ``__pycache__`` under the
+installed runspecimen package is refused (timestamp-based, hash-based, any
+optimisation level), as is ``PYTHONPYCACHEPREFIX`` / ``sys.pycache_prefix``
+and a sourceless ``.pyc`` module. The launcher body after the shebang must
+byte-match a pinned pip console-script template.
+
 Run with the venv interpreter that owns the install, under the same sanitized
 environment the acceptance sheet uses for every launcher call:
 
-  env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 \\
+  env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP -u PYTHONPYCACHEPREFIX \\
+    PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 \\
     "$VENV/bin/python" scripts/verify_installed_wheel.py \\
     --wheel /abs/path.whl --launcher "$VENV/bin/runspecimen"
 """
@@ -47,7 +54,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -56,11 +62,27 @@ import zipfile
 
 
 IMPORT_OVERRIDE_VARS = ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP")
+BYTECODE_OVERRIDE_VARS = ("PYTHONPYCACHEPREFIX",)
 HOOK_REFUSAL = (
     "This environment runs extra startup code we can't vouch for (file: {file}). "
     "Create a fresh one by following the acceptance sheet."
 )
-CONSOLE_FROM = re.compile(r"from\s+([\w.]+)\s+import\s+(\w+)")
+# pip._vendor.distlib.scripts.SCRIPT_TEMPLATE instantiated for
+# runspecimen.cli:main. Confirmed identical for:
+# - pip 21.2.4 (macOS 12+ system CPython 3.9.6 ensurepip)
+# - pip 24.0 / 24.x / 25.x on CPython 3.12 / 3.13 / 3.14
+# Shebang is validated separately; this is the body after the first newline.
+PIP_DISTLIB_CONSOLE_SCRIPT_BODY = (
+    b"# -*- coding: utf-8 -*-\n"
+    b"import re\n"
+    b"import sys\n"
+    b"from runspecimen.cli import main\n"
+    b"if __name__ == '__main__':\n"
+    b"    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])\n"
+    b"    sys.exit(main())\n"
+)
+KNOWN_CONSOLE_SCRIPT_BODIES = (PIP_DISTLIB_CONSOLE_SCRIPT_BODY,)
+PINNED_CONSOLE_SCRIPT_TARGET = "runspecimen.cli:main"
 PROBE_SCRIPT = r"""
 import json, sys, site, pkgutil, sysconfig
 from pathlib import Path
@@ -242,6 +264,22 @@ for hook in sys.path_hooks:
     if not _callable_is_stdlib(hook):
         unexpected_path_hooks.append(rec)
 
+cached_bytecode = []
+sourceless = []
+for name, mod in list(sys.modules.items()):
+    if name != 'runspecimen' and not name.startswith('runspecimen.'):
+        continue
+    origin = _origin(mod)
+    if origin and origin.endswith(('.pyc', '.pyo')):
+        sourceless.append({'name': name, 'file': origin})
+    cached = getattr(mod, '__cached__', None)
+    if cached:
+        try:
+            if Path(cached).is_file():
+                cached_bytecode.append({'name': name, 'cached': str(Path(cached).resolve())})
+        except Exception:
+            cached_bytecode.append({'name': name, 'cached': str(cached)})
+
 print(json.dumps({
     'runspecimen_file': str(Path(runspecimen.__file__).resolve()),
     'cli_file': str(Path(runspecimen.cli.__file__).resolve()),
@@ -265,6 +303,10 @@ print(json.dumps({
     'usercustomize': _find('usercustomize'),
     'enable_user_site': bool(getattr(site, 'ENABLE_USER_SITE', False)),
     'stdlib': [str(p) for p in _STDLIB_ROOTS],
+    'pycache_prefix': sys.pycache_prefix,
+    'dont_write_bytecode': bool(sys.dont_write_bytecode),
+    'cached_bytecode': cached_bytecode,
+    'sourceless_bytecode': sourceless,
 }))
 """
 
@@ -479,15 +521,19 @@ def verify_site_against_wheel(*, site_packages: Path, wheel: Path) -> dict[str, 
 
 def sanitized_env(base: dict[str, str] | None = None) -> dict[str, str]:
     env = dict(base if base is not None else os.environ)
-    for key in IMPORT_OVERRIDE_VARS:
+    for key in IMPORT_OVERRIDE_VARS + BYTECODE_OVERRIDE_VARS:
         env.pop(key, None)
     env["PYTHONNOUSERSITE"] = "1"
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     return env
 
 
 def import_overrides(env: dict[str, str] | None = None) -> list[str]:
     source = env if env is not None else os.environ
     found = [f"{key}={source[key]}" for key in IMPORT_OVERRIDE_VARS if source.get(key)]
+    for key in BYTECODE_OVERRIDE_VARS:
+        if source.get(key):
+            found.append(f"{key}={source[key]}")
     usersite = source.get("PYTHONNOUSERSITE", "")
     if usersite not in {"1", "true", "True", "yes"}:
         found.append("PYTHONNOUSERSITE is not 1")
@@ -506,12 +552,18 @@ def discover_launcher(prefix: Path | None = None) -> Path | None:
 def _is_venv_own_python(shebang: Path, launcher: Path) -> bool:
     """True when the shebang names this venv's Python, not another prefix.
 
-    Compare bin directories without following the ``python`` symlink: two
-    venvs can realpath to the same system interpreter.
+    Compare parent DIRECTORIES by filesystem identity (samefile), not lexical
+    path strings. macOS default TMPDIR is ``/var/...`` which aliases
+    ``/private/var/...``; ``/tmp`` aliases ``/private/tmp``. Do not realpath
+    the interpreter file itself: two venvs can share the same base Python.
     """
-    shebang_dir = os.path.normpath(os.path.abspath(str(shebang.parent)))
-    launcher_dir = os.path.normpath(os.path.abspath(str(launcher.parent)))
-    if shebang_dir != launcher_dir:
+    try:
+        same_parent = shebang.parent.samefile(launcher.parent)
+    except OSError:
+        same_parent = os.path.realpath(str(shebang.parent)) == os.path.realpath(
+            str(launcher.parent)
+        )
+    if not same_parent:
         return False
     name = shebang.name.lower()
     return name == "python.exe" or name.startswith("python")
@@ -556,15 +608,48 @@ def interpreter_from_launcher(launcher: Path) -> Path:
     return shebang
 
 
+def launcher_body_after_shebang(data: bytes) -> bytes:
+    """Return launcher bytes after the shebang line (validated separately)."""
+    if not data.startswith(b"#!"):
+        return data
+    newline = data.find(b"\n")
+    if newline < 0:
+        return b""
+    return data[newline + 1 :]
+
+
 def console_script_target(launcher: Path) -> str | None:
+    """Return the pinned entry point only when the body is an exact known template.
+
+    No regex. A file that merely contains ``from runspecimen.cli import main``
+    but does not call ``main`` is refused.
+    """
     try:
-        text = launcher.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
+        data = launcher.read_bytes()
+    except OSError:
         return None
-    match = CONSOLE_FROM.search(text)
-    if match:
-        return f"{match.group(1)}:{match.group(2)}"
+    body = launcher_body_after_shebang(data)
+    if body in KNOWN_CONSOLE_SCRIPT_BODIES:
+        return PINNED_CONSOLE_SCRIPT_TARGET
     return None
+
+
+def scan_package_bytecode(package_dir: Path) -> list[str]:
+    """Refuse any ``.pyc`` / ``__pycache__`` under the installed package."""
+    findings: list[str] = []
+    if not package_dir.is_dir():
+        return findings
+    for path in sorted(package_dir.rglob("*")):
+        try:
+            relative_parts = path.relative_to(package_dir).parts
+        except ValueError:
+            continue
+        if path.name == "__pycache__" or "__pycache__" in relative_parts:
+            findings.append(f"bytecode cache path: {path}")
+            continue
+        if path.suffix.lower() in {".pyc", ".pyo"}:
+            findings.append(f"bytecode file: {path}")
+    return findings
 
 
 def launcher_sysconfig(interpreter: Path, env: dict[str, str]) -> dict[str, str]:
@@ -578,7 +663,7 @@ def launcher_sysconfig(interpreter: Path, env: dict[str, str]) -> dict[str, str]
         "}))\n"
     )
     result = subprocess.run(
-        [str(interpreter), "-c", script],
+        [str(interpreter), "-I", "-B", "-c", script],
         check=False,
         capture_output=True,
         text=True,
@@ -594,7 +679,7 @@ def launcher_sysconfig(interpreter: Path, env: dict[str, str]) -> dict[str, str]
 
 def probe_effective_origins(interpreter: Path, env: dict[str, str]) -> dict[str, Any]:
     result = subprocess.run(
-        [str(interpreter), "-c", PROBE_SCRIPT],
+        [str(interpreter), "-I", "-B", "-c", PROBE_SCRIPT],
         check=False,
         capture_output=True,
         text=True,
@@ -894,14 +979,29 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
     pth_findings = scan_pth_files(site) + scan_virtualenv_artifacts(site)
     report["pth_findings"] = pth_findings
 
+    bytecode_findings = scan_package_bytecode(package_dir)
+    report["bytecode_findings"] = bytecode_findings
+    target = console_script_target(resolved_launcher)
+    report["console_script_target"] = target
+
     hashed_py_members = list(report.get("hashed_py_members") or [])
     bind_error: str | None = "effective origins were not probed"
     startup_findings: list[str] = []
-    try:
-        origins = probe_effective_origins(interpreter, env)
-    except (RuntimeError, json.JSONDecodeError, KeyError) as exc:
-        origins = None
-        bind_error = str(exc)
+    origins: dict[str, Any] | None = None
+    # Do not import runspecimen while unhashed bytecode is sitting next to
+    # hashed sources: -B still loads an existing .pyc.
+    if not bytecode_findings:
+        try:
+            origins = probe_effective_origins(interpreter, env)
+        except (RuntimeError, json.JSONDecodeError, KeyError) as exc:
+            origins = None
+            bind_error = str(exc)
+    else:
+        bind_error = (
+            "installed runspecimen package contains bytecode "
+            "(__pycache__ / .pyc); install with pip install --no-compile "
+            "and PYTHONDONTWRITEBYTECODE=1"
+        )
     if origins is not None:
         rs_file = Path(origins["runspecimen_file"])
         cli_file = Path(origins["cli_file"])
@@ -934,6 +1034,28 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
             prefix=Path(cfg["prefix"]),
             site_packages=site,
         )
+        if origins.get("pycache_prefix"):
+            startup_findings.append(
+                f"sys.pycache_prefix is set: {origins.get('pycache_prefix')}"
+            )
+        if not origins.get("dont_write_bytecode"):
+            startup_findings.append("probe did not run with bytecode writing disabled")
+        if origins.get("cached_bytecode"):
+            startup_findings.append(
+                "loaded runspecimen modules have existing bytecode: "
+                + ", ".join(
+                    str(item.get("cached") or item)
+                    for item in origins["cached_bytecode"]
+                )
+            )
+        if origins.get("sourceless_bytecode"):
+            startup_findings.append(
+                "loaded sourceless runspecimen bytecode: "
+                + ", ".join(
+                    str(item.get("file") or item)
+                    for item in origins["sourceless_bytecode"]
+                )
+            )
     else:
         bound = False
         report["origins_bound"] = False
@@ -943,16 +1065,19 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
             site_packages=site,
         )
     report["startup_findings"] = startup_findings
-    expected_target = "runspecimen.cli:main"
-    target = report.get("console_script_target")
-    if target not in {None, expected_target}:
-        report["ok"] = False
-        report["message"] = (
-            f"console-script target {target} is not {expected_target}"
-        )
-        return report
 
     failures: list[str] = []
+    if target != PINNED_CONSOLE_SCRIPT_TARGET:
+        failures.append(
+            "console-script body is not a pinned pip template for "
+            f"{PINNED_CONSOLE_SCRIPT_TARGET}"
+        )
+    if bytecode_findings:
+        failures.append(
+            "installed runspecimen package contains bytecode "
+            "(__pycache__ / .pyc); install with pip install --no-compile "
+            "and PYTHONDONTWRITEBYTECODE=1"
+        )
     if incoming_overrides:
         failures.append("import overrides: " + "; ".join(incoming_overrides))
     hook_file = _first_hook_file(
@@ -1019,6 +1144,7 @@ def main(argv: list[str] | None = None) -> int:
             "import_overrides",
             "pth_findings",
             "startup_findings",
+            "bytecode_findings",
             "meta_path_findings",
             "path_hook_findings",
             "lazy_loaded_runspecimen",

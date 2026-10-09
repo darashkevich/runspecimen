@@ -50,8 +50,9 @@ kinds/versions fail closed. They do not replace `verify`.
   `evidence_attestation`, and `confirm_channel`. Each key is part of
   `certificate_id` only when it is present. Historical receipts that omit them
   still recompute `certificate_id`, but verify refuses `ok:true` unless the
-  chain has an authentic approval event (or holder receipt) consistent with
-  `approval.json` and the certificate. Do not rewrite an issued certificate to
+  chain has a bound approval event (or holder receipt) consistent with
+  `approval.json` and the certificate. A bound approval event is a recorded
+  local step, not cryptographic proof of a human. Do not rewrite an issued certificate to
   add them. Unknown top-level keys fail closed.
 - `evidence_attestation` (when present) binds an evidence-report digest. It
   authenticates linked evidence bytes; it does not rewrite check outcomes or
@@ -61,7 +62,7 @@ kinds/versions fail closed. They do not replace `verify`.
 
 New certificates always set `"schema_version": 2` and bind that value into
 `certificate_id`. Verification still parses schema `1` and legacy certificates
-without the field, then fails closed if approval is not bound to the chain.
+without the field. Legacy receipts without a bound approval fail verify.
 
 ### Migration rules
 
