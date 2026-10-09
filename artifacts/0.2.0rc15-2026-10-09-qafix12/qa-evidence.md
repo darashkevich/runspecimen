@@ -153,3 +153,9 @@ session; `--pretty doctor` is a non-qualifying supplement.
 | `--human-invoked` | not used |
 | merge / publish / retag / notarize / real-machine install | not done |
 | older packs | not overwritten (qafix11, qafix10, and earlier stay on disk) |
+
+## 6. CI
+
+Push run [37939741004](https://github.com/darashkevich/runspecimen/actions/runs/37939741004): 11/11 success on `ba52627`, including macos-latest 3.14 and ubuntu 3.13/3.14 (CC-04 pip 26 bodies). Darwin 3.11 unittest: `Ran 777 tests in 372.339s`.
+
+PR run [37939747726](https://github.com/darashkevich/runspecimen/actions/runs/37939747726): 10/11 success. macos-latest 3.14 ERROR in `test_stalled_client_and_oversize_frame_are_refused` (`BrokenPipeError` on `sock2.sendall`) after `Ran 777 tests in 420.585s`. Rebuilt sdist/wheel still matched `8ecf72a9…` / `72503166…`. Unrelated to CC-04. This unpacked note retriggers CI; pack bytes are unchanged.
