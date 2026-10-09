@@ -41,7 +41,9 @@ byte-match a pinned pip console-script template.
 
 The venv ``bin/`` directory may contain only what ``python -m venv`` plus pip
 plus this wheel create (python symlinks, activate scripts, pip and
-runspecimen launchers). A ``json.py`` (or any ``.py`` / ``.pyc`` / ``.so`` /
+runspecimen launchers). CPython 3.14 ``python -m venv`` also writes the exact
+name ``𝜋thon`` (U+1D70B MATHEMATICAL ITALIC SMALL PI + ``thon``; gh-119535);
+that name is allowlisted. A ``json.py`` (or any ``.py`` / ``.pyc`` / ``.so`` /
 directory) there is refused because the real launcher puts ``bin/`` on
 ``sys.path[0]``. Module origins are taken from the real launcher process
 (``runspecimen doctor``), not from ``python -c``.
@@ -143,6 +145,9 @@ _VENV_BIN_EXACT = frozenset(
         "pythonw.exe",
         "python3",
         "python3.exe",
+        # CPython 3.14 POSIX venv easter egg (gh-119535). Exact name only;
+        # lookalikes such as U+03C0 GREEK SMALL LETTER PI are refused.
+        "\N{MATHEMATICAL ITALIC SMALL PI}thon",
     }
 )
 _BIN_FORBIDDEN_SUFFIXES = (".py", ".pyc", ".pyo", ".so", ".dylib")

@@ -57,8 +57,10 @@ the absolute launcher's own interpreter. That interpreter must be named by an
 absolute shebang; `#!/usr/bin/env python3` is refused. The launcher body after
 the shebang must byte-match the pinned pip console-script template. The
 verifier also refuses unexpected files in `$VENV/bin` (a `json.py` there would
-shadow stdlib because the real launcher puts `bin/` on `sys.path[0]`) and
-probes module origins by running `$RS doctor`, not `python -c`.
+shadow stdlib because the real launcher puts `bin/` on `sys.path[0]`). CPython
+3.14 `python -m venv` also creates the exact `𝜋thon` symlink (U+1D70B); that
+name is allowlisted. The verifier probes module origins by running `$RS doctor`,
+not `python -c`.
 `python -m runspecimen` from an untrusted cwd is not a supported verified
 path; this sheet only invokes the absolute launcher. The
 trusted interpreter assumption: the check trusts **only the Python interpreter and its stdlib**. It does not claim to resist someone replacing Python itself.

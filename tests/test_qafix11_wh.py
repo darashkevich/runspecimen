@@ -70,12 +70,25 @@ class WH01StdlibShadowingTests(unittest.TestCase):
 
     def test_wh01_bin_allowlist_includes_versioned_python_and_pip(self) -> None:
         module = _load_verify_module()
+        pi_thon = "\N{MATHEMATICAL ITALIC SMALL PI}thon"
         self.assertTrue(module.is_allowed_venv_bin_name("python3.14"))
         self.assertTrue(module.is_allowed_venv_bin_name("python3.13"))
         self.assertTrue(module.is_allowed_venv_bin_name("pip3.14"))
         self.assertTrue(module.is_allowed_venv_bin_name("python3.14t"))
+        self.assertTrue(module.is_allowed_venv_bin_name(pi_thon))
+        self.assertFalse(module.is_allowed_venv_bin_name("\N{GREEK SMALL LETTER PI}thon"))
+        self.assertFalse(module.is_allowed_venv_bin_name("python\N{MATHEMATICAL ITALIC SMALL PI}"))
         self.assertFalse(module.is_allowed_venv_bin_name("json.py"))
         self.assertFalse(module.is_allowed_venv_bin_name("pythonw.sh"))
+
+        with tempfile.TemporaryDirectory(prefix="rs-wh01-pithon-") as raw:
+            bin_dir = Path(raw)
+            (bin_dir / "python").write_text("", encoding="utf-8")
+            (bin_dir / pi_thon).symlink_to("python")
+            findings = module.scan_venv_bin(bin_dir)
+            joined = " ".join(findings)
+            self.assertNotIn("unexpected", joined)
+            self.assertNotIn(pi_thon, joined)
 
     def test_wh01_bin_directory_and_pyc_are_refused(self) -> None:
         module = _load_verify_module()
