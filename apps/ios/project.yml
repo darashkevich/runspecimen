@@ -23,6 +23,8 @@ targets:
     sources:
       - path: Sources/RunSpecimenObserve
       - path: ../macos/Sources/RunSpecimenCore/RSBA2Package.swift
+      # Includes PrivacyInfo.xcprivacy (UserDefaults CA92.1). Keep it in the
+      # committed pbxproj Resources phases as well; do not drop it on regenerate.
       - path: Resources
         buildPhase: resources
     settings:
