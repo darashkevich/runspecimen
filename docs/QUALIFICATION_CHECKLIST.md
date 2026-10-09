@@ -75,10 +75,10 @@ CI, all with conclusion `success` (10 jobs per event: 8 `release-check` matrix e
 
 | File | SHA-256 |
 | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | `72503166a31bc15bda8e31cfb57820ce7111355b3798e6fcdd53ce2c83a56ca4` |
-| `runspecimen-0.2.0rc15.tar.gz` | `8ecf72a9993b9dd5700ba9929e51d386d4c114833f3eacc4e1c963575055801c` |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | `fb1a1fca5c1cbc10c9c448d3803f2d9fc9ba000778bd4e30762d06fed56aaac3` |
+| `runspecimen-0.2.0rc15.tar.gz` | `ce871ab0a6822c9c021ed34bf2c32e76bcd33dfa509d01d75964f9295b50bc99` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb` |
-| `release-report.json` | `3d3c3396bde7fb360a5d7f76a5f76d3400cae537ad4cacc22053493720c55725` |
+| `release-report.json` | `8979c595400098958e3a3c3efcf33b7fcd002752bd8dd12066e2d27ed5139a09` |
 
 The qafix3 pack hashes (`bd9e6520…` / `cd09d72b…` / `ea38d5bc…` / `90069595…`) stay in `artifacts/0.2.0rc15-2026-10-07-qafix3/` and are not this pack. The qafix2 pack hashes (`b181822a…` / `659c72cf…` / `ea38d5bc…` / `63c808dc…`) stay in `artifacts/0.2.0rc15-2026-10-07-qafix2/`. The qafix pack hashes (`b181822a…` / `1ac1ca57…` / `ea38d5bc…` / `10747ca1…`) stay in `artifacts/0.2.0rc15-2026-10-07-qafix/`. The bump pack hashes (`a68094f0…` / `886f90d0…` / `d27799f7…` / `529718ff…`) stay in `artifacts/0.2.0rc15-2026-10-06-bump/`. Archive bytes are the package identity.
 
