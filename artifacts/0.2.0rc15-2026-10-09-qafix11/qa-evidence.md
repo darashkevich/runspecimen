@@ -5,8 +5,8 @@ It is not a production sign-off. It does not authorize a merge, tag,
 notarization, install, or upload. Version stays unpublished `0.2.0rc15`.
 
 Pack: `artifacts/0.2.0rc15-2026-10-09-qafix11/`
-Engine source: PR #63 commit `55f0781a9ab165deac02e4f567d96707cb607511`
-(the src+tests+docs commit; this pack commit does not change `src/`).
+Engine source: PR #63 commit `9377ea2e23122d67ddd8bc5041160dc772719585`
+(𝜋thon allowlist plus macOS stdlib-root resolve; `src/` tree unchanged from `55f0781`).
 `src/` tree: `019fff590c315299bbb12c243cfb8182f0cedfc1`
 `src/` archive SHA-256 (`git archive HEAD:src | sha256sum`):
 `607c973e3e241146f6d25ea355e8838cb729e0c22c1bb0a5888dde20c1578484`
@@ -23,15 +23,16 @@ QUALIFICATION_CHECKLIST / READINESS_LEDGER.
 | File | SHA-256 |
 | --- | --- |
 | `runspecimen-0.2.0rc15-py3-none-any.whl` | `fb1a1fca5c1cbc10c9c448d3803f2d9fc9ba000778bd4e30762d06fed56aaac3` |
-| `runspecimen-0.2.0rc15.tar.gz` | `ce871ab0a6822c9c021ed34bf2c32e76bcd33dfa509d01d75964f9295b50bc99` |
+| `runspecimen-0.2.0rc15.tar.gz` | `d0174ba8d6fb3599cbc458a69af129b5f5336ce25f0ef172d425d82c589fdee1` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb` (unchanged from qafix through qafix10; does not embed the wheel) |
-| `release-report.json` | `8979c595400098958e3a3c3efcf33b7fcd002752bd8dd12066e2d27ed5139a09` |
+| `release-report.json` | `434ee1d10da7cbfccfdec521c323000e7334902e8ceb733c6232ae85f1a597f8` |
+| `SHA256SUMS` | `95449a880a8f2106fb69ac264ab9a35f7747094a641b0ed234c67af7e8cf2986` |
 
 Toolchain: CPython 3.12.3, venv `/tmp/rs-relprep-qafix5` (setuptools 84.0.0, wheel 0.48.0).
 `SOURCE_DATE_EPOCH` 1577836800 as in `scripts/release_check.py`.
-Two independent rebuilds (`/tmp/rs-qafix11-pack-a-u38kzns3` and
-`/tmp/rs-qafix11-pack-b-4oqqwd7m`) were byte-identical (`cmp`) for wheel,
-sdist, and plugin zip.
+Two independent rebuilds (`/tmp/rs-qafix11-pack2-a-2n_v9aoq` and
+`/tmp/rs-qafix11-pack2-b-3f143sw5`) were byte-identical (`cmp`) for wheel,
+sdist, plugin zip, `release-report.json`, and `SHA256SUMS`.
 
 This pack is ChatGPT QA #5 plus WH-01..04 (DO-NOT-SHIP): CC-01..CC-06,
 CC-04 pip 25/26 console-script bodies, WH-01..04.
@@ -40,15 +41,15 @@ CC-04 pip 25/26 console-script bodies, WH-01..04.
 
 Command: `PYTHONPATH=src /tmp/rs-relprep-qafix5/bin/python -m unittest discover -s tests -v`
 Result: **795 tests, skipped=78, 0 failed**.
-Unittest wall time: **205.410s** (cap 600s). Golden rebuild printed
-`reproducible sdist ce871ab0…` / `reproducible wheel fb1a1fca…`.
+Unittest wall time: **201.536s** (cap 600s). Golden rebuild printed
+`reproducible sdist d0174ba8…` / `reproducible wheel fb1a1fca…`.
 Skip list is unchanged from qafix10 (78 Linux skips).
 
-`src/` changed (WH-01..04 plus doctor origins), so **wheel `fb1a1fca…` is new**.
-Plugin `ea38d5bc…` is unchanged. Sdist is `ce871ab0…` because packed
-`scripts/verify_installed_wheel.py`, `src/runspecimen/*`, tests, and packed
-docs/CHANGELOG changed. Test count rose from 776 to 795 because this pass
-adds `tests/test_qafix11_wh.py`.
+`src/` is unchanged from `55f0781` (**wheel `fb1a1fca…` unchanged**).
+Plugin `ea38d5bc…` is unchanged. Sdist is `d0174ba8…` because packed
+`scripts/verify_installed_wheel.py`, tests, and CHANGELOG gained the CPython
+3.14 `𝜋thon` allowlist and macOS stdlib-root `resolve()`. Test count is 795
+because this pass adds `tests/test_qafix11_wh.py`.
 
 The 78 Linux skips are Darwin-only or host-specific (CryptoKit, P-256
 verifier, phone peer, rsync/holder stage, codesign, sandbox-exec, relocatable
@@ -56,7 +57,7 @@ Mach-O) plus PyNaCl and pytest. None was turned into a passing stand-in.
 
 ## 2. Darwin 3.11 unittest timings
 
-Local pack unittest discover: **205.410s** vs 600s cap.
+Local pack unittest discover: **201.536s** vs 600s cap.
 Report Darwin 3.11 timings from the unittest line `Ran N tests in X s` in the
 CI logs, **not** the GitHub Actions job wall clock.
 
