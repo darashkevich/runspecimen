@@ -8,6 +8,7 @@ Queried **2026-09-22** via App Store Connect API (local AuthKey; no secrets in t
 - App Store provisioning profile **ACTIVE**: `RunSpecimen Observe App Store` (`YPLN4MZQ77` / UUID `2b4df713-ec58-4135-bf50-d16df1b48b61`)
 - IPA built: `apps/ios/build/ipa/RunSpecimenObserve.ipa` (version **0.1.0** / build **1**, not committed)
 - Archive signed with Apple Distribution team `UN6KF8636A`
+- Privacy manifest `Resources/PrivacyInfo.xcprivacy` is in both app targets (no tracking, no collected data types, UserDefaults reason `CA92.1`, same declaration as the Mac app). The 2026-09-22 IPA predates that file. Do not upload that IPA.
 
 ## Blocked on Yahor (portal / legal)
 
@@ -21,7 +22,7 @@ Queried **2026-09-22** via App Store Connect API (local AuthKey; no secrets in t
 
 ## Leave alone
 
-- Mac App Store `com.darashkevich.runspecimen` **0.1.4 (9)** is the package recorded as `WAITING_FOR_REVIEW` (submission `f0bb3ab1-c283-4463-8c27-e5702a35ac6a`). **0.1.3 (8)** was rejected. Do not cancel or resubmit from this note.
+- Mac App Store `com.darashkevich.runspecimen` **0.1.4 (9)** was `READY_FOR_SALE` on the 2026-09-28 Connect query recorded in `apps/macos/asc-kit/STATUS.md` (build `51a18894-02e3-4846-86f5-29cc345567f0`, submission `f0bb3ab1-c283-4463-8c27-e5702a35ac6a`). The earlier `WAITING_FOR_REVIEW` note is historical. **0.1.3 (8)** was rejected. This file was not a new Connect query. Do not upload a replacement from this note.
 
 ## Safety
 
