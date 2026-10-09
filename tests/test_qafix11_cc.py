@@ -288,20 +288,43 @@ class CC03PrettyVerifySignatureTests(unittest.TestCase):
 
 
 class CC04LauncherTemplateTests(unittest.TestCase):
+    def test_pinned_templates_are_exact_known_bodies(self) -> None:
+        module = _load_verify_module()
+        distlib = (
+            b"# -*- coding: utf-8 -*-\n"
+            b"import re\n"
+            b"import sys\n"
+            b"from runspecimen.cli import main\n"
+            b"if __name__ == '__main__':\n"
+            b"    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])\n"
+            b"    sys.exit(main())\n"
+        )
+        endswith = (
+            b"import sys\n"
+            b"from runspecimen.cli import main\n"
+            b"if __name__ == '__main__':\n"
+            b"    if sys.argv[0].endswith('.exe'):\n"
+            b"        sys.argv[0] = sys.argv[0][:-4]\n"
+            b"    sys.exit(main())\n"
+        )
+        removesuffix = (
+            b"import sys\n"
+            b"from runspecimen.cli import main\n"
+            b"if __name__ == '__main__':\n"
+            b"    sys.argv[0] = sys.argv[0].removesuffix('.exe')\n"
+            b"    sys.exit(main())\n"
+        )
+        self.assertEqual(module.PIP_DISTLIB_CONSOLE_SCRIPT_BODY, distlib)
+        self.assertEqual(module.PIP_SCRIPTMAKER_ENDSWITH_BODY, endswith)
+        self.assertEqual(module.PIP_SCRIPTMAKER_REMOVESUFFIX_BODY, removesuffix)
+        self.assertEqual(
+            module.KNOWN_CONSOLE_SCRIPT_BODIES,
+            (distlib, endswith, removesuffix),
+        )
+        self.assertEqual(len(set(module.KNOWN_CONSOLE_SCRIPT_BODIES)), 3)
+
     def test_pinned_template_matches_real_pip_body(self) -> None:
         module = _load_verify_module()
-        self.assertEqual(
-            module.PIP_DISTLIB_CONSOLE_SCRIPT_BODY,
-            (
-                b"# -*- coding: utf-8 -*-\n"
-                b"import re\n"
-                b"import sys\n"
-                b"from runspecimen.cli import main\n"
-                b"if __name__ == '__main__':\n"
-                b"    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])\n"
-                b"    sys.exit(main())\n"
-            ),
-        )
         pin = _pin_wheel()
         if not pin.is_file():
             self.skipTest("pin wheel must be on disk")
@@ -312,7 +335,7 @@ class CC04LauncherTemplateTests(unittest.TestCase):
             launcher = _venv_launcher(venv_dir)
             data = launcher.read_bytes()
             body = module.launcher_body_after_shebang(data)
-            self.assertEqual(body, module.PIP_DISTLIB_CONSOLE_SCRIPT_BODY)
+            self.assertIn(body, module.KNOWN_CONSOLE_SCRIPT_BODIES)
             self.assertEqual(module.console_script_target(launcher), "runspecimen.cli:main")
 
     def test_import_main_without_calling_it_is_refused(self) -> None:

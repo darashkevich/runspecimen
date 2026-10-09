@@ -67,11 +67,14 @@ HOOK_REFUSAL = (
     "This environment runs extra startup code we can't vouch for (file: {file}). "
     "Create a fresh one by following the acceptance sheet."
 )
-# pip._vendor.distlib.scripts.SCRIPT_TEMPLATE instantiated for
-# runspecimen.cli:main. Confirmed identical for:
-# - pip 21.2.4 (macOS 12+ system CPython 3.9.6 ensurepip)
-# - pip 24.0 / 24.x / 25.x on CPython 3.12 / 3.13 / 3.14
-# Shebang is validated separately; this is the body after the first newline.
+# Exact console-script bodies pip writes for entry point runspecimen.cli:main.
+# Shebang is validated separately; these are the bytes after the first newline.
+# No regex. Only these exact known bodies are accepted.
+#
+# 1) pip._vendor.distlib.scripts.SCRIPT_TEMPLATE (import at module level + re.sub).
+#    Captured from pip 24.0 on this pack host (CPython 3.12.3) and from GHA
+#    release-check 3.9 / 3.10 / 3.11 / 3.12 (ubuntu + macos 3.11). Also the
+#    historical macOS 12+ system CPython 3.9.6 ensurepip body (pip 21.2.4).
 PIP_DISTLIB_CONSOLE_SCRIPT_BODY = (
     b"# -*- coding: utf-8 -*-\n"
     b"import re\n"
@@ -81,7 +84,34 @@ PIP_DISTLIB_CONSOLE_SCRIPT_BODY = (
     b"    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])\n"
     b"    sys.exit(main())\n"
 )
-KNOWN_CONSOLE_SCRIPT_BODIES = (PIP_DISTLIB_CONSOLE_SCRIPT_BODY,)
+# 2) pip 25.1–25.3 PipScriptMaker override (pip/_internal/operations/install/wheel.py,
+#    PR #13166). textwrap.dedent of that template instantiated for this entry
+#    point. Not emitted by current GHA 3.9–3.12 (those still write (1)) or by
+#    GHA 3.13/3.14 (those write (3)).
+PIP_SCRIPTMAKER_ENDSWITH_BODY = (
+    b"import sys\n"
+    b"from runspecimen.cli import main\n"
+    b"if __name__ == '__main__':\n"
+    b"    if sys.argv[0].endswith('.exe'):\n"
+    b"        sys.argv[0] = sys.argv[0][:-4]\n"
+    b"    sys.exit(main())\n"
+)
+# 3) pip 26.0+ PipScriptMaker override (PR #13697, .removesuffix('.exe')).
+#    Captured from GHA ubuntu 3.13, ubuntu 3.14, and macos 3.14: the unittest
+#    shortening of the installed launcher body matches this 143-byte value
+#    exactly and does not match (1) or (2).
+PIP_SCRIPTMAKER_REMOVESUFFIX_BODY = (
+    b"import sys\n"
+    b"from runspecimen.cli import main\n"
+    b"if __name__ == '__main__':\n"
+    b"    sys.argv[0] = sys.argv[0].removesuffix('.exe')\n"
+    b"    sys.exit(main())\n"
+)
+KNOWN_CONSOLE_SCRIPT_BODIES = (
+    PIP_DISTLIB_CONSOLE_SCRIPT_BODY,
+    PIP_SCRIPTMAKER_ENDSWITH_BODY,
+    PIP_SCRIPTMAKER_REMOVESUFFIX_BODY,
+)
 PINNED_CONSOLE_SCRIPT_TARGET = "runspecimen.cli:main"
 PROBE_SCRIPT = r"""
 import json, sys, site, pkgutil, sysconfig

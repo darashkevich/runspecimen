@@ -30,7 +30,8 @@ HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 CANDIDATE_MANIFEST = ROOT / "docs" / "CANDIDATE_MANIFEST.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
-PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-09-qafix11"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-09-qafix12"
+QAFIX11_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-09-qafix11"
 QAFIX10_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix10"
 QAFIX9_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix9"
 QAFIX8_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix8"
@@ -154,7 +155,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("command -v runspecimen", text)
         self.assertIn("mktemp -d", text)
         self.assertIn('test ! -e "$VENV"', text)
-        self.assertIn("0.2.0rc15-2026-10-09-qafix11", text)
+        self.assertIn("0.2.0rc15-2026-10-09-qafix12", text)
         self.assertIn("--no-index --no-deps --force-reinstall --no-compile", text)
         self.assertIn("scripts/verify_installed_wheel.py", text)
         self.assertIn("--launcher", text)
@@ -216,9 +217,9 @@ class Rc15QaDocfixTests(unittest.TestCase):
         if CANDIDATE_MANIFEST.is_file():
             manifest = CANDIDATE_MANIFEST.read_text(encoding="utf-8")
             self.assertIn("| Candidate (this pass) |", manifest)
-            self.assertIn("PR #63 head that records the qafix11 pack", manifest)
+            self.assertIn("PR #63 head that records the qafix12 pack", manifest)
             self.assertIn("8015b6d8017e5566f7558cc916dc0ee470c653ad", manifest)
-            self.assertIn("artifacts/0.2.0rc15-2026-10-09-qafix11/", manifest)
+            self.assertIn("artifacts/0.2.0rc15-2026-10-09-qafix12/", manifest)
         self.assertIn("Homebrew", text)
         self.assertIn("STEP $1 exit=$2", text)
         command_lines = [
@@ -939,7 +940,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
 
 
 def _pin_wheel() -> Path:
-    for pack in (PIN_PACK, QAFIX10_PACK, QAFIX9_PACK, QAFIX8_PACK, QAFIX7_PACK, QAFIX6_PACK, QAFIX5_PACK, QAFIX4_PACK, QAFIX3_PACK, QAFIX_PACK):
+    for pack in (PIN_PACK, QAFIX11_PACK, QAFIX10_PACK, QAFIX9_PACK, QAFIX8_PACK, QAFIX7_PACK, QAFIX6_PACK, QAFIX5_PACK, QAFIX4_PACK, QAFIX3_PACK, QAFIX_PACK):
         pin = pack / WHEEL_NAME
         if pin.is_file():
             return pin
@@ -1004,7 +1005,7 @@ def _acceptance_sheet_script(markdown: str, pack: Path) -> str:
         parts.append(block.rstrip() + "\n")
     script = "".join(parts)
     replaced, count = re.subn(
-        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-09-qafix11"',
+        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-09-qafix12"',
         f"export PACK={shlex.quote(str(pack))}",
         script,
         count=1,
