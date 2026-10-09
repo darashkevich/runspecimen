@@ -30,7 +30,7 @@ from runspecimen.paths import (
 )
 from runspecimen.preflight import check_outputs_absent, check_predecessor
 from runspecimen.state import load_state, update_state
-from runspecimen.runtime import runtime_matches, runtime_provenance
+from runspecimen.runtime import job_environment, runtime_matches, runtime_provenance
 
 
 def _kill_process_group(proc: subprocess.Popen[bytes]) -> None:
@@ -382,9 +382,18 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
         )
         assert_tool_unchanged(isolation)
 
+        bound_runtime = approval.get("runtime") if isinstance(approval, dict) else runtime
+        try:
+            job_env = job_environment(
+                contract,
+                bound_runtime if isinstance(bound_runtime, dict) else runtime,
+            )
+        except RunError as exc:
+            raise PreflightError(str(exc)) from exc
         proc = subprocess.Popen(  # noqa: S603
             launch_argv,
             cwd=str(cwd),
+            env=job_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=0,

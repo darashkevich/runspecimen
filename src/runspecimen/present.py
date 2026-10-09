@@ -237,13 +237,14 @@ def _join_paths(items: Sequence[Any] | None) -> str:
 def kv_block(rows: Iterable[tuple[str, Any]], *, width: int = 14) -> list[str]:
     lines: list[str] = []
     for label, value in rows:
+        label_text = escape_for_terminal(str(label))
         text = _scalar(value)
         if "\n" in text:
-            lines.append(f"  {label:<{width}}")
+            lines.append(f"  {label_text:<{width}}")
             for part in text.splitlines():
-                lines.append(f"  {'':<{width}} {part}")
+                lines.append(f"  {'':<{width}} {escape_for_terminal(part)}")
         else:
-            lines.append(f"  {label:<{width}} {text}")
+            lines.append(f"  {label_text:<{width}} {text}")
     return lines
 
 
@@ -586,7 +587,7 @@ def _format_about(payload: dict[str, Any], *, enabled: bool, context: dict[str, 
         paint("Lifecycle", "bold", enabled=enabled),
     ]
     for i, step in enumerate(payload.get("lifecycle") or [], 1):
-        lines.append(f"  {i}. {step}")
+        lines.append(f"  {i}. {escape_for_terminal(str(step))}")
     docs = payload.get("docs") or {}
     if docs:
         lines.append("")
@@ -616,7 +617,9 @@ def _format_doctor(payload: dict[str, Any], *, enabled: bool, context: dict[str,
     ]
     lease = payload.get("active_lease")
     if isinstance(lease, dict):
-        lines.append(f"  {'Holder':<14} {lease.get('holder')} (pid {lease.get('pid')})")
+        holder = escape_for_terminal(str(lease.get("holder") or ""))
+        pid = escape_for_terminal(str(lease.get("pid") or ""))
+        lines.append(f"  {'Holder':<14} {holder} (pid {pid})")
     isolation = payload.get("isolation")
     if isinstance(isolation, dict):
         lines.append("")
@@ -625,7 +628,7 @@ def _format_doctor(payload: dict[str, Any], *, enabled: bool, context: dict[str,
         if isinstance(backends, dict):
             lines.extend(kv_block(list(backends.items())[:8]))
         else:
-            lines.append(f"  {backends}")
+            lines.append(f"  {escape_for_terminal(str(backends))}")
     lines.append("")
     lines.append("Doctor does not approve or run anything.")
     return "\n".join(lines) + "\n"
@@ -822,7 +825,7 @@ def _format_verify(payload: dict[str, Any], *, enabled: bool, context: dict[str,
     note = doc.get("confirm_channel_note")
     if note:
         lines.append("")
-        lines.append(str(note))
+        lines.append(escape_for_terminal(str(note)))
     lines.extend(
         [
             "",
@@ -903,7 +906,7 @@ def _format_digest(payload: dict[str, Any], *, enabled: bool, context: dict[str,
     lines = [
         _banner(None, "Recorded receipt digest (not verify)", enabled=enabled),
         "",
-        str(payload.get("note") or "Recorded certificate fields only."),
+        escape_for_terminal(str(payload.get("note") or "Recorded certificate fields only.")),
         "",
         *kv_block(
             [
@@ -1181,10 +1184,10 @@ def _generic_lines(payload: Any, indent: int) -> list[str]:
     if isinstance(payload, dict):
         for key, value in payload.items():
             if isinstance(value, (dict, list)) and value:
-                lines.append(f"{pad}{key}:")
+                lines.append(f"{pad}{escape_for_terminal(str(key))}:")
                 lines.extend(_generic_lines(value, indent + 1))
             else:
-                lines.append(f"{pad}{key}: {_scalar(value)}")
+                lines.append(f"{pad}{escape_for_terminal(str(key))}: {_scalar(value)}")
     elif isinstance(payload, list):
         for item in payload:
             if isinstance(item, (dict, list)):

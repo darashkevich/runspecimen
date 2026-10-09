@@ -313,10 +313,21 @@ external signature.
 
 ## Doctor, validate, status
 
+Verified acceptance uses the absolute venv launcher
+(`$VENV/bin/runspecimen`). `python -m runspecimen` from an untrusted cwd is
+not a supported verified path: a `json.py` in that cwd can shadow stdlib.
+
+After approve, `run` launches the job with an explicit environment built from
+the bound `runtime.env_allowlist` values plus a documented minimal set
+(`HOME`, `PATH`, `LANG` / locale, `TZ`, `TMPDIR`, `USER`, `LOGNAME`, `TERM`,
+and Windows `SYSTEMROOT` / `SYSTEMDRIVE` / `WINDIR` / `COMSPEC` / `PATHEXT`).
+Parent `PYTHONPATH` and `PYTHONHOME` are not inherited. If an allowlisted
+variable's current value differs from the bound value, run refuses.
+
 ```bash
 runspecimen doctor --workspace .
 # { ok, platform, python, workspace, workspace_writable,
-#   workspace_lease_held, active_lease }
+#   workspace_lease_held, active_lease, loaded_module_origins }
 
 runspecimen validate --workspace . --contract path/to/contract.json
 # { ok, campaign_id, run_id, contract_hash, runtime }

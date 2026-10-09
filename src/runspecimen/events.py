@@ -9,8 +9,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from runspecimen.errors import PathEscapeError
 from runspecimen.hashutil import canonical_json_bytes, sha256_bytes
-from runspecimen.paths import EVENTS_APPEND_LOCK_FILENAME, EVENTS_FILENAME
+from runspecimen.paths import (
+    EVENTS_APPEND_LOCK_FILENAME,
+    EVENTS_FILENAME,
+    assert_control_plane_not_symlinked,
+    ensure_dir,
+)
 
 try:
     import fcntl
@@ -65,9 +71,18 @@ class EventLog:
         return cls(state_dir / EVENTS_FILENAME)
 
     def ensure(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        assert_control_plane_not_symlinked(self.path)
+        ensure_dir(self.path.parent)
+        if self.path.is_symlink():
+            raise PathEscapeError(
+                f"control-plane path must not be a symlink (or contain a symlinked component): {self.path}"
+            )
         if not self.path.exists():
-            self.path.touch()
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            fd = os.open(str(self.path), flags, 0o644)
+            os.close(fd)
 
     def _read_all_unlocked(self) -> list[EventRecord]:
         if not self.path.exists():
@@ -149,10 +164,27 @@ class EventLog:
                 body=body,
             )
             line = json.dumps(record.to_dict(), sort_keys=True, separators=(",", ":")) + "\n"
-            with self.path.open("a", encoding="utf-8") as fh:
-                fh.write(line)
-                fh.flush()
-                os.fsync(fh.fileno())
+            if self.path.is_symlink():
+                raise PathEscapeError(
+                    f"control-plane path must not be a symlink (or contain a symlinked component): {self.path}"
+                )
+            flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            fd = os.open(str(self.path), flags, 0o644)
+            try:
+                with os.fdopen(fd, "a", encoding="utf-8") as fh:
+                    fd = -1
+                    fh.write(line)
+                    fh.flush()
+                    os.fsync(fh.fileno())
+            except Exception:
+                if fd >= 0:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+                raise
             return record
 
     def verify_chain(self) -> tuple[bool, str]:

@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from runspecimen.atomic import atomic_write_json, read_json
-from runspecimen.paths import STATE_FILENAME, ensure_dir
+from runspecimen.errors import PathEscapeError
+from runspecimen.paths import STATE_FILENAME, assert_control_plane_not_symlinked, ensure_dir
 
 
 def state_path(state_dir: Path) -> Path:
@@ -15,6 +16,11 @@ def state_path(state_dir: Path) -> Path:
 
 def load_state(state_dir: Path) -> dict[str, Any]:
     path = state_path(state_dir)
+    assert_control_plane_not_symlinked(path)
+    if path.is_symlink():
+        raise PathEscapeError(
+            f"control-plane path must not be a symlink (or contain a symlinked component): {path}"
+        )
     if not path.exists():
         return {
             "phase": "none",

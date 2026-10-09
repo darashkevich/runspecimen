@@ -8,9 +8,22 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from runspecimen.errors import PathEscapeError
+from runspecimen.paths import assert_control_plane_not_symlinked, ensure_dir
+
 
 def atomic_write_bytes(path: Path, data: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = Path(path)
+    assert_control_plane_not_symlinked(path)
+    if path.is_symlink():
+        raise PathEscapeError(
+            f"refusing to write through a symlink: {path} -> {path.resolve()}"
+        )
+    ensure_dir(path.parent)
+    if path.parent.is_symlink():
+        raise PathEscapeError(
+            f"refusing to write through a symlink directory: {path.parent}"
+        )
     fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
     tmp_path = Path(tmp_name)
     try:

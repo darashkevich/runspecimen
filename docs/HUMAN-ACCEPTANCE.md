@@ -5,9 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-09-qafix12/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-09-qafix11/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
-`artifacts/0.2.0rc15-2026-10-09-qafix11/`,
+`artifacts/0.2.0rc15-2026-10-09-qafix12/` (CC-04-only snapshot; not this sheet),
 `artifacts/0.2.0rc15-2026-10-08-qafix10/`,
 `artifacts/0.2.0rc15-2026-10-08-qafix9/`,
 `artifacts/0.2.0rc15-2026-10-08-qafix8/`,
@@ -24,7 +24,7 @@ Record these identities at the top of your notes before N1 (fill in from this
 machine; N2 prints the full wheel digest):
 
 - Candidate SHA: `git rev-parse HEAD` of this checkout
-- Pack: `artifacts/0.2.0rc15-2026-10-09-qafix12/`
+- Pack: `artifacts/0.2.0rc15-2026-10-09-qafix11/`
 - Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
 - python3: `command -v python3` and `python3 --version`
 - Wheel SHA-256: the `wheel_sha256` line from N2 (full 64 hex chars)
@@ -56,6 +56,11 @@ module (including `runspecimen.approve`) to the hashed installed files, using
 the absolute launcher's own interpreter. That interpreter must be named by an
 absolute shebang; `#!/usr/bin/env python3` is refused. The launcher body after
 the shebang must byte-match the pinned pip console-script template. The
+verifier also refuses unexpected files in `$VENV/bin` (a `json.py` there would
+shadow stdlib because the real launcher puts `bin/` on `sys.path[0]`) and
+probes module origins by running `$RS doctor`, not `python -c`.
+`python -m runspecimen` from an untrusted cwd is not a supported verified
+path; this sheet only invokes the absolute launcher. The
 trusted interpreter assumption: the check trusts **only the Python interpreter and its stdlib**. It does not claim to resist someone replacing Python itself.
 Venv-local metadata (setuptools RECORD, `_distutils_hack`) is not trust:
 RECORD does not hash itself and is writable by the same attacker. Bytecode is
@@ -77,7 +82,7 @@ refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
 Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-09-qafix12"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-09-qafix11"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 export WORK=$(mktemp -d "${TMPDIR:-/tmp}/rs-ha-rc15.XXXXXX")
 export VENV="$WORK/venv"
@@ -172,7 +177,7 @@ realpath is under the interpreter's stdlib dir, not by name.
 There is no RECORD-based trust of `_distutils_hack`. The script prints the
 installed dist-info `RECORD` and `direct_url.json`. `__version__ ==
 0.2.0rc15` is not sufficient: the 2026-10-06-bump wheel reports the same
-version and must fail this step when `$WHEEL` is the qafix12 pin. A
+version and must fail this step when `$WHEEL` is the qafix11 pin. A
 same-version tree selected via inside-venv `PYTHONPATH`, a `.pth` prepend,
 sitecustomize, or an executable `.pth` import must also fail.
 
@@ -197,7 +202,9 @@ and `RUN_ID` exported in N1. Use those same values for N7–N9.
 
 Use default JSON on this sheet (`rs doctor …`). `--pretty` is optional human
 view and must not be used for acceptance; JSON contracts and exit codes stay
-the default.
+the default. Doctor JSON may include `loaded_module_origins` (realpath of
+every loaded module) so N3 can bind the real launcher process. Other default
+JSON shapes are unchanged.
 
 ```
 rs doctor --workspace "$WS"
@@ -320,7 +327,9 @@ every loaded `runspecimen.*` origin bound to the hashed installed member
 (realpath-equal, including `runspecimen.approve` and the CLI), the
 installed-file comparison, installed `RECORD` and `direct_url.json`,
 the pinned launcher template (`console_script_target` `runspecimen.cli:main`),
-no bytecode under the installed package, `STEP N3-version exit=0`,
+no unexpected files in `$VENV/bin`, `loaded_module_origins` from the real
+launcher `doctor` process (each origin under stdlib or a hash-verified wheel
+file), no bytecode under the installed package, `STEP N3-version exit=0`,
 `STEP N3-verify exit=0`, and no import overrides
 (`PYTHONPATH` / `PYTHONHOME` / `PYTHONSTARTUP` / `PYTHONPYCACHEPREFIX` unset,
 `PYTHONNOUSERSITE=1`, `PYTHONDONTWRITEBYTECODE=1`,
@@ -332,7 +341,9 @@ N4–N7 use the same `rs` helper and the `CAMPAIGN_ID` / `RUN_ID` from N1.
 N8 is a real human approval in a real terminal. An agent must not type `APPROVE`.
 
 N9 is sequential `preflight`, `run`, `postflight`, `verify` with those same
-identities, plus the schema-2 certificate field printout.
+identities, plus the schema-2 certificate field printout. `run` launches the
+job with an explicit environment: bound `env_allowlist` values plus a
+documented minimal set. Parent `PYTHONPATH` / `PYTHONHOME` are not inherited.
 
 N10 is unchanged: exact `execution policy local has no typed-phrase fallback`
 refusal, no prompt. Do not treat an unknown-field error as N10. The sheet
@@ -376,7 +387,7 @@ as acceptance of this pack.
 
 ```
 Session: HUMAN-ACCEPTANCE historical note (not qualification)
-Pack: artifacts/0.2.0rc15-2026-10-09-qafix12/
+Pack: artifacts/0.2.0rc15-2026-10-09-qafix11/
 Do not paste N1–N7+N10 as a substitute for N8/N9 on this lifecycle.
 ```
 

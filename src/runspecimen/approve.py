@@ -12,7 +12,7 @@ from typing import Any, TextIO
 
 from runspecimen.atomic import atomic_write_json, read_json
 from runspecimen.contract import Contract, check_contract_paths, load_contract
-from runspecimen.errors import ApprovalError, LeaseError
+from runspecimen.errors import ApprovalError, LeaseError, PathEscapeError
 from runspecimen.isolation import plans_match
 from runspecimen.policy import execution_constraints
 from runspecimen.events import EventLog, utc_now_iso
@@ -20,6 +20,7 @@ from runspecimen.hashutil import canonical_json_bytes, hash_source, sha256_bytes
 from runspecimen.lease import hold_workspace_lease
 from runspecimen.paths import (
     APPROVAL_FILENAME,
+    assert_control_plane_not_symlinked,
     ensure_dir,
     resolve_workspace,
     run_state_dir,
@@ -101,6 +102,11 @@ def approval_path(state_dir: Path) -> Path:
 
 def load_approval(state_dir: Path) -> dict | None:
     path = approval_path(state_dir)
+    assert_control_plane_not_symlinked(path)
+    if path.is_symlink():
+        raise PathEscapeError(
+            f"control-plane path must not be a symlink (or contain a symlinked component): {path}"
+        )
     if not path.exists():
         return None
     return read_json(path)
