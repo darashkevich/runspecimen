@@ -40,22 +40,32 @@ directories this venv would process, including Debian ``dist-packages`` and
 paths driven by ``pyvenv.cfg``. The user site is included only when that
 ``site`` logic would enable it. A normal venv (``include-system-site-packages``
 false) turns the user site off, so a ``usercustomize`` there is not startup.
-The scan refuses executable ``.pth`` lines, ``sitecustomize`` /
-``usercustomize`` as a module or a package, bytecode under ``dist-packages``,
-unexpected ``bin/`` files, a launcher body that is not a pinned pip template,
-and a ``pyvenv.cfg`` whose ``home`` is not that base interpreter or that sets
-``include-system-site-packages=true``. Only a clean static phase runs the
-real launcher.
+The scan refuses executable ``.pth`` lines, every directory or zip a ``.pth``
+path line would add (followed recursively), ``sitecustomize`` /
+``usercustomize`` in every importable form (source, bytecode, extension, or
+package), bytecode under ``dist-packages``, unexpected ``bin/`` files, a
+launcher body that is not a pinned pip template, and a ``pyvenv.cfg`` whose
+``home`` is not that base interpreter or that turns on system site-packages.
+``python``, ``python3``, ``python3.X``, and the CPython 3.14 ``𝜋thon`` name
+must be a symlink to that base interpreter, or a byte-for-byte copy of it.
+Only a clean static phase runs a probe, and the probe uses the base
+interpreter with ``-I -S`` and an explicit site-packages path. It does not
+execute the venv's Python, so site hooks and the Debian ``sitecustomize``
+import chain do not run.
 
 Stdlib means the base interpreter's own library directories, minus every
 site-packages or dist-packages directory and minus anything under the venv.
 A path is not stdlib just because a broader directory contains it.
 
-The probe runs with ``-I -B`` after that scan. Any ``.pyc`` / ``__pycache__``
-under the installed runspecimen package is refused (timestamp-based,
-hash-based, any optimisation level), as is ``PYTHONPYCACHEPREFIX`` /
-``sys.pycache_prefix`` and a sourceless ``.pyc`` module. The launcher body
-after the shebang must byte-match a pinned pip console-script template.
+The probe runs with ``-I -S -B`` on that base interpreter after the scan.
+``-S`` skips site startup, so a ``.pth`` file, ``sitecustomize``, and the
+Debian ``sitecustomize`` import chain (``apport_python_hook``) do not run.
+Any module that chain would import is still refused when it is present on
+the venv's effective path. Any ``.pyc`` / ``__pycache__`` under the installed
+runspecimen package is refused (timestamp-based, hash-based, any
+optimisation level), as is ``PYTHONPYCACHEPREFIX`` / ``sys.pycache_prefix``
+and a sourceless ``.pyc`` module. The launcher body after the shebang must
+byte-match a pinned pip console-script template.
 
 The venv ``bin/`` directory may contain only what ``python -m venv`` plus pip
 plus this wheel create (python symlinks, activate scripts, pip and
@@ -79,9 +89,11 @@ venv's python runs site hooks before the first line of this file. Follow
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -823,13 +835,44 @@ def launcher_sysconfig(interpreter: Path, env: dict[str, str]) -> dict[str, str]
     }
 
 
-def probe_launcher_doctor(launcher: Path, env: dict[str, str]) -> dict[str, Any]:
-    """Run the real console-script process (WH-01). ``python -c`` is not this probe."""
+def probe_launcher_doctor(
+    launcher: Path,
+    env: dict[str, str],
+    *,
+    base: Path,
+    extra_paths: list[Path],
+) -> dict[str, Any]:
+    """Run the known launcher body on the verified base interpreter.
+
+    The venv's ``bin/python`` is not executed. ``-S`` skips site startup, so
+    a ``.pth`` file, ``sitecustomize``, and Debian's apport hook do not run.
+    The launcher file itself was already checked against a pinned pip template.
+    """
+    script = (
+        "import runpy, sys\n"
+        "from pathlib import Path\n"
+        "launcher, workspace = sys.argv[1], sys.argv[2]\n"
+        "for item in sys.argv[3:]:\n"
+        "    if item not in sys.path:\n"
+        "        sys.path.append(item)\n"
+        "sys.argv = [launcher, 'doctor', '--workspace', workspace]\n"
+        "runpy.run_path(launcher, run_name='__main__')\n"
+    )
     with tempfile.TemporaryDirectory(prefix="rs-verify-doctor-") as raw:
         workspace = Path(raw) / "ws"
         workspace.mkdir()
         result = subprocess.run(
-            [str(launcher), "doctor", "--workspace", str(workspace)],
+            [
+                str(base),
+                "-I",
+                "-S",
+                "-B",
+                "-c",
+                script,
+                str(launcher),
+                str(workspace),
+                *[str(path) for path in extra_paths],
+            ],
             check=False,
             capture_output=True,
             text=True,
@@ -978,10 +1021,18 @@ def probe_effective_origins(
     *,
     trusted_stdlib: list[Path] | None = None,
     exclusions: list[Path] | None = None,
+    extra_paths: list[Path] | None = None,
 ) -> dict[str, Any]:
-    prelude = ""
+    """Import the installed tree with the base interpreter and ``-I -S``.
+
+    ``extra_paths`` is the verified site-packages directory. Site startup is
+    not run, so venv ``.pth`` files and ``sitecustomize`` do not run.
+    """
+    prelude = "import sys\n"
+    for path in extra_paths or []:
+        prelude += f"if {str(path)!r} not in sys.path:\n    sys.path.append({str(path)!r})\n"
     if trusted_stdlib is not None or exclusions is not None:
-        prelude = (
+        prelude += (
             "_TRUSTED_STDLIB = "
             + json.dumps([str(path) for path in (trusted_stdlib or [])])
             + "\n_STDLIB_EXCLUSIONS = "
@@ -989,7 +1040,7 @@ def probe_effective_origins(
             + "\n"
         )
     result = subprocess.run(
-        [str(interpreter), "-I", "-B", "-c", prelude + PROBE_SCRIPT],
+        [str(interpreter), "-I", "-S", "-B", "-c", prelude + PROBE_SCRIPT],
         check=False,
         capture_output=True,
         text=True,
@@ -1231,7 +1282,7 @@ def validate_pyvenv(venv_root: Path, base: Path) -> list[str]:
     if executable and not _same_file(Path(executable), base):
         findings.append("pyvenv.cfg executable does not match the base interpreter in use")
     if cfg.get("include-system-site-packages", "").lower() != "false":
-        findings.append("pyvenv.cfg sets include-system-site-packages=true")
+        findings.append(f"include-system-site-packages is turned on: {path}")
     version = cfg.get("version", "")
     parts = version.split(".")
     try:
@@ -1354,24 +1405,49 @@ def _purelib_from_site_dirs(venv_root: Path, site_dirs: list[Path], version_text
     return venv_root / "lib" / short / "site-packages"
 
 
-def scan_customization_hooks(directory: Path) -> list[str]:
-    """Refuse sitecustomize/usercustomize as a module or a package."""
+def _hook_finding(name: str, location: Path, chain_names: set[str]) -> str:
+    if name in chain_names:
+        return (
+            f"unvetted {name} imported by the interpreter sitecustomize: {location}"
+        )
+    return f"unvetted {name} on the import path: {location}"
+
+
+def scan_customization_hooks(
+    directory: Path,
+    extra_names: tuple[str, ...] = (),
+) -> list[str]:
+    """Refuse startup hooks in every form importlib would load.
+
+    ``extra_names`` are modules the base interpreter's own ``sitecustomize``
+    imports (Debian ``apport_python_hook``). They are read from that file;
+    the file is not executed. A copy on the venv path would run when the
+    venv's Python starts, so it is refused here.
+    """
+    names = ["sitecustomize", "usercustomize"]
+    chain_names: set[str] = set()
+    for name in extra_names:
+        if not name.isidentifier() or name in names:
+            continue
+        names.append(name)
+        chain_names.add(name)
+    if zipfile.is_zipfile(directory):
+        return _scan_zip_hooks(directory, names, chain_names)
     if not directory.is_dir():
         return []
     findings: list[str] = []
-    for name in ("sitecustomize", "usercustomize"):
-        candidates = [
-            directory / f"{name}.py",
-            directory / f"{name}.pyc",
-            directory / f"{name}.pyo",
-            directory / name / "__init__.py",
-            directory / name / "__init__.pyc",
-            directory / name / "__init__.pyo",
-        ]
-        cache = directory / "__pycache__"
-        if cache.is_dir():
+    suffixes = _import_suffixes()
+    for name in names:
+        candidates: list[Path] = []
+        for suffix in suffixes:
+            candidates.append(directory / f"{name}{suffix}")
+            candidates.append(directory / name / f"__init__{suffix}")
+        for cache in (directory / "__pycache__", directory / name / "__pycache__"):
+            if not cache.is_dir():
+                continue
+            prefix = name if cache.parent == directory else "__init__"
             for path in cache.iterdir():
-                if path.name.startswith(name + "."):
+                if path.name.startswith(prefix + "."):
                     candidates.append(path)
         reported: set[str] = set()
         for candidate in candidates:
@@ -1385,7 +1461,244 @@ def scan_customization_hooks(directory: Path) -> list[str]:
             if not present:
                 continue
             reported.add(key)
-            findings.append(f"unvetted {name} on the import path: {candidate}")
+            findings.append(_hook_finding(name, candidate, chain_names))
+    return findings
+
+
+def _import_suffixes() -> list[str]:
+    """Source, bytecode, and extension suffixes for this base interpreter."""
+    import importlib.machinery as machinery
+
+    suffixes: list[str] = []
+    for item in (
+        *machinery.SOURCE_SUFFIXES,
+        *machinery.BYTECODE_SUFFIXES,
+        *machinery.EXTENSION_SUFFIXES,
+    ):
+        if item not in suffixes:
+            suffixes.append(item)
+    for extra in (".pyd", ".pyo"):
+        if extra not in suffixes:
+            suffixes.append(extra)
+    return suffixes
+
+
+def _scan_zip_hooks(
+    path: Path,
+    hook_names: list[str],
+    chain_names: set[str],
+) -> list[str]:
+    """Refuse a startup hook stored in a zip that a .pth line would put on sys.path."""
+    findings: list[str] = []
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = set(archive.namelist())
+    except (OSError, zipfile.BadZipFile):
+        return findings
+    suffixes = _import_suffixes()
+    for hook in hook_names:
+        matched = False
+        for suffix in suffixes:
+            if f"{hook}{suffix}" in names or f"{hook}/__init__{suffix}" in names:
+                matched = True
+                break
+        if not matched:
+            for name in names:
+                marker = f"__pycache__/{hook}."
+                init_marker = f"{hook}/__pycache__/__init__."
+                if name.startswith(marker) or name.startswith(init_marker):
+                    matched = True
+                    break
+        if matched:
+            findings.append(_hook_finding(hook, path, chain_names))
+    return findings
+
+
+def _imported_module_names(source: str) -> list[str]:
+    """Top-level and nested import targets. The source is not executed."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name:
+                    found.append(alias.name.split(".", 1)[0])
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            found.append(node.module.split(".", 1)[0])
+    chosen: list[str] = []
+    seen: set[str] = set()
+    for name in found:
+        if name and name not in seen:
+            seen.add(name)
+            chosen.append(name)
+    return chosen
+
+
+def interpreter_sitecustomize_imports(stdlib_roots: list[Path]) -> tuple[str, ...]:
+    """Modules the base interpreter's sitecustomize would import.
+
+    The file is read as text. It is not imported and not executed.
+    """
+    for root in stdlib_roots:
+        path = root / "sitecustomize.py"
+        if not path.is_file():
+            continue
+        try:
+            source = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        return tuple(_imported_module_names(source))
+    return ()
+
+
+def pth_import_entries(directory: Path) -> list[Path]:
+    """Directories and zips a non-import .pth line would add to sys.path.
+
+    Matches site.py: the line is joined with the .pth directory and kept when
+    that path exists. Import lines are reported separately and are not listed
+    here.
+    """
+    if not directory.is_dir():
+        return []
+    added: list[Path] = []
+    seen: set[str] = set()
+    for pth in sorted(directory.glob("*.pth")):
+        try:
+            text = pth.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("import ") or line.startswith("import\t"):
+                continue
+            candidate = Path(line)
+            if not candidate.is_absolute():
+                candidate = directory / candidate
+            if not candidate.exists():
+                continue
+            try:
+                key = str(candidate.resolve())
+            except OSError:
+                key = str(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            added.append(candidate)
+    return added
+
+
+def expand_site_paths(site_dirs: list[Path]) -> list[Path]:
+    """Site directories plus every path a .pth line would add, recursively."""
+    chosen: list[Path] = []
+    seen: set[str] = set()
+    queue: list[Path] = list(site_dirs)
+    while queue and len(chosen) < 64:
+        directory = queue.pop(0)
+        try:
+            key = str(directory.resolve()) if directory.exists() else str(directory)
+        except OSError:
+            key = str(directory)
+        if key in seen:
+            continue
+        seen.add(key)
+        chosen.append(directory)
+        if not directory.is_dir() or zipfile.is_zipfile(directory):
+            continue
+        for extra in pth_import_entries(directory):
+            queue.append(extra)
+    return chosen
+
+
+def _is_venv_interpreter_entry(name: str) -> bool:
+    """True for python, python3, python3.X, and the CPython 3.14 pi name."""
+    stem = name[:-4] if name.lower().endswith(".exe") else name
+    if stem == "\N{MATHEMATICAL ITALIC SMALL PI}thon":
+        return True
+    if stem in {"python", "python3", "pythonw"}:
+        return True
+    if not stem.startswith("python3."):
+        return False
+    rest = stem[len("python3.") :]
+    if rest.endswith("t") and rest[:-1].replace(".", "").isdigit():
+        rest = rest[:-1]
+    return bool(rest) and all(ch.isdigit() or ch == "." for ch in rest)
+
+
+def _final_regular_file(path: Path) -> Path | None:
+    """Walk symlinks without executing the target. Return the regular file."""
+    current = path
+    seen: set[str] = set()
+    for _ in range(40):
+        key = os.path.abspath(str(current))
+        if key in seen:
+            return None
+        seen.add(key)
+        try:
+            st = current.lstat()
+        except OSError:
+            return None
+        if stat.S_ISLNK(st.st_mode):
+            try:
+                raw = os.readlink(current)
+            except OSError:
+                return None
+            nxt = Path(raw)
+            current = nxt if nxt.is_absolute() else current.parent / nxt
+            continue
+        if stat.S_ISREG(st.st_mode):
+            return current
+        return None
+    return None
+
+
+def scan_venv_interpreters(bin_dir: Path, base: Path) -> list[str]:
+    """Refuse a venv Python entry that is not the base interpreter.
+
+    A symlink must resolve, by filesystem identity, to ``base``. A regular
+    file must be a byte-for-byte copy (Windows copies mode or a hard link).
+    The file is not executed.
+    """
+    if not bin_dir.is_dir():
+        return []
+    findings: list[str] = []
+    try:
+        base_digest = sha256_file(base)
+    except OSError as exc:
+        return [f"cannot read the base interpreter {base}: {exc}"]
+    try:
+        entries = sorted(bin_dir.iterdir(), key=lambda item: item.name.lower())
+    except OSError as exc:
+        return [f"cannot list venv bin directory {bin_dir}: {exc}"]
+    for path in entries:
+        if not _is_venv_interpreter_entry(path.name):
+            continue
+        final = _final_regular_file(path)
+        if final is None:
+            findings.append(
+                "venv interpreter is not the base interpreter named by pyvenv.cfg: "
+                f"{path}"
+            )
+            continue
+        try:
+            same = _same_file(final, base)
+        except OSError:
+            same = False
+        if same:
+            continue
+        try:
+            linked = path.is_symlink()
+        except OSError:
+            linked = True
+        if linked or sha256_file(final) != base_digest:
+            findings.append(
+                "venv interpreter is not the base interpreter named by pyvenv.cfg: "
+                f"{path}"
+            )
     return findings
 
 
@@ -1534,19 +1847,22 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
             report["console_script_target"] = console_script_target(resolved_launcher)
             report["verified_package_dir"] = str(package_dir)
             seen_pth: set[tuple[str, int, str]] = set()
-            for directory in site_dirs:
-                for item in scan_pth_files(directory):
-                    marker = (str(item.get("path")), int(item.get("line") or 0), str(item.get("text")))
-                    if marker in seen_pth:
-                        continue
-                    seen_pth.add(marker)
-                    pth_findings.append(item)
-                startup_findings.extend(scan_customization_hooks(directory))
+            stdlib_roots = [Path(str(item)).resolve() for item in layout.get("stdlib") or []]
+            chain_names = interpreter_sitecustomize_imports(stdlib_roots)
+            scan_roots = expand_site_paths(site_dirs)
+            for directory in scan_roots:
+                if directory.is_dir() and not zipfile.is_zipfile(directory):
+                    for item in scan_pth_files(directory):
+                        marker = (str(item.get("path")), int(item.get("line") or 0), str(item.get("text")))
+                        if marker in seen_pth:
+                            continue
+                        seen_pth.add(marker)
+                        pth_findings.append(item)
+                startup_findings.extend(scan_customization_hooks(directory, chain_names))
                 startup_findings.extend(scan_dist_packages_modules(directory))
             if site.is_dir():
                 pth_findings.extend(scan_virtualenv_artifacts(site))
             bytecode_findings = scan_package_bytecode(package_dir)
-            stdlib_roots = [Path(str(item)).resolve() for item in layout.get("stdlib") or []]
             exclusions = [venv_root.resolve()]
             for directory in site_dirs:
                 try:
@@ -1557,6 +1873,8 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
                 exclusions.append(Path(str(item)).resolve())
     report["pth_findings"] = pth_findings
     report["bytecode_findings"] = bytecode_findings
+    bin_findings = list(bin_findings) + scan_venv_interpreters(resolved_launcher.parent, base)
+    report["bin_findings"] = bin_findings
     target = console_script_target(resolved_launcher)
     report["console_script_target"] = target
 
@@ -1591,7 +1909,12 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
     bound = False
     if not static_blocked and package_dir is not None and site is not None:
         try:
-            doctor = probe_launcher_doctor(resolved_launcher, env)
+            doctor = probe_launcher_doctor(
+                resolved_launcher,
+                env,
+                base=base,
+                extra_paths=[site],
+            )
             loaded_module_origins = dict(doctor.get("loaded_module_origins") or {})
             launcher_module_findings = launcher_module_origin_findings(
                 loaded_module_origins or None,
@@ -1605,10 +1928,11 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
             launcher_module_findings = [str(exc)]
         try:
             origins = probe_effective_origins(
-                interpreter,
+                base,
                 env,
                 trusted_stdlib=stdlib_roots,
                 exclusions=exclusions,
+                extra_paths=[site],
             )
         except (RuntimeError, json.JSONDecodeError, KeyError) as exc:
             origins = None

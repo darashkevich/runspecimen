@@ -4,6 +4,10 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
+- RQ14-01: `python`, `python3`, `python3.X`, and `𝜋thon` in the venv must be a symlink to the base interpreter named by `pyvenv.cfg`, or a byte-for-byte copy of that file. A wrapper script is refused before it runs. The probe uses that base interpreter, not the venv launcher. qafix15 pack.
+- RQ14-02: a `.pth` line that names a folder or a zip is followed, including further `.pth` lines, and those locations are scanned for startup hooks. Debian's `sitecustomize` import (such as `apport_python_hook`) is read, not run; a copy on the venv path is refused. The probe uses `-S`, so that import chain does not run. qafix15 pack.
+- RQ14-03: `sitecustomize` and `usercustomize` are refused in every form this interpreter can import (source, bytecode, extension, package), not only a `.py` file. qafix15 pack.
+- RQ14-04: when system site-packages are turned on, the refusal names the `pyvenv.cfg` path in plain English. qafix15 pack.
 - LATEST-01: the installed-wheel check refuses `sitecustomize` and `usercustomize` when they are a folder with `__init__.py`, not only when they are a single `.py` file. That reading happens before any file in the venv runs. qafix14 pack.
 - LATEST-02: a launcher that does not match the pinned pip template is refused before it is executed. qafix14 pack.
 - SIB-01: on Debian and Ubuntu, the check also reads `dist-packages` directories the venv's `site` would use (`lib/python3/dist-packages`, `lib/pythonX.Y/dist-packages`, `local/lib/pythonX.Y/dist-packages`). Those directories are not treated as the standard library. qafix14 pack.

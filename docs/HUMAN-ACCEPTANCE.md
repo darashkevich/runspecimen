@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-09-qafix14/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-10-qafix15/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-09-qafix14/` (static scan; not this sheet),
 `artifacts/0.2.0rc15-2026-10-09-qafix13/` (CC/WH freeze; not this sheet),
 `artifacts/0.2.0rc15-2026-10-09-qafix12/` (CC-04-only snapshot; not this sheet),
 `artifacts/0.2.0rc15-2026-10-09-qafix11/` (in-place edits; not this sheet),
@@ -26,10 +27,10 @@ Record these identities at the top of your notes before N1 (fill in from this
 machine; N2 prints the full wheel digest):
 
 - Candidate SHA: `git rev-parse HEAD` of this checkout
-- Pack: `artifacts/0.2.0rc15-2026-10-09-qafix14/`
+- Pack: `artifacts/0.2.0rc15-2026-10-10-qafix15/`
 - Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
 - python3: `command -v python3` and `python3 --version`
-- Wheel SHA-256: `f4111bc60fdda2d59d24b2aa9740fad5e3a27bcbeb49ba0018c5958ee8382d9f` (must match N2 `wheel_sha256` and pack SHA256SUMS)
+- Wheel SHA-256: `f4111bc60fdda2d59d24b2aa9740fad5e3a27bcbeb49ba0018c5958ee8382d9f` (must match N2 `wheel_sha256` and pack SHA256SUMS). These wheel bytes match the qafix14 wheel because the wheel is the engine package and that `src/` tree did not change. The verifier script in this checkout did change, and it is what N3 runs.
 
 You can paste this whole sheet into a fresh macOS Terminal (zsh, the default)
 or into bash. You do not need extra wrappers, and you do not need to turn
@@ -61,9 +62,15 @@ the shebang must byte-match the pinned pip console-script template. The
 verifier also refuses unexpected files in `$VENV/bin` (a `json.py` there would
 shadow stdlib because the real launcher puts `bin/` on `sys.path[0]`). CPython
 3.14 `python -m venv` also creates the exact `𝜋thon` symlink (U+1D70B); that
-name is allowlisted. The verifier reads the venv before it runs anything there. It probes module
-origins by running `$RS doctor`, not `python -c`, and only after that reading
-is clean.
+name is allowlisted. The verifier reads the venv before it runs anything there.
+`python`, `python3`, `python3.X`, and that `𝜋thon` name must be a link to the
+real interpreter named by `pyvenv.cfg`, or an exact copy of that file. A wrapper
+script is refused before it can run. A `.pth` line that names a folder or a zip
+is followed, and those locations are read for `sitecustomize` and `usercustomize`
+in every form Python can import. On Debian, the interpreter's own sitecustomize
+imports another module; a copy of that module in the venv is refused, and the
+probe does not run it. The probe runs the launcher body on the real interpreter
+with site startup turned off, and only after that reading is clean.
 `python -m runspecimen` from an untrusted cwd is not a supported verified
 path; this sheet only invokes the absolute launcher. The
 trusted interpreter assumption: the check trusts **only the Python interpreter and its stdlib**. It does not claim to resist someone replacing Python itself.
@@ -89,7 +96,7 @@ refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
 Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-09-qafix14"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-10-qafix15"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 export WORK=$(mktemp -d "${TMPDIR:-/tmp}/rs-ha-rc15.XXXXXX")
 export VENV="$WORK/venv"
@@ -160,7 +167,8 @@ that program runs site hooks (including a `.pth` import, or a `sitecustomize`
 folder) before the script's first line. `basepy` follows the `$PY` symlink to
 the real interpreter that created the venv, then starts the script with `-I`
 so those hooks stay unloaded. The script itself then reads the venv without
-running it. Only a clean reading runs `$RS`.
+running it. Only a clean reading runs the launcher body on that same real
+interpreter, with site startup turned off.
 
 ```
 rs --version
@@ -179,7 +187,7 @@ launcher's own interpreter, every loaded `runspecimen.*` origin (including
 member, the sanitized environment has no import overrides, and the target
 venv has no extra startup code. The launcher body after the shebang must
 byte-match the pinned pip console-script template (shebang checked
-separately). The verifier's probe runs with `-I -B` and refuses any
+separately). The verifier's probe runs with `-I -S -B` and refuses any
 `.pyc` / `__pycache__` under the installed package, `PYTHONPYCACHEPREFIX` /
 `sys.pycache_prefix`, and sourceless bytecode. The verifier trusts **only the Python interpreter and its stdlib**. In that venv it refuses: any `.pth` with
 an executable `import` line (any name or owner, including leftover setuptools
@@ -192,7 +200,7 @@ realpath is under the interpreter's stdlib dir, not by name.
 There is no RECORD-based trust of `_distutils_hack`. The script prints the
 installed dist-info `RECORD` and `direct_url.json`. `__version__ ==
 0.2.0rc15` is not sufficient: the 2026-10-06-bump wheel reports the same
-version and must fail this step when `$WHEEL` is the qafix14 pin. A
+version and must fail this step when `$WHEEL` is the qafix15 pin. A
 same-version tree selected via inside-venv `PYTHONPATH`, a `.pth` prepend,
 sitecustomize, or an executable `.pth` import must also fail.
 

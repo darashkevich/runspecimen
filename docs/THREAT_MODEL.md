@@ -93,21 +93,30 @@ not trust files inside the virtual environment.
 
 Before anything in that environment runs, the check asks the base interpreter
 which directories Python's site startup would use. That list covers Debian
-and Ubuntu `dist-packages` directories, paths named by `pyvenv.cfg`, and the
-user site when this environment would actually turn the user site on. A normal
-venv leaves the user site off. The check then reads those directories for
-startup hooks: a `.pth` file with an `import` line, `sitecustomize` or
-`usercustomize` as a file or a folder, and bytecode that does not belong.
-`pyvenv.cfg` must name this same base interpreter, and it must not turn on
-system site-packages. Any of those findings stops the check immediately.
+and Ubuntu `dist-packages` directories, paths named by `pyvenv.cfg`, every
+folder or zip a `.pth` line would add (followed again when those folders
+have their own `.pth` lines), and the user site when this environment would
+actually turn the user site on. A normal venv leaves the user site off. The
+check then reads those locations for startup hooks: a `.pth` file with an
+`import` line, `sitecustomize` or `usercustomize` in every form Python can
+import (source, bytecode, an extension, or a package), a module that the
+base interpreter's own `sitecustomize` would import (on Debian, that is
+`apport_python_hook`), and bytecode that does not belong. `python`,
+`python3`, `python3.X`, and `𝜋thon` must be a symlink to the base interpreter
+named by `pyvenv.cfg`, or a byte-for-byte copy of that file. `pyvenv.cfg`
+must name this same base interpreter, and it must not turn on system
+site-packages. When that switch is on, the message names the `pyvenv.cfg`
+file. Any of those findings stops the check immediately.
 
 A path counts as the standard library only when it is inside the base
 interpreter's real library directories, is not a site-packages or
 dist-packages directory, and is not inside the virtual environment. Sharing a
 parent folder with the standard library is not enough.
 
-Only after that reading is clean does the check run the real `runspecimen`
-launcher and look at where the loaded modules came from.
+Only after that reading is clean does the check run the launcher body on the
+base interpreter with site startup turned off (`-I -S`), and look at where
+the loaded modules came from. The venv's Python is not executed, so site
+hooks and Debian's `sitecustomize` import chain do not run.
 
 ## Residual risks
 
