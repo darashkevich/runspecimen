@@ -209,7 +209,9 @@ class Qafix15VerifierTests(unittest.TestCase):
             payload = json.loads(result.stdout.split("---")[0])  # type: ignore[attr-defined]
             self.assertFalse(payload["ok"], payload)
             message = str(payload.get("message") or "")
-            cfg = str(box["cfg"])
+            # macOS tempfile is /var, which is /private/var. The verifier
+            # prints the resolved path. Compare that path.
+            cfg = str(box["cfg"].resolve())
             self.assertIn("include-system-site-packages is turned on", message)
             self.assertIn(cfg, message)
             self.assertIn(f"(file: {cfg})", message)
