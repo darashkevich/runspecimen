@@ -17,7 +17,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-GOLDEN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-10-qafix15"
+GOLDEN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-10-qafix16"
 SDIST_NAME = "runspecimen-0.2.0rc15.tar.gz"
 WHEEL_NAME = "runspecimen-0.2.0rc15-py3-none-any.whl"
 
@@ -298,7 +298,7 @@ class ReleaseArchiveReproducibilityTests(unittest.TestCase):
         packed_sdist = GOLDEN_PACK / SDIST_NAME
         packed_wheel = GOLDEN_PACK / WHEEL_NAME
         if committed_sdist is None:
-            # Two-rebuild identity already asserted. The qafix15 SHA256SUMS
+            # Two-rebuild identity already asserted. The qafix16 SHA256SUMS
             # is recorded with the pack; the sdist does not contain artifacts/.
             print(f"reproducible sdist {sdist_digest}")
             print(f"reproducible wheel {wheel_digest}")

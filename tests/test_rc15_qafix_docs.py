@@ -30,7 +30,7 @@ HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 CANDIDATE_MANIFEST = ROOT / "docs" / "CANDIDATE_MANIFEST.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
-PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-10-qafix15"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-10-qafix16"
 QAFIX11_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-09-qafix11"
 QAFIX10_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix10"
 QAFIX9_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix9"
@@ -155,7 +155,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("command -v runspecimen", text)
         self.assertIn("mktemp -d", text)
         self.assertIn('test ! -e "$VENV"', text)
-        self.assertIn("0.2.0rc15-2026-10-10-qafix15", text)
+        self.assertIn("0.2.0rc15-2026-10-10-qafix16", text)
         self.assertIn("--no-index --no-deps --force-reinstall --no-compile", text)
         self.assertIn("scripts/verify_installed_wheel.py", text)
         self.assertIn("--launcher", text)
@@ -223,9 +223,9 @@ class Rc15QaDocfixTests(unittest.TestCase):
         if CANDIDATE_MANIFEST.is_file():
             manifest = CANDIDATE_MANIFEST.read_text(encoding="utf-8")
             self.assertIn("| Candidate (this pass) |", manifest)
-            self.assertIn("PR #63 head that records the qafix15 pack", manifest)
+            self.assertIn("PR #63 head that records the qafix16 pack", manifest)
             self.assertIn("8015b6d8017e5566f7558cc916dc0ee470c653ad", manifest)
-            self.assertIn("artifacts/0.2.0rc15-2026-10-10-qafix15/", manifest)
+            self.assertIn("artifacts/0.2.0rc15-2026-10-10-qafix16/", manifest)
         self.assertIn("Homebrew", text)
         self.assertIn("STEP $1 exit=$2", text)
         command_lines = [
@@ -1011,7 +1011,7 @@ def _acceptance_sheet_script(markdown: str, pack: Path) -> str:
         parts.append(block.rstrip() + "\n")
     script = "".join(parts)
     replaced, count = re.subn(
-        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-10-qafix15"',
+        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-10-qafix16"',
         f"export PACK={shlex.quote(str(pack))}",
         script,
         count=1,
@@ -1554,6 +1554,11 @@ def _install_and_verify(
             _create_venv_and_install(old_venv, plant_older, env)
         launcher = _venv_launcher(venv_dir)
         site = _site_packages(py, env)
+        # Resolve before after_install. Python 3.9 and 3.10 pyvenv.cfg has no
+        # executable key, so the fallback walks bin/python. A plant may replace
+        # that symlink with a script; the verifier must still be started with
+        # the real base interpreter.
+        base = _base_interpreter(venv_dir)
         if after_install is not None:
             after_install(
                 _ProvHook(
@@ -1574,7 +1579,7 @@ def _install_and_verify(
         # run site hooks before this script can refuse them.
         result = subprocess.run(
             [
-                str(_base_interpreter(venv_dir)),
+                str(base),
                 "-I",
                 str(VERIFY_INSTALLED),
                 "--wheel",
