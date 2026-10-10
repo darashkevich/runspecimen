@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from runspecimen.atomic import atomic_write_json, read_json
+from runspecimen.atomic import atomic_write_json, read_json_nofollow
 from runspecimen.errors import PathEscapeError
 from runspecimen.paths import STATE_FILENAME, assert_control_plane_not_symlinked, ensure_dir
 
@@ -27,7 +27,7 @@ def load_state(state_dir: Path) -> dict[str, Any]:
             "campaign_id": None,
             "run_id": None,
         }
-    return read_json(path)
+    return read_json_nofollow(path)
 
 
 def save_state(state_dir: Path, state: dict[str, Any]) -> None:

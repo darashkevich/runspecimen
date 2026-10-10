@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-09-qafix13/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-09-qafix14/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-09-qafix13/` (CC/WH freeze; not this sheet),
 `artifacts/0.2.0rc15-2026-10-09-qafix12/` (CC-04-only snapshot; not this sheet),
 `artifacts/0.2.0rc15-2026-10-09-qafix11/` (in-place edits; not this sheet),
 `artifacts/0.2.0rc15-2026-10-08-qafix10/`,
@@ -25,10 +26,10 @@ Record these identities at the top of your notes before N1 (fill in from this
 machine; N2 prints the full wheel digest):
 
 - Candidate SHA: `git rev-parse HEAD` of this checkout
-- Pack: `artifacts/0.2.0rc15-2026-10-09-qafix13/`
+- Pack: `artifacts/0.2.0rc15-2026-10-09-qafix14/`
 - Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
 - python3: `command -v python3` and `python3 --version`
-- Wheel SHA-256: `fb1a1fca5c1cbc10c9c448d3803f2d9fc9ba000778bd4e30762d06fed56aaac3` (must match N2 `wheel_sha256` and pack SHA256SUMS; `src/` is unchanged from `10e2f2f`)
+- Wheel SHA-256: `f4111bc60fdda2d59d24b2aa9740fad5e3a27bcbeb49ba0018c5958ee8382d9f` (must match N2 `wheel_sha256` and pack SHA256SUMS)
 
 You can paste this whole sheet into a fresh macOS Terminal (zsh, the default)
 or into bash. You do not need extra wrappers, and you do not need to turn
@@ -60,8 +61,9 @@ the shebang must byte-match the pinned pip console-script template. The
 verifier also refuses unexpected files in `$VENV/bin` (a `json.py` there would
 shadow stdlib because the real launcher puts `bin/` on `sys.path[0]`). CPython
 3.14 `python -m venv` also creates the exact `𝜋thon` symlink (U+1D70B); that
-name is allowlisted. The verifier probes module origins by running `$RS doctor`,
-not `python -c`.
+name is allowlisted. The verifier reads the venv before it runs anything there. It probes module
+origins by running `$RS doctor`, not `python -c`, and only after that reading
+is clean.
 `python -m runspecimen` from an untrusted cwd is not a supported verified
 path; this sheet only invokes the absolute launcher. The
 trusted interpreter assumption: the check trusts **only the Python interpreter and its stdlib**. It does not claim to resist someone replacing Python itself.
@@ -80,12 +82,14 @@ as they are; do not go back and invent exit codes that were not printed then.
 
 Paste this first. It remembers the pack path and defines four tiny helpers.
 `rs` and `py` always use the venv copies, with a clean Python environment.
+`basepy` is only for the provenance script: it follows `$PY` back to the real
+interpreter that created the venv, so site hooks cannot run before the check.
 `rs_ok` is for steps that must succeed. `rs_neg` is for the two expected
 refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
 Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-09-qafix13"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-09-qafix14"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 export WORK=$(mktemp -d "${TMPDIR:-/tmp}/rs-ha-rc15.XXXXXX")
 export VENV="$WORK/venv"
@@ -96,6 +100,7 @@ export CAMPAIGN_ID="ha-campaign"
 export RUN_ID="ha-$(date +%Y%m%d-%H%M%S)-$$"
 rs() { env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 "$RS" "$@"; }
 py() { env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 "$PY" "$@"; }
+basepy() { BASE_PY="$PY"; while [ -L "$BASE_PY" ]; do _link=$(readlink "$BASE_PY"); case "$_link" in /*) BASE_PY="$_link" ;; *) BASE_PY="$(dirname "$BASE_PY")/$_link" ;; esac; done; env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP -u PYTHONPYCACHEPREFIX PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 "$BASE_PY" "$@"; }
 rs_ok() { echo "STEP $1 exit=$2"; if [ "$2" -ne 0 ]; then echo "FAIL: step $1 expected exit 0, got $2. Stop here; do not continue."; exit 1; fi; }
 rs_neg() { echo "STEP $1 exit=$2"; echo "$3"; if [ "$2" -eq 0 ]; then echo "FAIL: step $1 expected a refusal (nonzero exit), got 0. Stop here."; exit 1; fi; if printf '%s\n' "$3" | grep -Fqx -- "$4"; then echo "PASS: $1"; else echo "FAIL: step $1 did not print the expected message as a complete line:"; echo "  $4"; exit 1; fi; }
 ```
@@ -150,10 +155,17 @@ package.
 command -v runspecimen
 ```
 
+Do not start the provenance script with `py`. `py` is the venv's Python, and
+that program runs site hooks (including a `.pth` import, or a `sitecustomize`
+folder) before the script's first line. `basepy` follows the `$PY` symlink to
+the real interpreter that created the venv, then starts the script with `-I`
+so those hooks stay unloaded. The script itself then reads the venv without
+running it. Only a clean reading runs `$RS`.
+
 ```
 rs --version
 rs_ok N3-version $?
-py "$PWD/scripts/verify_installed_wheel.py" --wheel "$WHEEL" --launcher "$RS"
+basepy -I "$PWD/scripts/verify_installed_wheel.py" --wheel "$WHEEL" --launcher "$RS"
 rs_ok N3-verify $?
 ```
 
@@ -180,7 +192,7 @@ realpath is under the interpreter's stdlib dir, not by name.
 There is no RECORD-based trust of `_distutils_hack`. The script prints the
 installed dist-info `RECORD` and `direct_url.json`. `__version__ ==
 0.2.0rc15` is not sufficient: the 2026-10-06-bump wheel reports the same
-version and must fail this step when `$WHEEL` is the qafix13 pin. A
+version and must fail this step when `$WHEEL` is the qafix14 pin. A
 same-version tree selected via inside-venv `PYTHONPATH`, a `.pth` prepend,
 sitecustomize, or an executable `.pth` import must also fail.
 

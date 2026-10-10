@@ -134,9 +134,29 @@ def _abort_partial(fd: int, dest: Path, exc: BaseException) -> None:
     raise ProtocolError(f"snapshot write failed ({exc})") from exc
 
 
-def _load_source(src: Path, expected: str) -> bytes:
-    if not _is_sha256(expected):
-        raise ProtocolError("signed fingerprint is not a sha256 hex digest")
+_CHUNK = 1024 * 1024
+# Shebang handling keeps only this much of the start of a file.
+_SHEBANG_PREFIX_MAX = 4096
+
+
+def _sha256_fd(fd: int) -> str:
+    digest = hashlib.sha256()
+    while True:
+        block = os.read(fd, _CHUNK)
+        if not block:
+            break
+        digest.update(block)
+    return digest.hexdigest()
+
+
+def _read_prefix(fd: int) -> bytes:
+    os.lseek(fd, 0, os.SEEK_SET)
+    data = os.read(fd, _SHEBANG_PREFIX_MAX)
+    os.lseek(fd, 0, os.SEEK_SET)
+    return data
+
+
+def _open_source(src: Path) -> int:
     try:
         fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     except OSError as exc:
@@ -145,12 +165,42 @@ def _load_source(src: Path, expected: str) -> bytes:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             raise ProtocolError(f"not a regular file: {src}")
-        data = _read_all(fd)
-    finally:
+    except Exception:
         os.close(fd)
-    if _sha256_hex(data) != expected:
-        raise ProtocolError("snapshot bytes do not match the signed fingerprint")
-    return data
+        raise
+    return fd
+
+
+def _stream_copy(in_fd: int, out_fd: int, *, lead: bytes = b"", skip: int = 0) -> tuple[str, bytes]:
+    """Copy ``in_fd`` to ``out_fd``, hashing the bytes that land in the output.
+
+    ``lead`` is written and hashed first. ``skip`` input bytes are discarded
+    and not hashed (they are the shebang line ``lead`` replaces). The return
+    prefix is at most ``_SHEBANG_PREFIX_MAX`` bytes of the output.
+    """
+    digest = hashlib.sha256()
+    prefix = bytearray()
+
+    def take_output(block: bytes) -> None:
+        if len(prefix) < _SHEBANG_PREFIX_MAX:
+            prefix.extend(block[: _SHEBANG_PREFIX_MAX - len(prefix)])
+        digest.update(block)
+        _write_all(out_fd, block)
+
+    if lead:
+        take_output(lead)
+    left = skip
+    while left:
+        block = os.read(in_fd, min(_CHUNK, left))
+        if not block:
+            break
+        left -= len(block)
+    while True:
+        block = os.read(in_fd, _CHUNK)
+        if not block:
+            break
+        take_output(block)
+    return digest.hexdigest(), bytes(prefix)
 
 
 def _reuse(dest: Path, digest: str, mode: int) -> int:
@@ -164,7 +214,7 @@ def _reuse(dest: Path, digest: str, mode: int) -> int:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             raise ProtocolError(f"snapshot destination is not a regular file: {dest}")
-        if _sha256_hex(_read_all(fd)) != digest:
+        if _sha256_fd(fd) != digest:
             raise ProtocolError("reused snapshot does not match the signed fingerprint")
         os.lseek(fd, 0, os.SEEK_SET)
         current = stat.S_IMODE(info.st_mode)
@@ -176,32 +226,113 @@ def _reuse(dest: Path, digest: str, mode: int) -> int:
     return fd
 
 
-def _store(
-    dest_dir: Path,
-    digest: str,
-    data: bytes,
-    mode: int,
-    source_digest: str,
-    original: str,
-) -> Snapshot:
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / digest
+def _create_snapshot(dest: Path, mode: int) -> int | None:
+    """Create ``dest`` exclusively. ``None`` means it already exists."""
     try:
-        out = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, mode)
+        return os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, mode)
     except FileExistsError:
-        fd = _reuse(dest, digest, mode)
+        return None
     except OSError as exc:
         if exc.errno != errno.EEXIST:
             raise ProtocolError(f"cannot create snapshot: {dest}") from exc
+        return None
+
+
+def _store_fd(
+    dest_dir: Path,
+    digest: str,
+    src_fd: int,
+    mode: int,
+    source_digest: str,
+    original: str,
+    *,
+    lead: bytes = b"",
+    skip: int = 0,
+) -> tuple[Snapshot, bytes]:
+    """Stream ``src_fd`` into ``dest_dir / digest`` and return a checked fd.
+
+    The signed name is known up front. A file that already has that name is
+    not rewritten; it is opened and hashed. A hash mismatch deletes a file
+    this call created.
+    """
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / digest
+    out = _create_snapshot(dest, mode)
+    if out is None:
+        got = _sha256_fd(src_fd)
+        if lead or skip:
+            # The caller is rebinding; the source fd is the previous snapshot,
+            # and its hash is not the new digest. Re-check by streaming once
+            # into a refused create path is unnecessary: the new bytes are
+            # produced only when this process creates the file.
+            pass
+        elif got != digest:
+            raise ProtocolError("snapshot bytes do not match the signed fingerprint")
         fd = _reuse(dest, digest, mode)
+        return Snapshot(original, str(dest), digest, os.fstat(fd).st_ino, fd, source_digest), _read_prefix(fd)
+    prefix = b""
+    try:
+        got, prefix = _stream_copy(src_fd, out, lead=lead, skip=skip)
+        os.fsync(out)
+    except Exception as exc:
+        _abort_partial(out, dest, exc)
+    os.close(out)
+    if got != digest:
+        try:
+            os.unlink(dest)
+        except OSError as cleanup:
+            raise ProtocolError(
+                f"snapshot write failed ({got} != {digest}); cleanup failed ({cleanup})"
+            ) from cleanup
+        raise ProtocolError("snapshot bytes do not match the signed fingerprint")
+    fd = _reuse(dest, digest, mode)
+    return Snapshot(original, str(dest), digest, os.fstat(fd).st_ino, fd, source_digest), prefix
+
+
+def _store_rebind(
+    dest_dir: Path,
+    src_fd: int,
+    mode: int,
+    source_digest: str,
+    original: str,
+    *,
+    lead: bytes,
+    skip: int,
+) -> Snapshot:
+    """Stream a rewritten shebang to a new snapshot. The name is the new hash."""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    tmp = dest_dir / f".rebind-{os.getpid()}-{os.urandom(8).hex()}"
+    try:
+        out = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, mode)
+    except OSError as exc:
+        raise ProtocolError(f"cannot create snapshot: {tmp}") from exc
+    try:
+        os.lseek(src_fd, 0, os.SEEK_SET)
+        digest, _prefix = _stream_copy(src_fd, out, lead=lead, skip=skip)
+        os.fsync(out)
+    except Exception as exc:
+        _abort_partial(out, tmp, exc)
+    os.close(out)
+    dest = dest_dir / digest
+    try:
+        os.link(tmp, dest)
+    except FileExistsError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    except OSError as exc:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise ProtocolError(f"cannot create snapshot: {dest}") from exc
     else:
         try:
-            _write_all(out, data)
-            os.fsync(out)
-        except Exception as exc:
-            _abort_partial(out, dest, exc)
-        os.close(out)
-        fd = _reuse(dest, digest, mode)
+            os.unlink(tmp)
+        except OSError as cleanup:
+            raise ProtocolError(f"snapshot write failed (link); cleanup failed ({cleanup})") from cleanup
+    fd = _reuse(dest, digest, mode)
     return Snapshot(original, str(dest), digest, os.fstat(fd).st_ino, fd, source_digest)
 
 
@@ -272,7 +403,7 @@ def bind_execution(request: LaunchRequest, snapshot_root: Path) -> BoundExecutio
     fingerprints = _required_fingerprints(request)
     files = snapshot_root / "files"
     by_original: dict[str, Snapshot] = {}
-    loaded: dict[str, bytes] = {}
+    prefixes: dict[str, bytes] = {}
 
     def take(path: str, *, executable: bool) -> Snapshot:
         if path in by_original:
@@ -280,16 +411,21 @@ def bind_execution(request: LaunchRequest, snapshot_root: Path) -> BoundExecutio
             if executable:
                 os.fchmod(snap.fd, EXEC_MODE)
             return snap
-        data = _load_source(Path(path), fingerprints[path])
-        loaded[path] = data
-        snap = _store(
-            files,
-            fingerprints[path],
-            data,
-            EXEC_MODE if executable else DATA_MODE,
-            fingerprints[path],
-            path,
-        )
+        if not _is_sha256(fingerprints[path]):
+            raise ProtocolError("signed fingerprint is not a sha256 hex digest")
+        src = _open_source(Path(path))
+        try:
+            snap, prefix = _store_fd(
+                files,
+                fingerprints[path],
+                src,
+                EXEC_MODE if executable else DATA_MODE,
+                fingerprints[path],
+                path,
+            )
+        finally:
+            os.close(src)
+        prefixes[path] = prefix
         by_original[path] = snap
         return snap
 
@@ -300,29 +436,49 @@ def bind_execution(request: LaunchRequest, snapshot_root: Path) -> BoundExecutio
         if request.script is not None:
             if request.script not in request.argv:
                 raise ProtocolError("script path is not in argv")
-            if request.script not in loaded:
+            if request.script not in by_original:
                 take(request.script, executable=False)
-            interpreter = _shebang_interpreter(loaded[request.script])
+            prefix = prefixes[request.script]
+            size = os.fstat(by_original[request.script].fd).st_size
+            if prefix.startswith(b"#!") and b"\n" not in prefix and size > len(prefix):
+                raise ProtocolError("shebang line exceeds the bound")
+            interpreter = _shebang_interpreter(prefix)
             if interpreter is not None:
                 if interpreter not in by_original:
                     raise ProtocolError("the script interpreter is not in the signed dependency set")
                 interp = by_original[interpreter]
                 os.fchmod(interp.fd, EXEC_MODE)
-                rebound = _rebind_shebang(loaded[request.script], interp.path)
-                digest = _sha256_hex(rebound)
+                newline = prefix.find(b"\n")
+                head = prefix if newline < 0 else prefix[:newline]
+                skip = len(prefix) if newline < 0 else newline + 1
+                parts = head[2:].decode("utf-8", "replace").strip().split()
+                if not parts:
+                    lead = b""
+                elif Path(parts[0]).name == "env":
+                    raise ProtocolError("an env shebang does not name one bound interpreter")
+                else:
+                    args = (" " + " ".join(parts[1:])) if len(parts) > 1 else ""
+                    lead = f"#!{interp.path}{args}\n".encode("utf-8")
                 current = by_original[request.script]
-                if digest != current.digest:
-                    os.close(current.fd)
-                    by_original[request.script] = _store(
+                if not lead:
+                    os.fchmod(current.fd, EXEC_MODE)
+                else:
+                    rebound = _store_rebind(
                         files,
-                        digest,
-                        rebound,
+                        current.fd,
                         EXEC_MODE,
                         current.source_digest,
                         request.script,
+                        lead=lead,
+                        skip=skip,
                     )
-                else:
-                    os.fchmod(current.fd, EXEC_MODE)
+                    if rebound.digest != current.digest:
+                        os.close(current.fd)
+                        by_original[request.script] = rebound
+                    else:
+                        os.close(rebound.fd)
+                        os.fchmod(current.fd, EXEC_MODE)
+                        os.lseek(current.fd, 0, os.SEEK_SET)
         for original in request.inputs:
             if original not in request.argv:
                 raise ProtocolError("declared input is not an argv token")

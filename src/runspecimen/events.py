@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
+import stat
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +18,7 @@ from runspecimen.paths import (
     EVENTS_FILENAME,
     assert_control_plane_not_symlinked,
     ensure_dir,
+    open_regular_nofollow,
 )
 
 try:
@@ -70,47 +73,117 @@ class EventLog:
     def for_state_dir(cls, state_dir: Path) -> EventLog:
         return cls(state_dir / EVENTS_FILENAME)
 
-    def ensure(self) -> None:
+    def _prepare_log_parent(self) -> None:
         assert_control_plane_not_symlinked(self.path)
         ensure_dir(self.path.parent)
         if self.path.is_symlink():
             raise PathEscapeError(
                 f"control-plane path must not be a symlink (or contain a symlinked component): {self.path}"
             )
-        if not self.path.exists():
-            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-            if hasattr(os, "O_NOFOLLOW"):
-                flags |= os.O_NOFOLLOW
+
+    def _ensure_file_unlocked(self) -> None:
+        """Create the log if needed. Caller holds the append lock."""
+        if self.path.is_symlink():
+            raise PathEscapeError(
+                f"control-plane path must not be a symlink (or contain a symlinked component): {self.path}"
+            )
+        try:
+            info = os.lstat(self.path)
+        except FileNotFoundError:
+            info = None
+        else:
+            if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+                raise PathEscapeError(
+                    f"control-plane path must not be a symlink (or contain a symlinked component): {self.path}"
+                )
+            return
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        try:
             fd = os.open(str(self.path), flags, 0o644)
+        except FileExistsError:
+            try:
+                info = os.lstat(self.path)
+            except OSError as exc:
+                raise PathEscapeError(
+                    f"control-plane path must not be a symlink (or contain a symlinked component): {self.path}"
+                ) from exc
+            if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+                raise PathEscapeError(
+                    f"control-plane path must not be a symlink (or contain a symlinked component): {self.path}"
+                )
+            return
+        except OSError as exc:
+            if getattr(exc, "errno", None) in {errno.ELOOP, errno.EPERM}:
+                raise PathEscapeError(
+                    f"control-plane path must not be a symlink (or contain a symlinked component): {self.path}"
+                ) from exc
+            raise
+        else:
             os.close(fd)
 
+    def ensure(self) -> None:
+        self._prepare_log_parent()
+        with self._with_lock(exclusive=True):
+            return
+
     def _read_all_unlocked(self) -> list[EventRecord]:
+        if self.path.is_symlink():
+            raise PathEscapeError(
+                f"control-plane path must not be a symlink (or contain a symlinked component): {self.path}"
+            )
         if not self.path.exists():
             return []
+        flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        try:
+            fd = os.open(str(self.path), flags)
+        except OSError as exc:
+            if getattr(exc, "errno", None) in {errno.ELOOP, errno.EPERM} or self.path.is_symlink():
+                raise PathEscapeError(
+                    f"control-plane path must not be a symlink (or contain a symlinked component): {self.path}"
+                ) from exc
+            raise
         records: list[EventRecord] = []
-        with self.path.open("r", encoding="utf-8") as fh:
-            for line_no, line in enumerate(fh, start=1):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                    records.append(
-                        EventRecord(
-                            seq=int(obj["seq"]),
-                            prev_hash=str(obj["prev_hash"]),
-                            event_hash=str(obj["event_hash"]),
-                            ts=str(obj["ts"]),
-                            type=str(obj["type"]),
-                            body=dict(obj["body"]),
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode):
+                raise PathEscapeError(
+                    f"control-plane path must not be a symlink (or contain a symlinked component): {self.path}"
+                )
+            with os.fdopen(fd, "r", encoding="utf-8") as fh:
+                fd = -1
+                for line_no, line in enumerate(fh, start=1):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                        records.append(
+                            EventRecord(
+                                seq=int(obj["seq"]),
+                                prev_hash=str(obj["prev_hash"]),
+                                event_hash=str(obj["event_hash"]),
+                                ts=str(obj["ts"]),
+                                type=str(obj["type"]),
+                                body=dict(obj["body"]),
+                            )
                         )
-                    )
-                except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-                    raise ValueError(f"corrupt event log at line {line_no}: {exc}") from exc
+                    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                        raise ValueError(f"corrupt event log at line {line_no}: {exc}") from exc
+        finally:
+            if fd >= 0:
+                os.close(fd)
         return records
 
     def read_all(self) -> list[EventRecord]:
         """Read a stable snapshot while excluding an in-progress append."""
+        if self.path.is_symlink():
+            raise PathEscapeError(
+                f"control-plane path must not be a symlink (or contain a symlinked component): {self.path}"
+            )
         if not self.path.exists():
             return []
         with self._with_lock(exclusive=False):
@@ -129,13 +202,14 @@ class EventLog:
     def _with_lock(self, *, exclusive: bool):
         if fcntl is None:
             raise RuntimeError("fcntl event lock requires a POSIX platform")
-        self.ensure()
-        self.append_lock_path.touch(exist_ok=True)
-        fd = os.open(str(self.append_lock_path), os.O_RDWR)
+        self._prepare_log_parent()
+        fd = open_regular_nofollow(self.append_lock_path, os.O_RDWR | os.O_CREAT, 0o644)
 
         class _Guard:
             def __enter__(self_inner):
                 fcntl.flock(fd, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+                if exclusive:
+                    self._ensure_file_unlocked()
                 return fd
 
             def __exit__(self_inner, exc_type, exc, tb):

@@ -4,6 +4,14 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
+- LATEST-01: the installed-wheel check refuses `sitecustomize` and `usercustomize` when they are a folder with `__init__.py`, not only when they are a single `.py` file. That reading happens before any file in the venv runs. qafix14 pack.
+- LATEST-02: a launcher that does not match the pinned pip template is refused before it is executed. qafix14 pack.
+- SIB-01: on Debian and Ubuntu, the check also reads `dist-packages` directories the venv's `site` would use (`lib/python3/dist-packages`, `lib/pythonX.Y/dist-packages`, `local/lib/pythonX.Y/dist-packages`). Those directories are not treated as the standard library. qafix14 pack.
+- SIB-02: an executable `.pth` line in site-packages is refused before the venv's Python can run it. Start the check with the base interpreter and `-I`, not with the venv's `python`. qafix14 pack.
+- LATEST-03: two processes writing the first event-log line no longer hit `FileExistsError`. The log file is created while the append lock is held. The two lines are still sequence 1 and sequence 2. qafix14 pack.
+- LATEST-04: lock files, `state.json`, and `approval.json` are opened without following a symlink. A symlink is refused. qafix14 pack.
+- LATEST-05: the macOS default-TMPDIR shebang check compares the two directories while the temporary venv still exists. qafix14 pack.
+- STRUCT-02: an execution snapshot is hashed while its bytes are copied. The holder keeps only a short prefix for the shebang check, instead of a second full copy of the file. A shebang line longer than 4096 bytes with no newline is refused. qafix14 pack.
 - CC-01: contract validation refuses C0/C1/DEL/bidi/format characters in argv (and other contract strings); TTY display also escapes them. The bind line stays `Type 'APPROVE' to bind this approval:`. qafix13 pack.
 - CC-02: installed-wheel shebang parent compare uses filesystem identity (samefile), so macOS `/var` vs `/private/var` TMPDIR aliases are accepted; a different venv that shares the base Python is still refused. qafix13 pack.
 - CC-03: pretty `verify-signature` leads with `receipt_verification_error` when a MAC-valid receipt fails live check, and does not lead with a positive MAC/schema line when `ok` is false. Default JSON is unchanged. qafix13 pack.

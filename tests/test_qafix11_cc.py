@@ -164,18 +164,27 @@ class CC02ShebangParentIdentityTests(unittest.TestCase):
             self.skipTest("pin wheel must be on disk")
         if not VERIFY_INSTALLED.is_file():
             self.skipTest("verify_installed_wheel.py is not packed into this tree")
-        # Intentionally do not set or rewrite TMPDIR.
-        result = _install_and_verify(pin, pin)
+        # Intentionally do not set or rewrite TMPDIR. Compare parents while
+        # the venv directory still exists; TemporaryDirectory removal makes
+        # samefile fail even when the paths were the same directory.
+        checked: dict[str, bool] = {}
+
+        def _inspect(result: subprocess.CompletedProcess[str]) -> None:
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads(result.stdout.split("---")[0])
+            self.assertTrue(payload["ok"], payload)
+            shebang_parent = Path(payload["interpreter"]).parent
+            launcher_parent = Path(payload["launcher"]).parent
+            if shebang_parent != launcher_parent:
+                self.assertTrue(
+                    shebang_parent.samefile(launcher_parent),
+                    (str(shebang_parent), str(launcher_parent)),
+                )
+            checked["samefile"] = True
+
+        result = _install_and_verify(pin, pin, inspect=_inspect)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        payload = json.loads(result.stdout.split("---")[0])
-        self.assertTrue(payload["ok"], payload)
-        shebang_parent = str(Path(payload["interpreter"]).parent)
-        launcher_parent = str(Path(payload["launcher"]).parent)
-        if shebang_parent != launcher_parent:
-            self.assertTrue(
-                Path(shebang_parent).samefile(launcher_parent),
-                (shebang_parent, launcher_parent),
-            )
+        self.assertTrue(checked.get("samefile"))
 
     def test_cc02_symlinked_parent_dirs_are_accepted(self) -> None:
         pin = _pin_wheel()

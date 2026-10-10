@@ -85,6 +85,30 @@ and it does not replace the contract backend.
   sharing the private key; still depends on key custody and does not prove
   scientific truth. See `docs/ED25519_RECEIPTS.md`.
 
+## Installed-wheel check
+
+The check that compares an installed copy to the pinned wheel trusts only the
+base Python interpreter and that interpreter's own standard library. It does
+not trust files inside the virtual environment.
+
+Before anything in that environment runs, the check asks the base interpreter
+which directories Python's site startup would use. That list covers Debian
+and Ubuntu `dist-packages` directories, paths named by `pyvenv.cfg`, and the
+user site when this environment would actually turn the user site on. A normal
+venv leaves the user site off. The check then reads those directories for
+startup hooks: a `.pth` file with an `import` line, `sitecustomize` or
+`usercustomize` as a file or a folder, and bytecode that does not belong.
+`pyvenv.cfg` must name this same base interpreter, and it must not turn on
+system site-packages. Any of those findings stops the check immediately.
+
+A path counts as the standard library only when it is inside the base
+interpreter's real library directories, is not a site-packages or
+dist-packages directory, and is not inside the virtual environment. Sharing a
+parent folder with the standard library is not enough.
+
+Only after that reading is clean does the check run the real `runspecimen`
+launcher and look at where the loaded modules came from.
+
 ## Residual risks
 
 The wall-clock timeout kills the launched process group, but detached or hostile

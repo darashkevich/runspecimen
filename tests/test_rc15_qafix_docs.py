@@ -30,7 +30,7 @@ HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 CANDIDATE_MANIFEST = ROOT / "docs" / "CANDIDATE_MANIFEST.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
-PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-09-qafix13"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-09-qafix14"
 QAFIX11_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-09-qafix11"
 QAFIX10_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix10"
 QAFIX9_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix9"
@@ -155,7 +155,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("command -v runspecimen", text)
         self.assertIn("mktemp -d", text)
         self.assertIn('test ! -e "$VENV"', text)
-        self.assertIn("0.2.0rc15-2026-10-09-qafix13", text)
+        self.assertIn("0.2.0rc15-2026-10-09-qafix14", text)
         self.assertIn("--no-index --no-deps --force-reinstall --no-compile", text)
         self.assertIn("scripts/verify_installed_wheel.py", text)
         self.assertIn("--launcher", text)
@@ -223,9 +223,9 @@ class Rc15QaDocfixTests(unittest.TestCase):
         if CANDIDATE_MANIFEST.is_file():
             manifest = CANDIDATE_MANIFEST.read_text(encoding="utf-8")
             self.assertIn("| Candidate (this pass) |", manifest)
-            self.assertIn("PR #63 head that records the qafix13 pack", manifest)
+            self.assertIn("PR #63 head that records the qafix14 pack", manifest)
             self.assertIn("8015b6d8017e5566f7558cc916dc0ee470c653ad", manifest)
-            self.assertIn("artifacts/0.2.0rc15-2026-10-09-qafix13/", manifest)
+            self.assertIn("artifacts/0.2.0rc15-2026-10-09-qafix14/", manifest)
         self.assertIn("Homebrew", text)
         self.assertIn("STEP $1 exit=$2", text)
         command_lines = [
@@ -1011,7 +1011,7 @@ def _acceptance_sheet_script(markdown: str, pack: Path) -> str:
         parts.append(block.rstrip() + "\n")
     script = "".join(parts)
     replaced, count = re.subn(
-        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-09-qafix13"',
+        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-09-qafix14"',
         f"export PACK={shlex.quote(str(pack))}",
         script,
         count=1,
@@ -1502,6 +1502,26 @@ def _create_venv_and_install(venv_dir: Path, wheel: Path, env: dict[str, str]) -
     return py
 
 
+def _base_interpreter(venv_dir: Path) -> Path:
+    """Resolve the venv symlink chain without executing the venv interpreter."""
+    cfg_path = venv_dir / "pyvenv.cfg"
+    if cfg_path.is_file():
+        for raw in cfg_path.read_text(encoding="utf-8").splitlines():
+            if raw.strip().lower().startswith("executable") and "=" in raw:
+                return Path(raw.split("=", 1)[1].strip())
+    current = _venv_python(venv_dir)
+    seen: set[Path] = set()
+    while current.is_symlink():
+        if current in seen:
+            break
+        seen.add(current)
+        target = Path(os.readlink(current))
+        if not target.is_absolute():
+            target = current.parent / target
+        current = target
+    return current
+
+
 def _install_and_verify(
     install_wheel: Path,
     pin_wheel: Path,
@@ -1511,6 +1531,7 @@ def _install_and_verify(
     extra_env_factory=None,
     after_install=None,
     make_old_venv: bool = False,
+    inspect=None,
 ) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix="rs-ha-prov-") as root:
         venv_dir = Path(root) / "venv"
@@ -1549,9 +1570,12 @@ def _install_and_verify(
             verify_env = extra_env_factory(venv_dir, planted, old_venv)
         else:
             verify_env = env
-        return subprocess.run(
+        # The base interpreter, not the venv python: the venv python would
+        # run site hooks before this script can refuse them.
+        result = subprocess.run(
             [
-                str(py),
+                str(_base_interpreter(venv_dir)),
+                "-I",
                 str(VERIFY_INSTALLED),
                 "--wheel",
                 str(pin_wheel.resolve()),
@@ -1563,6 +1587,9 @@ def _install_and_verify(
             text=True,
             env=verify_env,
         )
+        if inspect is not None:
+            inspect(result)
+        return result
 
 
 if __name__ == "__main__":

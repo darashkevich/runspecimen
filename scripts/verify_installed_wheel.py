@@ -33,11 +33,29 @@ stdlib dir**, not by claimed ``__name__`` / ``__module__``. Frozen/built-in
 interpreter modules count as the interpreter. There is no DistutilsMetaFinder
 allowlist and no RECORD-based trust of ``_distutils_hack``.
 
-The probe runs with ``-I -B``. Any ``.pyc`` / ``__pycache__`` under the
-installed runspecimen package is refused (timestamp-based, hash-based, any
-optimisation level), as is ``PYTHONPYCACHEPREFIX`` / ``sys.pycache_prefix``
-and a sourceless ``.pyc`` module. The launcher body after the shebang must
-byte-match a pinned pip console-script template.
+The check has two phases. The static phase uses the base interpreter named
+by ``pyvenv.cfg`` (never the venv's python) with ``-I -S``. It does not run
+any file from the venv. It asks that interpreter's ``site`` module which
+directories this venv would process, including Debian ``dist-packages`` and
+paths driven by ``pyvenv.cfg``. The user site is included only when that
+``site`` logic would enable it. A normal venv (``include-system-site-packages``
+false) turns the user site off, so a ``usercustomize`` there is not startup.
+The scan refuses executable ``.pth`` lines, ``sitecustomize`` /
+``usercustomize`` as a module or a package, bytecode under ``dist-packages``,
+unexpected ``bin/`` files, a launcher body that is not a pinned pip template,
+and a ``pyvenv.cfg`` whose ``home`` is not that base interpreter or that sets
+``include-system-site-packages=true``. Only a clean static phase runs the
+real launcher.
+
+Stdlib means the base interpreter's own library directories, minus every
+site-packages or dist-packages directory and minus anything under the venv.
+A path is not stdlib just because a broader directory contains it.
+
+The probe runs with ``-I -B`` after that scan. Any ``.pyc`` / ``__pycache__``
+under the installed runspecimen package is refused (timestamp-based,
+hash-based, any optimisation level), as is ``PYTHONPYCACHEPREFIX`` /
+``sys.pycache_prefix`` and a sourceless ``.pyc`` module. The launcher body
+after the shebang must byte-match a pinned pip console-script template.
 
 The venv ``bin/`` directory may contain only what ``python -m venv`` plus pip
 plus this wheel create (python symlinks, activate scripts, pip and
@@ -48,12 +66,13 @@ directory) there is refused because the real launcher puts ``bin/`` on
 ``sys.path[0]``. Module origins are taken from the real launcher process
 (``runspecimen doctor``), not from ``python -c``.
 
-Run with the venv interpreter that owns the install, under the same sanitized
-environment the acceptance sheet uses for every launcher call:
+Start this script with the base interpreter, not the venv's python. The
+venv's python runs site hooks before the first line of this file. Follow
+``$VENV/bin/python`` to the real binary, then:
 
   env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP -u PYTHONPYCACHEPREFIX \\
     PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 \\
-    "$VENV/bin/python" scripts/verify_installed_wheel.py \\
+    "$BASE_PY" -I scripts/verify_installed_wheel.py \\
     --wheel /abs/path.whl --launcher "$VENV/bin/runspecimen"
 """
 
@@ -224,9 +243,16 @@ def _under_stdlib(path):
         resolved = Path(path).resolve()
     except Exception:
         return False
-    for root in _STDLIB_ROOTS:
+    for raw in globals().get('_STDLIB_EXCLUSIONS') or []:
         try:
-            resolved.relative_to(root)
+            resolved.relative_to(Path(raw))
+            return False
+        except ValueError:
+            continue
+    roots = globals().get('_TRUSTED_STDLIB') or _STDLIB_ROOTS
+    for root in roots:
+        try:
+            resolved.relative_to(root if isinstance(root, Path) else Path(root))
             return True
         except ValueError:
             continue
@@ -848,6 +874,32 @@ def _samefile(left: Path, right: Path) -> bool:
         return False
 
 
+def path_is_real_stdlib(path: Path, stdlib_roots: list[Path], exclusions: list[Path]) -> bool:
+    """True only for the base interpreter's library, not site or the venv.
+
+    Prefix containment alone is not enough: Debian's stdlib directory also
+    contains ``dist-packages``, and a venv ``platstdlib`` contains
+    ``site-packages``. Those directories are excluded.
+    """
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+    for root in exclusions:
+        try:
+            resolved.relative_to(root.resolve())
+            return False
+        except ValueError:
+            continue
+    for root in stdlib_roots:
+        try:
+            resolved.relative_to(root.resolve())
+            return True
+        except ValueError:
+            continue
+    return False
+
+
 def launcher_module_origin_findings(
     origins: dict[str, Any] | None,
     *,
@@ -855,6 +907,7 @@ def launcher_module_origin_findings(
     hashed_files: set[Path],
     launcher: Path | None = None,
     venv_prefix: Path | None = None,
+    exclusions: list[Path] | None = None,
 ) -> list[str]:
     """Loaded modules must be stdlib, hashed wheel files, or interpreter-owned.
 
@@ -882,7 +935,9 @@ def launcher_module_origin_findings(
         except OSError:
             findings.append(f"loaded module {name} origin is not a readable path: {origin}")
             continue
-        if name in {"json", "re"} and not _under_roots(resolved, stdlib_roots):
+        if name in {"json", "re"} and not path_is_real_stdlib(
+            resolved, stdlib_roots, exclusions or []
+        ):
             findings.append(
                 f"loaded module {name} origin {resolved} is not the interpreter stdlib"
             )
@@ -903,7 +958,7 @@ def launcher_module_origin_findings(
                     f"loaded module {name} origin {resolved} is in the venv bin directory"
                 )
             continue
-        if _under_roots(resolved, stdlib_roots):
+        if path_is_real_stdlib(resolved, stdlib_roots, exclusions or []):
             continue
         if resolved in hashed_files or any(_samefile(resolved, item) for item in hashed_files):
             continue
@@ -917,9 +972,24 @@ def launcher_module_origin_findings(
     return findings
 
 
-def probe_effective_origins(interpreter: Path, env: dict[str, str]) -> dict[str, Any]:
+def probe_effective_origins(
+    interpreter: Path,
+    env: dict[str, str],
+    *,
+    trusted_stdlib: list[Path] | None = None,
+    exclusions: list[Path] | None = None,
+) -> dict[str, Any]:
+    prelude = ""
+    if trusted_stdlib is not None or exclusions is not None:
+        prelude = (
+            "_TRUSTED_STDLIB = "
+            + json.dumps([str(path) for path in (trusted_stdlib or [])])
+            + "\n_STDLIB_EXCLUSIONS = "
+            + json.dumps([str(path) for path in (exclusions or [])])
+            + "\n"
+        )
     result = subprocess.run(
-        [str(interpreter), "-I", "-B", "-c", PROBE_SCRIPT],
+        [str(interpreter), "-I", "-B", "-c", prelude + PROBE_SCRIPT],
         check=False,
         capture_output=True,
         text=True,
@@ -1119,23 +1189,242 @@ def _path_is_interpreter_stdlib(path: Path, stdlib_roots: list[Path]) -> bool:
     return False
 
 
+def _same_file(left: Path, right: Path) -> bool:
+    try:
+        return left.exists() and right.exists() and left.samefile(right)
+    except OSError:
+        return os.path.realpath(str(left)) == os.path.realpath(str(right))
+
+
+def _parse_pyvenv_cfg(path: Path) -> dict[str, str]:
+    data: dict[str, str] = {}
+    text = path.read_text(encoding="utf-8")
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        data[key.strip().lower()] = value.strip()
+    return data
+
+
+def base_interpreter_in_use() -> Path:
+    """The trusted interpreter: never the venv symlink."""
+    raw = getattr(sys, "_base_executable", None) or sys.executable
+    return Path(raw)
+
+
+def validate_pyvenv(venv_root: Path, base: Path) -> list[str]:
+    """Refuse a venv whose config does not name this base interpreter."""
+    path = venv_root / "pyvenv.cfg"
+    if not path.is_file():
+        return [f"pyvenv.cfg is missing: {path}"]
+    try:
+        cfg = _parse_pyvenv_cfg(path)
+    except OSError as exc:
+        return [f"cannot read pyvenv.cfg: {exc}"]
+    findings: list[str] = []
+    home = cfg.get("home", "")
+    if not home or not _same_file(Path(home), base.parent):
+        findings.append("pyvenv.cfg home does not point at the base interpreter in use")
+    executable = cfg.get("executable", "")
+    if executable and not _same_file(Path(executable), base):
+        findings.append("pyvenv.cfg executable does not match the base interpreter in use")
+    if cfg.get("include-system-site-packages", "").lower() != "false":
+        findings.append("pyvenv.cfg sets include-system-site-packages=true")
+    version = cfg.get("version", "")
+    parts = version.split(".")
+    try:
+        major_minor = (int(parts[0]), int(parts[1])) if len(parts) >= 2 else None
+    except ValueError:
+        major_minor = None
+    if major_minor != tuple(sys.version_info[:2]):
+        findings.append("pyvenv.cfg version does not match the base interpreter in use")
+    return findings
+
+
+_SITE_LAYOUT_QUERY = r"""
+import json, os, sys, site, sysconfig
+from pathlib import Path
+venv_prefix = sys.argv[1]
+saved = sys.prefix
+sys.prefix = venv_prefix
+try:
+    venv_sites = list(site.getsitepackages([venv_prefix]))
+finally:
+    sys.prefix = saved
+user_site = site.getusersitepackages()
+system_sites = list(site.getsitepackages())
+stdlib = []
+for key in ("stdlib", "platstdlib"):
+    value = sysconfig.get_path(key)
+    if value:
+        stdlib.append(str(Path(value).resolve()))
+# site.venv() turns user site off unless include-system-site-packages is
+# exactly true. This query is started with -I, so do not trust
+# ENABLE_USER_SITE or check_enableusersite() here.
+enable_user_site = False
+cfg_path = os.path.join(venv_prefix, "pyvenv.cfg")
+system_site = "true"
+if os.path.isfile(cfg_path):
+    with open(cfg_path, encoding="utf-8") as handle:
+        for raw in handle:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            if key.strip().lower() == "include-system-site-packages":
+                system_site = value.strip().lower()
+    enable_user_site = system_site == "true" and not os.environ.get("PYTHONNOUSERSITE")
+print(json.dumps({
+    "venv_site_dirs": venv_sites,
+    "user_site": user_site,
+    "enable_user_site": enable_user_site,
+    "system_site_dirs": system_sites,
+    "stdlib": stdlib,
+    "version": "%d.%d.%d" % sys.version_info[:3],
+}))
+"""
+
+
+def debian_venv_site_dirs(prefix: Path, version_text: str) -> list[Path]:
+    """Directories Debian/Ubuntu site.py adds under a venv prefix.
+
+    Also scanned when this host's site.py is not the Debian patch, so a
+    simulated layout is still refused.
+    """
+    parts = version_text.split(".")
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+        short = f"python{parts[0]}.{parts[1]}"
+    else:
+        short = f"python{sys.version_info[0]}.{sys.version_info[1]}"
+    return [
+        prefix / "lib" / short / "site-packages",
+        prefix / "lib" / short / "dist-packages",
+        prefix / "lib" / "python3" / "dist-packages",
+        prefix / "local" / "lib" / short / "dist-packages",
+    ]
+
+
+def _dedupe_paths(paths: list[Path]) -> list[Path]:
+    seen: set[str] = set()
+    chosen: list[Path] = []
+    for path in paths:
+        try:
+            key = str(path.resolve()) if path.exists() else str(path.absolute())
+        except OSError:
+            key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        chosen.append(path)
+    return chosen
+
+
+def query_site_layout(base: Path, venv_prefix: Path, env: dict[str, str]) -> dict[str, Any]:
+    """Ask the base interpreter which directories site would process.
+
+    Runs ``base -I -S``. That process does not import the venv's site hooks.
+    """
+    result = subprocess.run(
+        [str(base), "-I", "-S", "-c", _SITE_LAYOUT_QUERY, str(venv_prefix)],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+        raise RuntimeError(f"base interpreter site layout failed: {detail}")
+    payload = json.loads(result.stdout)
+    if not isinstance(payload, dict):
+        raise RuntimeError("base interpreter site layout was not a JSON object")
+    return payload
+
+
+def _purelib_from_site_dirs(venv_root: Path, site_dirs: list[Path], version_text: str) -> Path:
+    for directory in site_dirs:
+        if directory.name == "site-packages":
+            return directory
+    parts = version_text.split(".")
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+        short = f"python{parts[0]}.{parts[1]}"
+    else:
+        short = f"python{sys.version_info[0]}.{sys.version_info[1]}"
+    return venv_root / "lib" / short / "site-packages"
+
+
+def scan_customization_hooks(directory: Path) -> list[str]:
+    """Refuse sitecustomize/usercustomize as a module or a package."""
+    if not directory.is_dir():
+        return []
+    findings: list[str] = []
+    for name in ("sitecustomize", "usercustomize"):
+        candidates = [
+            directory / f"{name}.py",
+            directory / f"{name}.pyc",
+            directory / f"{name}.pyo",
+            directory / name / "__init__.py",
+            directory / name / "__init__.pyc",
+            directory / name / "__init__.pyo",
+        ]
+        cache = directory / "__pycache__"
+        if cache.is_dir():
+            for path in cache.iterdir():
+                if path.name.startswith(name + "."):
+                    candidates.append(path)
+        reported: set[str] = set()
+        for candidate in candidates:
+            key = str(candidate)
+            if key in reported:
+                continue
+            try:
+                present = candidate.is_file() or candidate.is_symlink()
+            except OSError:
+                present = False
+            if not present:
+                continue
+            reported.add(key)
+            findings.append(f"unvetted {name} on the import path: {candidate}")
+    return findings
+
+
+def scan_dist_packages_modules(directory: Path) -> list[str]:
+    """Refuse modules planted where Debian site.py would put them on sys.path."""
+    if not directory.is_dir() or directory.name != "dist-packages":
+        return []
+    findings: list[str] = []
+    for path in sorted(directory.rglob("*")):
+        if path.is_dir():
+            continue
+        if path.suffix.lower() == ".pth":
+            continue
+        suffix = path.suffix.lower()
+        if suffix in {".py", ".pyc", ".pyo", ".so"} or "__pycache__" in path.parts:
+            findings.append(f"unexpected module in dist-packages: {path}")
+    return findings
+
+
 def startup_customization_findings(
     origins: dict[str, Any] | None,
     *,
     prefix: Path,
     site_packages: Path,
+    stdlib_roots: list[Path] | None = None,
+    exclusions: list[Path] | None = None,
 ) -> list[str]:
     """Reject sitecustomize/usercustomize that is importable from the target venv.
 
     The trusted interpreter includes its own stdlib and distro sitecustomize
-    (Debian/Ubuntu ``/etc/pythonX.Y/sitecustomize.py``). A sitecustomize.py
-    inside the venv prefix or site-packages is extra startup and is refused.
-    usercustomize is refused when it is importable (user site enabled).
+    (Debian/Ubuntu ``/etc/pythonX.Y/sitecustomize.py``). A sitecustomize module
+    or package inside the venv is extra startup and is refused. usercustomize
+    is refused when it is importable (user site enabled).
     """
     findings: list[str] = []
     prefix = prefix.resolve()
     site_packages = site_packages.resolve()
-    stdlib_roots = _stdlib_roots_from_origins(origins)
+    roots = list(stdlib_roots) if stdlib_roots is not None else _stdlib_roots_from_origins(origins)
+    excluded = list(exclusions or [])
     for name in ("sitecustomize.py", "sitecustomize.pyc"):
         cand = site_packages / name
         if cand.is_file():
@@ -1146,7 +1435,7 @@ def startup_customization_findings(
             loaded = Path(str(sitecustomize)).resolve()
             already = any(loaded.as_posix() in item for item in findings)
             in_venv = _under(loaded, prefix)
-            interpreter_owned = _path_is_interpreter_stdlib(loaded, stdlib_roots)
+            interpreter_owned = path_is_real_stdlib(loaded, roots, excluded) if roots else False
             if not already and in_venv and not interpreter_owned:
                 findings.append(f"unvetted sitecustomize on the import path: {loaded}")
         enable_user_site = bool(origins.get("enable_user_site"))
@@ -1160,6 +1449,10 @@ def startup_customization_findings(
 
 
 def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, Any]:
+    """Static scan, then probe, then the verdict.
+
+    Nothing in the venv is executed until the static phase is clean.
+    """
     incoming_overrides = import_overrides()
     env = sanitized_env()
     report: dict[str, Any] = {
@@ -1186,6 +1479,7 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         "bin_findings": [],
         "launcher_module_findings": [],
         "loaded_module_origins": {},
+        "bytecode_findings": [],
     }
     resolved_launcher = launcher.resolve() if launcher is not None else discover_launcher()
     if resolved_launcher is None or not resolved_launcher.is_file():
@@ -1201,49 +1495,101 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         report["message"] = str(exc)
         return report
     report["interpreter"] = str(interpreter)
-    if not interpreter.exists():
-        report["message"] = f"launcher interpreter not found: {interpreter}"
-        return report
-    try:
-        cfg = launcher_sysconfig(interpreter, env)
-    except (RuntimeError, json.JSONDecodeError, KeyError) as exc:
-        report["message"] = str(exc)
-        return report
-    report["prefix"] = cfg["prefix"]
-    site = Path(cfg["purelib"]).resolve()
-    package_dir = (site / "runspecimen").resolve()
-    report["verified_package_dir"] = str(package_dir)
-    report.update(verify_site_against_wheel(site_packages=site, wheel=wheel))
-    report["import_overrides"] = incoming_overrides
-    report["launcher"] = str(resolved_launcher)
-    report["interpreter"] = str(interpreter)
-    report["prefix"] = cfg["prefix"]
-    report["console_script_target"] = console_script_target(resolved_launcher)
-    report["verified_package_dir"] = str(package_dir)
 
-    pth_findings = scan_pth_files(site) + scan_virtualenv_artifacts(site)
+    # --- static phase: base interpreter only, no venv code ---
+    venv_root = resolved_launcher.parent.parent
+    base = base_interpreter_in_use()
+    pyvenv_findings = validate_pyvenv(venv_root, base)
+    pth_findings: list[dict[str, Any]] = []
+    startup_findings: list[str] = list(pyvenv_findings)
+    bytecode_findings: list[str] = []
+    stdlib_roots: list[Path] = []
+    exclusions: list[Path] = []
+    site: Path | None = None
+    package_dir: Path | None = None
+    layout_error: str | None = None
+    version_text = ".".join(str(part) for part in sys.version_info[:3])
+    if not pyvenv_findings:
+        try:
+            layout = query_site_layout(base, venv_root, env)
+        except (RuntimeError, json.JSONDecodeError, OSError) as exc:
+            layout_error = str(exc)
+            startup_findings.append(layout_error)
+        else:
+            version_text = str(layout.get("version") or version_text)
+            queried = [Path(str(item)) for item in layout.get("venv_site_dirs") or []]
+            site_dirs = _dedupe_paths(queried + debian_venv_site_dirs(venv_root, version_text))
+            user_site = layout.get("user_site")
+            if user_site and layout.get("enable_user_site"):
+                site_dirs = _dedupe_paths(site_dirs + [Path(str(user_site))])
+            site = _purelib_from_site_dirs(venv_root, site_dirs, version_text)
+            package_dir = (site / "runspecimen").resolve()
+            report["prefix"] = str(venv_root.resolve())
+            report["verified_package_dir"] = str(package_dir)
+            report.update(verify_site_against_wheel(site_packages=site, wheel=wheel))
+            report["import_overrides"] = incoming_overrides
+            report["launcher"] = str(resolved_launcher)
+            report["interpreter"] = str(interpreter)
+            report["prefix"] = str(venv_root.resolve())
+            report["console_script_target"] = console_script_target(resolved_launcher)
+            report["verified_package_dir"] = str(package_dir)
+            seen_pth: set[tuple[str, int, str]] = set()
+            for directory in site_dirs:
+                for item in scan_pth_files(directory):
+                    marker = (str(item.get("path")), int(item.get("line") or 0), str(item.get("text")))
+                    if marker in seen_pth:
+                        continue
+                    seen_pth.add(marker)
+                    pth_findings.append(item)
+                startup_findings.extend(scan_customization_hooks(directory))
+                startup_findings.extend(scan_dist_packages_modules(directory))
+            if site.is_dir():
+                pth_findings.extend(scan_virtualenv_artifacts(site))
+            bytecode_findings = scan_package_bytecode(package_dir)
+            stdlib_roots = [Path(str(item)).resolve() for item in layout.get("stdlib") or []]
+            exclusions = [venv_root.resolve()]
+            for directory in site_dirs:
+                try:
+                    exclusions.append(directory.resolve() if directory.exists() else directory.absolute())
+                except OSError:
+                    exclusions.append(directory)
+            for item in layout.get("system_site_dirs") or []:
+                exclusions.append(Path(str(item)).resolve())
     report["pth_findings"] = pth_findings
-
-    bytecode_findings = scan_package_bytecode(package_dir)
     report["bytecode_findings"] = bytecode_findings
     target = console_script_target(resolved_launcher)
     report["console_script_target"] = target
 
     hashed_py_members = list(report.get("hashed_py_members") or [])
     hashed_members = list(report.get("hashed_members") or hashed_py_members)
-    hashed_files = {
-        (site / member).resolve()
-        for member in hashed_members
-        if (site / member).is_file()
-    }
-    stdlib_roots = [
-        Path(cfg[key]).resolve()
-        for key in ("stdlib", "platstdlib")
-        if cfg.get(key)
-    ]
+    hashed_files: set[Path] = set()
+    if site is not None:
+        hashed_files = {
+            (site / member).resolve()
+            for member in hashed_members
+            if (site / member).is_file()
+        }
+    static_blocked = bool(
+        pyvenv_findings
+        or layout_error
+        or pth_findings
+        or startup_findings
+        or bytecode_findings
+        or bin_findings
+        or target != PINNED_CONSOLE_SCRIPT_TARGET
+        or incoming_overrides
+        or not report.get("ok")
+        or site is None
+        or package_dir is None
+    )
+
+    # --- probe phase: only after a clean static phase ---
     launcher_module_findings: list[str] = []
     loaded_module_origins: dict[str, Any] = {}
-    if not bytecode_findings and not bin_findings:
+    origins: dict[str, Any] | None = None
+    bind_error: str | None = "effective origins were not probed"
+    bound = False
+    if not static_blocked and package_dir is not None and site is not None:
         try:
             doctor = probe_launcher_doctor(resolved_launcher, env)
             loaded_module_origins = dict(doctor.get("loaded_module_origins") or {})
@@ -1252,32 +1598,26 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
                 stdlib_roots=stdlib_roots,
                 hashed_files=hashed_files,
                 launcher=resolved_launcher,
-                venv_prefix=Path(cfg["prefix"]),
+                venv_prefix=venv_root,
+                exclusions=exclusions,
             )
         except (RuntimeError, json.JSONDecodeError, KeyError, TypeError) as exc:
             launcher_module_findings = [str(exc)]
-    elif bin_findings:
-        launcher_module_findings = list(bin_findings)
-    report["loaded_module_origins"] = loaded_module_origins
-    report["launcher_module_findings"] = launcher_module_findings
-    bind_error: str | None = "effective origins were not probed"
-    startup_findings: list[str] = []
-    origins: dict[str, Any] | None = None
-    # Do not import runspecimen while unhashed bytecode is sitting next to
-    # hashed sources: -B still loads an existing .pyc.
-    if not bytecode_findings:
         try:
-            origins = probe_effective_origins(interpreter, env)
+            origins = probe_effective_origins(
+                interpreter,
+                env,
+                trusted_stdlib=stdlib_roots,
+                exclusions=exclusions,
+            )
         except (RuntimeError, json.JSONDecodeError, KeyError) as exc:
             origins = None
             bind_error = str(exc)
-    else:
-        bind_error = (
-            "installed runspecimen package contains bytecode "
-            "(__pycache__ / .pyc); install with pip install --no-compile "
-            "and PYTHONDONTWRITEBYTECODE=1"
-        )
-    if origins is not None:
+    report["loaded_module_origins"] = loaded_module_origins
+    report["launcher_module_findings"] = launcher_module_findings
+
+    # --- evidence / verdict ---
+    if origins is not None and package_dir is not None and site is not None:
         rs_file = Path(origins["runspecimen_file"])
         cli_file = Path(origins["cli_file"])
         report["runspecimen_file"] = str(rs_file)
@@ -1304,41 +1644,37 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
             hashed_py_members=hashed_py_members,
         )
         report["origins_bound"] = bound
-        startup_findings = startup_customization_findings(
-            origins,
-            prefix=Path(cfg["prefix"]),
-            site_packages=site,
+        startup_findings.extend(
+            startup_customization_findings(
+                origins,
+                prefix=venv_root,
+                site_packages=site,
+                stdlib_roots=stdlib_roots,
+                exclusions=exclusions,
+            )
         )
         if origins.get("pycache_prefix"):
-            startup_findings.append(
-                f"sys.pycache_prefix is set: {origins.get('pycache_prefix')}"
-            )
+            startup_findings.append(f"sys.pycache_prefix is set: {origins.get('pycache_prefix')}")
         if not origins.get("dont_write_bytecode"):
             startup_findings.append("probe did not run with bytecode writing disabled")
         if origins.get("cached_bytecode"):
             startup_findings.append(
                 "loaded runspecimen modules have existing bytecode: "
-                + ", ".join(
-                    str(item.get("cached") or item)
-                    for item in origins["cached_bytecode"]
-                )
+                + ", ".join(str(item.get("cached") or item) for item in origins["cached_bytecode"])
             )
         if origins.get("sourceless_bytecode"):
             startup_findings.append(
                 "loaded sourceless runspecimen bytecode: "
-                + ", ".join(
-                    str(item.get("file") or item)
-                    for item in origins["sourceless_bytecode"]
-                )
+                + ", ".join(str(item.get("file") or item) for item in origins["sourceless_bytecode"])
             )
     else:
-        bound = False
         report["origins_bound"] = False
-        startup_findings = startup_customization_findings(
-            None,
-            prefix=Path(cfg["prefix"]),
-            site_packages=site,
-        )
+        if bytecode_findings:
+            bind_error = (
+                "installed runspecimen package contains bytecode "
+                "(__pycache__ / .pyc); install with pip install --no-compile "
+                "and PYTHONDONTWRITEBYTECODE=1"
+            )
     report["startup_findings"] = startup_findings
 
     failures: list[str] = []
@@ -1365,6 +1701,10 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         )
     if incoming_overrides:
         failures.append("import overrides: " + "; ".join(incoming_overrides))
+    if pyvenv_findings:
+        failures.extend(pyvenv_findings)
+    if layout_error:
+        failures.append(layout_error)
     hook_file = _first_hook_file(
         pth_findings,
         startup_findings,
@@ -1375,8 +1715,10 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         failures.append(hook_refusal_message(hook_file))
     if not bound:
         failures.append(bind_error or "effective origins are not bound to the verified package directory")
-    if not report.get("ok"):
+    if site is not None and not report.get("ok"):
         failures.append(str(report.get("message") or "installed tree does not match the pinned wheel"))
+    elif site is None and not pyvenv_findings and not layout_error:
+        failures.append("installed tree does not match the pinned wheel")
 
     if failures:
         report["ok"] = False

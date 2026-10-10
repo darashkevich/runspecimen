@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any, TextIO
 
-from runspecimen.atomic import atomic_write_json, read_json
+from runspecimen.atomic import atomic_write_json, read_json_nofollow
 from runspecimen.contract import Contract, check_contract_paths, load_contract
 from runspecimen.errors import ApprovalError, LeaseError, PathEscapeError
 from runspecimen.isolation import plans_match
@@ -109,7 +109,7 @@ def load_approval(state_dir: Path) -> dict | None:
         )
     if not path.exists():
         return None
-    return read_json(path)
+    return read_json_nofollow(path)
 
 
 def require_interactive_tty(
