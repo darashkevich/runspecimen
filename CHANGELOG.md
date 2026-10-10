@@ -4,6 +4,11 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
+- RQ17-01: the installed-wheel check no longer stops after 64 import directories. A path that does not exist is not counted. If more existing directories remain than the check can safely read, it refuses in plain English and does not run the environment. An unreadable `.pth` file, zip, or interpreter `sitecustomize` is refused the same way. qafix18 pack.
+- RQ17-02: the acceptance sheet records `python3` before it creates the venv and runs the provenance script with that program only. It does not follow `bin/python`. qafix18 pack.
+- RQ17-03: `pyvenv.cfg` `home` and `executable` are compared by the real file they name, so a venv created through a symlink is accepted when that file is the Python running the check. qafix18 pack.
+- RQ17-04: a `.pth` file that is not UTF-8 text, or that contains a null byte, is a refusal in the usual JSON report. qafix18 pack.
+- RQ17-05: a `pyvenv.cfg` mismatch names that file. It is not reported as extra startup code. qafix18 pack.
 - RQ14-01: `python`, `python3`, `python3.X`, and `𝜋thon` in the venv must be a symlink to the base interpreter named by `pyvenv.cfg`, or a byte-for-byte copy of that file. A wrapper script is refused before it runs. The probe uses that base interpreter, not the venv launcher. qafix17 pack.
 - RQ14-02: a `.pth` line that names a folder or a zip is followed, including further `.pth` lines, and those locations are scanned for startup hooks. Debian's `sitecustomize` import (such as `apport_python_hook`) is read, not run; a copy on the venv path is refused. The probe uses `-S`, so that import chain does not run. qafix17 pack.
 - RQ14-03: `sitecustomize` and `usercustomize` are refused in every form this interpreter can import (source, bytecode, extension, package), not only a `.py` file. qafix17 pack.

@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-10-qafix17/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-10-qafix18/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-10-qafix17/` (resolved `pyvenv.cfg` path compare; not this sheet),
 `artifacts/0.2.0rc15-2026-10-10-qafix16/` (3.9/3.10 base-interpreter test fix; not this sheet),
 `artifacts/0.2.0rc15-2026-10-10-qafix15/` (first RQ14 cut; not this sheet),
 `artifacts/0.2.0rc15-2026-10-09-qafix14/` (static scan; not this sheet),
@@ -29,7 +30,7 @@ Record these identities at the top of your notes before N1 (fill in from this
 machine; N2 prints the full wheel digest):
 
 - Candidate SHA: `git rev-parse HEAD` of this checkout
-- Pack: `artifacts/0.2.0rc15-2026-10-10-qafix17/`
+- Pack: `artifacts/0.2.0rc15-2026-10-10-qafix18/`
 - Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
 - python3: `command -v python3` and `python3 --version`
 - Wheel SHA-256: `f4111bc60fdda2d59d24b2aa9740fad5e3a27bcbeb49ba0018c5958ee8382d9f` (must match N2 `wheel_sha256` and pack SHA256SUMS). These wheel bytes match the qafix14 wheel because the wheel is the engine package and that `src/` tree did not change. The verifier script in this checkout did change, and it is what N3 runs.
@@ -91,15 +92,17 @@ as they are; do not go back and invent exit codes that were not printed then.
 
 Paste this first. It remembers the pack path and defines four tiny helpers.
 `rs` and `py` always use the venv copies, with a clean Python environment.
-`basepy` is only for the provenance script: it follows `$PY` back to the real
-interpreter that created the venv, so site hooks cannot run before the check.
+`basepy` is only for the provenance script. It runs the `python3` recorded in
+`BASE_PY` before the venv exists. It does not follow `$PY`, and it does not
+run anything inside the venv or anything `$PY` points at.
 `rs_ok` is for steps that must succeed. `rs_neg` is for the two expected
 refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
 Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-10-qafix17"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-10-qafix18"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
+export BASE_PY="$(command -v python3)"
 export WORK=$(mktemp -d "${TMPDIR:-/tmp}/rs-ha-rc15.XXXXXX")
 export VENV="$WORK/venv"
 export RS="$VENV/bin/runspecimen"
@@ -109,7 +112,7 @@ export CAMPAIGN_ID="ha-campaign"
 export RUN_ID="ha-$(date +%Y%m%d-%H%M%S)-$$"
 rs() { env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 "$RS" "$@"; }
 py() { env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 "$PY" "$@"; }
-basepy() { BASE_PY="$PY"; while [ -L "$BASE_PY" ]; do _link=$(readlink "$BASE_PY"); case "$_link" in /*) BASE_PY="$_link" ;; *) BASE_PY="$(dirname "$BASE_PY")/$_link" ;; esac; done; env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP -u PYTHONPYCACHEPREFIX PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 "$BASE_PY" "$@"; }
+basepy() { env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP -u PYTHONPYCACHEPREFIX PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 "$BASE_PY" "$@"; }
 rs_ok() { echo "STEP $1 exit=$2"; if [ "$2" -ne 0 ]; then echo "FAIL: step $1 expected exit 0, got $2. Stop here; do not continue."; exit 1; fi; }
 rs_neg() { echo "STEP $1 exit=$2"; echo "$3"; if [ "$2" -eq 0 ]; then echo "FAIL: step $1 expected a refusal (nonzero exit), got 0. Stop here."; exit 1; fi; if printf '%s\n' "$3" | grep -Fqx -- "$4"; then echo "PASS: $1"; else echo "FAIL: step $1 did not print the expected message as a complete line:"; echo "  $4"; exit 1; fi; }
 ```
@@ -166,11 +169,12 @@ command -v runspecimen
 
 Do not start the provenance script with `py`. `py` is the venv's Python, and
 that program runs site hooks (including a `.pth` import, or a `sitecustomize`
-folder) before the script's first line. `basepy` follows the `$PY` symlink to
-the real interpreter that created the venv, then starts the script with `-I`
-so those hooks stay unloaded. The script itself then reads the venv without
-running it. Only a clean reading runs the launcher body on that same real
-interpreter, with site startup turned off.
+folder) before the script's first line. `basepy` runs the `python3` recorded
+in `BASE_PY` before the venv was created. It does not run `bin/python`, a
+wrapper copied there, or a symlink that starts inside the venv. It starts the
+script with `-I`. The script itself then compares that Python to `pyvenv.cfg`
+and reads the venv without running it. Only a clean reading runs the launcher
+body on that same Python, with site startup turned off.
 
 ```
 rs --version
@@ -202,7 +206,7 @@ realpath is under the interpreter's stdlib dir, not by name.
 There is no RECORD-based trust of `_distutils_hack`. The script prints the
 installed dist-info `RECORD` and `direct_url.json`. `__version__ ==
 0.2.0rc15` is not sufficient: the 2026-10-06-bump wheel reports the same
-version and must fail this step when `$WHEEL` is the qafix17 pin. A
+version and must fail this step when `$WHEEL` is the qafix18 pin. A
 same-version tree selected via inside-venv `PYTHONPATH`, a `.pth` prepend,
 sitecustomize, or an executable `.pth` import must also fail.
 

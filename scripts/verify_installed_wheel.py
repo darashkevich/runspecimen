@@ -433,6 +433,16 @@ def hook_refusal_message(file_hint: str) -> str:
     return HOOK_REFUSAL.format(file=file_hint)
 
 
+def _plain_scan_refusal(text: str) -> bool:
+    """Sentences that must be printed as themselves, not as a file name."""
+    return text.startswith((
+        "pyvenv.cfg ",
+        "too many directories",
+        "cannot ",
+        "followed too many",
+    ))
+
+
 def _first_hook_file(
     pth_findings: list[dict[str, Any]],
     startup_findings: list[str],
@@ -705,7 +715,16 @@ def interpreter_from_launcher(launcher: Path) -> Path:
             f"launcher {launcher} uses unsupported shebang {first!r}; "
             "only an absolute path to the venv's own Python is accepted"
         )
-    if not shebang.exists():
+    try:
+        shebang.lstat()
+    except OSError:
+        raise UnsupportedShebangError(
+            f"launcher shebang interpreter not found: {shebang}"
+        )
+    _final, walk_error = _final_regular_file(shebang)
+    if walk_error:
+        raise UnsupportedShebangError(walk_error)
+    if _final is None:
         raise UnsupportedShebangError(
             f"launcher shebang interpreter not found: {shebang}"
         )
@@ -791,7 +810,11 @@ def scan_package_bytecode(package_dir: Path) -> list[str]:
     findings: list[str] = []
     if not package_dir.is_dir():
         return findings
-    for path in sorted(package_dir.rglob("*")):
+    try:
+        paths = sorted(package_dir.rglob("*"))
+    except OSError as exc:
+        return [f"cannot list the installed package: {package_dir} ({exc})"]
+    for path in paths:
         try:
             relative_parts = path.relative_to(package_dir).parts
         except ValueError:
@@ -1158,16 +1181,49 @@ def _normalize_pth_import_line(line: str) -> str:
     return line.replace("\t", " ").strip()
 
 
+def read_pth_text(path: Path) -> tuple[str | None, str | None]:
+    """Read a .pth file as UTF-8. A problem string means the file was not scanned."""
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        return None, f"cannot read this .pth file: {path} ({exc})"
+    if b"\x00" in data:
+        return None, (
+            f"cannot read this .pth file: {path} (it contains a null byte)"
+        )
+    try:
+        return data.decode("utf-8"), None
+    except UnicodeDecodeError:
+        return None, (
+            f"cannot read this .pth file: {path} (it is not UTF-8 text)"
+        )
+
+
+def _pth_problem(path: Path, reason: str, *, line: int = 0, text: str = "") -> dict[str, Any]:
+    return {"path": str(path), "line": line, "reason": reason, "text": text}
+
+
 def scan_pth_files(site_packages: Path) -> list[dict[str, Any]]:
     """Reject .pth path prepends and every executable ``import`` line.
 
     Filename and owner are not trust. setuptools' ``distutils-precedence.pth``
     is refused the same as any other import hook. There is no known-safe body.
+    A file that cannot be decoded is a refusal, not a skip.
     """
     findings: list[dict[str, Any]] = []
-    site_packages = site_packages.resolve()
-    for pth in sorted(site_packages.glob("*.pth")):
-        text = pth.read_text(encoding="utf-8", errors="replace")
+    try:
+        site_packages = site_packages.resolve()
+    except (OSError, ValueError) as exc:
+        return [_pth_problem(site_packages, f"cannot resolve the site directory {site_packages}: {exc}")]
+    try:
+        pth_files = sorted(site_packages.glob("*.pth"))
+    except OSError as exc:
+        return [_pth_problem(site_packages, f"cannot list .pth files in {site_packages}: {exc}")]
+    for pth in pth_files:
+        text, problem = read_pth_text(pth)
+        if problem or text is None:
+            findings.append(_pth_problem(pth, problem or f"cannot read this .pth file: {pth}"))
+            continue
         for lineno, raw in enumerate(text.splitlines(), 1):
             line = raw.strip()
             if not line or line.startswith("#"):
@@ -1188,10 +1244,19 @@ def scan_pth_files(site_packages: Path) -> list[dict[str, Any]]:
                     "text": _normalize_pth_import_line(line),
                 })
                 continue
-            candidate = Path(line)
-            if not candidate.is_absolute():
-                candidate = site_packages / candidate
-            resolved = candidate.resolve()
+            try:
+                candidate = Path(line)
+                if not candidate.is_absolute():
+                    candidate = site_packages / candidate
+                resolved = candidate.resolve()
+            except (OSError, ValueError) as exc:
+                findings.append(_pth_problem(
+                    pth,
+                    f"cannot resolve a path named by this .pth file: {exc}",
+                    line=lineno,
+                    text=line,
+                ))
+                continue
             try:
                 resolved.relative_to(site_packages)
             except ValueError:
@@ -1265,6 +1330,46 @@ def base_interpreter_in_use() -> Path:
     return Path(raw)
 
 
+def _interpreter_names_for_home(base: Path, executable: str) -> list[str]:
+    """File names ``pyvenv.cfg`` home may use for this base interpreter."""
+    names: list[str] = []
+
+    def add(name: str) -> None:
+        if name and name not in names:
+            names.append(name)
+
+    add("python")
+    add("python3")
+    add(f"python{sys.version_info[0]}.{sys.version_info[1]}")
+    add(base.name)
+    if executable:
+        add(Path(executable).name)
+    return names
+
+
+def _pyvenv_names_base(home: str, executable: str, base: Path) -> bool:
+    """True when ``home/<name>`` and ``executable`` both name ``base``.
+
+    Comparison is filesystem identity (``samefile`` / ``realpath``). Neither
+    file is executed. Python 3.9 and 3.10 omit ``executable``; ``home/<name>``
+    is enough in that case. A venv created through a symlink records ``home``
+    as the symlink's directory and ``executable`` as the real binary.
+    """
+    if not home:
+        return False
+    home_dir = Path(home)
+    named = False
+    for name in _interpreter_names_for_home(base, executable):
+        if _same_file(home_dir / name, base):
+            named = True
+            break
+    if not named:
+        return False
+    if executable and not _same_file(Path(executable), base):
+        return False
+    return True
+
+
 def validate_pyvenv(venv_root: Path, base: Path) -> list[str]:
     """Refuse a venv whose config does not name this base interpreter."""
     path = venv_root / "pyvenv.cfg"
@@ -1272,15 +1377,16 @@ def validate_pyvenv(venv_root: Path, base: Path) -> list[str]:
         return [f"pyvenv.cfg is missing: {path}"]
     try:
         cfg = _parse_pyvenv_cfg(path)
-    except OSError as exc:
-        return [f"cannot read pyvenv.cfg: {exc}"]
+    except (OSError, UnicodeError) as exc:
+        return [f"pyvenv.cfg cannot be read: {path} ({exc})"]
     findings: list[str] = []
     home = cfg.get("home", "")
-    if not home or not _same_file(Path(home), base.parent):
-        findings.append("pyvenv.cfg home does not point at the base interpreter in use")
     executable = cfg.get("executable", "")
-    if executable and not _same_file(Path(executable), base):
-        findings.append("pyvenv.cfg executable does not match the base interpreter in use")
+    if not _pyvenv_names_base(home, executable, base):
+        findings.append(
+            "pyvenv.cfg does not name the Python that is running this check: "
+            f"{path}"
+        )
     if cfg.get("include-system-site-packages", "").lower() != "false":
         findings.append(f"include-system-site-packages is turned on: {path}")
     version = cfg.get("version", "")
@@ -1290,7 +1396,10 @@ def validate_pyvenv(venv_root: Path, base: Path) -> list[str]:
     except ValueError:
         major_minor = None
     if major_minor != tuple(sys.version_info[:2]):
-        findings.append("pyvenv.cfg version does not match the base interpreter in use")
+        findings.append(
+            "pyvenv.cfg version does not match the Python that is running this check: "
+            f"{path}"
+        )
     return findings
 
 
@@ -1456,8 +1565,12 @@ def scan_customization_hooks(
                 continue
             try:
                 present = candidate.is_file() or candidate.is_symlink()
-            except OSError:
-                present = False
+            except OSError as exc:
+                findings.append(
+                    "cannot tell whether a startup hook is present: "
+                    f"{candidate} ({exc})"
+                )
+                continue
             if not present:
                 continue
             reported.add(key)
@@ -1493,8 +1606,8 @@ def _scan_zip_hooks(
     try:
         with zipfile.ZipFile(path) as archive:
             names = set(archive.namelist())
-    except (OSError, zipfile.BadZipFile):
-        return findings
+    except (OSError, zipfile.BadZipFile) as exc:
+        return [f"cannot read this zip: {path} ({exc})"]
     suffixes = _import_suffixes()
     for hook in hook_names:
         matched = False
@@ -1537,38 +1650,65 @@ def _imported_module_names(source: str) -> list[str]:
     return chosen
 
 
-def interpreter_sitecustomize_imports(stdlib_roots: list[Path]) -> tuple[str, ...]:
+def interpreter_sitecustomize_imports(
+    stdlib_roots: list[Path],
+) -> tuple[tuple[str, ...], list[str]]:
     """Modules the base interpreter's sitecustomize would import.
 
-    The file is read as text. It is not imported and not executed.
+    The file is read as text. It is not imported and not executed. If that
+    file exists but cannot be read or parsed, the check refuses.
     """
     for root in stdlib_roots:
         path = root / "sitecustomize.py"
-        if not path.is_file():
+        try:
+            present = path.is_file()
+        except OSError as exc:
+            return (), [f"cannot read the interpreter sitecustomize: {path} ({exc})"]
+        if not present:
             continue
         try:
-            source = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        return tuple(_imported_module_names(source))
-    return ()
+            data = path.read_bytes()
+        except OSError as exc:
+            return (), [f"cannot read the interpreter sitecustomize: {path} ({exc})"]
+        if b"\x00" in data:
+            return (), [
+                f"cannot read the interpreter sitecustomize: {path} (it contains a null byte)"
+            ]
+        try:
+            source = data.decode("utf-8")
+        except UnicodeDecodeError:
+            return (), [
+                f"cannot read the interpreter sitecustomize: {path} (it is not UTF-8 text)"
+            ]
+        try:
+            ast.parse(source)
+        except (SyntaxError, ValueError):
+            return (), [f"cannot read the interpreter sitecustomize: {path}"]
+        return tuple(_imported_module_names(source)), []
+    return (), []
 
 
-def pth_import_entries(directory: Path) -> list[Path]:
+def pth_import_entries(directory: Path) -> tuple[list[Path], list[str]]:
     """Directories and zips a non-import .pth line would add to sys.path.
 
     Matches site.py: the line is joined with the .pth directory and kept when
-    that path exists. Import lines are reported separately and are not listed
-    here.
+    that path exists. A path that does not exist is not returned. Import lines
+    are reported separately and are not listed here. An unreadable .pth file
+    is a refusal, not a skip.
     """
     if not directory.is_dir():
-        return []
+        return [], []
     added: list[Path] = []
+    findings: list[str] = []
     seen: set[str] = set()
-    for pth in sorted(directory.glob("*.pth")):
-        try:
-            text = pth.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+    try:
+        pth_files = sorted(directory.glob("*.pth"))
+    except OSError as exc:
+        return [], [f"cannot list .pth files in {directory}: {exc}"]
+    for pth in pth_files:
+        text, problem = read_pth_text(pth)
+        if problem or text is None:
+            findings.append(problem or f"cannot read this .pth file: {pth}")
             continue
         for raw in text.splitlines():
             line = raw.strip()
@@ -1576,42 +1716,74 @@ def pth_import_entries(directory: Path) -> list[Path]:
                 continue
             if line.startswith("import ") or line.startswith("import\t"):
                 continue
-            candidate = Path(line)
-            if not candidate.is_absolute():
-                candidate = directory / candidate
-            if not candidate.exists():
+            try:
+                candidate = Path(line)
+                if not candidate.is_absolute():
+                    candidate = directory / candidate
+                exists = candidate.exists()
+            except (OSError, ValueError) as exc:
+                findings.append(f"cannot tell whether a path named by {pth} exists: {exc}")
+                continue
+            if not exists:
                 continue
             try:
                 key = str(candidate.resolve())
-            except OSError:
-                key = str(candidate)
+            except (OSError, ValueError) as exc:
+                findings.append(f"cannot resolve a path named by {pth}: {exc}")
+                continue
             if key in seen:
                 continue
             seen.add(key)
             added.append(candidate)
-    return added
+    return added, findings
 
 
-def expand_site_paths(site_dirs: list[Path]) -> list[Path]:
-    """Site directories plus every path a .pth line would add, recursively."""
+# High enough that a long .pth is fully scanned. Hitting it refuses; it does
+# not drop the rest of the path. Paths that do not exist are not counted.
+SITE_PATH_LIMIT = 4096
+
+
+def expand_site_paths(site_dirs: list[Path]) -> tuple[list[Path], list[str]]:
+    """Site directories plus every existing path a .pth line would add.
+
+    A path that does not exist is not scanned and does not count toward the
+    safety ceiling. If more existing paths remain after that ceiling, the
+    scan refuses instead of dropping them.
+    """
     chosen: list[Path] = []
     seen: set[str] = set()
+    findings: list[str] = []
     queue: list[Path] = list(site_dirs)
-    while queue and len(chosen) < 64:
+    while queue:
         directory = queue.pop(0)
         try:
-            key = str(directory.resolve()) if directory.exists() else str(directory)
-        except OSError:
-            key = str(directory)
+            exists = directory.exists()
+        except (OSError, ValueError) as exc:
+            findings.append(f"cannot tell whether an import path exists: {directory} ({exc})")
+            continue
+        if not exists:
+            continue
+        try:
+            key = str(directory.resolve())
+        except (OSError, ValueError) as exc:
+            findings.append(f"cannot resolve an import path: {directory} ({exc})")
+            continue
         if key in seen:
             continue
+        if len(chosen) >= SITE_PATH_LIMIT:
+            findings.append(
+                "too many directories on the import path to check them all. "
+                "Create a fresh environment by following the acceptance sheet."
+            )
+            break
         seen.add(key)
         chosen.append(directory)
         if not directory.is_dir() or zipfile.is_zipfile(directory):
             continue
-        for extra in pth_import_entries(directory):
-            queue.append(extra)
-    return chosen
+        extras, extra_findings = pth_import_entries(directory)
+        findings.extend(extra_findings)
+        queue.extend(extras)
+    return chosen, findings
 
 
 def _is_venv_interpreter_entry(name: str) -> bool:
@@ -1629,31 +1801,42 @@ def _is_venv_interpreter_entry(name: str) -> bool:
     return bool(rest) and all(ch.isdigit() or ch == "." for ch in rest)
 
 
-def _final_regular_file(path: Path) -> Path | None:
-    """Walk symlinks without executing the target. Return the regular file."""
+# A longer chain is a refusal with a reason, not a silent stop.
+LINK_WALK_LIMIT = 40
+
+
+def _final_regular_file(path: Path) -> tuple[Path | None, str | None]:
+    """Walk symlinks without executing the target.
+
+    Returns ``(regular file, None)`` or ``(None, reason)``. A reason means
+    the walk could not be finished and the caller must refuse.
+    """
     current = path
     seen: set[str] = set()
-    for _ in range(40):
+    for _ in range(LINK_WALK_LIMIT):
         key = os.path.abspath(str(current))
         if key in seen:
-            return None
+            return None, f"venv interpreter link loop: {path}"
         seen.add(key)
         try:
             st = current.lstat()
-        except OSError:
-            return None
+        except OSError as exc:
+            return None, f"cannot follow the venv interpreter {path}: {exc}"
         if stat.S_ISLNK(st.st_mode):
             try:
                 raw = os.readlink(current)
-            except OSError:
-                return None
+            except OSError as exc:
+                return None, f"cannot follow the venv interpreter {path}: {exc}"
             nxt = Path(raw)
             current = nxt if nxt.is_absolute() else current.parent / nxt
             continue
         if stat.S_ISREG(st.st_mode):
-            return current
-        return None
-    return None
+            return current, None
+        return None, (
+            "venv interpreter is not the base interpreter named by pyvenv.cfg: "
+            f"{path}"
+        )
+    return None, f"followed too many links while checking the venv interpreter: {path}"
 
 
 def scan_venv_interpreters(bin_dir: Path, base: Path) -> list[str]:
@@ -1677,11 +1860,14 @@ def scan_venv_interpreters(bin_dir: Path, base: Path) -> list[str]:
     for path in entries:
         if not _is_venv_interpreter_entry(path.name):
             continue
-        final = _final_regular_file(path)
-        if final is None:
+        final, walk_error = _final_regular_file(path)
+        if walk_error or final is None:
             findings.append(
-                "venv interpreter is not the base interpreter named by pyvenv.cfg: "
-                f"{path}"
+                walk_error
+                or (
+                    "venv interpreter is not the base interpreter named by pyvenv.cfg: "
+                    f"{path}"
+                )
             )
             continue
         try:
@@ -1707,7 +1893,11 @@ def scan_dist_packages_modules(directory: Path) -> list[str]:
     if not directory.is_dir() or directory.name != "dist-packages":
         return []
     findings: list[str] = []
-    for path in sorted(directory.rglob("*")):
+    try:
+        paths = sorted(directory.rglob("*"))
+    except OSError as exc:
+        return [f"cannot list dist-packages: {directory} ({exc})"]
+    for path in paths:
         if path.is_dir():
             continue
         if path.suffix.lower() == ".pth":
@@ -1848,8 +2038,10 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
             report["verified_package_dir"] = str(package_dir)
             seen_pth: set[tuple[str, int, str]] = set()
             stdlib_roots = [Path(str(item)).resolve() for item in layout.get("stdlib") or []]
-            chain_names = interpreter_sitecustomize_imports(stdlib_roots)
-            scan_roots = expand_site_paths(site_dirs)
+            chain_names, chain_problems = interpreter_sitecustomize_imports(stdlib_roots)
+            startup_findings.extend(chain_problems)
+            scan_roots, path_problems = expand_site_paths(site_dirs)
+            startup_findings.extend(path_problems)
             for directory in scan_roots:
                 if directory.is_dir() and not zipfile.is_zipfile(directory):
                     for item in scan_pth_files(directory):
@@ -1867,8 +2059,10 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
             for directory in site_dirs:
                 try:
                     exclusions.append(directory.resolve() if directory.exists() else directory.absolute())
-                except OSError:
-                    exclusions.append(directory)
+                except (OSError, ValueError) as exc:
+                    startup_findings.append(
+                        f"cannot resolve an import path: {directory} ({exc})"
+                    )
             for item in layout.get("system_site_dirs") or []:
                 exclusions.append(Path(str(item)).resolve())
     report["pth_findings"] = pth_findings
@@ -2029,9 +2223,18 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         failures.extend(pyvenv_findings)
     if layout_error:
         failures.append(layout_error)
+    already_reported = set(pyvenv_findings)
+    if layout_error:
+        already_reported.add(layout_error)
+    for item in startup_findings:
+        text = str(item)
+        if text in already_reported or not _plain_scan_refusal(text):
+            continue
+        failures.append(text)
+        already_reported.add(text)
     hook_file = _first_hook_file(
         pth_findings,
-        startup_findings,
+        [item for item in startup_findings if not _plain_scan_refusal(str(item))],
         list(report.get("meta_path_findings") or []),
         list(report.get("path_hook_findings") or []),
     )
@@ -2072,7 +2275,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Absolute path to the venv console script (default: $prefix/bin/runspecimen)",
     )
     args = parser.parse_args(argv)
-    report = verify_launcher_install(wheel=args.wheel, launcher=args.launcher)
+    try:
+        report = verify_launcher_install(wheel=args.wheel, launcher=args.launcher)
+    except Exception as exc:
+        report = {
+            "ok": False,
+            "message": f"the installed-wheel check stopped: {exc}",
+        }
     printable = {
         key: report[key]
         for key in (

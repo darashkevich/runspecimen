@@ -96,17 +96,31 @@ which directories Python's site startup would use. That list covers Debian
 and Ubuntu `dist-packages` directories, paths named by `pyvenv.cfg`, every
 folder or zip a `.pth` line would add (followed again when those folders
 have their own `.pth` lines), and the user site when this environment would
-actually turn the user site on. A normal venv leaves the user site off. The
+actually turn the user site on. A normal venv leaves the user site off. A
+path that does not exist is not scanned and is not counted. The check does
+not stop after a fixed number of directories and leave the rest unread. If
+there are more existing directories than it can safely read, it refuses in
+plain English and does not run the environment. The
 check then reads those locations for startup hooks: a `.pth` file with an
 `import` line, `sitecustomize` or `usercustomize` in every form Python can
 import (source, bytecode, an extension, or a package), a module that the
 base interpreter's own `sitecustomize` would import (on Debian, that is
-`apport_python_hook`), and bytecode that does not belong. `python`,
+`apport_python_hook`), and bytecode that does not belong. A `.pth` file that
+is not UTF-8 text, or that contains a null byte, is refused, and the report
+is still the usual JSON. A `.pth` file or zip that cannot be read is refused
+the same way. `python`,
 `python3`, `python3.X`, and `𝜋thon` must be a symlink to the base interpreter
-named by `pyvenv.cfg`, or a byte-for-byte copy of that file. `pyvenv.cfg`
-must name this same base interpreter, and it must not turn on system
-site-packages. When that switch is on, the message names the `pyvenv.cfg`
-file. Any of those findings stops the check immediately.
+named by `pyvenv.cfg`, or a byte-for-byte copy of that file. Following too
+many links is a refusal with that reason. `pyvenv.cfg`
+must name this same base interpreter. `home` and `executable` are compared
+by the real file they name (`home` plus the interpreter's file name, and
+`executable` when it is present), so a venv created through a symlink is
+accepted when that file is the Python running the check. A mismatch names
+`pyvenv.cfg` and is not described as extra startup code. The file must not
+turn on system site-packages. When that switch is on, the message names the
+`pyvenv.cfg` file. Any of those findings stops the check immediately. The
+acceptance sheet starts this check with the `python3` it recorded before
+creating the venv. It does not run the venv's `python`.
 
 A path counts as the standard library only when it is inside the base
 interpreter's real library directories, is not a site-packages or
