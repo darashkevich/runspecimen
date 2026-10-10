@@ -243,9 +243,23 @@ class Qafix18VerifierTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(created.returncode, 0, created.stderr)
-            cfg_text = (venv_dir / "pyvenv.cfg").read_text(encoding="utf-8")
-            self.assertIn(f"home = {linkdir}", cfg_text)
-            self.assertNotIn(f"home = {real.parent}", cfg_text)
+            cfg_path = venv_dir / "pyvenv.cfg"
+            # Debian records home as the symlink directory and executable as
+            # the real binary. macOS framework Python records home as the real
+            # framework bin even when creation went through the symlink. Write
+            # the Debian shape so the check is the same on every host.
+            lines = []
+            saw_home = False
+            for raw in cfg_path.read_text(encoding="utf-8").splitlines():
+                key = raw.split("=", 1)[0].strip().lower() if "=" in raw else ""
+                if key == "home":
+                    lines.append(f"home = {linkdir}")
+                    saw_home = True
+                else:
+                    lines.append(raw)
+            if not saw_home:
+                raise AssertionError(cfg_path.read_text(encoding="utf-8"))
+            cfg_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
             env = _sanitized_env()
             py = venv_dir / "bin" / "python"
             _uninstall_setuptools(py, env)

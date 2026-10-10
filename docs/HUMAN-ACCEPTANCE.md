@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-10-qafix18/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-10-qafix19/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-10-qafix18/` (RQ17 scan and sheet; not this sheet),
 `artifacts/0.2.0rc15-2026-10-10-qafix17/` (resolved `pyvenv.cfg` path compare; not this sheet),
 `artifacts/0.2.0rc15-2026-10-10-qafix16/` (3.9/3.10 base-interpreter test fix; not this sheet),
 `artifacts/0.2.0rc15-2026-10-10-qafix15/` (first RQ14 cut; not this sheet),
@@ -30,7 +31,7 @@ Record these identities at the top of your notes before N1 (fill in from this
 machine; N2 prints the full wheel digest):
 
 - Candidate SHA: `git rev-parse HEAD` of this checkout
-- Pack: `artifacts/0.2.0rc15-2026-10-10-qafix18/`
+- Pack: `artifacts/0.2.0rc15-2026-10-10-qafix19/`
 - Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
 - python3: `command -v python3` and `python3 --version`
 - Wheel SHA-256: `f4111bc60fdda2d59d24b2aa9740fad5e3a27bcbeb49ba0018c5958ee8382d9f` (must match N2 `wheel_sha256` and pack SHA256SUMS). These wheel bytes match the qafix14 wheel because the wheel is the engine package and that `src/` tree did not change. The verifier script in this checkout did change, and it is what N3 runs.
@@ -100,7 +101,7 @@ refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
 Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-10-qafix18"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-10-qafix19"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 export BASE_PY="$(command -v python3)"
 export WORK=$(mktemp -d "${TMPDIR:-/tmp}/rs-ha-rc15.XXXXXX")
@@ -206,7 +207,7 @@ realpath is under the interpreter's stdlib dir, not by name.
 There is no RECORD-based trust of `_distutils_hack`. The script prints the
 installed dist-info `RECORD` and `direct_url.json`. `__version__ ==
 0.2.0rc15` is not sufficient: the 2026-10-06-bump wheel reports the same
-version and must fail this step when `$WHEEL` is the qafix18 pin. A
+version and must fail this step when `$WHEEL` is the qafix19 pin. A
 same-version tree selected via inside-venv `PYTHONPATH`, a `.pth` prepend,
 sitecustomize, or an executable `.pth` import must also fail.
 

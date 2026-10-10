@@ -4,6 +4,7 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
+- The symlink-home acceptance test writes `pyvenv.cfg` `home` as the symlink directory. macOS framework Python records the real bin even when the venv was created through a symlink, so the Debian shape has to be written or that host never reaches the check. qafix19 pack.
 - RQ17-01: the installed-wheel check no longer stops after 64 import directories. A path that does not exist is not counted. If more existing directories remain than the check can safely read, it refuses in plain English and does not run the environment. An unreadable `.pth` file, zip, or interpreter `sitecustomize` is refused the same way. qafix18 pack.
 - RQ17-02: the acceptance sheet records `python3` before it creates the venv and runs the provenance script with that program only. It does not follow `bin/python`. qafix18 pack.
 - RQ17-03: `pyvenv.cfg` `home` and `executable` are compared by the real file they name, so a venv created through a symlink is accepted when that file is the Python running the check. qafix18 pack.
