@@ -66,6 +66,20 @@ command without a human at the keyboard. `approve` requires interactive stdin
 (`skip_tty_check`) exist for regenerating demos; they are not the production
 path.
 
+## How do I get human-readable CLI output?
+
+JSON is the default for every command (agents, tests, and scripts depend on it).
+Pass `--pretty` for a table-style view of the same result:
+
+```bash
+runspecimen --pretty doctor --workspace .
+runspecimen status --pretty --workspace . --campaign-id demo-campaign --run-id run-001
+```
+
+`--pretty` does not change exit codes, hashes, or the approval gate. Color is
+`--color auto|always|never` (`NO_COLOR` disables auto). For a copy-paste first
+run: `runspecimen quickstart`.
+
 ## What is the eval fast path?
 
 An opt-in exact-match step on `runspecimen eval` that can finish a configured
@@ -77,10 +91,17 @@ run, or count a model call unless the skipped task was a model judgment. See
 
 ## Can agents approve runs?
 
-**No.** Codex/Cursor plugins and the narrow adapter
+**Not through the app.** Codex/Cursor plugins and the narrow adapter
 (`about`, `dashboard`, `doctor`, `validate`, `status`, `preflight`, `run`, `postflight`,
 `verify`) deliberately exclude `approve`. A human must run
 `runspecimen approve --workspace … --contract …` in a real terminal.
+
+RunSpecimen stops agents from approving through the app and makes planted or
+edited approvals show up as broken receipts. A program running as you that can
+edit RunSpecimen's files can still add a fake approval to the record. Signing
+with a key the agent can't access lets you check afterwards that a receipt is
+authentic, when a signature is required and checked; it does not stop a program
+running as you from adding a fake approval or running the job.
 
 ## Why does verify fail after I clone the repo?
 
@@ -101,9 +122,14 @@ you need concurrency. There is no built-in worker pool or scheduler.
 ## Is the hash chain a signature?
 
 **No.** Events and certificates are SHA-256 hash-chained and locally
-recomputable. They detect casual tampering of the evidence set, but a
-privileged attacker who can rewrite the whole workspace can fabricate a new
-history.
+recomputable. They detect planted or edited `approval.json` files and casual
+tampering of the evidence set. The chain is unkeyed: a program running as you
+that can edit RunSpecimen's files can still add a fake approval to the record.
+Signing with a key the agent can't access lets you check afterwards that a
+receipt is authentic, when a signature is required and checked
+(`verify-signature` with an out-of-reach key, or an installed holder —
+fail-closed under D1/D2); it does not stop a program running as you from
+adding a fake approval or running the job.
 
 The default `sign` command provides HMAC-SHA256 authentication (a shared-secret
 Message Authentication Code), not digital signatures. Anyone with the key

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import unittest
 from io import StringIO
@@ -35,6 +36,84 @@ class TestApprovalAndPaths(RunSpecimenTestCase):
     def test_tty_required(self) -> None:
         with self.assertRaises(ApprovalError):
             require_interactive_tty(stdin=StringIO("APPROVE\n"), stdout=StringIO())
+
+    def test_piped_ordinary_contract_still_requires_tty(self) -> None:
+        cpath = write_contract(self.ws, "contract.json", base_contract())
+        with self.assertRaises(ApprovalError) as ctx:
+            approve_contract(
+                contract_path=cpath,
+                workspace=self.ws,
+                stdin=StringIO("APPROVE\n"),
+                stdout=StringIO(),
+            )
+        self.assertIn("interactive TTY", str(ctx.exception))
+
+    def test_piped_protected_policy_refuses_before_tty(self) -> None:
+        cpath = write_contract(
+            self.ws, "n10.json", base_contract(execution_approval="local")
+        )
+        with self.assertRaises(ApprovalError) as ctx:
+            approve_contract(
+                contract_path=cpath,
+                workspace=self.ws,
+                stdin=StringIO("APPROVE\n"),
+                stdout=StringIO(),
+            )
+        self.assertEqual(
+            str(ctx.exception),
+            "execution policy local has no typed-phrase fallback",
+        )
+        self.assertNotIn("interactive TTY", str(ctx.exception))
+
+    def test_pty_protected_policy_refuses_with_the_same_message(self) -> None:
+        from tests.helpers import NullWriter, PhraseReader
+
+        cpath = write_contract(
+            self.ws, "n10-pty.json", base_contract(execution_approval="local")
+        )
+        reader = PhraseReader("APPROVE\n")
+        with self.assertRaises(ApprovalError) as ctx:
+            approve_contract(
+                contract_path=cpath,
+                workspace=self.ws,
+                stdin=reader,
+                stdout=NullWriter(),
+            )
+        self.assertEqual(
+            str(ctx.exception),
+            "execution policy local has no typed-phrase fallback",
+        )
+        self.assertEqual(reader._pos, 0)
+
+    def test_cli_piped_approve_on_local_policy_prints_typed_phrase_fallback(self) -> None:
+        cpath = write_contract(
+            self.ws, "n10-cli.json", base_contract(execution_approval="local")
+        )
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(SRC)
+        env["PYTHONNOUSERSITE"] = "1"
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "runspecimen",
+                "approve",
+                "--workspace",
+                str(self.ws),
+                "--contract",
+                str(cpath),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+            input="",
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn(
+            "execution policy local has no typed-phrase fallback", proc.stderr
+        )
+        self.assertNotIn("interactive TTY", proc.stderr)
 
     def test_stale_approval_expired(self) -> None:
         cpath = write_contract(self.ws, "contract.json", base_contract())

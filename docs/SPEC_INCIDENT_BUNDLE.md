@@ -60,7 +60,7 @@ Never copy `remote_confirm_challenge.local` or pairing tokens.
 }
 ```
 
-`confirm_channel` is copied from approval or the last `approval` event (`local_tty_approve` | `remote_human_confirm` | omitted). Verify output must surface the same field so TTY vs phone confirm is honest.
+`confirm_channel` comes from the certificate (bound into `certificate_id`) and the latest chained `approval` event (`local_tty_approve` | `remote_human_confirm` | omitted). It is never displayed from an unbound `approval.json` side file. Verify output must surface the same field so TTY vs phone confirm is honest.
 
 ## Campaign chain
 

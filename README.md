@@ -15,7 +15,7 @@ Exactly **one** approved, bounded run at a time, with:
 1. **Approved provenance** — interactive TTY approval binds contract, source, and resolved executable hashes with expiry
 2. **Crash-safe state** — atomic JSON state writes
 3. **Mandatory postflight** — successor runs refuse an unpostflighted / failed predecessor
-4. **Tamper-evident receipts** — append-only SHA-256 hash-chained event log + verifiable certificate
+4. **Tamper-evident receipts** — append-only SHA-256 hash-chained event log + verifiable certificate. The chain is unkeyed.
 
 No watchers, no recurring scheduler, no parallel workers.
 
@@ -31,6 +31,7 @@ No watchers, no recurring scheduler, no parallel workers.
 
 - [About](docs/ABOUT.md) — what RunSpecimen does, lifecycle, safety model, dashboard role
 - [User guide](docs/USER_GUIDE.md) — install, lifecycle, contracts, dashboard, plugins, troubleshooting
+- [CLI and macOS UX review](docs/ux/CLI_AND_MACOS_REVIEW.md) — presentation findings; `--pretty` is opt-in JSON stays default
 - [FAQ](docs/FAQ.md) — vs CI/sandbox/agents, TTY approval, verify-after-clone, parallelism, receipts
 - [Product plan](docs/PRODUCT_PLAN.md) — invariants and roadmap
 - [Market and distribution](docs/MARKET_AND_DISTRIBUTION.md) — wedge, channels, commercial sequence
@@ -43,7 +44,7 @@ No watchers, no recurring scheduler, no parallel workers.
 - [Ed25519 receipts (optional)](docs/ED25519_RECEIPTS.md) — offline public-key verify
 - [Phased roadmap](docs/ROADMAP_PHASED.md) — feature and UX pipeline
 - [ADR-003 iOS companion observation](docs/ADR-003-ios-companion-observation.md) — remote observe / attention (Accepted defaults: loopback HTTP OK; LAN TLS + Tailscale preferred)
-- [ADR-004 remote human confirm](docs/ADR-004-remote-human-confirm.md) — Mac-armed challenge + phone `APPROVE` (not TTY-equivalent; plugins cannot approve)
+- [ADR-004 remote human confirm](docs/ADR-004-remote-human-confirm.md) — Mac-armed challenge + phone `APPROVE` (not TTY-equivalent; plugins cannot approve through the app)
 - [Incident bundle](docs/SPEC_INCIDENT_BUNDLE.md) — local Community evidence pack (`runspecimen bundle`); not a Veto vault
 - [Remote confirm card](docs/SPEC_REMOTE_CONFIRM_CARD.md) — one-card iOS UX, refuse+reason, `confirm_channel` on verify
 - [iOS Observe app](apps/ios/README.md) — `com.darashkevich.runspecimen.observe` (TestFlight/later)
@@ -159,6 +160,10 @@ runspecimen bundle --workspace . --campaign-id demo-campaign --run-id run-001 \
   --out /tmp/rs-incident --contract examples/demo_contract.json
 ```
 
+JSON is the default output. For a copy-paste first run, `runspecimen quickstart`.
+For a human table of the same result, pass `--pretty` (exit codes and JSON
+defaults stay unchanged): `runspecimen --pretty status --workspace . --campaign-id demo-campaign --run-id run-001`.
+
 ## Local dashboard for agent-host users
 
 Open a contract-scoped dashboard from a terminal, or ask the installed
@@ -175,25 +180,34 @@ runspecimen dashboard --workspace . --contract examples/demo_contract.json --ope
 
 It binds only to `127.0.0.1`, has no remote service or telemetry, and is
 read-only: it shows an About overview, the current phase, approval/lease/receipt
-evidence, and the exact lifecycle commands. It cannot approve or execute a run.
+evidence, and the exact lifecycle commands. It cannot approve or execute a run
+through the app.
 This keeps the real-TTY approval gate and the CLI enforcement boundary intact
 while making the workflow visible in the browser. Docs links open the published
 About, User guide, and FAQ on GitHub. CLI shortcut: `runspecimen about`.
 
+RunSpecimen stops agents from approving through the app and makes planted or
+edited approvals show up as broken receipts. A program running as you that can
+edit RunSpecimen's files can still add a fake approval to the record. Signing
+with a key the agent can't access lets you check afterwards that a receipt is
+authentic, when a signature is required and checked; it does not stop a program
+running as you from adding a fake approval or running the job.
+
 ### Showcase receipt
 
 `examples/showcase/` holds a regeneratable postflight receipt with
-`outputs/result.json`. Verify it with:
+`outputs/result.json`. Live `verify` binds this machine's interpreter hash, so
+lead with a refresh (or treat the committed receipt as host-specific):
 
 ```bash
+python3 scripts/refresh_showcase.py
 runspecimen verify --workspace examples/showcase \
   --contract examples/showcase/contract.json \
   --campaign-id showcase-campaign --run-id run-001
 ```
 
-Refresh without a TTY (uses the library test hook `skip_tty_check`; not for
-production approvals): `python3 scripts/refresh_showcase.py`. Interactive TTY
-path: `scripts/demo_rc.sh`.
+`refresh_showcase.py` uses the library test hook `skip_tty_check`; that is not
+a production approval. Interactive TTY path: `scripts/demo_rc.sh`.
 
 Any local `/.runspecimen/runs/demo-campaign/run-001` left from earlier RCs is
 **historical / pre-`runtime` certificate** and is **not** verifiable on rc2.
@@ -219,7 +233,7 @@ absent before launch and is hashed into the receipt after it passes.
 
 Per run under `{workspace}/.runspecimen/runs/{campaign_id}/{run_id}/`:
 
-- `approval.json` — bound hashes + expiry
+- `approval.json` — bound hashes + expiry (must match the latest chained `approval` event; the file alone is not a token)
 - `state.json` — atomic phase document
 - `events.jsonl` — hash-chained append-only log (`events.append.lock` serializes appends)
 - `stdout.capture` / `stderr.capture` — bounded captures
@@ -254,10 +268,10 @@ runspecimen keygen --workspace .
 runspecimen list-keys --workspace .
 
 # Authenticate a certificate (creates .signed.json with MAC)
-runspecimen sign --workspace . --key-id <key-id> --certificate path/to/certificate.json
+runspecimen sign --workspace . --key-id <key-id> --certificate path/to/certificate.json --contract path/to/contract.json
 
 # Verify an authenticated certificate
-runspecimen verify-signature --workspace . --key-id <key-id> --signed path/to/certificate.signed.json
+runspecimen verify-signature --workspace . --key-id <key-id> --signed path/to/certificate.signed.json --contract path/to/contract.json
 ```
 
 **Shared-secret limitation**: HMAC-SHA256 uses the same key for authentication

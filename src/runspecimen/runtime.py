@@ -24,9 +24,37 @@ from pathlib import Path
 from typing import Any
 
 from runspecimen.contract import Contract
-from runspecimen.errors import ProvenanceError
+from runspecimen.errors import ProvenanceError, RunError
 from runspecimen.hashutil import canonical_json_bytes, sha256_bytes, sha256_file
 from runspecimen.paths import ensure_within
+
+# Job spawn uses only these parent variables plus bound env_allowlist values.
+# PYTHONPATH / PYTHONHOME / other PYTHON* import overrides are never copied
+# from the parent unless the contract allowlisted them and the live value
+# still matches the bound hash. This is a behaviour change: the job no longer
+# inherits the approving process's full environment.
+MINIMAL_JOB_ENV_NAMES = (
+    "HOME",
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TZ",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "USER",
+    "LOGNAME",
+    "TERM",
+    "SYSTEMROOT",
+    "SYSTEMDRIVE",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+)
+ALLOWLIST_ENV_DRIFT = (
+    "an allowlisted environment variable's current value differs from the bound value"
+)
 
 # Common interpreter patterns
 KNOWN_INTERPRETERS = {
@@ -96,6 +124,33 @@ def _capture_env_allowlist(allowlist: tuple[str, ...]) -> dict[str, str | None]:
     for var in sorted(allowlist):
         result[var] = os.environ.get(var)
     return result
+
+
+def job_environment(contract: Contract, bound_runtime: dict[str, Any] | None) -> dict[str, str]:
+    """Explicit env for the approved job. Parent PYTHONPATH is not inherited."""
+    env: dict[str, str] = {}
+    for name in MINIMAL_JOB_ENV_NAMES:
+        if name.startswith("PYTHON"):
+            continue
+        value = os.environ.get(name)
+        if value is not None:
+            env[name] = value
+    spec = contract.runtime
+    allowlist = spec.env_allowlist if spec is not None else ()
+    if not allowlist:
+        return env
+    live = _capture_env_allowlist(allowlist)
+    bound = bound_runtime or {}
+    bound_hash = bound.get("env_hash")
+    live_hash = _hash_env_allowlist(live)
+    if bound_hash != live_hash:
+        raise RunError(ALLOWLIST_ENV_DRIFT)
+    for name, value in live.items():
+        if value is None:
+            env.pop(name, None)
+        else:
+            env[name] = value
+    return env
 
 
 def _hash_env_allowlist(env_capture: dict[str, str | None]) -> str:

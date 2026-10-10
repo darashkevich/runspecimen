@@ -37,26 +37,32 @@ kinds/versions fail closed. They do not replace `verify`.
 
 | `schema_version` | Status | Notes |
 | --- | --- | --- |
-| absent | Legacy v1 | Treated as `1`. Golden / pre-Phase-0 receipts. |
-| `1` | Current | Written on every newly issued certificate. |
+| absent | Legacy v1 | Treated as `1`. Golden / pre-Phase-0 receipts. Verify fails closed unless a bound approval event or holder receipt is present. |
+| `1` | Supported | Historical receipts. Same bound-approval rule: no silent `ok:true`. |
+| `2` | Current | Written on every newly issued certificate. Binds `confirm_channel` into `certificate_id` when present. Unknown top-level certificate fields fail verify. |
 
 - `schema_version`, when present, must be a JSON integer in the supported set.
 - Unsupported or non-integer values → `CertificateError` with a migration hint.
 - When `schema_version` is present on a certificate, it is included in the
   `certificate_id` hash material. Legacy certificates omit it from both the
   document and the hash material.
-- New receipts may also include `isolation`, `policy`, `approver`, and optional
-  `evidence_attestation`. Each key is part of `certificate_id` only when it is
-  present. Historical receipts that omit them stay valid. Do not rewrite an
-  issued certificate to add them.
+- New receipts may also include `isolation`, `policy`, `approver`, optional
+  `evidence_attestation`, and `confirm_channel`. Each key is part of
+  `certificate_id` only when it is present. Historical receipts that omit them
+  still recompute `certificate_id`, but verify refuses `ok:true` unless the
+  chain has a bound approval event (or holder receipt) consistent with
+  `approval.json` and the certificate. A bound approval event is a recorded
+  local step, not cryptographic proof of a human. Do not rewrite an issued certificate to
+  add them. Unknown top-level keys fail closed.
 - `evidence_attestation` (when present) binds an evidence-report digest. It
   authenticates linked evidence bytes; it does not rewrite check outcomes or
   imply current applicability. Live `verify` semantics are unchanged.
 
 ### Issuance rules
 
-New certificates always set `"schema_version": 1` and bind that value into
-`certificate_id`. Verification accepts legacy certificates without the field.
+New certificates always set `"schema_version": 2` and bind that value into
+`certificate_id`. Verification still parses schema `1` and legacy certificates
+without the field. Legacy receipts without a bound approval fail verify.
 
 ### Migration rules
 
@@ -90,3 +96,4 @@ New certificates always set `"schema_version": 1` and bind that value into
 | 0.2.0-rc.10 and earlier | `version: 1` | Legacy (no `schema_version`) |
 | Phase 0+ (this roadmap) | `version: 1` | Legacy **or** `schema_version: 1` |
 | Evidence expansion (ADR-005) | `version: 1` + sidecar kinds | Receipt optional `evidence_attestation` |
+| 0.2.0rc15 approval binding | `version: 1` | `schema_version: 2` (current). Schema `1` and legacy still parse, then fail closed without a bound approval. |

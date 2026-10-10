@@ -30,7 +30,8 @@ from typing import Any
 from runspecimen.atomic import atomic_write_json, read_json
 from runspecimen.hashutil import canonical_json_bytes
 from runspecimen.holder_protocol import LaunchRequest, ProtocolError, bind_execution
-from runspecimen.paths import ensure_within
+from runspecimen.errors import PathEscapeError
+from runspecimen.paths import ensure_within, open_regular_nofollow
 
 try:
     import fcntl
@@ -3744,8 +3745,10 @@ class ExecutionHolder:
 
     def _transaction(self):
         lock_path = self.root / ".holder.op.lock"
-        lock_path.touch(exist_ok=True)
-        fd = os.open(str(lock_path), os.O_RDWR)
+        try:
+            fd = open_regular_nofollow(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+        except PathEscapeError as exc:
+            raise HolderRefusal(f"refusing to follow a symlink: {lock_path}") from exc
 
         class _Lock:
             def __enter__(self_inner):

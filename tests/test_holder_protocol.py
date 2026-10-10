@@ -293,6 +293,72 @@ class BindingTests(unittest.TestCase):
         )
         self.assertEqual(completed.stdout, b"approved")
 
+    def test_snapshot_bytes_and_fingerprints_match_the_rebind_helper(self) -> None:
+        interpreter = self._file("interp", b"#!/bin/sh\nprintf ok\n")
+        script = self._file("run.sh", f"#!{interpreter} -s\nbody-line\n".encode())
+        source = self._file("input.txt", b"approved\n")
+        self.bound = bind_execution(self._request(interpreter, script), self.root / "snap")
+        data_snap = self.bound.snapshot_for(str(source))
+        self.assertEqual(pathlib.Path(data_snap.path).read_bytes(), source.read_bytes())
+        self.assertEqual(data_snap.digest, hashlib.sha256(source.read_bytes()).hexdigest())
+        self.assertEqual(data_snap.source_digest, data_snap.digest)
+        interp = self.bound.snapshot_for(str(interpreter))
+        self.assertEqual(pathlib.Path(interp.path).read_bytes(), interpreter.read_bytes())
+        self.assertEqual(interp.digest, hashlib.sha256(interpreter.read_bytes()).hexdigest())
+        script_snap = self.bound.snapshot_for(str(script))
+        expected = holder_protocol._rebind_shebang(script.read_bytes(), interp.path)
+        self.assertEqual(pathlib.Path(script_snap.path).read_bytes(), expected)
+        self.assertEqual(script_snap.digest, hashlib.sha256(expected).hexdigest())
+        self.assertEqual(script_snap.source_digest, hashlib.sha256(script.read_bytes()).hexdigest())
+        self.assertNotEqual(script_snap.digest, script_snap.source_digest)
+        self.assertEqual(os.fstat(script_snap.fd).st_ino, pathlib.Path(script_snap.path).stat().st_ino)
+
+    def test_large_input_snapshot_peak_stays_under_half_the_input(self) -> None:
+        size = 32 * 1024 * 1024
+        blob = self.root / "big.bin"
+        digest = hashlib.sha256()
+        chunk = b"Q" * (1024 * 1024)
+        remaining = size
+        with blob.open("wb") as handle:
+            while remaining:
+                block = chunk if remaining >= len(chunk) else chunk[:remaining]
+                handle.write(block)
+                digest.update(block)
+                remaining -= len(block)
+        expected = digest.hexdigest()
+        interpreter = self._file("interp", b"interp")
+        script = self._file("run.sh", f"#!{interpreter}\n".encode())
+        request = LaunchRequest(
+            nonce="n-large",
+            argv=(str(interpreter), str(script), str(blob)),
+            executable=str(interpreter),
+            script=str(script),
+            inputs=(str(blob),),
+            dependencies=(str(interpreter),),
+            fingerprints=self._fingerprints(interpreter, script, blob),
+        )
+        import tracemalloc
+
+        tracemalloc.start()
+        try:
+            self.bound = bind_execution(request, self.root / "snap-large")
+            _current, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertLess(peak, size // 2, peak)
+        snap = self.bound.snapshot_for(str(blob))
+        self.assertEqual(snap.digest, expected)
+        self.assertEqual(snap.source_digest, expected)
+        self.assertEqual(pathlib.Path(snap.path).stat().st_size, size)
+        os.lseek(snap.fd, 0, os.SEEK_SET)
+        got = hashlib.sha256()
+        while True:
+            block = os.read(snap.fd, 1024 * 1024)
+            if not block:
+                break
+            got.update(block)
+        self.assertEqual(got.hexdigest(), expected)
+
 
 class HandshakeTests(unittest.TestCase):
     """HolderSim only. These crashes do not fsync a file and do not reap a real child."""

@@ -28,7 +28,7 @@ Neither signature proves that no model was involved, that the person understood 
 
 Each signature is over one versioned byte string, not over an authentication-success Boolean. The request includes the exact version `RSBA2`, the Mac and workspace identity, campaign and run IDs, the contract and input fingerprints, the execution bounds, the policy (`local`, `companion`, or `dual`), a nonce, an expiry, the key identifier, and the enrollment generation for each required role. Local-only policy rejects a companion signature. Dual policy requires both signatures over that same request. A relay that carries bytes does not get a key and cannot approve.
 
-The store can consume an RSBA2 approval once. It does not recheck a live contract, and it does not take the workspace lease. That execution-boundary wiring is waiting on where the check is allowed to live. A restart of the store process still sees the consumed marker on disk. A signature after expiry spends the nonce. Neither of those facts is a protected execution boundary.
+The store can consume an RSBA2 approval once. It does not recheck a live contract, and it does not take the workspace lease. Connecting consume to the execution lease is still not done; that is not a request to reopen D1 or D2. A restart of the store process still sees the consumed marker on disk. A signature after expiry spends the nonce. Neither of those facts is a protected execution boundary.
 
 ## What this Mac can enforce today
 
@@ -36,20 +36,30 @@ TTY `approve` checks that stdin and stdout are terminals and that the line is ex
 
 An agent that can replace the user-writable CLI, or that runs inside the same user session as the executor, can still skip a check that lives only in that CLI. A Secure Enclave signature does not fix a replaced executor. Putting the check in a privileged helper, or in an App Store binary the agent cannot rewrite, is a different product boundary.
 
-## Decisions still required
+## Current state (locked D1/D2; E2 remains open)
 
-These are separate. Choosing one does not choose the other. Neither is implemented.
+Do not read the historical section below as the live product record.
 
-**Executor protection.** Three different guarantees are open: RunSpecimen refusing its own transition, protecting RunSpecimen's lease and enrollment files from other same-user writers, and blocking every equivalent command on the Mac. The candidate does the first. The lease still lives in the user-writable workspace, so the second is unfinished and does not require Endpoint Security. The third is global command blocking and is not this product. Details and the one decision are in `docs/EXECUTOR_PROTECTION.md`. Nothing beyond the sandboxed app is built.
+- **D1 locked:** installed Secure Enclave / biometric admission stays fail-closed. `run_integration_complete` and `e2_closed` stay false.
+- **D2 locked:** bundle id `com.darashkevich.runspecimen.holder` is accepted for Developer ID packaging and is not `production_verifier_pin()`. Guarantee (3) is excluded. The Store app stays guarantee (1).
+- **Holder source exists, and it is not the Store app.** Yahor authorized a separate Developer ID holder. Its source is in this repository (`apps/holder`, `src/runspecimen/execution_holder.py`). A prior session observed `/Applications/RunSpecimen Holder.app` with `SMAppService.daemon`. That is a separate product. "Not in the Store app" is not "no separate holder source exists." It is not Store parity and is not installed admission.
+- **E2 stays open.** Mac and iPhone Secure Enclave enroll, sign, revoke, and rotate are implemented in source and are not human-accepted on this candidate. Unit tests do not call the Secure Enclave. A passing software test is not that hardware path. A biometric press does not close E2.
+- **Store app:** do not add `com.apple.security.network.server`, a relay, or a privileged helper to the Store binary. The Developer ID holder is not a Store privileged helper.
 
-Mac and iPhone Secure Enclave enroll, sign, revoke, and rotate are implemented and are not human-tested. Unit tests do not call the Secure Enclave. A passing software test is not that hardware path.
+Details of the three guarantees remain in `docs/EXECUTOR_PROTECTION.md`. Do not describe biometric approval as shipped.
 
-**Companion transport.** How an iPhone signature would reach the Mac. Local enrollment does not need this.
+## Historical decision text (2026-09; do not reopen D1/D2)
+
+The next paragraphs are the original decision record. They are not current identity. "Three different guarantees are open" and "Nothing beyond the sandboxed app is built" were true of that draft. D1 and D2 are now locked as above. Holder source exists outside the Store app. E2 is the item that remains open.
+
+**Executor protection (historical wording).** Three different guarantees were distinguished: RunSpecimen refusing its own transition, protecting RunSpecimen's lease and enrollment files from other same-user writers, and blocking every equivalent command on the Mac. The candidate does the first. The lease still lives in the user-writable workspace, so the second is unfinished and does not require Endpoint Security. The third is global command blocking and is not this product.
+
+**Companion transport (historical wording).** How an iPhone signature would reach the Mac. Local enrollment does not need this.
 
 1. User-mediated transfer. The person moves the signature onto the Mac. No listening socket. Easy to mishandle, and it is not automatic pairing.
 2. Outbound relay. The Mac uses the existing outbound client entitlement. The relay holds no approval keys. That is new infrastructure, a privacy disclosure, and an outage dependency.
 
-A listening server was the rejected Mac App Store entitlement. Do not add `com.apple.security.network.server`, a relay, or a privileged helper until the matching decision is explicit. Do not connect consumption to the lease before the executor decision is accepted. Do not describe biometric approval as shipped.
+A listening server was the rejected Mac App Store entitlement. That Store prohibition still holds. It does not mean the separate Developer ID holder source is absent.
 
 ## Real-device steps, for Yahor
 

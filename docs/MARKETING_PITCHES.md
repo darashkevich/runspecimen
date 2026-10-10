@@ -111,7 +111,7 @@ not proof that the science is true.
 
 Let the agent draft contracts, validate, preflight, run, postflight, and
 verify. You keep the only gate that matters: type `APPROVE` in a real terminal.
-Plugins are adapters to the CLI on `PATH`; they cannot approve. Open
+Plugins are adapters to the CLI on `PATH`; they cannot approve through the app. Open
 `runspecimen dashboard` on loopback for phase and evidence without handing the
 agent the keys.
 
@@ -161,7 +161,7 @@ For landing page hero or GitHub social preview (`og:title` / description).
 
 5. **Local run assurance. Stdlib-only.**
    Clone, install, doctor, approve, run, postflight, verify. Loopback dashboard
-   shows the state; it cannot approve for you.
+   shows the state; it cannot approve through the app.
 
 ---
 

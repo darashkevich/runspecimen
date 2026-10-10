@@ -30,7 +30,7 @@ from runspecimen.paths import (
 )
 from runspecimen.preflight import check_outputs_absent, check_predecessor
 from runspecimen.state import load_state, update_state
-from runspecimen.runtime import runtime_matches, runtime_provenance
+from runspecimen.runtime import job_environment, runtime_matches, runtime_provenance
 
 
 def _kill_process_group(proc: subprocess.Popen[bytes]) -> None:
@@ -223,7 +223,9 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
     isolation, policy = execution_constraints(contract, workspace)
     ts = time.time() if now is None else now
     if holder_receipt is None:
-        ok, reason = approval_is_valid(approval, contract, source_hash, now=now)
+        ok, reason = approval_is_valid(
+            approval, contract, source_hash, now=now, state_dir=state_dir
+        )
         if not ok:
             raise PreflightError(reason)
         ok, reason = runtime_matches(approval, runtime)
@@ -238,7 +240,9 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
             raise PreflightError("shared policy does not match the approval")
         # Source/runtime hashing and predecessor verification can outlast a short
         # approval. Check the clock again at the actual launch boundary.
-        ok, reason = approval_is_valid(approval, contract, source_hash, now=ts)
+        ok, reason = approval_is_valid(
+            approval, contract, source_hash, now=ts, state_dir=state_dir
+        )
         if not ok:
             raise PreflightError(reason)
     elif holder_receipt.get("holder_id") == source_hash:
@@ -378,9 +382,18 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
         )
         assert_tool_unchanged(isolation)
 
+        bound_runtime = approval.get("runtime") if isinstance(approval, dict) else runtime
+        try:
+            job_env = job_environment(
+                contract,
+                bound_runtime if isinstance(bound_runtime, dict) else runtime,
+            )
+        except RunError as exc:
+            raise PreflightError(str(exc)) from exc
         proc = subprocess.Popen(  # noqa: S603
             launch_argv,
             cwd=str(cwd),
+            env=job_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=0,

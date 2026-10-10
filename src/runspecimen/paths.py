@@ -19,6 +19,10 @@ CERTIFICATE_FILENAME = "certificate.json"
 STDOUT_FILENAME = "stdout.capture"
 STDERR_FILENAME = "stderr.capture"
 
+CONTROL_PLANE_SYMLINK_REFUSAL = (
+    "control-plane path must not be a symlink (or contain a symlinked component)"
+)
+
 
 def resolve_workspace(workspace: str | Path) -> Path:
     return Path(workspace).expanduser().resolve()
@@ -56,17 +60,62 @@ def rel_to_workspace(workspace: Path, path: Path) -> str:
 
 def workspace_state_root(workspace: Path) -> Path:
     """Workspace-wide control plane (execution lease lives here)."""
-    return Path(workspace) / STATE_DIRNAME
+    root = Path(workspace) / STATE_DIRNAME
+    _assert_unlinked(root)
+    return root
 
 
 def run_state_dir(workspace: Path, campaign_id: str, run_id: str) -> Path:
     safe_campaign = _safe_id(campaign_id)
     safe_run = _safe_id(run_id)
-    return workspace_state_root(workspace) / "runs" / safe_campaign / safe_run
+    path = workspace_state_root(workspace) / "runs" / safe_campaign / safe_run
+    assert_control_plane_not_symlinked(path)
+    return path
 
 
 def campaign_state_dir(workspace: Path, campaign_id: str) -> Path:
-    return workspace_state_root(workspace) / "runs" / _safe_id(campaign_id)
+    path = workspace_state_root(workspace) / "runs" / _safe_id(campaign_id)
+    assert_control_plane_not_symlinked(path)
+    return path
+
+
+def _control_plane_chain(path: Path) -> list[Path]:
+    """``.runspecimen`` ancestor down to *path*, or just *path* if none."""
+    chain: list[Path] = []
+    cursor = Path(path)
+    found = False
+    while True:
+        chain.append(cursor)
+        if cursor.name == STATE_DIRNAME:
+            found = True
+            break
+        parent = cursor.parent
+        if parent == cursor:
+            break
+        cursor = parent
+    if not found:
+        return [Path(path)]
+    chain.reverse()
+    return chain
+
+
+def _assert_unlinked(path: Path) -> None:
+    if path.is_symlink():
+        try:
+            target = path.resolve()
+        except OSError:
+            target = path
+        raise PathEscapeError(f"{CONTROL_PLANE_SYMLINK_REFUSAL}: {path} -> {target}")
+
+
+def assert_control_plane_not_symlinked(path: Path) -> None:
+    """Refuse a symlinked ``.runspecimen``, campaign, or run dir (WH-04).
+
+    Only components from the ``.runspecimen`` ancestor downward are checked, so
+    host aliases such as macOS ``/var`` → ``/private/var`` stay accepted.
+    """
+    for item in _control_plane_chain(path):
+        _assert_unlinked(item)
 
 
 def validate_id(value: str) -> str:
@@ -82,8 +131,64 @@ def _safe_id(value: str) -> str:
     return value
 
 
+def open_regular_nofollow(path: Path, flags: int, mode: int = 0o644) -> int:
+    """Open a regular file without following a symlink.
+
+    ``O_NOFOLLOW`` is added where the platform provides it. An existing path
+    must already be a regular file (``lstat``), and the opened fd is checked
+    again with ``fstat``. A missing path is created only when ``O_CREAT`` is
+    set. Symlinks are refused.
+    """
+    import errno
+    import stat as statmod
+
+    open_flags = flags
+    if hasattr(os, "O_NOFOLLOW"):
+        open_flags |= os.O_NOFOLLOW
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        info = None
+    else:
+        if statmod.S_ISLNK(info.st_mode) or not statmod.S_ISREG(info.st_mode):
+            raise PathEscapeError(f"refusing to follow a symlink: {path}")
+    try:
+        fd = os.open(str(path), open_flags, mode)
+    except OSError as exc:
+        if getattr(exc, "errno", None) in {errno.ELOOP, errno.EPERM} or path.is_symlink():
+            raise PathEscapeError(f"refusing to follow a symlink: {path}") from exc
+        raise
+    try:
+        opened = os.fstat(fd)
+        if not statmod.S_ISREG(opened.st_mode):
+            raise PathEscapeError(f"refusing to follow a symlink: {path}")
+    except Exception:
+        os.close(fd)
+        raise
+    return fd
+
+
 def ensure_dir(path: Path) -> Path:
-    path.mkdir(parents=True, exist_ok=True)
+    """Create *path* without following a control-plane symlink (WH-04)."""
+    assert_control_plane_not_symlinked(path)
+    missing: list[Path] = []
+    cursor = Path(path)
+    while not cursor.exists():
+        if cursor.is_symlink():
+            _assert_unlinked(cursor)
+        missing.append(cursor)
+        if cursor.name == STATE_DIRNAME:
+            break
+        parent = cursor.parent
+        if parent == cursor:
+            break
+        cursor = parent
+    if cursor.is_symlink():
+        _assert_unlinked(cursor)
+    for item in reversed(missing):
+        _assert_unlinked(item)
+        item.mkdir(exist_ok=True)
+        _assert_unlinked(item)
     return path
 
 

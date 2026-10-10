@@ -11,6 +11,7 @@ from runspecimen.errors import ContractError, PathEscapeError
 from runspecimen.hashutil import hash_contract_file, sha256_bytes
 from runspecimen.paths import ensure_within, resolve_workspace, validate_id
 from runspecimen.schema import assert_supported_contract_version
+from runspecimen.terminaltext import UNSAFE_DISPLAY_REFUSAL, has_unsafe_display_chars
 
 # Hard caps enforced by the tool (unsafe if contract exceeds these).
 MAX_WALL_TIMEOUT_SEC = 24 * 60 * 60
@@ -55,11 +56,22 @@ def _require_id(obj: Any, label: str) -> str:
         raise ContractError(f"{label} is not a path-safe id: {exc}") from exc
 
 
+def _refuse_display_controls(value: str, label: str) -> None:
+    """Refuse C0/C1/DEL/bidi/format characters in contract strings.
+
+    Display code also escapes these (defence in depth) so a TTY cannot be
+    rewritten if a value ever reaches approve review or pretty output.
+    """
+    if has_unsafe_display_chars(value):
+        raise ContractError(f"{label} {UNSAFE_DISPLAY_REFUSAL}")
+
+
 def _require_str(obj: Any, label: str) -> str:
     if not isinstance(obj, str) or not obj:
         raise ContractError(f"{label} must be a non-empty string")
     if "\x00" in obj:
         raise ContractError(f"{label} must not contain NUL bytes")
+    _refuse_display_controls(obj, label)
     if len(obj) > MAX_STRING_CHARS:
         raise ContractError(
             f"{label} exceeds max length {MAX_STRING_CHARS} characters"
@@ -334,6 +346,11 @@ def parse_contract(
     for i, item in enumerate(argv_raw):
         if not isinstance(item, str) or item == "":
             raise ContractError(f"argv[{i}] must be a non-empty string")
+        # Preferred refuse point for terminal-control injection in argv
+        # (CC-01). Display still escapes as defence in depth.
+        if "\x00" in item:
+            raise ContractError(f"argv[{i}] must not contain NUL bytes")
+        _refuse_display_controls(item, f"argv[{i}]")
         argv.append(item)
 
     cwd = _require_str(data.get("cwd", "."), "cwd")

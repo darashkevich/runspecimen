@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,25 @@ def active_bundle_path(workspace: Path) -> Path:
 
 def backup_dir(workspace: Path) -> Path:
     return config_root(workspace) / "backups"
+
+
+def loaded_module_origins() -> dict[str, str | None]:
+    """Real path of every loaded module (WH-01). Builtin/frozen modules are null."""
+    out: dict[str, str | None] = {}
+    for name, mod in sys.modules.items():
+        path = getattr(mod, "__file__", None)
+        if not path:
+            out[name] = None
+            continue
+        text = str(path)
+        if text.startswith("<"):
+            out[name] = text
+            continue
+        try:
+            out[name] = str(Path(text).resolve())
+        except OSError:
+            out[name] = text
+    return out
 
 
 def inspect_environment(*, workspace: Path, contract_path: Path | None = None) -> dict[str, Any]:
@@ -144,6 +164,7 @@ def inspect_environment(*, workspace: Path, contract_path: Path | None = None) -
         "active_bundle": active,
         "env_overrides": env_overrides,
         "contract_path": str(contract_path) if contract_path else None,
+        "loaded_module_origins": loaded_module_origins(),
         "sync": {
             "silent_sync_during_doctor": False,
             "note": "Use config preview/apply explicitly; doctor never mutates config.",

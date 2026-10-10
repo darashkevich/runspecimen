@@ -75,11 +75,11 @@ FORBIDDEN_PARTS = frozenset({".git", ".runspecimen", ".tools", "__pycache__"})
 
 
 def run(*args: str, cwd: Path = ROOT, env: dict[str, str] | None = None,
-        capture: bool = False) -> subprocess.CompletedProcess[str]:
+        capture: bool = False, timeout: int = 300) -> subprocess.CompletedProcess[str]:
     print("+", " ".join(args), flush=True)
     return subprocess.run(
         args, cwd=cwd, env=env, check=True, text=True,
-        stdin=subprocess.DEVNULL, capture_output=capture, timeout=300,
+        stdin=subprocess.DEVNULL, capture_output=capture, timeout=timeout,
     )
 
 
@@ -609,6 +609,99 @@ def smoke_signing(cli: Path, python: Path, workspace: Path, contract: Path, env:
         raise SystemExit(f"verify-signature with missing key did not report error: stdout={result.stdout}, stderr={result.stderr}")
 
 
+def assert_installed_wheel_identity(
+    python: Path, wheel: Path, env: dict[str, str]
+) -> None:
+    """Require the installed package to come from the wheel, not an in-tree src/.
+
+    ``tests/helpers.py`` prepends the repository ``src`` directory to
+    ``sys.path``. This check uses a clean interpreter with empty
+    ``PYTHONPATH`` and compares installed files to the wheel RECORD.
+    """
+    if env.get("PYTHONPATH"):
+        raise SystemExit(
+            "installed-wheel identity check requires an empty PYTHONPATH, "
+            f"got {env.get('PYTHONPATH')!r}"
+        )
+    probe = r"""
+import base64
+import hashlib
+import os
+import pathlib
+import sys
+import zipfile
+
+wheel = pathlib.Path(sys.argv[1])
+if os.environ.get("PYTHONPATH"):
+    raise SystemExit(f"PYTHONPATH is set: {os.environ.get('PYTHONPATH')!r}")
+import runspecimen
+
+package_file = pathlib.Path(runspecimen.__file__).resolve()
+parts = set(package_file.parts)
+if "site-packages" not in parts and "dist-packages" not in parts:
+    raise SystemExit(
+        "runspecimen.__file__ is not under site-packages: " + str(package_file)
+    )
+site_root = package_file.parent.parent
+with zipfile.ZipFile(wheel) as archive:
+    record_names = [name for name in archive.namelist() if name.endswith(".dist-info/RECORD")]
+    if len(record_names) != 1:
+        raise SystemExit(f"expected one RECORD member, got {record_names}")
+    rows = []
+    for line in archive.read(record_names[0]).decode("utf-8").splitlines():
+        if not line:
+            continue
+        name, sep, rest = line.partition(",")
+        if not sep:
+            raise SystemExit(f"malformed RECORD line: {line!r}")
+        digest, size_sep, size = rest.partition(",")
+        if not size_sep:
+            raise SystemExit(f"malformed RECORD line: {line!r}")
+        rows.append((name, digest, size))
+missing = []
+mismatched = []
+for name, digest, size in rows:
+    if name.endswith("/"):
+        continue
+    installed = site_root / name
+    if name.endswith(".dist-info/RECORD"):
+        if digest != "":
+            raise SystemExit(f"RECORD hashed itself: {digest}")
+        if not installed.is_file():
+            missing.append(name)
+        continue
+    if not installed.is_file():
+        missing.append(name)
+        continue
+    data = installed.read_bytes()
+    if size and size != str(len(data)):
+        mismatched.append(f"{name} size {len(data)} != {size}")
+        continue
+    if digest:
+        encoded = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode("ascii").rstrip("=")
+        expected = f"sha256={encoded}"
+        if digest != expected:
+            mismatched.append(f"{name} hash {digest} != {expected}")
+if missing or mismatched:
+    raise SystemExit(
+        "installed files do not match the wheel RECORD: "
+        + "; ".join(missing + mismatched)
+    )
+print(str(package_file))
+"""
+    result = run(
+        str(python),
+        "-c",
+        probe,
+        str(wheel),
+        env=env,
+        capture=True,
+    )
+    installed = result.stdout.strip()
+    if "site-packages" not in installed and "dist-packages" not in installed:
+        raise SystemExit(f"installed identity probe did not report site-packages: {installed}")
+
+
 def smoke_install(wheel: Path, source: Path, temp: Path, env: dict[str, str]) -> None:
     venv = temp / "venv"
     run(sys.executable, "-m", "venv", str(venv), cwd=temp, env=env)
@@ -616,6 +709,9 @@ def smoke_install(wheel: Path, source: Path, temp: Path, env: dict[str, str]) ->
     cli = venv / "bin/runspecimen"
     run(str(python), "-m", "pip", "install", "--no-index", "--no-deps", str(wheel), cwd=temp, env=env)
     smoke_env = dict(env, PATH=str(venv / "bin") + os.pathsep + env.get("PATH", ""))
+    if smoke_env.get("PYTHONPATH"):
+        raise SystemExit("release smoke must run with an empty PYTHONPATH")
+    assert_installed_wheel_identity(python, wheel, smoke_env)
     version = run(str(cli), "--version", cwd=temp, env=smoke_env, capture=True).stdout.strip()
     if version != f"runspecimen {EXPECTED_PYTHON_VERSION}":
         raise SystemExit(f"installed console script has an unexpected version: {version}")
@@ -771,7 +867,12 @@ def main(argv: list[str] | None = None) -> int:
     check_versions()
     ensure_build_backend()
     env = offline_env()
-    run(sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v", env=env)
+    # Darwin 3.11 with ~711 tests plus two in-suite archive rebuilds can
+    # exceed 300s (PR run 37781319560 timed out on that matrix cell).
+    run(
+        sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v",
+        env=env, timeout=600,
+    )
     with tempfile.TemporaryDirectory(prefix="runspecimen-release-") as directory:
         temp = Path(directory)
         sdist, wheel, extracted = build_release_archives(temp, env)
@@ -792,7 +893,9 @@ def main(argv: list[str] | None = None) -> int:
             "python": sys.version.split()[0], "platform": sys.platform,
             "checks": ["unit-tests", "source-compile", "source-archive-contents",
                        "sdist-distribution-artifact-tests", "wheel-from-source-archive",
-                       "wheel-contents", "fresh-install-console-script", "installed-cli-doctor-validate-status",
+                       "wheel-contents", "fresh-install-console-script",
+                       "installed-wheel-site-packages-record",
+                       "installed-cli-doctor-validate-status",
                        "installed-plugin-adapter", "installed-dashboard-http", "dashboard-write-refusal",
                        "installed-keygen-listkeys", "installed-sign-verify-error-handling"],
             "artifacts": {path.name: hashlib.sha256(path.read_bytes()).hexdigest()

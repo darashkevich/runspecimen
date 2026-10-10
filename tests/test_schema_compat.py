@@ -24,6 +24,7 @@ from runspecimen.schema import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+COMPAT_DOC = ROOT / "docs" / "SCHEMA_COMPATIBILITY.md"
 SHOWCASE_CERT = (
     ROOT
     / "examples"
@@ -85,10 +86,42 @@ class TestSchemaVersions(unittest.TestCase):
 
 
 class TestGoldenLegacyReceipt(unittest.TestCase):
-    def test_showcase_certificate_is_legacy_v1_and_self_consistent(self) -> None:
+    def test_legacy_absent_schema_still_recomputes_id(self) -> None:
+        cert = {
+            "approval_expires_at_unix": 1,
+            "campaign_id": "camp",
+            "certificate_id": "x",
+            "contract_hash": "a" * 64,
+            "event_head": "d" * 64,
+            "exit_code": 0,
+            "issued_at": "2026-01-01T00:00:00Z",
+            "output_digests": {"out.json": "c" * 64},
+            "run_id": "run",
+            "run_result": "completed",
+            "runtime": {"runtime_id": "e" * 64},
+            "source_hash": "b" * 64,
+        }
+        cert["certificate_id"] = _recompute_certificate_id(cert)
+        self.assertEqual(assert_supported_receipt_schema(cert), 1)
+        self.assertNotIn("schema_version", certificate_id_material(cert))
+        self.assertEqual(_recompute_certificate_id(cert), cert["certificate_id"])
+
+    def test_showcase_certificate_matches_current_schema_and_self_consistent(self) -> None:
         self.assertTrue(SHOWCASE_CERT.is_file(), "showcase certificate fixture missing")
         cert = json.loads(SHOWCASE_CERT.read_text(encoding="utf-8"))
-        self.assertNotIn("schema_version", cert)
-        self.assertEqual(assert_supported_receipt_schema(cert), 1)
+        self.assertEqual(cert.get("schema_version"), CURRENT_RECEIPT_SCHEMA_VERSION)
+        self.assertEqual(assert_supported_receipt_schema(cert), CURRENT_RECEIPT_SCHEMA_VERSION)
         self.assertEqual(_recompute_certificate_id(cert), cert["certificate_id"])
-        self.assertNotIn("schema_version", certificate_id_material(cert))
+        self.assertIn("schema_version", certificate_id_material(cert))
+        self.assertEqual(cert.get("confirm_channel"), "local_tty_approve")
+        self.assertIn("confirm_channel", certificate_id_material(cert))
+
+
+class TestSchemaCompatibilityDoc(unittest.TestCase):
+    def test_compatibility_matrix_lists_receipt_schema_2(self) -> None:
+        text = COMPAT_DOC.read_text(encoding="utf-8")
+        self.assertIn("## Compatibility matrix (engine ↔ schemas)", text)
+        matrix = text.split("## Compatibility matrix (engine ↔ schemas)", 1)[1]
+        self.assertIn("`schema_version: 2` (current)", matrix)
+        self.assertIn("Schema `1` and legacy still parse, then fail closed without a bound approval.", matrix)
+        self.assertEqual(CURRENT_RECEIPT_SCHEMA_VERSION, 2)

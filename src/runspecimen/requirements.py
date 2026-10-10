@@ -1071,7 +1071,9 @@ def assert_checks_authorized(
     source_hash, _ = hash_source(
         workspace, list(contract.source.roots), list(contract.source.excludes)
     )
-    ok, reason = approval_is_valid(approval, contract, source_hash)
+    ok, reason = approval_is_valid(
+        approval, contract, source_hash, state_dir=state_dir
+    )
     if not ok:
         raise AuthorizationError(
             f"requirements check refused: approval not valid ({reason}). "

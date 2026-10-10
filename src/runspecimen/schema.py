@@ -9,8 +9,32 @@ from runspecimen.errors import CertificateError, ContractError
 CURRENT_CONTRACT_VERSION = 1
 SUPPORTED_CONTRACT_VERSIONS = frozenset({1})
 
-CURRENT_RECEIPT_SCHEMA_VERSION = 1
-SUPPORTED_RECEIPT_SCHEMA_VERSIONS = frozenset({1})
+CURRENT_RECEIPT_SCHEMA_VERSION = 2
+SUPPORTED_RECEIPT_SCHEMA_VERSIONS = frozenset({1, 2})
+
+# Top-level certificate.json keys. Unknown extras fail verify (BH-05).
+CERTIFICATE_KNOWN_KEYS = frozenset(
+    {
+        "approval_expires_at_unix",
+        "approver",
+        "campaign_id",
+        "certificate_id",
+        "confirm_channel",
+        "contract_hash",
+        "event_head",
+        "evidence_attestation",
+        "exit_code",
+        "isolation",
+        "issued_at",
+        "output_digests",
+        "policy",
+        "run_id",
+        "run_result",
+        "runtime",
+        "schema_version",
+        "source_hash",
+    }
+)
 
 _COMPAT_DOC = "docs/SCHEMA_COMPATIBILITY.md"
 
@@ -28,7 +52,7 @@ def assert_supported_contract_version(version: int) -> None:
 def normalize_receipt_schema_version(cert: dict[str, Any]) -> int:
     """Return the effective receipt schema version (absent → legacy 1)."""
     if "schema_version" not in cert:
-        return CURRENT_RECEIPT_SCHEMA_VERSION
+        return 1
     raw = cert["schema_version"]
     if isinstance(raw, bool) or not isinstance(raw, int):
         raise CertificateError(
@@ -68,9 +92,20 @@ def certificate_id_material(cert: dict[str, Any]) -> dict[str, Any]:
     }
     if "schema_version" in cert:
         material["schema_version"] = cert["schema_version"]
-    # Optional Phase 2–5 fields. Omitted keys stay out of the hash so historical
-    # receipts that never recorded them still verify.
-    for key in ("approver", "isolation", "policy", "evidence_attestation"):
+    # Optional Phase 2–5 fields plus confirm_channel. Omitted keys stay out of
+    # the hash so historical receipts that never recorded them still recompute
+    # certificate_id; verify still refuses those receipts unless a bound
+    # approval event or holder receipt is present.
+    for key in ("approver", "isolation", "policy", "evidence_attestation", "confirm_channel"):
         if key in cert:
             material[key] = cert[key]
     return material
+
+
+def assert_certificate_known_keys(cert: dict[str, Any]) -> None:
+    """Fail closed on unknown top-level certificate.json fields."""
+    extra = sorted(set(cert) - CERTIFICATE_KNOWN_KEYS)
+    if extra:
+        raise CertificateError(
+            "certificate contains unknown field(s): " + ", ".join(extra)
+        )

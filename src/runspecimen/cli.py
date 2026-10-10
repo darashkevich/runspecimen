@@ -9,9 +9,11 @@ import platform
 import sys
 import webbrowser
 from pathlib import Path
+from typing import Any
 
 from runspecimen import DOCS_URLS, PRODUCT_NAME, __version__
 from runspecimen.approve import approve_contract
+from runspecimen.present import HELP_EPILOG, emit_result, format_error, format_quickstart
 from runspecimen.bundle import write_incident_bundle
 from runspecimen.certificate import verify_run_receipt
 from runspecimen.contract import load_contract
@@ -20,7 +22,7 @@ from runspecimen.paths import resolve_workspace
 from runspecimen.postflight import postflight
 from runspecimen.preflight import preflight
 from runspecimen.run import run_contract
-from runspecimen.status import format_status, status_for
+from runspecimen.status import status_for
 from runspecimen.runtime import runtime_provenance
 from runspecimen.lease import Lease
 from runspecimen.recovery import abandon_run, check_recovery_status
@@ -42,8 +44,11 @@ _ABOUT_SUMMARY = (
     "run → postflight → verify. Safety model: local TTY APPROVE (primary), optional "
     "Mac-armed remote human confirm via paired companion (not TTY-equivalent), "
     "workspace lease, hash-chained events, and certificates — evidence controls, "
-    "not an OS sandbox. Plugins/agents cannot approve. The dashboard is "
-    "loopback-only and read-only; it cannot approve or execute."
+    "not an OS sandbox. Plugins/agents cannot approve through the app. A program "
+    "running as you that can edit RunSpecimen's files can still add a fake "
+    "approval to the record. Signing with a key the agent can't access lets you check afterwards that a receipt is authentic, when a signature is required and checked; it does not stop a program running as you from adding a fake approval or running the job. "
+    "The dashboard is loopback-only and read-only; it "
+    "cannot approve or execute through the app."
 )
 
 
@@ -60,32 +65,87 @@ def _add_contract(p: argparse.ArgumentParser) -> None:
     p.add_argument("--contract", type=Path, required=True, help="Path to contract JSON")
 
 
+class _ArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:  # type: ignore[override]
+        if "the following arguments are required: command" in message:
+            message = (
+                "a command is required. Try:  runspecimen quickstart"
+                "   or   runspecimen --help"
+            )
+        self.print_usage(sys.stderr)
+        self.exit(2, f"{self.prog}: error: {message}\n")
+
+
+def _add_presentation_flags(p: argparse.ArgumentParser, *, suppress_defaults: bool) -> None:
+    p.add_argument(
+        "--pretty",
+        action="store_true",
+        default=False if not suppress_defaults else argparse.SUPPRESS,
+        help="Human-readable view (JSON remains the default)",
+    )
+    color_kwargs: dict = {
+        "choices": ("auto", "always", "never"),
+        "help": "Color for --pretty output (default: auto; respects NO_COLOR)",
+    }
+    if suppress_defaults:
+        color_kwargs["default"] = argparse.SUPPRESS
+    else:
+        color_kwargs["default"] = "auto"
+    p.add_argument("--color", **color_kwargs)
+
+
+def _attach_presentation_flags(subparsers: Any) -> None:
+    original = subparsers.add_parser
+
+    def add_parser(name: str, **kwargs):  # type: ignore[no-untyped-def]
+        parser = original(name, **kwargs)
+        _add_presentation_flags(parser, suppress_defaults=True)
+        return parser
+
+    subparsers.add_parser = add_parser  # type: ignore[method-assign]
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _ArgumentParser(
         prog="runspecimen",
         description=(
             f"{PRODUCT_NAME}: exactly one approved bounded run with "
             "provenance binding, crash-safe state, mandatory postflight, "
-            "and tamper-evident receipts."
+            "and tamper-evident receipts.\n\n"
+            "JSON is the default output for every command (stable for tests and "
+            "agents). Pass --pretty for a human view. Approval still requires a "
+            "real TTY; plugins cannot approve through the app."
         ),
-        epilog=(
-            "Docs: "
-            f"About {DOCS_URLS['about']} · "
-            f"User guide {DOCS_URLS['user_guide']} · "
-            f"FAQ {DOCS_URLS['faq']} · "
-            "or run: runspecimen about"
-        ),
+        epilog=HELP_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    _add_presentation_flags(parser, suppress_defaults=False)
     sub = parser.add_subparsers(dest="command", required=True)
+    _attach_presentation_flags(sub)
 
     sub.add_parser("about", help="Describe RunSpecimen and print documentation URLs")
+    sub.add_parser("quickstart", help="Print a copy-pasteable first-run command sequence")
 
-    p_demo = sub.add_parser("init-demo", help="Create a fresh unapproved demo workspace")
+    p_demo = sub.add_parser(
+        "init-demo",
+        help="Create a fresh unapproved demo workspace",
+        epilog="Example:\n  runspecimen init-demo --workspace ./runspecimen-demo",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p_demo.add_argument("--workspace", type=Path, required=True, help="New directory to create (must not exist)")
 
-    p_approve = sub.add_parser("approve", help="Interactively approve a contract+source binding")
+    p_approve = sub.add_parser(
+        "approve",
+        help="Interactively approve a contract+source binding",
+        epilog=(
+            "Examples:\n"
+            "  runspecimen approve --workspace . --contract contract.json\n"
+            "  # Type APPROVE exactly on a real TTY. Plugins cannot approve through the app.\n"
+            "  runspecimen --pretty approve --workspace . --contract contract.json"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     _add_workspace(p_approve)
     _add_contract(p_approve)
 
@@ -110,7 +170,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_verify.add_argument("--campaign-id", required=True)
     p_verify.add_argument("--run-id", required=True)
 
-    p_status = sub.add_parser("status", help="Show run state, approval, lease, and chain health")
+    p_status = sub.add_parser(
+        "status",
+        help="Show run state, approval, lease, and chain health",
+        epilog=(
+            "Examples:\n"
+            "  runspecimen status --workspace . --campaign-id demo-campaign --run-id run-001\n"
+            "  runspecimen --pretty status --workspace . --campaign-id demo-campaign --run-id run-001\n"
+            "JSON is the default. --pretty is a human view; it is not live verify."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     _add_workspace(p_status)
     p_status.add_argument("--campaign-id", required=True)
     p_status.add_argument("--run-id", required=True)
@@ -142,7 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_companion = sub.add_parser(
         "companion",
-        help="Opt-in observe + remote-human-confirm endpoint (plugins cannot approve)",
+        help="Opt-in observe + remote-human-confirm endpoint (plugins cannot approve through the app)",
         description=(
             "Start a fail-closed companion listener for remote observation and optional "
             "Mac-armed remote human confirm (ADR-004). Requires an explicit pairing token. "
@@ -287,7 +357,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print recorded receipt fields (does not live-verify)",
         description=(
             "Summarize a certificate already on disk. This does not check the "
-            "event chain, signatures, or current provenance. Use verify for that. "
+            "event chain, HMAC or Ed25519 signatures, or current provenance. "
+            "verify checks receipt integrity, the event chain, and live "
+            "provenance; it does not check HMAC or Ed25519 signatures. "
+            "verify-signature does that, with its required trust inputs. "
             "--live only compares output file bytes to output_digests."
         ),
     )
@@ -440,34 +513,87 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+
+def _want_pretty(args: argparse.Namespace) -> bool:
+    return bool(getattr(args, "pretty", False))
+
+
+def _color_mode(args: argparse.Namespace) -> str:
+    return str(getattr(args, "color", "auto") or "auto")
+
+
+def _cli_context(args: argparse.Namespace) -> dict[str, Any]:
+    ctx: dict = {"command": getattr(args, "command", None)}
+    workspace = getattr(args, "workspace", None)
+    if workspace is not None:
+        ctx["workspace"] = str(workspace)
+    contract = getattr(args, "contract", None)
+    if contract is not None:
+        ctx["contract"] = str(contract)
+    campaign = getattr(args, "campaign_id", None)
+    if campaign:
+        ctx["campaign_id"] = campaign
+    run_id = getattr(args, "run_id", None)
+    if run_id:
+        ctx["run_id"] = run_id
+    return ctx
+
+
+def _emit(
+    payload: object,
+    args: argparse.Namespace,
+    *,
+    kind: str,
+    json_kwargs: dict[str, Any] | None = None,
+    flush: bool = False,
+) -> None:
+    emit_result(
+        payload,
+        pretty=_want_pretty(args),
+        color=_color_mode(args),
+        kind=kind,
+        context=_cli_context(args),
+        json_kwargs=json_kwargs,
+        flush=flush,
+    )
+
+
+def _emit_error(message: str, args: argparse.Namespace) -> None:
+    print(
+        format_error(str(message), pretty=_want_pretty(args), color_mode=_color_mode(args)),
+        file=sys.stderr,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == "quickstart":
+        sys.stdout.write(format_quickstart())
+        return 0
     if args.command == "about":
-        print(
-            json.dumps(
-                {
-                    "product": PRODUCT_NAME,
-                    "version": __version__,
-                    "summary": _ABOUT_SUMMARY,
-                    "lifecycle": [
-                        "approve",
-                        "preflight",
-                        "run",
-                        "postflight",
-                        "verify",
-                    ],
-                    "docs": dict(DOCS_URLS),
-                },
-                indent=2,
-                sort_keys=True,
-            )
+        _emit(
+            {
+                "product": PRODUCT_NAME,
+                "version": __version__,
+                "summary": _ABOUT_SUMMARY,
+                "lifecycle": [
+                    "approve",
+                    "preflight",
+                    "run",
+                    "postflight",
+                    "verify",
+                ],
+                "docs": dict(DOCS_URLS),
+            },
+            args,
+            kind="about",
         )
         return 0
     if args.command == "isolation":
         from runspecimen.isolation import host_capabilities
 
-        print(json.dumps(host_capabilities(), indent=2, sort_keys=True))
+        _emit(host_capabilities(), args, kind="isolation")
         return 0
 
     # Expansion command groups own --workspace parsing differently for some
@@ -490,7 +616,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             code = handle_expansion(args, ws)
         except RunSpecimenError as exc:
-            print(f"{PRODUCT_NAME} error: {exc}", file=sys.stderr)
+            _emit_error(str(exc), args)
             return 1
         if code is not None:
             return code
@@ -501,23 +627,23 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "init-demo":
             from runspecimen.demo import init_demo
 
-            print(json.dumps(init_demo(workspace), indent=2, sort_keys=True))
+            _emit(init_demo(workspace), args, kind="init-demo")
             return 0
         if args.command == "approve":
             doc = approve_contract(contract_path=args.contract, workspace=workspace)
-            print(json.dumps({"ok": True, "approval": doc}, indent=2, sort_keys=True))
+            _emit({"ok": True, "approval": doc}, args, kind="approve")
             return 0
         if args.command == "preflight":
             result = preflight(contract_path=args.contract, workspace=workspace)
-            print(json.dumps(result, indent=2, sort_keys=True))
+            _emit(result, args, kind="preflight")
             return 0
         if args.command == "run":
             result = run_contract(contract_path=args.contract, workspace=workspace)
-            print(json.dumps(result, indent=2, sort_keys=True))
+            _emit(result, args, kind="run")
             return 0
         if args.command == "postflight":
             cert = postflight(contract_path=args.contract, workspace=workspace)
-            print(json.dumps({"ok": True, "certificate": cert}, indent=2, sort_keys=True))
+            _emit({"ok": True, "certificate": cert}, args, kind="postflight")
             return 0
         if args.command == "verify":
             contract = load_contract(args.contract)
@@ -532,8 +658,8 @@ def main(argv: list[str] | None = None) -> int:
                 contract=contract,
                 require_live_provenance=True,
             )
-            print(json.dumps(result, indent=2, sort_keys=True))
-            return 0
+            _emit(result, args, kind="verify")
+            return 0 if isinstance(result, dict) and result.get("ok") is True else 1
         if args.command == "status":
             if args.contract is not None:
                 c = load_contract(args.contract)
@@ -547,7 +673,7 @@ def main(argv: list[str] | None = None) -> int:
                 run_id=args.run_id,
                 contract_path=args.contract,
             )
-            print(format_status(doc))
+            _emit(doc, args, kind="status", json_kwargs={"indent": 2, "sort_keys": True, "default": str})
             return 0
         if args.command == "validate":
             contract = load_contract(args.contract)
@@ -565,13 +691,13 @@ def main(argv: list[str] | None = None) -> int:
                 "isolation": isolation,
                 "policy": policy,
             }
-            print(json.dumps(result, indent=2, sort_keys=True))
+            _emit(result, args, kind="validate")
             return 0
         if args.command == "doctor":
             from runspecimen.configsync import inspect_environment
 
             result = inspect_environment(workspace=workspace)
-            print(json.dumps(result, indent=2, sort_keys=True, default=str))
+            _emit(result, args, kind="doctor", json_kwargs={"indent": 2, "sort_keys": True, "default": str})
             return 0 if result.get("ok") else 1
         if args.command == "dashboard":
             if not 0 <= args.port <= 65535:
@@ -581,7 +707,7 @@ def main(argv: list[str] | None = None) -> int:
             server, url = start_dashboard(
                 workspace=workspace, contract_path=args.contract, port=args.port
             )
-            print(json.dumps({"ok": True, "url": url, "loopback_only": True}, sort_keys=True), flush=True)
+            _emit({"ok": True, "url": url, "loopback_only": True}, args, kind="dashboard", json_kwargs={"sort_keys": True}, flush=True)
             try:
                 if args.open:
                     webbrowser.open(url)
@@ -606,10 +732,10 @@ def main(argv: list[str] | None = None) -> int:
                     workspace=workspace,
                     ttl_sec=int(args.ttl_sec),
                 )
-                print(json.dumps(meta, indent=2, sort_keys=True))
+                _emit(meta, args, kind="remote-confirm")
                 return 0
             if args.remote_confirm_command == "cancel":
-                print(json.dumps(cancel_remote_confirm(contract_path=args.contract, workspace=workspace), indent=2, sort_keys=True))
+                _emit(cancel_remote_confirm(contract_path=args.contract, workspace=workspace), args, kind="remote-confirm")
                 return 0
             if args.remote_confirm_command == "refuse":
                 refused = refuse_remote_confirm(
@@ -618,7 +744,7 @@ def main(argv: list[str] | None = None) -> int:
                     challenge=str(args.challenge),
                     reason=str(args.reason),
                 )
-                print(json.dumps(refused, indent=2, sort_keys=True))
+                _emit(refused, args, kind="remote-confirm")
                 return 0
             if args.remote_confirm_command == "status":
                 contract = load_contract(args.contract)
@@ -634,7 +760,7 @@ def main(argv: list[str] | None = None) -> int:
                         "local_challenge is printed for Mac display only; "
                         "companion HTTP never returns this secret."
                     )
-                print(json.dumps(out, indent=2, sort_keys=True))
+                _emit(out, args, kind="remote-confirm")
                 return 0
             raise RunSpecimenError(f"unknown remote-confirm command: {args.remote_confirm_command}")
         if args.command == "bundle":
@@ -646,7 +772,7 @@ def main(argv: list[str] | None = None) -> int:
                 contract_path=args.contract,
                 include_chain=bool(args.chain),
             )
-            print(json.dumps(manifest, indent=2, sort_keys=True, default=str))
+            _emit(manifest, args, kind="bundle", json_kwargs={"indent": 2, "sort_keys": True, "default": str})
             return 0
         if args.command == "retain":
             from runspecimen.bundle import retain_incident_bundle
@@ -659,7 +785,7 @@ def main(argv: list[str] | None = None) -> int:
                 contract_path=args.contract,
                 include_chain=bool(args.chain),
             )
-            print(json.dumps(manifest, indent=2, sort_keys=True, default=str))
+            _emit(manifest, args, kind="retain", json_kwargs={"indent": 2, "sort_keys": True, "default": str})
             return 0
         if args.command == "digest":
             from runspecimen.digest import live_output_rows, load_recorded_receipt, summarize_receipt
@@ -672,7 +798,7 @@ def main(argv: list[str] | None = None) -> int:
                     "Recorded certificate fields, plus a byte compare of output_digests "
                     "to current files. This is not runspecimen verify."
                 )
-            print(json.dumps(summary, indent=2, sort_keys=True, default=str))
+            _emit(summary, args, kind="digest", json_kwargs={"indent": 2, "sort_keys": True, "default": str})
             return 0
         if args.command == "diff":
             from runspecimen.digest import diff_summaries, load_recorded_receipt, summarize_receipt
@@ -681,7 +807,7 @@ def main(argv: list[str] | None = None) -> int:
             right = summarize_receipt(
                 load_recorded_receipt(workspace, args.against_campaign_id, args.against_run_id)
             )
-            print(json.dumps(diff_summaries(left, right), indent=2, sort_keys=True, default=str))
+            _emit(diff_summaries(left, right), args, kind="diff", json_kwargs={"indent": 2, "sort_keys": True, "default": str})
             return 0
         if args.command == "companion":
             from runspecimen.companion import generate_pairing_token, start_companion
@@ -762,7 +888,7 @@ def main(argv: list[str] | None = None) -> int:
             payload = dict(meta)
             if args.print_token:
                 payload["pairing_token"] = token
-            print(json.dumps(payload, sort_keys=True), flush=True)
+            _emit(payload, args, kind=str(args.command), json_kwargs={"sort_keys": True}, flush=True)
             try:
                 server.serve_forever()
             finally:
@@ -775,7 +901,7 @@ def main(argv: list[str] | None = None) -> int:
                 run_id=args.run_id,
                 reason=args.reason,
             )
-            print(json.dumps(result, indent=2, sort_keys=True))
+            _emit(result, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
             return 0
         if args.command == "recovery-status":
             result = check_recovery_status(
@@ -783,7 +909,7 @@ def main(argv: list[str] | None = None) -> int:
                 campaign_id=args.campaign_id,
                 run_id=args.run_id,
             )
-            print(json.dumps(result, indent=2, sort_keys=True))
+            _emit(result, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
             return 0 if not result.get("needs_recovery") else 1
         if args.command == "keygen":
             if getattr(args, "scheme", "hmac") == "ed25519":
@@ -806,7 +932,7 @@ def main(argv: list[str] | None = None) -> int:
                         "Trust equals key custody — not absolute non-repudiation."
                     ),
                 }
-                print(json.dumps(result, indent=2, sort_keys=True))
+                _emit(result, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
                 return 0
             key = SigningKey.generate(key_id=args.key_id)
             key_path = save_signing_key(workspace, key)
@@ -818,7 +944,7 @@ def main(argv: list[str] | None = None) -> int:
                 "key_path": str(key_path),
                 "message": "HMAC key generated; keep the .key file secure (shared-secret MAC)",
             }
-            print(json.dumps(result, indent=2, sort_keys=True))
+            _emit(result, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
             return 0
         if args.command == "list-keys":
             from runspecimen.pubkey import list_ed25519_key_ids
@@ -833,7 +959,7 @@ def main(argv: list[str] | None = None) -> int:
                 "ed25519_key_ids": ed_ids,
                 "key_ids": hmac_ids if scheme != "ed25519" else ed_ids,
             }
-            print(json.dumps(result, indent=2, sort_keys=True))
+            _emit(result, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
             return 0
         if args.command == "export-public-key":
             from runspecimen.pubkey import export_ed25519_public_key
@@ -845,7 +971,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{PRODUCT_NAME} error: --output must be inside the workspace", file=sys.stderr)
                 return 1
             path_out = export_ed25519_public_key(workspace, args.key_id, output_path)
-            print(json.dumps({"ok": True, "key_id": args.key_id, "public_key_path": str(path_out)}, indent=2, sort_keys=True))
+            _emit({"ok": True, "key_id": args.key_id, "public_key_path": str(path_out)}, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
             return 0
         if args.command == "sign":
             from runspecimen.errors import CertificateError
@@ -916,7 +1042,7 @@ def main(argv: list[str] | None = None) -> int:
                     return 1
                 signed = sign_certificate_ed25519(canonical_cert, pair)
                 atomic_write_json(output_path, signed.to_dict())
-                print(json.dumps({
+                _emit({
                     "ok": True,
                     "scheme": "ed25519",
                     "certificate": str(cert_path),
@@ -926,7 +1052,7 @@ def main(argv: list[str] | None = None) -> int:
                     "public_key": pair.public_hex(),
                     "receipt_verified": True,
                     "certificate_id": canonical_cert.get("certificate_id"),
-                }, indent=2, sort_keys=True))
+                }, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
                 return 0
 
             key = load_signing_key(workspace, args.key_id)
@@ -940,7 +1066,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             signed = sign_certificate(canonical_cert, key)
             atomic_write_json(output_path, signed.to_dict())
-            print(json.dumps({
+            _emit({
                 "ok": True,
                 "scheme": "hmac",
                 "certificate": str(cert_path),
@@ -949,7 +1075,7 @@ def main(argv: list[str] | None = None) -> int:
                 "algorithm": key.algorithm,
                 "receipt_verified": True,
                 "certificate_id": canonical_cert.get("certificate_id"),
-            }, indent=2, sort_keys=True))
+            }, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
             return 0
         if args.command == "verify-signature":
             from runspecimen.errors import CertificateError
@@ -976,22 +1102,22 @@ def main(argv: list[str] | None = None) -> int:
                 )
 
                 if not signed_path.exists():
-                    print(json.dumps({
+                    _emit({
                         "ok": False,
                         "scheme": "ed25519",
                         "message": f"signed file not found: {signed_path}",
-                    }, indent=2, sort_keys=True))
+                    }, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
                     return 1
                 try:
                     data = read_json(signed_path)
                     verify_rejects_hmac_blob(data)
                     signed_cert = Ed25519SignedCertificate.from_dict(data)
                 except Exception as e:
-                    print(json.dumps({
+                    _emit({
                         "ok": False,
                         "scheme": "ed25519",
                         "message": f"failed to parse Ed25519 signed file: {e}",
-                    }, indent=2, sort_keys=True))
+                    }, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
                     return 1
 
                 # Trusted verify requires an external trust anchor — never the
@@ -1008,7 +1134,7 @@ def main(argv: list[str] | None = None) -> int:
                 elif args.key_id:
                     pub_bytes = load_ed25519_public_key_file(public_key_path(workspace, args.key_id))
                 else:
-                    print(json.dumps({
+                    _emit({
                         "ok": False,
                         "scheme": "ed25519",
                         "trusted": False,
@@ -1017,7 +1143,7 @@ def main(argv: list[str] | None = None) -> int:
                             "trusted Ed25519 verify requires --public-key or --key-id "
                             "(embedded receipt public key alone is not a trust anchor)"
                         ),
-                    }, indent=2, sort_keys=True))
+                    }, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
                     return 1
 
                 ver_result = verify_certificate_ed25519(signed_cert, public_key=pub_bytes)
@@ -1064,7 +1190,7 @@ def main(argv: list[str] | None = None) -> int:
                         result["ok"] = False
                         result["receipt_valid"] = False
                         result["message"] = f"signature ok but live receipt check failed: {e}"
-                print(json.dumps(result, indent=2, sort_keys=True))
+                _emit(result, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
                 return 0 if result["ok"] else 1
 
             if not args.key_id:
@@ -1086,7 +1212,7 @@ def main(argv: list[str] | None = None) -> int:
                     "canonical_match": False,
                     "message": f"signed file not found: {signed_path}",
                 }
-                print(json.dumps(result, indent=2, sort_keys=True))
+                _emit(result, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
                 return 1
 
             try:
@@ -1109,7 +1235,7 @@ def main(argv: list[str] | None = None) -> int:
                     "canonical_match": False,
                     "message": f"failed to parse signed file: {e}",
                 }
-                print(json.dumps(result, indent=2, sort_keys=True))
+                _emit(result, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
                 return 1
 
             ver_result = verify_signature(signed_cert, key)
@@ -1127,7 +1253,7 @@ def main(argv: list[str] | None = None) -> int:
             }
 
             if not ver_result.mac_valid:
-                print(json.dumps(result, indent=2, sort_keys=True))
+                _emit(result, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
                 return 1
 
             cert = signed_cert.certificate
@@ -1135,14 +1261,14 @@ def main(argv: list[str] | None = None) -> int:
             run_id = cert.get("run_id")
             if not campaign_id or not run_id:
                 result["message"] = "certificate missing campaign_id or run_id"
-                print(json.dumps(result, indent=2, sort_keys=True))
+                _emit(result, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
                 return 1
 
             state_dir = run_state_dir(workspace, str(campaign_id), str(run_id))
             canonical_cert = load_certificate(state_dir)
             if canonical_cert is None:
                 result["message"] = "canonical certificate not found in state directory"
-                print(json.dumps(result, indent=2, sort_keys=True))
+                _emit(result, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
                 return 1
 
             if canonical_json_bytes(cert) != canonical_json_bytes(canonical_cert):
@@ -1151,7 +1277,7 @@ def main(argv: list[str] | None = None) -> int:
                     f"signed_cert_id={cert.get('certificate_id')}, "
                     f"canonical_cert_id={canonical_cert.get('certificate_id')}"
                 )
-                print(json.dumps(result, indent=2, sort_keys=True))
+                _emit(result, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
                 return 1
 
             result["canonical_match"] = True
@@ -1166,7 +1292,7 @@ def main(argv: list[str] | None = None) -> int:
                 result["receipt_valid"] = True
             except CertificateError as e:
                 result["receipt_verification_error"] = str(e)
-                print(json.dumps(result, indent=2, sort_keys=True))
+                _emit(result, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
                 return 1
 
             if ver_result.ok and result["receipt_valid"] and result["canonical_match"]:
@@ -1176,17 +1302,17 @@ def main(argv: list[str] | None = None) -> int:
                     "MAC valid, certificate matches canonical receipt, live provenance verified"
                 )
 
-            print(json.dumps(result, indent=2, sort_keys=True))
+            _emit(result, args, kind=str(args.command), json_kwargs={"indent": 2, "sort_keys": True})
             return 0 if result["ok"] else 1
         parser.error(f"unknown command: {args.command}")
         return 2
     except RunSpecimenError as exc:
-        print(f"{PRODUCT_NAME} error: {exc}", file=sys.stderr)
+        _emit_error(str(exc), args)
         return 1
     except BrokenPipeError:
         return 0
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        print(f"{PRODUCT_NAME} error: {exc}", file=sys.stderr)
+        _emit_error(str(exc), args)
         return 1
     except KeyboardInterrupt:
         print(f"{PRODUCT_NAME}: {args.command} interrupted; inspect status before continuing", file=sys.stderr)
