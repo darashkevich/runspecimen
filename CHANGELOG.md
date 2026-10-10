@@ -4,6 +4,11 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
+- RQ19-01: the acceptance sheet starts the provenance check with `-I -S`. The check refuses when it was itself started by a virtual environment's Python, and it compares `pyvenv.cfg` to the real path of the file that was started. qafix20 pack.
+- RQ19-02: a `.pth` line that names a path which exists but cannot be fully read is a refusal. A permission error, a symlink loop, a non-regular file, and a file that is not a readable zip are not skipped. qafix20 pack.
+- A repeated `home` or `executable` in `pyvenv.cfg` is refused in plain English. This check does not guess which copy to keep. qafix20 pack.
+- A `.pth` line that names a symlink loop is a normal JSON refusal. qafix20 pack.
+- The acceptance sheet keeps `BASE_PY` only when `python3` is an absolute path to a real program, then stores the real path that program reports with `-I -S`. A function, an alias, or any other answer stops the sheet. qafix20 pack.
 - The symlink-home acceptance test writes `pyvenv.cfg` `home` as the symlink directory. macOS framework Python records the real bin even when the venv was created through a symlink, so the Debian shape has to be written or that host never reaches the check. qafix19 pack.
 - RQ17-01: the installed-wheel check no longer stops after 64 import directories. A path that does not exist is not counted. If more existing directories remain than the check can safely read, it refuses in plain English and does not run the environment. An unreadable `.pth` file, zip, or interpreter `sitecustomize` is refused the same way. qafix18 pack.
 - RQ17-02: the acceptance sheet records `python3` before it creates the venv and runs the provenance script with that program only. It does not follow `bin/python`. qafix18 pack.

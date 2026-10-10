@@ -108,19 +108,26 @@ base interpreter's own `sitecustomize` would import (on Debian, that is
 `apport_python_hook`), and bytecode that does not belong. A `.pth` file that
 is not UTF-8 text, or that contains a null byte, is refused, and the report
 is still the usual JSON. A `.pth` file or zip that cannot be read is refused
-the same way. `python`,
+the same way. A `.pth` line that names a file or folder which exists, but
+cannot be fully read, is refused. That includes a permission error, a
+symlink loop, something that is not a regular file or a directory, and a
+file that is not a readable zip. A repeated `home` or `executable` in
+`pyvenv.cfg` is refused; this check does not guess which copy to keep.
+`python`,
 `python3`, `python3.X`, and `𝜋thon` must be a symlink to the base interpreter
 named by `pyvenv.cfg`, or a byte-for-byte copy of that file. Following too
 many links is a refusal with that reason. `pyvenv.cfg`
-must name this same base interpreter. `home` and `executable` are compared
-by the real file they name (`home` plus the interpreter's file name, and
-`executable` when it is present), so a venv created through a symlink is
-accepted when that file is the Python running the check. A mismatch names
-`pyvenv.cfg` and is not described as extra startup code. The file must not
-turn on system site-packages. When that switch is on, the message names the
-`pyvenv.cfg` file. Any of those findings stops the check immediately. The
-acceptance sheet starts this check with the `python3` it recorded before
-creating the venv. It does not run the venv's `python`.
+must name the real file that was started (`home` plus the interpreter's file
+name, and `executable` when it is present), so a venv created through a
+symlink is accepted when that file is the Python running the check. A
+mismatch names `pyvenv.cfg` and is not described as extra startup code. The
+file must not turn on system site-packages. When that switch is on, the
+message names the `pyvenv.cfg` file. Any of those findings stops the check
+immediately. The acceptance sheet records an absolute `python3` program,
+asks that program for its real path with `-I -S`, and starts this check the
+same way. A shell function or alias named `python3` stops the sheet. The
+check also refuses when it was itself started by a virtual environment's
+Python. It does not run the venv's `python`.
 
 A path counts as the standard library only when it is inside the base
 interpreter's real library directories, is not a site-packages or

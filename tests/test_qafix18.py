@@ -162,14 +162,21 @@ class Qafix18VerifierTests(unittest.TestCase):
     def test_rq1702_sheet_basepy_does_not_execute_venv_python(self) -> None:
         text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
         self.assertLess(
-            text.index('export BASE_PY="$(command -v python3)"'),
+            text.index('_RS_PY3="$(command -v python3)"'),
+            text.index('python3 -m venv "$VENV"'),
+        )
+        self.assertLess(
+            text.index('"$BASE_PY" -I -S "$@"'),
             text.index('python3 -m venv "$VENV"'),
         )
         basepy_line = next(line for line in text.splitlines() if line.startswith("basepy()"))
         self.assertIn('"$BASE_PY"', basepy_line)
+        self.assertIn("-I -S", basepy_line)
         self.assertNotIn("$PY", basepy_line)
         self.assertNotIn("readlink", basepy_line)
         self.assertNotIn("while [ -L", text)
+        n3 = next(line for line in text.splitlines() if "verify_installed_wheel.py" in line)
+        self.assertIn("basepy -I -S", n3)
         helpers = _helper_functions(text)
         real = sys.executable
 

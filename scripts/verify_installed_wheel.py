@@ -34,8 +34,9 @@ interpreter modules count as the interpreter. There is no DistutilsMetaFinder
 allowlist and no RECORD-based trust of ``_distutils_hack``.
 
 The check has two phases. The static phase uses the base interpreter named
-by ``pyvenv.cfg`` (never the venv's python) with ``-I -S``. It does not run
-any file from the venv. It asks that interpreter's ``site`` module which
+by ``pyvenv.cfg`` (never the venv's python) with ``-I -S``. It refuses to
+run at all when this process was itself started by a virtual environment's
+Python. It does not run any file from the venv. It asks that interpreter's ``site`` module which
 directories this venv would process, including Debian ``dist-packages`` and
 paths driven by ``pyvenv.cfg``. The user site is included only when that
 ``site`` logic would enable it. A normal venv (``include-system-site-packages``
@@ -90,6 +91,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import errno
 import hashlib
 import json
 import os
@@ -1213,7 +1215,12 @@ def scan_pth_files(site_packages: Path) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
     try:
         site_packages = site_packages.resolve()
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, RuntimeError) as exc:
+        if isinstance(exc, RuntimeError) or getattr(exc, "errno", None) == errno.ELOOP:
+            return [_pth_problem(
+                site_packages,
+                f"cannot resolve this path because it is a symlink loop: {site_packages}",
+            )]
         return [_pth_problem(site_packages, f"cannot resolve the site directory {site_packages}: {exc}")]
     try:
         pth_files = sorted(site_packages.glob("*.pth"))
@@ -1249,10 +1256,14 @@ def scan_pth_files(site_packages: Path) -> list[dict[str, Any]]:
                 if not candidate.is_absolute():
                     candidate = site_packages / candidate
                 resolved = candidate.resolve()
-            except (OSError, ValueError) as exc:
+            except (OSError, ValueError, RuntimeError) as exc:
+                if isinstance(exc, RuntimeError) or getattr(exc, "errno", None) == errno.ELOOP:
+                    reason = f"cannot resolve this path because it is a symlink loop: {candidate}"
+                else:
+                    reason = f"cannot resolve a path named by this .pth file: {exc}"
                 findings.append(_pth_problem(
                     pth,
-                    f"cannot resolve a path named by this .pth file: {exc}",
+                    reason,
                     line=lineno,
                     text=line,
                 ))
@@ -1312,22 +1323,88 @@ def _same_file(left: Path, right: Path) -> bool:
         return os.path.realpath(str(left)) == os.path.realpath(str(right))
 
 
-def _parse_pyvenv_cfg(path: Path) -> dict[str, str]:
+def _parse_pyvenv_cfg(path: Path) -> tuple[dict[str, str], str | None]:
+    """Parse ``pyvenv.cfg``. A repeated ``home`` or ``executable`` is refused.
+
+    This check does not guess which copy CPython would keep. A repeated
+    setting is a refusal in plain English.
+    """
     data: dict[str, str] = {}
+    seen: dict[str, int] = {}
     text = path.read_text(encoding="utf-8")
     for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        data[key.strip().lower()] = value.strip()
-    return data
+        name = key.strip().lower()
+        if name in {"home", "executable"}:
+            seen[name] = seen.get(name, 0) + 1
+        data[name] = value.strip()
+    if seen.get("home", 0) > 1 or seen.get("executable", 0) > 1:
+        return data, (
+            "pyvenv.cfg repeats home or executable. "
+            "This check does not accept a repeated setting: "
+            f"{path}"
+        )
+    return data, None
 
 
 def base_interpreter_in_use() -> Path:
-    """The trusted interpreter: never the venv symlink."""
-    raw = getattr(sys, "_base_executable", None) or sys.executable
-    return Path(raw)
+    """Real path of the file that was started.
+
+    ``sys._base_executable`` is not this file. A venv's Python reports the
+    base there even when this process was started by the venv symlink.
+    """
+    return Path(os.path.realpath(sys.executable))
+
+
+def _pyvenv_cfg_above(executable: Path) -> Path | None:
+    """``pyvenv.cfg`` in the started file's directory or a parent.
+
+    The walk uses the path that was started, not its realpath. A venv
+    ``bin/python`` is often a symlink to the base interpreter; walking the
+    real path would miss the venv's ``pyvenv.cfg``.
+    """
+    current = Path(os.path.abspath(str(executable)))
+    seen: set[str] = set()
+    while True:
+        key = str(current)
+        if key in seen:
+            return None
+        seen.add(key)
+        candidate = current / "pyvenv.cfg"
+        try:
+            present = candidate.is_file()
+        except OSError as exc:
+            raise OSError(f"pyvenv.cfg cannot be read: {candidate} ({exc})") from exc
+        if present:
+            return candidate
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent
+
+
+def running_interpreter_problem() -> str | None:
+    """Refuse when this process is a virtual environment's Python.
+
+    ``-I -S`` makes ``sys.prefix == sys.base_prefix``, so the prefix compare
+    is not enough. A ``pyvenv.cfg`` next to or above the started file is
+    also a venv.
+    """
+    started_venv = sys.prefix != sys.base_prefix
+    if not started_venv:
+        try:
+            started_venv = _pyvenv_cfg_above(Path(sys.executable)) is not None
+        except OSError as exc:
+            return str(exc)
+    if not started_venv:
+        return None
+    return (
+        "This check was started with a virtual environment's Python. "
+        "Start it with the base Python, using -I -S, so site hooks do not run."
+    )
 
 
 def _interpreter_names_for_home(base: Path, executable: str) -> list[str]:
@@ -1376,9 +1453,11 @@ def validate_pyvenv(venv_root: Path, base: Path) -> list[str]:
     if not path.is_file():
         return [f"pyvenv.cfg is missing: {path}"]
     try:
-        cfg = _parse_pyvenv_cfg(path)
+        cfg, duplicate = _parse_pyvenv_cfg(path)
     except (OSError, UnicodeError) as exc:
         return [f"pyvenv.cfg cannot be read: {path} ({exc})"]
+    if duplicate:
+        return [duplicate]
     findings: list[str] = []
     home = cfg.get("home", "")
     executable = cfg.get("executable", "")
@@ -1522,6 +1601,94 @@ def _hook_finding(name: str, location: Path, chain_names: set[str]) -> str:
     return f"unvetted {name} on the import path: {location}"
 
 
+# A longer chain is a refusal with a reason, not a silent stop.
+LINK_WALK_LIMIT = 40
+
+
+def _symlink_loop_reason(path: Path) -> str:
+    return f"cannot read an import path because it is a symlink loop: {path}"
+
+
+def _unreadable_import_reason(path: Path, exc: BaseException | None = None) -> str:
+    if exc is None:
+        return f"cannot read an import path: {path}"
+    return f"cannot read an import path: {path} ({exc})"
+
+
+def _classify_import_path(path: Path) -> tuple[str, str | None]:
+    """Classify a path a ``.pth`` line would add.
+
+    Returns ``(kind, finding)``. ``kind`` is ``missing``, ``dir``, or
+    ``zip``. A finding means the path exists but cannot be fully read or
+    is not a directory or a readable zip. A missing path is not a finding.
+    ``zipfile.is_zipfile`` turns ``EACCES`` into ``False``; that is not a
+    reason to skip the path.
+    """
+    current = path
+    seen: set[str] = set()
+    st: os.stat_result | None = None
+    for _ in range(LINK_WALK_LIMIT):
+        key = os.path.abspath(str(current))
+        if key in seen:
+            return "bad", _symlink_loop_reason(path)
+        seen.add(key)
+        try:
+            st = current.lstat()
+        except FileNotFoundError:
+            return "missing", None
+        except OSError as exc:
+            if exc.errno == errno.ENOENT:
+                return "missing", None
+            if exc.errno == errno.ELOOP:
+                return "bad", _symlink_loop_reason(path)
+            return "bad", _unreadable_import_reason(path, exc)
+        if not stat.S_ISLNK(st.st_mode):
+            break
+        try:
+            raw = os.readlink(current)
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                return "bad", _symlink_loop_reason(path)
+            return "bad", _unreadable_import_reason(path, exc)
+        nxt = Path(raw)
+        current = nxt if nxt.is_absolute() else (current.parent / nxt)
+    else:
+        return "bad", _symlink_loop_reason(path)
+    if st is None:
+        return "bad", _unreadable_import_reason(path)
+    if stat.S_ISDIR(st.st_mode):
+        try:
+            os.listdir(current)
+        except OSError as exc:
+            return "bad", _unreadable_import_reason(path, exc)
+        return "dir", None
+    if not stat.S_ISREG(st.st_mode):
+        return "bad", (
+            "cannot read an import path because it is not a regular file "
+            f"or a directory: {path}"
+        )
+    try:
+        with open(current, "rb") as handle:
+            handle.read(4)
+    except OSError as exc:
+        return "bad", _unreadable_import_reason(path, exc)
+    try:
+        is_zip = zipfile.is_zipfile(current)
+    except OSError as exc:
+        return "bad", _unreadable_import_reason(path, exc)
+    if not is_zip:
+        return "bad", (
+            "cannot read an import path because it is not a directory "
+            f"or a readable zip file: {path}"
+        )
+    try:
+        with zipfile.ZipFile(current) as archive:
+            archive.namelist()
+    except (OSError, zipfile.BadZipFile) as exc:
+        return "bad", f"cannot read this zip: {path} ({exc})"
+    return "zip", None
+
+
 def scan_customization_hooks(
     directory: Path,
     extra_names: tuple[str, ...] = (),
@@ -1540,10 +1707,15 @@ def scan_customization_hooks(
             continue
         names.append(name)
         chain_names.add(name)
-    if zipfile.is_zipfile(directory):
-        return _scan_zip_hooks(directory, names, chain_names)
-    if not directory.is_dir():
+    kind, problem = _classify_import_path(directory)
+    if problem:
+        return [problem]
+    if kind == "missing":
         return []
+    if kind == "zip":
+        return _scan_zip_hooks(directory, names, chain_names)
+    if kind != "dir":
+        return [f"cannot read an import path: {directory}"]
     findings: list[str] = []
     suffixes = _import_suffixes()
     for name in names:
@@ -1552,10 +1724,26 @@ def scan_customization_hooks(
             candidates.append(directory / f"{name}{suffix}")
             candidates.append(directory / name / f"__init__{suffix}")
         for cache in (directory / "__pycache__", directory / name / "__pycache__"):
-            if not cache.is_dir():
+            try:
+                cache_is_dir = cache.is_dir()
+            except OSError as exc:
+                findings.append(
+                    "cannot tell whether a startup hook is present: "
+                    f"{cache} ({exc})"
+                )
+                continue
+            if not cache_is_dir:
                 continue
             prefix = name if cache.parent == directory else "__init__"
-            for path in cache.iterdir():
+            try:
+                cache_entries = list(cache.iterdir())
+            except OSError as exc:
+                findings.append(
+                    "cannot tell whether a startup hook is present: "
+                    f"{cache} ({exc})"
+                )
+                continue
+            for path in cache_entries:
                 if path.name.startswith(prefix + "."):
                     candidates.append(path)
         reported: set[str] = set()
@@ -1696,7 +1884,10 @@ def pth_import_entries(directory: Path) -> tuple[list[Path], list[str]]:
     are reported separately and are not listed here. An unreadable .pth file
     is a refusal, not a skip.
     """
-    if not directory.is_dir():
+    kind, problem = _classify_import_path(directory)
+    if problem:
+        return [], [problem]
+    if kind != "dir":
         return [], []
     added: list[Path] = []
     findings: list[str] = []
@@ -1720,16 +1911,27 @@ def pth_import_entries(directory: Path) -> tuple[list[Path], list[str]]:
                 candidate = Path(line)
                 if not candidate.is_absolute():
                     candidate = directory / candidate
-                exists = candidate.exists()
-            except (OSError, ValueError) as exc:
-                findings.append(f"cannot tell whether a path named by {pth} exists: {exc}")
+            except (OSError, ValueError, RuntimeError) as exc:
+                if isinstance(exc, RuntimeError) or getattr(exc, "errno", None) == errno.ELOOP:
+                    findings.append(f"cannot resolve this path because it is a symlink loop: {line}")
+                else:
+                    findings.append(f"cannot tell whether a path named by {pth} exists: {exc}")
                 continue
-            if not exists:
+            listed, listed_problem = _classify_import_path(candidate)
+            if listed_problem:
+                findings.append(listed_problem)
+                continue
+            if listed == "missing":
                 continue
             try:
                 key = str(candidate.resolve())
-            except (OSError, ValueError) as exc:
-                findings.append(f"cannot resolve a path named by {pth}: {exc}")
+            except (OSError, ValueError, RuntimeError) as exc:
+                if isinstance(exc, RuntimeError) or getattr(exc, "errno", None) == errno.ELOOP:
+                    findings.append(
+                        f"cannot resolve this path because it is a symlink loop: {candidate}"
+                    )
+                else:
+                    findings.append(f"cannot resolve a path named by {pth}: {exc}")
                 continue
             if key in seen:
                 continue
@@ -1756,17 +1958,21 @@ def expand_site_paths(site_dirs: list[Path]) -> tuple[list[Path], list[str]]:
     queue: list[Path] = list(site_dirs)
     while queue:
         directory = queue.pop(0)
-        try:
-            exists = directory.exists()
-        except (OSError, ValueError) as exc:
-            findings.append(f"cannot tell whether an import path exists: {directory} ({exc})")
+        kind, problem = _classify_import_path(directory)
+        if problem:
+            findings.append(problem)
             continue
-        if not exists:
+        if kind == "missing":
             continue
         try:
             key = str(directory.resolve())
-        except (OSError, ValueError) as exc:
-            findings.append(f"cannot resolve an import path: {directory} ({exc})")
+        except (OSError, ValueError, RuntimeError) as exc:
+            if isinstance(exc, RuntimeError) or getattr(exc, "errno", None) == errno.ELOOP:
+                findings.append(
+                    f"cannot resolve this path because it is a symlink loop: {directory}"
+                )
+            else:
+                findings.append(f"cannot resolve an import path: {directory} ({exc})")
             continue
         if key in seen:
             continue
@@ -1778,7 +1984,7 @@ def expand_site_paths(site_dirs: list[Path]) -> tuple[list[Path], list[str]]:
             break
         seen.add(key)
         chosen.append(directory)
-        if not directory.is_dir() or zipfile.is_zipfile(directory):
+        if kind != "dir":
             continue
         extras, extra_findings = pth_import_entries(directory)
         findings.extend(extra_findings)
@@ -1799,10 +2005,6 @@ def _is_venv_interpreter_entry(name: str) -> bool:
     if rest.endswith("t") and rest[:-1].replace(".", "").isdigit():
         rest = rest[:-1]
     return bool(rest) and all(ch.isdigit() or ch == "." for ch in rest)
-
-
-# A longer chain is a refusal with a reason, not a silent stop.
-LINK_WALK_LIMIT = 40
 
 
 def _final_regular_file(path: Path) -> tuple[Path | None, str | None]:
@@ -1890,7 +2092,12 @@ def scan_venv_interpreters(bin_dir: Path, base: Path) -> list[str]:
 
 def scan_dist_packages_modules(directory: Path) -> list[str]:
     """Refuse modules planted where Debian site.py would put them on sys.path."""
-    if not directory.is_dir() or directory.name != "dist-packages":
+    if directory.name != "dist-packages":
+        return []
+    kind, problem = _classify_import_path(directory)
+    if problem:
+        return [problem]
+    if kind != "dir":
         return []
     findings: list[str] = []
     try:
@@ -1955,7 +2162,12 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
     """Static scan, then probe, then the verdict.
 
     Nothing in the venv is executed until the static phase is clean.
+    A check started by a virtual environment's Python is refused before
+    any of that work, including when ``-I -S`` hid the venv prefix.
     """
+    started = running_interpreter_problem()
+    if started:
+        return {"ok": False, "message": started}
     incoming_overrides = import_overrides()
     env = sanitized_env()
     report: dict[str, Any] = {
@@ -2043,12 +2255,19 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
             scan_roots, path_problems = expand_site_paths(site_dirs)
             startup_findings.extend(path_problems)
             for directory in scan_roots:
-                if directory.is_dir() and not zipfile.is_zipfile(directory):
+                kind, problem = _classify_import_path(directory)
+                if problem:
+                    startup_findings.append(problem)
+                    continue
+                if kind == "dir":
                     for item in scan_pth_files(directory):
                         marker = (str(item.get("path")), int(item.get("line") or 0), str(item.get("text")))
                         if marker in seen_pth:
                             continue
                         seen_pth.add(marker)
+                        reason = str(item.get("reason") or "")
+                        if _plain_scan_refusal(reason) and reason not in startup_findings:
+                            startup_findings.append(reason)
                         pth_findings.append(item)
                 startup_findings.extend(scan_customization_hooks(directory, chain_names))
                 startup_findings.extend(scan_dist_packages_modules(directory))
