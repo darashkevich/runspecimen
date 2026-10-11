@@ -1183,6 +1183,45 @@ def _normalize_pth_import_line(line: str) -> str:
     return line.replace("\t", " ").strip()
 
 
+def _universal_newline_lines(text: str) -> list[str]:
+    """Line text the way a universal-newline file read yields it.
+
+    ``str.splitlines`` also breaks on vertical tab and form feed. CPython's
+    ``.pth`` and ``pyvenv.cfg`` readers do not, so those characters stay in
+    the line here.
+    """
+    if text == "":
+        return []
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    parts = normalized.split("\n")
+    if normalized.endswith("\n"):
+        parts.pop()
+    return parts
+
+
+def _pth_line_shape_problem(raw: str) -> str | None:
+    """Refuse a ``.pth`` line whose spaces would change the directory name.
+
+    CPython skips a line that starts with ``#``, skips a blank line, runs a
+    line that starts with ``import `` or ``import`` plus a tab, and otherwise
+    ``rstrip``s only the end. Leading whitespace stays part of the directory
+    name. This check does not guess that name. A line with leading or
+    trailing whitespace, or any control character, is a refusal.
+    """
+    if raw == "":
+        return None
+    if (
+        raw[:1].isspace()
+        or raw[-1:].isspace()
+        or any(ord(ch) < 32 or ord(ch) == 127 for ch in raw)
+    ):
+        return (
+            "cannot read this .pth line because it has leading or trailing "
+            "whitespace or a control character"
+        )
+    return None
+
+
 def read_pth_text(path: Path) -> tuple[str | None, str | None]:
     """Read a .pth file as UTF-8. A problem string means the file was not scanned."""
     try:
@@ -1231,10 +1270,14 @@ def scan_pth_files(site_packages: Path) -> list[dict[str, Any]]:
         if problem or text is None:
             findings.append(_pth_problem(pth, problem or f"cannot read this .pth file: {pth}"))
             continue
-        for lineno, raw in enumerate(text.splitlines(), 1):
-            line = raw.strip()
-            if not line or line.startswith("#"):
+        for lineno, raw in enumerate(_universal_newline_lines(text), 1):
+            shape = _pth_line_shape_problem(raw)
+            if shape:
+                findings.append(_pth_problem(pth, f"{shape}: {pth}", line=lineno, text=raw))
                 continue
+            if raw.startswith("#"):
+                continue
+            line = raw
             if line.startswith("import ") or line.startswith("import\t"):
                 reason = "executable import .pth line"
                 if pth.name == "distutils-precedence.pth" or "_distutils_hack" in line:
@@ -1327,12 +1370,15 @@ def _parse_pyvenv_cfg(path: Path) -> tuple[dict[str, str], str | None]:
     """Parse ``pyvenv.cfg``. A repeated ``home`` or ``executable`` is refused.
 
     This check does not guess which copy CPython would keep. A repeated
-    setting is a refusal in plain English.
+    setting is a refusal in plain English. Keys and values are stripped the
+    same way ``site.venv`` strips them. A comment line is ignored; CPython
+    would only see a key that still starts with ``#`` after that strip, and
+    that key is not ``home`` or ``executable``.
     """
     data: dict[str, str] = {}
     seen: dict[str, int] = {}
     text = path.read_text(encoding="utf-8")
-    for raw in text.splitlines():
+    for raw in _universal_newline_lines(text):
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -1843,8 +1889,10 @@ def interpreter_sitecustomize_imports(
 ) -> tuple[tuple[str, ...], list[str]]:
     """Modules the base interpreter's sitecustomize would import.
 
-    The file is read as text. It is not imported and not executed. If that
-    file exists but cannot be read or parsed, the check refuses.
+    The file is read as text. It is not imported and not executed. Import
+    names come from the parse tree, not from a stripped copy of the line, so
+    a leading space cannot hide a module. If that file exists but cannot be
+    read or parsed, the check refuses.
     """
     for root in stdlib_roots:
         path = root / "sitecustomize.py"
@@ -1901,12 +1949,16 @@ def pth_import_entries(directory: Path) -> tuple[list[Path], list[str]]:
         if problem or text is None:
             findings.append(problem or f"cannot read this .pth file: {pth}")
             continue
-        for raw in text.splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#"):
+        for raw in _universal_newline_lines(text):
+            shape = _pth_line_shape_problem(raw)
+            if shape:
+                findings.append(f"{shape}: {pth}")
                 continue
-            if line.startswith("import ") or line.startswith("import\t"):
+            if raw.startswith("#"):
                 continue
+            if raw.startswith("import ") or raw.startswith("import\t"):
+                continue
+            line = raw
             try:
                 candidate = Path(line)
                 if not candidate.is_absolute():

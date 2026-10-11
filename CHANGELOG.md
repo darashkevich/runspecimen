@@ -4,6 +4,7 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
+- RQ20-01: a `.pth` line with leading or trailing whitespace, or a control character, is refused in plain English. This check does not strip the line and look at a different directory. qafix21 pack.
 - RQ19-01: the acceptance sheet starts the provenance check with `-I -S`. The check refuses when it was itself started by a virtual environment's Python, and it compares `pyvenv.cfg` to the real path of the file that was started. qafix20 pack.
 - RQ19-02: a `.pth` line that names a path which exists but cannot be fully read is a refusal. A permission error, a symlink loop, a non-regular file, and a file that is not a readable zip are not skipped. qafix20 pack.
 - A repeated `home` or `executable` in `pyvenv.cfg` is refused in plain English. This check does not guess which copy to keep. qafix20 pack.

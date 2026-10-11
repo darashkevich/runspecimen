@@ -107,7 +107,9 @@ import (source, bytecode, an extension, or a package), a module that the
 base interpreter's own `sitecustomize` would import (on Debian, that is
 `apport_python_hook`), and bytecode that does not belong. A `.pth` file that
 is not UTF-8 text, or that contains a null byte, is refused, and the report
-is still the usual JSON. A `.pth` file or zip that cannot be read is refused
+is still the usual JSON. A `.pth` line with a leading or trailing space, or
+a control character, is refused. This check does not treat that line as a
+different directory. Python keeps a leading space as part of the name. A `.pth` file or zip that cannot be read is refused
 the same way. A `.pth` line that names a file or folder which exists, but
 cannot be fully read, is refused. That includes a permission error, a
 symlink loop, something that is not a regular file or a directory, and a
