@@ -105,11 +105,22 @@ check then reads those locations for startup hooks: a `.pth` file with an
 `import` line, `sitecustomize` or `usercustomize` in every form Python can
 import (source, bytecode, an extension, or a package), a module that the
 base interpreter's own `sitecustomize` would import (on Debian, that is
-`apport_python_hook`), and bytecode that does not belong. A `.pth` file that
-is not UTF-8 text, or that contains a null byte, is refused, and the report
-is still the usual JSON. A `.pth` line with a leading or trailing space, or
-a control character, is refused. This check does not treat that line as a
-different directory. Python keeps a leading space as part of the name. A `.pth` file or zip that cannot be read is refused
+`apport_python_hook`), and bytecode that does not belong. A `.pth` file is refused unless every byte is printable ASCII or a
+newline. A Windows `\r\n` pair counts as a newline. A lone `\r` does not.
+That rule rejects a byte-order mark, every non-ASCII byte, and every
+character another Python version might treat as a line break, before any
+line is read. The report is still the usual JSON. A `.pth` line with a
+leading or trailing space is still refused. This check does not treat that
+line as a different directory. Python keeps a leading space as part of the
+name. A `.pth` file that is not a regular file, including a FIFO, is refused
+before it is opened. The same is true of a path named by a `.pth` line.
+`pyvenv.cfg` follows the same byte rule, except that `home`, `executable`,
+and `command` may contain ordinary non-ASCII path characters. A byte-order
+mark, a control character, or a character that can split a line is refused
+there too. An `import` line is refused whatever the file is named, including
+`distutils-precedence.pth`, `_virtualenv.pth`, an editable `__editable__*.pth`,
+and the import lines shipped by packages such as pywin32 and matplotlib. A
+plain-ASCII directory line is still scanned. A `.pth` file or zip that cannot be read is refused
 the same way. A `.pth` line that names a file or folder which exists, but
 cannot be fully read, is refused. That includes a permission error, a
 symlink loop, something that is not a regular file or a directory, and a

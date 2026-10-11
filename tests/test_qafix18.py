@@ -319,7 +319,7 @@ class Qafix18VerifierTests(unittest.TestCase):
 
         box = self._refuse_without_marker(
             plant,
-            needles=("null byte", "not UTF-8"),
+            needles=("plain ASCII",),
         )
         message = str(box["payload"].get("message") or "")
         self.assertIn("cannot read this .pth file", message)

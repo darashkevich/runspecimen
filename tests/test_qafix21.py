@@ -24,7 +24,7 @@ class Qafix21VerifierTests(unittest.TestCase):
             self.skipTest("verify_installed_wheel.py is not packed into this tree")
         return pin
 
-    def _refuse(self, plant) -> dict:
+    def _refuse(self, plant, *, needles: tuple[str, ...] = ("cannot read this .pth line", "whitespace")) -> dict:
         pin = self._require_pin()
         box: dict[str, Path] = {}
 
@@ -42,8 +42,8 @@ class Qafix21VerifierTests(unittest.TestCase):
             payload = json.loads(result.stdout.split("---")[0])  # type: ignore[attr-defined]
             self.assertFalse(payload["ok"], payload)
             message = str(payload.get("message") or "")
-            self.assertIn("cannot read this .pth line", message)
-            self.assertIn("whitespace", message)
+            for needle in needles:
+                self.assertIn(needle, message, payload)
             box["payload"] = payload
 
         _install_and_verify(pin, pin, after_install=after_install, inspect=inspect)
@@ -72,7 +72,7 @@ class Qafix21VerifierTests(unittest.TestCase):
             (site / "evil").mkdir()
             (site / "zz-tab.pth").write_bytes(b"\tevil\n")
 
-        self._refuse(plant)
+        self._refuse(plant, needles=("plain ASCII", "cannot read this .pth file"))
 
     def test_rq2001_trailing_spaces_pth_is_refused(self) -> None:
         def plant(site: Path, marker: Path) -> None:
@@ -87,7 +87,7 @@ class Qafix21VerifierTests(unittest.TestCase):
             (site / "evil").mkdir()
             (site / "zz-crlf.pth").write_bytes(b"# note\r\n evil\r\nbad\x01dir\n")
 
-        self._refuse(plant)
+        self._refuse(plant, needles=("plain ASCII", "cannot read this .pth file"))
 
 
 if __name__ == "__main__":

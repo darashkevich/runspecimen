@@ -4,6 +4,8 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
+- RQ21-01 and RQ21-02: a `.pth` file is refused unless every byte is printable ASCII or a newline. A CRLF pair is a newline. A lone CR is not. A byte-order mark, a non-ASCII name, and a character that can split a line are refused before the line is read. `pyvenv.cfg` uses the same rule, except that `home`, `executable`, and `command` may contain ordinary non-ASCII path characters. qafix22 pack.
+- RQ21-03: a `.pth` file that is not a regular file, including a FIFO, is refused before it is opened. A path named by a `.pth` line is treated the same way. qafix22 pack.
 - RQ20-01: a `.pth` line with leading or trailing whitespace, or a control character, is refused in plain English. This check does not strip the line and look at a different directory. qafix21 pack.
 - RQ19-01: the acceptance sheet starts the provenance check with `-I -S`. The check refuses when it was itself started by a virtual environment's Python, and it compares `pyvenv.cfg` to the real path of the file that was started. qafix20 pack.
 - RQ19-02: a `.pth` line that names a path which exists but cannot be fully read is a refusal. A permission error, a symlink loop, a non-regular file, and a file that is not a readable zip are not skipped. qafix20 pack.

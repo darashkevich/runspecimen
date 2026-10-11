@@ -30,7 +30,7 @@ HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 CANDIDATE_MANIFEST = ROOT / "docs" / "CANDIDATE_MANIFEST.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
-PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-11-qafix21"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-11-qafix22"
 QAFIX11_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-09-qafix11"
 QAFIX10_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix10"
 QAFIX9_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix9"
@@ -97,6 +97,39 @@ def _bash_commands(markdown: str) -> list[str]:
     return commands
 
 
+def _python_for_installed_check(test: unittest.TestCase) -> str:
+    """Base interpreter for a check that refuses a venv-started process.
+
+    The suite itself may be running under a virtual environment. Starting the
+    checker with that interpreter reports the venv guard before the assertion
+    this test is about. Skip when the base interpreter cannot be named.
+    """
+
+    def looks_like_venv(executable: str) -> bool:
+        current = Path(os.path.abspath(executable))
+        seen: set[str] = set()
+        while current != current.parent:
+            key = str(current)
+            if key in seen:
+                break
+            seen.add(key)
+            if (current / "pyvenv.cfg").is_file():
+                return True
+            current = current.parent
+        return False
+
+    candidate = sys.executable
+    if sys.prefix != sys.base_prefix or looks_like_venv(candidate):
+        candidate = str(getattr(sys, "_base_executable", "") or "")
+    if not candidate or not os.path.isfile(candidate) or looks_like_venv(candidate):
+        test.skipTest(
+            "the suite interpreter is a virtual environment and its base "
+            "interpreter was not found; this test starts the checker with "
+            "the base interpreter"
+        )
+    return candidate
+
+
 class Rc15QaDocfixTests(unittest.TestCase):
     def test_digest_help_does_not_claim_verify_checks_signatures(self) -> None:
         description = _digest_parser().description or ""
@@ -155,7 +188,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("command -v runspecimen", text)
         self.assertIn("mktemp -d", text)
         self.assertIn('test ! -e "$VENV"', text)
-        self.assertIn("0.2.0rc15-2026-10-11-qafix21", text)
+        self.assertIn("0.2.0rc15-2026-10-11-qafix22", text)
         self.assertIn("--no-index --no-deps --force-reinstall --no-compile", text)
         self.assertIn("scripts/verify_installed_wheel.py", text)
         self.assertIn("--launcher", text)
@@ -223,9 +256,9 @@ class Rc15QaDocfixTests(unittest.TestCase):
         if CANDIDATE_MANIFEST.is_file():
             manifest = CANDIDATE_MANIFEST.read_text(encoding="utf-8")
             self.assertIn("| Candidate (this pass) |", manifest)
-            self.assertIn("PR #63 head that records the qafix21 pack", manifest)
+            self.assertIn("PR #63 head that records the qafix22 pack", manifest)
             self.assertIn("8015b6d8017e5566f7558cc916dc0ee470c653ad", manifest)
-            self.assertIn("artifacts/0.2.0rc15-2026-10-11-qafix21/", manifest)
+            self.assertIn("artifacts/0.2.0rc15-2026-10-11-qafix22/", manifest)
         self.assertIn("Homebrew", text)
         self.assertIn("STEP $1 exit=$2", text)
         command_lines = [
@@ -590,7 +623,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         wheel = str(pin.resolve()) if pin.is_file() else str(ROOT / "no.whl")
         result = subprocess.run(
             [
-                sys.executable,
+                _python_for_installed_check(self),
                 str(VERIFY_INSTALLED),
                 "--wheel",
                 wheel,
@@ -1011,7 +1044,7 @@ def _acceptance_sheet_script(markdown: str, pack: Path) -> str:
         parts.append(block.rstrip() + "\n")
     script = "".join(parts)
     replaced, count = re.subn(
-        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-11-qafix21"',
+        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-11-qafix22"',
         f"export PACK={shlex.quote(str(pack))}",
         script,
         count=1,
@@ -1532,6 +1565,7 @@ def _install_and_verify(
     after_install=None,
     make_old_venv: bool = False,
     inspect=None,
+    verify_timeout: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix="rs-ha-prov-") as root:
         venv_dir = Path(root) / "venv"
@@ -1591,6 +1625,7 @@ def _install_and_verify(
             capture_output=True,
             text=True,
             env=verify_env,
+            timeout=verify_timeout,
         )
         if inspect is not None:
             inspect(result)

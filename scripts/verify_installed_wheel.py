@@ -19,8 +19,15 @@ venv-local metadata is attacker-controlled.
 
 In the **target venv** it REJECTS:
 
+- any ``.pth`` file that is not plain ASCII text (printable ASCII or
+  newlines only; a CRLF pair is a newline and a lone CR is not),
+  including a byte-order mark, a non-ASCII directory name, or a character
+  that another Python version would treat as a line break
 - any ``.pth`` file with an executable (``import``) line, whatever its name
-  or owner (including setuptools' ``distutils-precedence.pth``)
+  or owner (including setuptools' ``distutils-precedence.pth``,
+  ``_virtualenv.pth``, an editable ``__editable__*.pth``, or a pywin32 or
+  matplotlib ``import`` line). A plain-ASCII directory line is still scanned.
+  A file that is not a regular file is refused before it is opened
 - any sitecustomize or usercustomize that is importable from a path that is
   not the interpreter's own stdlib
 - any non-stdlib ``sys.meta_path`` or ``sys.path_hooks`` entry present after
@@ -1184,15 +1191,14 @@ def _normalize_pth_import_line(line: str) -> str:
 
 
 def _universal_newline_lines(text: str) -> list[str]:
-    """Line text the way a universal-newline file read yields it.
+    """Split on ``\\n`` only, after ``\\r\\n`` pairs were already accepted.
 
-    ``str.splitlines`` also breaks on vertical tab and form feed. CPython's
-    ``.pth`` and ``pyvenv.cfg`` readers do not, so those characters stay in
-    the line here.
+    Callers refuse every other line-breaking byte before this runs. This is
+    not ``str.splitlines``.
     """
     if text == "":
         return []
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = text.replace("\r\n", "\n")
     parts = normalized.split("\n")
     if normalized.endswith("\n"):
         parts.pop()
@@ -1222,22 +1228,88 @@ def _pth_line_shape_problem(raw: str) -> str | None:
     return None
 
 
-def read_pth_text(path: Path) -> tuple[str | None, str | None]:
-    """Read a .pth file as UTF-8. A problem string means the file was not scanned."""
+def _read_regular_bytes(path: Path) -> tuple[bytes | None, str | None]:
+    """Read a regular file without blocking on a FIFO or following a symlink.
+
+    ``lstat`` and ``fstat`` must both see a regular file. The open uses
+    ``O_NONBLOCK`` and ``O_NOFOLLOW`` when this platform has them.
+    """
     try:
-        data = path.read_bytes()
+        st = os.lstat(path)
     except OSError as exc:
-        return None, f"cannot read this .pth file: {path} ({exc})"
-    if b"\x00" in data:
-        return None, (
-            f"cannot read this .pth file: {path} (it contains a null byte)"
-        )
+        return None, f"cannot read this file: {path} ({exc})"
+    if not stat.S_ISREG(st.st_mode):
+        return None, f"cannot read this file because it is not a regular file: {path}"
+    flags = os.O_RDONLY
+    for name in ("O_CLOEXEC", "O_NONBLOCK", "O_NOFOLLOW"):
+        flags |= getattr(os, name, 0)
     try:
-        return data.decode("utf-8"), None
-    except UnicodeDecodeError:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        return None, f"cannot read this file: {path} ({exc})"
+    try:
+        try:
+            opened = os.fstat(fd)
+        except OSError as exc:
+            return None, f"cannot read this file: {path} ({exc})"
+        if not stat.S_ISREG(opened.st_mode):
+            return None, (
+                f"cannot read this file because it is not a regular file: {path}"
+            )
+        chunks: list[bytes] = []
+        while True:
+            try:
+                block = os.read(fd, 65536)
+            except OSError as exc:
+                return None, f"cannot read this file: {path} ({exc})"
+            if not block:
+                break
+            chunks.append(block)
+        return b"".join(chunks), None
+    finally:
+        os.close(fd)
+
+
+def _pth_ascii_problem(data: bytes) -> str | None:
+    """Refuse a ``.pth`` byte that is not printable ASCII or a newline.
+
+    ``\\r\\n`` is a newline. A lone ``\\r`` is not. A byte-order mark, any
+    non-ASCII byte, and every control character fail this check, so later
+    line splitting cannot disagree with another Python version.
+    """
+    index = 0
+    size = len(data)
+    while index < size:
+        byte = data[index]
+        if byte == 0x0D:
+            if index + 1 < size and data[index + 1] == 0x0A:
+                index += 2
+                continue
+            return "lone carriage return"
+        if byte == 0x0A or 0x20 <= byte <= 0x7E:
+            index += 1
+            continue
+        return "not printable ASCII"
+    return None
+
+
+def read_pth_text(path: Path) -> tuple[str | None, str | None]:
+    """Read a ``.pth`` file. A problem string means the file was not scanned."""
+    data, problem = _read_regular_bytes(path)
+    if problem or data is None:
+        reason = problem or f"cannot read this file: {path}"
+        if "not a regular file" in reason:
+            return None, (
+                f"cannot read this .pth file because it is not a regular file: {path}"
+            )
+        if reason.startswith("cannot read this file:"):
+            return None, "cannot read this .pth file:" + reason[len("cannot read this file:") :]
+        return None, reason
+    if _pth_ascii_problem(data):
         return None, (
-            f"cannot read this .pth file: {path} (it is not UTF-8 text)"
+            f"cannot read this .pth file because it is not plain ASCII text: {path}"
         )
+    return data.replace(b"\r\n", b"\n").decode("ascii"), None
 
 
 def _pth_problem(path: Path, reason: str, *, line: int = 0, text: str = "") -> dict[str, Any]:
@@ -1366,6 +1438,47 @@ def _same_file(left: Path, right: Path) -> bool:
         return os.path.realpath(str(left)) == os.path.realpath(str(right))
 
 
+_PYVENV_PATH_KEYS = frozenset({"home", "executable", "command"})
+
+
+def _ordinary_pyvenv_path_char(ch: str) -> bool:
+    """A path character that cannot split a line and is not a control."""
+    code = ord(ch)
+    if code < 32 or code == 127 or 128 <= code <= 159:
+        return False
+    return ch not in {"\u2028", "\u2029", "\ufeff"}
+
+
+def _pyvenv_text_problem(text: str, path: Path) -> str | None:
+    """Refuse ``pyvenv.cfg`` text outside the ASCII allowlist.
+
+    Non-ASCII bytes are allowed only inside ``home``, ``executable``, and
+    ``command`` values, and only as ordinary path characters. A byte-order
+    mark, a control character, and a character that can split a line are
+    refused everywhere, including those values.
+    """
+    message = (
+        "pyvenv.cfg must be plain ASCII text, except for ordinary non-ASCII "
+        f"characters inside home, executable, and command: {path}"
+    )
+    for raw in text.split("\n"):
+        if "=" not in raw:
+            if all(32 <= ord(ch) <= 126 for ch in raw):
+                continue
+            return message
+        key, _, value = raw.partition("=")
+        if not all(32 <= ord(ch) <= 126 for ch in key):
+            return message
+        if key.strip().lower() in _PYVENV_PATH_KEYS:
+            if all(_ordinary_pyvenv_path_char(ch) for ch in value):
+                continue
+            return message
+        if all(32 <= ord(ch) <= 126 for ch in value):
+            continue
+        return message
+    return None
+
+
 def _parse_pyvenv_cfg(path: Path) -> tuple[dict[str, str], str | None]:
     """Parse ``pyvenv.cfg``. A repeated ``home`` or ``executable`` is refused.
 
@@ -1373,11 +1486,35 @@ def _parse_pyvenv_cfg(path: Path) -> tuple[dict[str, str], str | None]:
     setting is a refusal in plain English. Keys and values are stripped the
     same way ``site.venv`` strips them. A comment line is ignored; CPython
     would only see a key that still starts with ``#`` after that strip, and
-    that key is not ``home`` or ``executable``.
+    that key is not ``home`` or ``executable``. The file must be plain ASCII
+    except for ordinary non-ASCII characters inside ``home``, ``executable``,
+    and ``command``.
     """
     data: dict[str, str] = {}
     seen: dict[str, int] = {}
-    text = path.read_text(encoding="utf-8")
+    raw_bytes, read_problem = _read_regular_bytes(path)
+    if read_problem or raw_bytes is None:
+        reason = read_problem or f"cannot read this file: {path}"
+        if "not a regular file" in reason:
+            return {}, f"pyvenv.cfg is not a regular file: {path}"
+        if reason.startswith("cannot read this file:"):
+            return {}, "pyvenv.cfg cannot be read:" + reason[len("cannot read this file:") :]
+        return {}, reason
+    if b"\r" in raw_bytes.replace(b"\r\n", b""):
+        return {}, (
+            "pyvenv.cfg must be plain ASCII text, except for ordinary non-ASCII "
+            f"characters inside home, executable, and command: {path}"
+        )
+    try:
+        text = raw_bytes.replace(b"\r\n", b"\n").decode("utf-8")
+    except UnicodeDecodeError:
+        return {}, (
+            "pyvenv.cfg must be plain ASCII text, except for ordinary non-ASCII "
+            f"characters inside home, executable, and command: {path}"
+        )
+    shape = _pyvenv_text_problem(text, path)
+    if shape:
+        return data, shape
     for raw in _universal_newline_lines(text):
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -1496,8 +1633,14 @@ def _pyvenv_names_base(home: str, executable: str, base: Path) -> bool:
 def validate_pyvenv(venv_root: Path, base: Path) -> list[str]:
     """Refuse a venv whose config does not name this base interpreter."""
     path = venv_root / "pyvenv.cfg"
-    if not path.is_file():
-        return [f"pyvenv.cfg is missing: {path}"]
+    try:
+        st = os.lstat(path)
+    except OSError as exc:
+        if exc.errno == errno.ENOENT:
+            return [f"pyvenv.cfg is missing: {path}"]
+        return [f"pyvenv.cfg cannot be read: {path} ({exc})"]
+    if not stat.S_ISREG(st.st_mode):
+        return [f"pyvenv.cfg is not a regular file: {path}"]
     try:
         cfg, duplicate = _parse_pyvenv_cfg(path)
     except (OSError, UnicodeError) as exc:
@@ -1713,11 +1856,29 @@ def _classify_import_path(path: Path) -> tuple[str, str | None]:
             "cannot read an import path because it is not a regular file "
             f"or a directory: {path}"
         )
+    flags = os.O_RDONLY
+    for name in ("O_CLOEXEC", "O_NONBLOCK", "O_NOFOLLOW"):
+        flags |= getattr(os, name, 0)
     try:
-        with open(current, "rb") as handle:
-            handle.read(4)
+        fd = os.open(current, flags)
     except OSError as exc:
         return "bad", _unreadable_import_reason(path, exc)
+    try:
+        try:
+            opened = os.fstat(fd)
+        except OSError as exc:
+            return "bad", _unreadable_import_reason(path, exc)
+        if not stat.S_ISREG(opened.st_mode):
+            return "bad", (
+                "cannot read an import path because it is not a regular file "
+                f"or a directory: {path}"
+            )
+        try:
+            os.read(fd, 4)
+        except OSError as exc:
+            return "bad", _unreadable_import_reason(path, exc)
+    finally:
+        os.close(fd)
     try:
         is_zip = zipfile.is_zipfile(current)
     except OSError as exc:

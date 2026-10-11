@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-11-qafix21/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-11-qafix22/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-11-qafix21/` (leading-space `.pth` lines; not this sheet),
 `artifacts/0.2.0rc15-2026-10-10-qafix20/` (venv-started checker and unreadable `.pth` paths; not this sheet),
 `artifacts/0.2.0rc15-2026-10-10-qafix19/` (symlink-home test; not this sheet),
 `artifacts/0.2.0rc15-2026-10-10-qafix18/` (RQ17 scan and sheet; not this sheet),
@@ -33,7 +34,7 @@ Record these identities at the top of your notes before N1 (fill in from this
 machine; N2 prints the full wheel digest):
 
 - Candidate SHA: `git rev-parse HEAD` of this checkout
-- Pack: `artifacts/0.2.0rc15-2026-10-11-qafix21/`
+- Pack: `artifacts/0.2.0rc15-2026-10-11-qafix22/`
 - Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
 - python3: `command -v python3` and `python3 --version`
 - Wheel SHA-256: `f4111bc60fdda2d59d24b2aa9740fad5e3a27bcbeb49ba0018c5958ee8382d9f` (must match N2 `wheel_sha256` and pack SHA256SUMS). These wheel bytes match the qafix14 wheel because the wheel is the engine package and that `src/` tree did not change. The verifier script in this checkout did change, and it is what N3 runs.
@@ -106,7 +107,7 @@ refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
 Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-11-qafix21"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-11-qafix22"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 _RS_PY3="$(command -v python3)"
 case "$_RS_PY3" in
@@ -222,7 +223,7 @@ separately). The verifier's probe runs with `-I -S -B` and refuses any
 `.pyc` / `__pycache__` under the installed package, `PYTHONPYCACHEPREFIX` /
 `sys.pycache_prefix`, and sourceless bytecode. The verifier trusts **only the Python interpreter and its stdlib**. In that venv it refuses: any `.pth` with
 an executable `import` line (any name or owner, including leftover setuptools
-`distutils-precedence.pth` / DistutilsMetaFinder), a `.pth` line with a leading or trailing space or a control character, any importable
+`distutils-precedence.pth` / DistutilsMetaFinder), a `.pth` file that is not plain ASCII text, a `.pth` line with a leading or trailing space, any importable
 sitecustomize or usercustomize that is not the interpreter's own stdlib, any
 non-stdlib `sys.meta_path` or `sys.path_hooks` entry after startup, and any
 `_virtualenv*`. This sheet uses stdlib `python3 -m venv`, which creates none.
@@ -231,7 +232,7 @@ realpath is under the interpreter's stdlib dir, not by name.
 There is no RECORD-based trust of `_distutils_hack`. The script prints the
 installed dist-info `RECORD` and `direct_url.json`. `__version__ ==
 0.2.0rc15` is not sufficient: the 2026-10-06-bump wheel reports the same
-version and must fail this step when `$WHEEL` is the qafix21 pin. A
+version and must fail this step when `$WHEEL` is the qafix22 pin. A
 same-version tree selected via inside-venv `PYTHONPATH`, a `.pth` prepend,
 sitecustomize, or an executable `.pth` import must also fail.
 
