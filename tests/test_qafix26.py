@@ -204,7 +204,13 @@ class Qa2402CodingCookieTests(unittest.TestCase):
 
             with self.assertRaises(module.UnsupportedShebangError) as cm:
                 module.interpreter_from_launcher(launcher)
-            self.assertIn("non-printable-ascii", str(cm.exception).lower())
+            # QA26-05: High bytes (>=0x80) now get "non-ascii" error; 0x7F gets
+            # "non-printable-ascii" or "non-ascii" depending on the byte value.
+            msg = str(cm.exception).lower()
+            self.assertTrue(
+                "non-printable-ascii" in msg or "non-ascii" in msg,
+                f"Expected non-ASCII or non-printable-ASCII error: {cm.exception}"
+            )
 
 
 class Qa2403UnicodeWhitespaceTests(unittest.TestCase):
@@ -278,7 +284,12 @@ class Qa2403UnicodeWhitespaceTests(unittest.TestCase):
 
             with self.assertRaises(module.UnsupportedShebangError) as cm:
                 module.interpreter_from_launcher(launcher)
-            self.assertIn("non-printable-ascii", str(cm.exception).lower())
+            # QA26-05: High bytes (>=0x80) now get "non-ascii" error.
+            msg = str(cm.exception).lower()
+            self.assertTrue(
+                "non-printable-ascii" in msg or "non-ascii" in msg,
+                f"Expected non-ASCII or non-printable-ASCII error: {cm.exception}"
+            )
 
     def test_line_separator_refused(self) -> None:
         """A shebang with U+2028 LINE SEPARATOR before LF is refused."""
@@ -302,7 +313,12 @@ class Qa2403UnicodeWhitespaceTests(unittest.TestCase):
 
             with self.assertRaises(module.UnsupportedShebangError) as cm:
                 module.interpreter_from_launcher(launcher)
-            self.assertIn("non-printable-ascii", str(cm.exception).lower())
+            # QA26-05: High bytes (>=0x80) now get "non-ascii" error.
+            msg = str(cm.exception).lower()
+            self.assertTrue(
+                "non-printable-ascii" in msg or "non-ascii" in msg,
+                f"Expected non-ASCII or non-printable-ASCII error: {cm.exception}"
+            )
 
     def test_space_in_shebang_refused(self) -> None:
         """Spaces in shebang (padding or arguments) are refused."""
@@ -354,12 +370,12 @@ class Qa2404DocConsistencyTests(unittest.TestCase):
     """QA24-04: HUMAN-ACCEPTANCE.md pack references must be consistent."""
 
     def test_pack_references_consistent(self) -> None:
-        """All qafix pack references in HUMAN-ACCEPTANCE.md should be qafix27."""
+        """All qafix pack references in HUMAN-ACCEPTANCE.md should be qafix28."""
         if not HUMAN_ACCEPTANCE.is_file():
             self.skipTest("HUMAN-ACCEPTANCE.md not found")
         text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
         
-        self.assertIn("qafix27", text, "HUMAN-ACCEPTANCE.md should reference qafix27")
+        self.assertIn("qafix28", text, "HUMAN-ACCEPTANCE.md should reference qafix28")
         
         identity_lines = []
         for line in text.split("\n"):
@@ -367,7 +383,7 @@ class Qa2404DocConsistencyTests(unittest.TestCase):
                 identity_lines.append(line)
         
         for line in identity_lines:
-            self.assertIn("qafix27", line, f"Identity line should reference qafix27: {line}")
+            self.assertIn("qafix28", line, f"Identity line should reference qafix28: {line}")
 
     def test_export_pack_matches_identity(self) -> None:
         """The export PACK= line should match the identity pack."""
@@ -384,7 +400,7 @@ class Qa2404DocConsistencyTests(unittest.TestCase):
         if export_line is None:
             self.skipTest("export PACK line not found")
         
-        self.assertIn("qafix27", export_line, f"export PACK should use qafix27: {export_line}")
+        self.assertIn("qafix28", export_line, f"export PACK should use qafix28: {export_line}")
 
 
 if __name__ == "__main__":

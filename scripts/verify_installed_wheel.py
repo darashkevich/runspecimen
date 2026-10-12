@@ -776,10 +776,30 @@ def interpreter_from_launcher(launcher: Path) -> Path:
             f"launcher {launcher} shebang contains whitespace; "
             "only an absolute path with no arguments or padding is accepted"
         )
+    # QA26-02: Detect pip's shell wrapper (#!/bin/sh for paths >127 bytes).
+    # These have no whitespace in the shebang itself but are not Python interpreters.
+    # Provide a clear explanation of what pip did and why it's not accepted.
+    _SHELL_INTERPRETERS = (
+        b"/bin/sh", b"/bin/bash", b"/bin/zsh", b"/bin/dash",
+        b"/usr/bin/sh", b"/usr/bin/bash", b"/usr/bin/zsh", b"/usr/bin/dash",
+    )
+    if shebang_line in _SHELL_INTERPRETERS:
+        raise UnsupportedShebangError(
+            f"launcher {launcher} uses a shell wrapper (#{b'!' + shebang_line!r}); "
+            "pip creates these when the venv path exceeds 127 bytes - "
+            "move the venv to a shorter path or reinstall the package"
+        )
     # Refuse non-printable-ASCII bytes (0x00-0x1F except nothing, 0x7F-0xFF).
     # Printable ASCII is 0x20-0x7E, but we already refused space above, so 0x21-0x7E.
     for byte in shebang_line:
         if byte < 0x21 or byte > 0x7E:
+            # QA26-05: Plain-English error for non-ASCII paths.
+            if byte > 0x7E:
+                raise UnsupportedShebangError(
+                    f"launcher {launcher} shebang contains non-ASCII byte 0x{byte:02x}; "
+                    "only ASCII paths are accepted - "
+                    "non-ASCII characters in the venv path are not portable"
+                )
             raise UnsupportedShebangError(
                 f"launcher {launcher} shebang contains non-printable-ASCII byte 0x{byte:02x}; "
                 "only printable ASCII paths are accepted"
@@ -787,6 +807,14 @@ def interpreter_from_launcher(launcher: Path) -> Path:
     # At this point shebang_line is pure printable ASCII bytes (no spaces).
     # Safe to decode as ASCII for display and Path construction.
     first = shebang_line.decode("ascii")
+    # QA26-01: Refuse paths that pathlib would normalize but the kernel wouldn't.
+    # Catch ./, //, trailing /, and any other normalization differences.
+    normalized = os.path.normpath(first)
+    if normalized != first:
+        raise UnsupportedShebangError(
+            f"launcher {launcher} shebang path {first!r} is not normalized; "
+            f"expected {normalized!r} - paths with /./, //, or trailing / are not accepted"
+        )
     shebang = Path(first)
     if shebang.name in {"env", "env.exe"} or not shebang.is_absolute():
         raise UnsupportedShebangError(
@@ -875,6 +903,11 @@ def scan_venv_bin(bin_dir: Path) -> list[str]:
             if not is_allowed_venv_bin_name(name):
                 findings.append(f"unexpected symlink in venv bin: {path}")
                 continue
+            # QA26-04: Refuse allowlisted symlink whose target doesn't exist.
+            # A dangling symlink cannot be executed and indicates a broken venv.
+            if not path.exists():
+                findings.append(f"symlink in venv bin has a missing target: {path}")
+                continue
             # QA24-01: Refuse symlink whose target is a directory.
             # Interpreter symlinks point at a regular file (or another symlink to one).
             # A symlink to a package directory (e.g. runspecimen/) would shadow imports.
@@ -890,6 +923,16 @@ def scan_venv_bin(bin_dir: Path) -> list[str]:
             continue
         if not is_allowed_venv_bin_name(name):
             findings.append(f"unexpected file in venv bin: {path}")
+            continue
+        # QA26-03: Apply exact-shebang rule to all allowlisted console scripts.
+        # pip, pip3, pip3.X, and runspecimen console scripts must have valid shebangs
+        # with the same strict rules as the main launcher.
+        stem = name[:-4] if name.endswith(".exe") else name
+        if stem.startswith("pip") or stem == "runspecimen" or stem.startswith("runspecimen"):
+            try:
+                interpreter_from_launcher(path)
+            except UnsupportedShebangError as exc:
+                findings.append(f"console script {path.name} has an invalid shebang: {exc}")
     return findings
 
 
