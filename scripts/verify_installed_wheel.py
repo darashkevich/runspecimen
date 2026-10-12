@@ -728,6 +728,12 @@ def interpreter_from_launcher(launcher: Path) -> Path:
     guess a sibling for ``#!/usr/bin/env ...``, a missing shebang, or any
     interpreter that is not this venv's own Python. Pip's normal
     console-script shebang is an absolute path to ``$VENV/bin/python``.
+
+    The shebang line is parsed strictly: the first LF terminates it (not CR),
+    any CR before that LF is refused, and the LF must appear within the first
+    256 bytes (the kernel's BINPRM_BUF_SIZE limit on most systems). This
+    prevents CR-injection attacks where Python universal newlines would execute
+    a statement hidden between CR and LF that the kernel does not see.
     """
     data = launcher.read_bytes()
     if not data.startswith(b"#!"):
@@ -735,7 +741,19 @@ def interpreter_from_launcher(launcher: Path) -> Path:
             f"launcher {launcher} has no shebang; "
             "env-based and missing shebangs are not accepted"
         )
-    first = data.splitlines()[0][2:].decode("utf-8", "replace").strip()
+    lf_pos = data.find(b"\n")
+    if lf_pos < 0 or lf_pos >= 256:
+        raise UnsupportedShebangError(
+            f"launcher {launcher} shebang has no newline within the first 256 bytes; "
+            "the kernel would not parse it as a valid interpreter path"
+        )
+    shebang_line = data[2:lf_pos]
+    if b"\r" in shebang_line:
+        raise UnsupportedShebangError(
+            f"launcher {launcher} shebang contains a carriage return before the newline; "
+            "CR-injection in the shebang line is not accepted"
+        )
+    first = shebang_line.decode("utf-8", "replace").strip()
     if not first:
         raise UnsupportedShebangError(
             f"launcher {launcher} has an empty shebang; "
@@ -911,21 +929,29 @@ def probe_launcher_doctor(
 
     The venv's ``bin/python`` is not executed. ``-S`` skips site startup, so
     a ``.pth`` file, ``sitecustomize``, and Debian's apport hook do not run.
-    The launcher file itself was already checked against a pinned pip template.
+
+    IMPORTANT: The launcher file itself is NOT executed. Only the verified body
+    bytes (after the first LF) are written to a temp file and run. This ensures
+    the shebang line (including any content between CR and LF that Python's
+    universal newlines would otherwise execute) is never run by the probe.
     """
+    launcher_data = launcher.read_bytes()
+    body = launcher_body_after_shebang(launcher_data)
     script = (
         "import runpy, sys\n"
         "from pathlib import Path\n"
-        "launcher, workspace = sys.argv[1], sys.argv[2]\n"
-        "for item in sys.argv[3:]:\n"
+        "launcher_name, body_file, workspace = sys.argv[1], sys.argv[2], sys.argv[3]\n"
+        "for item in sys.argv[4:]:\n"
         "    if item not in sys.path:\n"
         "        sys.path.append(item)\n"
-        "sys.argv = [launcher, 'doctor', '--workspace', workspace]\n"
-        "runpy.run_path(launcher, run_name='__main__')\n"
+        "sys.argv = [launcher_name, 'doctor', '--workspace', workspace]\n"
+        "runpy.run_path(body_file, run_name='__main__')\n"
     )
     with tempfile.TemporaryDirectory(prefix="rs-verify-doctor-") as raw:
         workspace = Path(raw) / "ws"
         workspace.mkdir()
+        body_file = Path(raw) / "body.py"
+        body_file.write_bytes(body)
         result = subprocess.run(
             [
                 str(base),
@@ -935,6 +961,7 @@ def probe_launcher_doctor(
                 "-c",
                 script,
                 str(launcher),
+                str(body_file),
                 str(workspace),
                 *[str(path) for path in extra_paths],
             ],

@@ -149,7 +149,14 @@ class Qa2203DocOrderTests(unittest.TestCase):
 
 
 class Qa2204LockLeakTests(unittest.TestCase):
-    """QA22-04: Event-log lock released on refusal."""
+    """QA22-04: Event-log lock released on refusal.
+    
+    The test plants a FIFO (or directory on systems without mkfifo) at the
+    events.jsonl path. A symlink is refused in _prepare_log_parent before the
+    lock is taken, so it does not exercise the lock leak. A FIFO or directory
+    takes the lock and then fails in _ensure_file_unlocked, which is where the
+    leak would occur.
+    """
 
     def test_lock_released_on_ensure_file_failure(self) -> None:
         from runspecimen.events import EventLog
@@ -161,8 +168,12 @@ class Qa2204LockLeakTests(unittest.TestCase):
             state_dir.mkdir(parents=True)
             log = EventLog.for_state_dir(state_dir)
             events_path = state_dir / "events.jsonl"
-            events_path.symlink_to("/dev/null")
-            with self.assertRaises(PathEscapeError):
+            try:
+                os.mkfifo(str(events_path))
+            except (OSError, AttributeError):
+                events_path.mkdir()
+            fd_count_before = len(os.listdir(f"/proc/{os.getpid()}/fd")) if Path("/proc/self/fd").exists() else -1
+            with self.assertRaises((OSError, PathEscapeError)):
                 log.append("test", {"key": "value"})
             lock_path = state_dir / "events.append.lock"
             if lock_path.exists():
@@ -171,9 +182,12 @@ class Qa2204LockLeakTests(unittest.TestCase):
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     fcntl.flock(fd, fcntl.LOCK_UN)
                 except BlockingIOError:
-                    self.fail("Lock is still held after refusal")
+                    self.fail("Lock is still held after refusal - fd leak detected")
                 finally:
                     os.close(fd)
+            if fd_count_before >= 0:
+                fd_count_after = len(os.listdir(f"/proc/{os.getpid()}/fd"))
+                self.assertEqual(fd_count_before, fd_count_after, "fd count changed - possible leak")
 
     def test_append_then_retry_works_after_refusal(self) -> None:
         from runspecimen.events import EventLog
@@ -185,10 +199,16 @@ class Qa2204LockLeakTests(unittest.TestCase):
             state_dir.mkdir(parents=True)
             log = EventLog.for_state_dir(state_dir)
             events_path = state_dir / "events.jsonl"
-            events_path.symlink_to("/dev/null")
-            with self.assertRaises(PathEscapeError):
+            try:
+                os.mkfifo(str(events_path))
+            except (OSError, AttributeError):
+                events_path.mkdir()
+            with self.assertRaises((OSError, PathEscapeError)):
                 log.append("test1", {"key": "value"})
-            events_path.unlink()
+            if events_path.is_dir():
+                events_path.rmdir()
+            else:
+                events_path.unlink()
             record = log.append("test2", {"key": "value"})
             self.assertEqual(record.seq, 1)
             self.assertEqual(record.type, "test2")

@@ -23,7 +23,7 @@ tamper-evident receipt of what happened.
 RunSpecimen records evidence. The default isolation backend is `none`: it does
 **not** sandbox the payload from the OS.
 
-- Interactive TTY approval (agents cannot approve through the app; planted or edited approvals become broken receipts)
+- Interactive TTY approval (agents cannot approve through the app; inconsistent edits to local records can be detected, but a program that can rewrite those files can fabricate consistent evidence—signing with an inaccessible key lets you verify authenticity afterward)
 - Workspace execution lease (one mutating lifecycle step at a time)
 - Hash-chained append-only event log
 - Verifiable local certificates after successful postflight

@@ -536,7 +536,7 @@ main{{max-width:1120px;margin:0 auto;padding:28px 20px 56px}}
     <div class="next-action"><h2>What do I do next?</h2><p id="next-action">{_escape(view['next_action'])}</p></div>
   </section>
 
-  <aside class="notice"><span class="notice-icon" aria-hidden="true">!</span><div><strong>Safety boundary</strong><p>This dashboard can inspect evidence and copy commands, but it cannot approve or execute a run through the app. Approval must be typed by a human in a real terminal. Planted or edited approvals show up as broken receipts.</p></div></aside>
+  <aside class="notice"><span class="notice-icon" aria-hidden="true">!</span><div><strong>Safety boundary</strong><p>This dashboard can inspect evidence and copy commands, but it cannot approve or execute a run through the app. Approval must be typed by a human in a real terminal. Inconsistent edits to local records can be detected, but a program that can rewrite those files can fabricate consistent evidence; signing with an inaccessible key lets you verify authenticity afterward.</p></div></aside>
 
   <ol class="trust-ladder" id="trust-ladder" aria-label="Evidence trust ladder">{trust_html}</ol>
 

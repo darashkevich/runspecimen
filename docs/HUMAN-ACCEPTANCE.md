@@ -38,7 +38,7 @@ machine; N2 prints the full wheel digest):
 - Pack: `artifacts/0.2.0rc15-2026-10-12-qafix23/`
 - Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
 - python3: `command -v python3` and `python3 --version`
-- Wheel SHA-256: `12ee0b246b6229be59f4b780f2f0394efd4570eb08c3bafec886e9bf6b66074e` (must match N2 `wheel_sha256` and pack SHA256SUMS). The `src/` tree changed in qafix23 (events.py lock-leak fix, present.py hint wording), so this wheel differs from the qafix14–qafix22 wheel. The verifier script in this checkout also changed and is what N3 runs.
+- Wheel SHA-256: `3759ea01c7032b2b8f37482fbb32825fdef0508568cd4b505847a9f463c241f8` (must match N2 `wheel_sha256` and pack SHA256SUMS). The `src/` tree changed in qafix24 (dashboard.py wording), so this wheel differs from the qafix14–qafix23 wheel. The verifier script in this checkout also changed (CR-injection fix, probe runs only body bytes) and is what N3 runs.
 
 You can paste this whole sheet into a fresh macOS Terminal (zsh, the default)
 or into bash. You do not need extra wrappers, and you do not need to turn
@@ -108,7 +108,7 @@ refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
 Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix23"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix24"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 _RS_PY3="$(command -v python3)"
 case "$_RS_PY3" in
@@ -212,8 +212,9 @@ rs_ok N3-version $?
 
 `command -v runspecimen` is informational. Run the provenance script FIRST.
 If the verifier fails, N3-verify prints `FAIL` and stops; do not continue.
-Only after N3-verify passes is it safe to run any venv code. N3-version then
-confirms the launcher starts; if it is missing or corrupt, it prints `FAIL`.
+N3-version is the first execution of the installed launcher; run the verifier
+before it. N3-version confirms the launcher starts; if missing or corrupt, it
+prints `FAIL`.
 
 Abort unless every hashed RECORD member in the wheel, and every
 `runspecimen/*.py` in that zip, matches the file installed under the absolute
@@ -235,7 +236,7 @@ realpath is under the interpreter's stdlib dir, not by name.
 There is no RECORD-based trust of `_distutils_hack`. The script prints the
 installed dist-info `RECORD` and `direct_url.json`. `__version__ ==
 0.2.0rc15` is not sufficient: the 2026-10-06-bump wheel reports the same
-version and must fail this step when `$WHEEL` is the qafix22 pin. A
+version and must fail this step when `$WHEEL` is the qafix23 pin. A
 same-version tree selected via inside-venv `PYTHONPATH`, a `.pth` prepend,
 sitecustomize, or an executable `.pth` import must also fail.
 
