@@ -308,7 +308,7 @@ class Qa2902DocConsistencyTests(unittest.TestCase):
     """The sheet names the current pack, and keeps qafix29 as history."""
 
     def test_pack_references_qafix29(self) -> None:
-        """qafix29 stays in the history list. Identity lines name qafix31."""
+        """qafix29 stays in the history list. Identity lines name qafix32."""
         if not HUMAN_ACCEPTANCE.is_file():
             self.skipTest("HUMAN-ACCEPTANCE.md not found")
         text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
@@ -322,7 +322,7 @@ class Qa2902DocConsistencyTests(unittest.TestCase):
 
         self.assertTrue(identity_lines)
         for line in identity_lines:
-            self.assertIn("qafix31", line, f"Identity line should reference qafix31: {line}")
+            self.assertIn("qafix32", line, f"Identity line should reference qafix32: {line}")
 
     def test_export_pack_matches_identity(self) -> None:
         """The export PACK= line should match the identity pack."""
@@ -339,7 +339,7 @@ class Qa2902DocConsistencyTests(unittest.TestCase):
         if export_line is None:
             self.skipTest("export PACK line not found")
 
-        self.assertIn("qafix31", export_line, f"export PACK should use qafix31: {export_line}")
+        self.assertIn("qafix32", export_line, f"export PACK should use qafix32: {export_line}")
 
     def test_backtick_closed_at_line_75(self) -> None:
         """The backtick for /./' at line 75 should be properly closed."""

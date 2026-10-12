@@ -141,18 +141,22 @@ symlink loop, something that is not a regular file or a directory, and a
 file that is not a readable zip. A repeated `home` or `executable` in
 `pyvenv.cfg` is refused; this check does not guess which copy to keep.
 `python`,
-`python3`, `python3.X`, and `𝜋thon` must be a symlink to the base interpreter
-named by `pyvenv.cfg`. A byte-for-byte copy is admitted only when every
-relative loader dependency still names that interpreter's libraries. A copy
-whose `@executable_path` or `$ORIGIN` dependency moves is refused. Equal
-bytes are not a runtime layout. The copy is not executed to discover this.
+`python3`, `python3.X`, and `𝜋thon` must be a symlink that lands on the base
+interpreter's own path. A hard link in another directory is not that path:
+`@executable_path` follows the hard link's location. A byte-for-byte copy or
+hard link is admitted only when every relative loader dependency still names
+that interpreter's libraries. A copy whose `@executable_path` or `$ORIGIN`
+dependency moves is refused. Equal bytes are not a runtime layout. The copy
+is not executed to discover this.
 Following too
 many links is a refusal with that reason. `pyvenv.cfg`
 must name the real file that was started (`home` plus the interpreter's file
 name, and `executable` when it is present), so a venv created through a
-symlink is accepted when that file is the Python running the check. A `home`
-with its own `lib/pythonX.Y` is accepted only when that directory is the
-trusted standard library. The check does not start the suspect interpreter
+symlink is accepted when that file is the Python running the check. From
+`home`, the check walks upward for `lib/pythonXY.zip` and for
+`lib/pythonX.Y/os.py` or `os.pyc`. The first landmark is accepted only when
+it is the trusted standard library. No landmark on that walk means the
+compiled-in library. The check does not start the suspect interpreter
 to find that library. A
 mismatch names `pyvenv.cfg` and is not described as extra startup code. The
 file must not turn on system site-packages. When that switch is on, the

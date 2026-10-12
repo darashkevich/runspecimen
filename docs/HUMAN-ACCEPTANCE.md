@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-12-qafix31/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-12-qafix32/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-12-qafix31/` (authenticated probe; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix30/` (pip-free install; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix29/` (QA28 sheet fixes; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix28/` (sheet fixes; not this sheet),
@@ -43,10 +44,10 @@ Record these identities at the top of your notes before N1 (fill in from this
 machine; N2 prints the full wheel digest):
 
 - Candidate SHA: `git rev-parse HEAD` of this checkout
-- Pack: `artifacts/0.2.0rc15-2026-10-12-qafix31/`
+- Pack: `artifacts/0.2.0rc15-2026-10-12-qafix32/`
 - Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
 - python3: `command -v python3` and `python3 --version`
-- Wheel SHA-256: `d9d0c9dfc978beb29ac34901d788e647812d3f663c703281da35d2172ac4f048` (must match N2 `wheel_sha256` and pack SHA256SUMS). This is the setuptools 82.0.1 file. Its payload differs from the qafix30 wheel `25c6fa06…` in `runspecimen/present.py`, `runspecimen/certificate.py`, and the metadata that records those bytes. The plugin zip is byte-identical to qafix30. N3 runs the verifier in this checkout.
+- Wheel SHA-256: `d9d0c9dfc978beb29ac34901d788e647812d3f663c703281da35d2172ac4f048` (must match N2 `wheel_sha256` and pack SHA256SUMS). This is the setuptools 82.0.1 file. It is byte-identical to the qafix31 wheel because this pass does not change `src/`. Its payload still differs from the qafix30 wheel `25c6fa06…` in `runspecimen/present.py`, `runspecimen/certificate.py`, and the metadata that records those bytes. The plugin zip is byte-identical to qafix31 and qafix30. N3 runs the verifier in this checkout.
 
 You can paste this whole sheet into a fresh macOS Terminal (zsh, the default)
 or into bash. You do not need extra wrappers, and you do not need to turn
@@ -70,9 +71,14 @@ not pip-upgrade an existing venv. Create a brand-new directory every run.
 A same-version tree can still be selected from inside that new venv.
 `PYTHONPATH`, a `.pth` path-prepend, sitecustomize, or an executable `.pth`
 import can load old approval code while the top-level package still looks
-right. The provenance step therefore binds every loaded `runspecimen.*`
-module (including `runspecimen.approve`) to the hashed installed files, using
-the absolute launcher's own interpreter. That interpreter must be named by an
+right. The provenance step has two different checks. The static layout check
+reads the installed tree and `pyvenv.cfg` and does not run the venv. The
+probe then executes the captured wheel bytes and the known launcher body with
+the trusted base interpreter, not with the launcher's own interpreter, and
+not against the live venv. Loaded `runspecimen.*` modules (including
+`runspecimen.approve`) come from that snapshot. They are not an observation
+of the live venv runtime. The installed launcher itself is not run until
+N3-version, after N3-verify. That interpreter must be named by an
 absolute shebang; `#!/usr/bin/env python3` is refused. The shebang path must
 be printable ASCII only (non-ASCII venv paths are not portable), normalized
 (no `/./'`, `//`, or trailing `/`), and must not be a shell wrapper (`#!/bin/sh`
@@ -87,11 +93,15 @@ real interpreter named by `pyvenv.cfg`. A byte copy is admitted only when its
 relative loader dependencies still resolve to that interpreter's libraries. A
 copy that moves `@executable_path` or `$ORIGIN` dependencies is refused. Equal
 executable bytes are not a runtime layout. A wrapper
-script is refused before it can run. A `pyvenv.cfg` `home` whose adjacent
-`lib/pythonX.Y` is not the trusted standard library is refused. A home that
-only aliases the interpreter, with no separate library tree, still uses the
-trusted standard library. The check does not start the suspect interpreter to
-discover that layout. A `.pth` line that names a folder or a zip
+script is refused before it can run. A `pyvenv.cfg` `home` is searched upward,
+as CPython does, for `lib/pythonXY.zip` and for `lib/pythonX.Y/os.py` or
+`os.pyc`. The first landmark must be the trusted standard library. A parent
+directory, a bytecode-only landmark, or a directory of symlinks into the real
+library is refused. A home that only aliases the interpreter, with no landmark
+on that walk, still uses the trusted standard library. A hard link to the
+interpreter at a different path is checked like a byte copy: relative loader
+dependencies must still name the trusted libraries. The check does not start
+the suspect interpreter to discover that layout. A `.pth` line that names a folder or a zip
 is followed, and those locations are read for `sitecustomize` and `usercustomize`
 in every form Python can import. On Debian, the interpreter's own sitecustomize
 imports another module; a copy of that module in the venv is refused, and the
@@ -134,7 +144,7 @@ refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
 Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix31"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix32"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 _RS_PY3="$(command -v python3)"
 case "$_RS_PY3" in

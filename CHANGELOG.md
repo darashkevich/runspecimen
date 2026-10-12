@@ -4,6 +4,7 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
+- The wheel check walks `pyvenv.cfg` home the way CPython does, including a parent directory and an `os.pyc` landmark, and refuses a library that is not the trusted base. A nested package-directory alias is inventoried instead of ignored. A hard link at a different path is checked for loader dependencies. The probe still runs captured bytes on the trusted base interpreter; it does not observe the live venv. qafix32 pack.
 - The wheel check has three stages: an authenticated install (one read of each member, no unmanifested package file), a permitted runtime layout (home and loader dependencies, without starting the suspect interpreter), and an authenticated probe of those captured bytes. A later reread is not treated as verified. The installer writes through directory descriptors and refuses a symlinked path component. The check remains point-in-time. qafix31 pack.
 - The acceptance sheet creates a pip-free venv with the trusted base interpreter (`-I -S`) and installs the pinned wheel with a stdlib installer. It does not run the target venv's Python or pip before verification, and it does not delete setuptools with a glob. The wheel check is point-in-time: a same-user rewrite during or after the check is not blocked. qafix30 pack.
 

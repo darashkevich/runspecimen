@@ -584,7 +584,10 @@ def _package_inventory(package_dir: Path) -> list[str]:
     """Logical files under the installed package, including a symlinked root.
 
     Names stay relative to ``site-packages``. A nested directory is followed
-    so an extension inside it is visible. Symlink loops are not walked twice.
+    so an extension inside it is visible. A directory inode that appears again
+    under a different logical name is recorded, not skipped: that alias is
+    what import will load. The package root itself may be a symlink to another
+    directory; that one inode is the package, not a nested alias.
     """
     if not package_dir.exists() and not package_dir.is_symlink():
         return []
@@ -601,6 +604,11 @@ def _package_inventory(package_dir: Path) -> list[str]:
         if stat.S_ISDIR(info.st_mode):
             key = (info.st_dev, info.st_ino)
             if key in seen:
+                # A nested directory that resolves to one we already walked is
+                # an import alias. CPython follows it. Record the logical name
+                # instead of treating the second visit as absent.
+                if relative:
+                    found.append("runspecimen/" + "/".join(relative))
                 continue
             seen.add(key)
             try:
@@ -1167,24 +1175,13 @@ def selected_interpreter_findings(bin_dir: Path, base: Path) -> list[str]:
                 or f"launcher {path.name} selects an interpreter that is not a regular file"
             )
             continue
-        try:
-            same = _same_file(resolved, base)
-        except OSError:
-            same = False
-        if same:
-            continue
-        try:
-            copied = sha256_file(resolved) == base_digest
-        except OSError:
-            copied = False
-        if not copied:
+        problem = _interpreter_location_problem(resolved, base, base_digest)
+        if problem == "different":
             findings.append(
                 f"launcher {path.name} selects {selected}, which is not the trusted "
                 f"base interpreter {base}"
             )
-            continue
-        problem = copied_interpreter_problem(resolved, base)
-        if problem:
+        elif problem:
             findings.append(problem)
     return findings
 
@@ -2127,45 +2124,100 @@ def _pyvenv_names_base(home: str, executable: str, base: Path) -> bool:
     return True
 
 
-def _home_stdlib_findings(home: str, venv_root: Path) -> list[str]:
-    """Refuse a home whose adjacent standard library is not the trusted base.
+def _first_prefix_landmark(
+    start: Path, relatives: tuple[str, ...]
+) -> tuple[Path, str] | str | None:
+    """Nearest ancestor prefix that has one of ``relatives``, or an error.
 
-    CPython joins ``home`` as written in ``pyvenv.cfg``. A directory that only
-    aliases the interpreter, with no library tree beside it, still uses the
-    base interpreter's compiled-in standard library. A library tree that is a
-    different directory, even when ``os.py`` is a symlink into the real
-    library, is not that layout. This function does not start an interpreter.
+    The walk matches CPython's ``search_up``: it starts at ``home`` as written
+    in ``pyvenv.cfg`` and moves to each parent. It does not start an interpreter.
+    ``None`` means no landmark. A string is a read error.
     """
+    current = start
+    for _ in range(64):
+        for relative in relatives:
+            candidate = current.joinpath(*relative.split("/"))
+            try:
+                present = candidate.is_file()
+            except OSError as exc:
+                return (
+                    "pyvenv.cfg home standard library cannot be read: "
+                    f"{candidate} ({exc})"
+                )
+            if present:
+                return current, relative
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return None
+
+
+def _home_stdlib_findings(home: str, venv_root: Path) -> list[str]:
+    """Refuse a home whose searched standard library is not the trusted base.
+
+    CPython searches upward from ``home`` as written in ``pyvenv.cfg``, first
+    for ``lib/pythonXY.zip``, then for ``lib/pythonX.Y/os.py`` or ``os.pyc``.
+    The first landmark selects the prefix. That library must be the trusted
+    base's standard library. A missing landmark is the compiled-in library,
+    which is the supported alias with no separate tree. A landmark in a
+    different directory is an unsupported relocated layout, even when ``os.py``
+    is a symlink into the real library or only ``os.pyc`` is present. This
+    function does not start an interpreter.
+    """
+    del venv_root
     if not home:
         return []
     major, minor = sys.version_info[:2]
-    root = Path(home).parent
-    candidate = root / "lib" / f"python{major}.{minor}"
-    landmark = candidate / "os.py"
-    zip_path = root / "lib" / f"python{major}{minor}.zip"
+    plat = sysconfig.get_config_var("platlibdir") or "lib"
+    zip_rel = f"{plat}/python{major}{minor}.zip"
+    stdlib_rels = (
+        f"{plat}/python{major}.{minor}/os.py",
+        f"{plat}/python{major}.{minor}/os.pyc",
+    )
+    found = _first_prefix_landmark(Path(home), (zip_rel,))
+    if isinstance(found, str):
+        return [found]
+    if found is None:
+        found = _first_prefix_landmark(Path(home), stdlib_rels)
+    if isinstance(found, str):
+        return [found]
+    if found is None:
+        return []
+    prefix, relative = found
+    stdlib_dir = prefix / plat / f"python{major}.{minor}"
     trusted = Path(sysconfig.get_path("stdlib"))
-    findings: list[str] = []
     try:
-        landmark_present = landmark.is_file() or landmark.is_symlink()
+        stdlib_present = stdlib_dir.is_dir()
     except OSError as exc:
-        return [f"pyvenv.cfg home standard library cannot be read: {candidate} ({exc})"]
-    if landmark_present and not _same_file(candidate, trusted):
-        findings.append(
-            "pyvenv.cfg home selects a standard library that is not the trusted "
-            f"base: {candidate}"
-        )
-    trusted_zip = Path(sys.base_prefix) / "lib" / f"python{major}{minor}.zip"
-    try:
-        zip_present = zip_path.exists()
-    except OSError as exc:
-        return findings + [f"pyvenv.cfg home zip cannot be read: {zip_path} ({exc})"]
-    if zip_present and not _same_file(zip_path, trusted_zip):
-        findings.append(
-            "pyvenv.cfg home selects a standard-library zip that is not the trusted "
-            f"base: {zip_path}"
-        )
-    del venv_root
-    return findings
+        return [
+            "pyvenv.cfg home standard library cannot be read: "
+            f"{stdlib_dir} ({exc})"
+        ]
+    if stdlib_present:
+        if not _same_file(stdlib_dir, trusted):
+            return [
+                "pyvenv.cfg home selects a standard library that is not the trusted "
+                f"base: {stdlib_dir}"
+            ]
+        return []
+    if relative.endswith(".zip"):
+        trusted_zip = Path(sys.base_prefix) / plat / f"python{major}{minor}.zip"
+        zip_path = prefix.joinpath(*relative.split("/"))
+        try:
+            same_zip = _same_file(zip_path, trusted_zip)
+        except OSError as exc:
+            return [f"pyvenv.cfg home zip cannot be read: {zip_path} ({exc})"]
+        if not same_zip:
+            return [
+                "pyvenv.cfg home selects a standard-library zip that is not the trusted "
+                f"base: {zip_path}"
+            ]
+        return []
+    return [
+        "pyvenv.cfg home selects a standard library that is not the trusted "
+        f"base: {stdlib_dir}"
+    ]
 
 
 def validate_pyvenv(venv_root: Path, base: Path) -> list[str]:
@@ -2854,6 +2906,57 @@ def _resolve_loader_dep(origin_dir: Path, dep: str) -> Path | None:
     return None
 
 
+def _at_trusted_executable_path(final: Path, base: Path) -> bool:
+    """True when ``final`` is the trusted executable's own path.
+
+    A symlink chain that lands on that path is the supported alias. A hard
+    link in another directory shares the inode, but dyld uses the hard link's
+    path for ``@executable_path``. Those are not the same location.
+    """
+    base_final, error = _final_regular_file(base)
+    if error or base_final is None:
+        return False
+    try:
+        if not _same_file(final, base_final):
+            return False
+        return os.path.realpath(final) == os.path.realpath(base_final)
+    except OSError:
+        return False
+
+
+def _interpreter_location_problem(path: Path, base: Path, base_digest: str) -> str | None:
+    """Refuse a distinct executable path whose loader closure moved.
+
+    ``None`` means the path is the trusted executable, or a relocated file
+    whose relative loader dependencies still name the trusted libraries.
+    ``"different"`` means the bytes are not that executable. Any other string
+    is a loader-layout refusal. The file is not executed.
+    """
+    if _at_trusted_executable_path(path, base):
+        return None
+    try:
+        same_inode = _same_file(path, base)
+    except OSError:
+        same_inode = False
+    byte_match = same_inode
+    if not byte_match:
+        try:
+            byte_match = sha256_file(path) == base_digest
+        except OSError:
+            byte_match = False
+    if not byte_match:
+        return "different"
+    layout = copied_interpreter_problem(path, base)
+    if layout is None:
+        return None
+    if same_inode:
+        return (
+            f"interpreter at {path} is a hard link to the trusted executable "
+            f"at a different location; {layout}"
+        )
+    return layout
+
+
 def copied_interpreter_problem(copy: Path, base: Path) -> str | None:
     """Refuse a byte copy whose relative loader dependencies are not the base's.
 
@@ -2889,10 +2992,10 @@ def copied_interpreter_problem(copy: Path, base: Path) -> str | None:
 def scan_venv_interpreters(bin_dir: Path, base: Path) -> list[str]:
     """Refuse a venv Python entry that is not the base interpreter.
 
-    A symlink must resolve, by filesystem identity, to ``base``. A regular
-    file with the same bytes is admitted only when its relative loader
-    dependencies still resolve to the base's libraries. A hard link is the
-    same file. The file is not executed.
+    A symlink is admitted only when it lands on the trusted executable's own
+    path. A hard link or byte copy at a different path is admitted only when
+    its relative loader dependencies still resolve to the base's libraries.
+    The file is not executed.
     """
     if not bin_dir.is_dir():
         return []
@@ -2918,24 +3021,13 @@ def scan_venv_interpreters(bin_dir: Path, base: Path) -> list[str]:
                 )
             )
             continue
-        try:
-            same = _same_file(final, base)
-        except OSError:
-            same = False
-        if same:
-            continue
-        try:
-            linked = path.is_symlink()
-        except OSError:
-            linked = True
-        if linked or sha256_file(final) != base_digest:
+        problem = _interpreter_location_problem(final, base, base_digest)
+        if problem == "different":
             findings.append(
                 "venv interpreter is not the base interpreter named by pyvenv.cfg: "
                 f"{path}"
             )
-            continue
-        problem = copied_interpreter_problem(final, base)
-        if problem:
+        elif problem:
             findings.append(problem)
     return findings
 
