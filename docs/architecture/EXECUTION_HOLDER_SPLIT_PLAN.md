@@ -1,6 +1,6 @@
 # Execution holder split plan (RS-06)
 
-Status: **plan only.** This document does not refactor `src/runspecimen/execution_holder.py`. No module is extracted here. `run_integration_complete` stays false. E2 stays closed. Installed Secure Enclave / biometric admission stays fail-closed. A typed phrase remains refused for `local` / `companion` / `dual`.
+Status: **plan only.** This document does not refactor `src/runspecimen/execution_holder.py`. No module is extracted here. `run_integration_complete` stays false. E2 is not closed (`e2_closed=false`). Installed Secure Enclave / biometric admission stays fail-closed. A typed phrase remains refused for `local` / `companion` / `dual`.
 
 `execution_holder.py` is about 4000 lines. It is the in-process core a separate Developer ID product would run. It is not installed by importing the module. An unprivileged test adapter may construct `ExecutionHolder(allow_test_double=True)`. That adapter is not installed protection.
 

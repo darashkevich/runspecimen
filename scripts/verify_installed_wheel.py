@@ -676,6 +676,27 @@ def discover_launcher(prefix: Path | None = None) -> Path | None:
     return None
 
 
+def _is_identity_checked_interpreter_name(name: str) -> bool:
+    """True for interpreter names identity-checked against the trusted base.
+
+    Only these names are verified as symlinks or copies of the pyvenv.cfg base:
+    python, python3, pythonw, python3.X (with optional 't' suffix for
+    free-threading), and the CPython 3.14 pi name. Names like python2 are NOT
+    identity-checked and must be refused in the shebang.
+    """
+    stem = name[:-4] if name.lower().endswith(".exe") else name
+    if stem == "\N{MATHEMATICAL ITALIC SMALL PI}thon":
+        return True
+    if stem in {"python", "python3", "pythonw"}:
+        return True
+    if not stem.startswith("python3."):
+        return False
+    rest = stem[len("python3."):]
+    if rest.endswith("t") and rest[:-1].replace(".", "").isdigit():
+        return True
+    return rest.replace(".", "").isdigit()
+
+
 def _is_venv_own_python(shebang: Path, launcher: Path) -> bool:
     """True when the shebang names this venv's Python, not another prefix.
 
@@ -683,17 +704,20 @@ def _is_venv_own_python(shebang: Path, launcher: Path) -> bool:
     path strings. macOS default TMPDIR is ``/var/...`` which aliases
     ``/private/var/...``; ``/tmp`` aliases ``/private/tmp``. Do not realpath
     the interpreter file itself: two venvs can share the same base Python.
+
+    The shebang interpreter name must be one of the identity-checked names
+    (python, python3, pythonw, python3.X). Names like python2 are refused
+    because they are not verified against the trusted base interpreter.
     """
+    if not _is_identity_checked_interpreter_name(shebang.name):
+        return False
     try:
         same_parent = shebang.parent.samefile(launcher.parent)
     except OSError:
         same_parent = os.path.realpath(str(shebang.parent)) == os.path.realpath(
             str(launcher.parent)
         )
-    if not same_parent:
-        return False
-    name = shebang.name.lower()
-    return name == "python.exe" or name.startswith("python")
+    return same_parent
 
 
 def interpreter_from_launcher(launcher: Path) -> Path:
@@ -723,6 +747,11 @@ def interpreter_from_launcher(launcher: Path) -> Path:
         raise UnsupportedShebangError(
             f"launcher {launcher} uses unsupported shebang {first!r}; "
             "only an absolute path to the venv's own Python is accepted"
+        )
+    if len(parts) > 1:
+        raise UnsupportedShebangError(
+            f"launcher {launcher} shebang {first!r} has extra interpreter args; "
+            "only an absolute path with no arguments is accepted"
         )
     try:
         shebang.lstat()
@@ -771,13 +800,17 @@ def console_script_target(launcher: Path) -> str | None:
 
 
 def is_allowed_venv_bin_name(name: str) -> bool:
-    """True for python/pip/activate/runspecimen names ``python -m venv`` plus pip write."""
+    """True for python/pip/activate/runspecimen names ``python -m venv`` plus pip write.
+
+    Python interpreter names must be identity-checked names only (python,
+    python3, pythonw, python3.X). Names like python2 are refused because they
+    are not verified against the trusted base interpreter.
+    """
     if name in _VENV_BIN_EXACT:
         return True
     stem = name[:-4] if name.endswith(".exe") else name
     if stem.startswith("python"):
-        rest = stem[len("python") :]
-        return rest == "" or all(ch.isdigit() or ch in ".t" for ch in rest)
+        return _is_identity_checked_interpreter_name(name)
     if stem.startswith("pip"):
         rest = stem[len("pip") :]
         return rest == "" or all(ch.isdigit() or ch == "." for ch in rest)
@@ -2206,18 +2239,11 @@ def expand_site_paths(site_dirs: list[Path]) -> tuple[list[Path], list[str]]:
 
 
 def _is_venv_interpreter_entry(name: str) -> bool:
-    """True for python, python3, python3.X, and the CPython 3.14 pi name."""
-    stem = name[:-4] if name.lower().endswith(".exe") else name
-    if stem == "\N{MATHEMATICAL ITALIC SMALL PI}thon":
-        return True
-    if stem in {"python", "python3", "pythonw"}:
-        return True
-    if not stem.startswith("python3."):
-        return False
-    rest = stem[len("python3.") :]
-    if rest.endswith("t") and rest[:-1].replace(".", "").isdigit():
-        rest = rest[:-1]
-    return bool(rest) and all(ch.isdigit() or ch == "." for ch in rest)
+    """True for python, python3, python3.X, and the CPython 3.14 pi name.
+
+    Delegates to the shared identity-checked interpreter name policy.
+    """
+    return _is_identity_checked_interpreter_name(name)
 
 
 def _final_regular_file(path: Path) -> tuple[Path | None, str | None]:

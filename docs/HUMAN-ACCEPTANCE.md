@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-11-qafix22/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-12-qafix23/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-11-qafix22/` (non-ASCII `.pth` files; not this sheet),
 `artifacts/0.2.0rc15-2026-10-11-qafix21/` (leading-space `.pth` lines; not this sheet),
 `artifacts/0.2.0rc15-2026-10-10-qafix20/` (venv-started checker and unreadable `.pth` paths; not this sheet),
 `artifacts/0.2.0rc15-2026-10-10-qafix19/` (symlink-home test; not this sheet),
@@ -34,10 +35,10 @@ Record these identities at the top of your notes before N1 (fill in from this
 machine; N2 prints the full wheel digest):
 
 - Candidate SHA: `git rev-parse HEAD` of this checkout
-- Pack: `artifacts/0.2.0rc15-2026-10-11-qafix22/`
+- Pack: `artifacts/0.2.0rc15-2026-10-12-qafix23/`
 - Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
 - python3: `command -v python3` and `python3 --version`
-- Wheel SHA-256: `f4111bc60fdda2d59d24b2aa9740fad5e3a27bcbeb49ba0018c5958ee8382d9f` (must match N2 `wheel_sha256` and pack SHA256SUMS). These wheel bytes match the qafix14 wheel because the wheel is the engine package and that `src/` tree did not change. The verifier script in this checkout did change, and it is what N3 runs.
+- Wheel SHA-256: `12ee0b246b6229be59f4b780f2f0394efd4570eb08c3bafec886e9bf6b66074e` (must match N2 `wheel_sha256` and pack SHA256SUMS). The `src/` tree changed in qafix23 (events.py lock-leak fix, present.py hint wording), so this wheel differs from the qafix14–qafix22 wheel. The verifier script in this checkout also changed and is what N3 runs.
 
 You can paste this whole sheet into a fresh macOS Terminal (zsh, the default)
 or into bash. You do not need extra wrappers, and you do not need to turn
@@ -107,7 +108,7 @@ refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
 Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-11-qafix22"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix23"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 _RS_PY3="$(command -v python3)"
 case "$_RS_PY3" in
@@ -203,14 +204,16 @@ if it was started by a virtual environment's Python. Only a clean reading
 runs the launcher body on that same Python, with site startup turned off.
 
 ```
-rs --version
-rs_ok N3-version $?
 basepy -I -S "$PWD/scripts/verify_installed_wheel.py" --wheel "$WHEEL" --launcher "$RS"
 rs_ok N3-verify $?
+rs --version
+rs_ok N3-version $?
 ```
 
-`command -v runspecimen` is informational. If the launcher is missing, N3-version
-prints `FAIL` and stops; do not continue to N4.
+`command -v runspecimen` is informational. Run the provenance script FIRST.
+If the verifier fails, N3-verify prints `FAIL` and stops; do not continue.
+Only after N3-verify passes is it safe to run any venv code. N3-version then
+confirms the launcher starts; if it is missing or corrupt, it prints `FAIL`.
 
 Abort unless every hashed RECORD member in the wheel, and every
 `runspecimen/*.py` in that zip, matches the file installed under the absolute
@@ -382,10 +385,11 @@ every loaded `runspecimen.*` origin bound to the hashed installed member
 (realpath-equal, including `runspecimen.approve` and the CLI), the
 installed-file comparison, installed `RECORD` and `direct_url.json`,
 the pinned launcher template (`console_script_target` `runspecimen.cli:main`),
-no unexpected files in `$VENV/bin`, `loaded_module_origins` from the real
-launcher `doctor` process (each origin under stdlib or a hash-verified wheel
-file), no bytecode under the installed package, `STEP N3-version exit=0`,
-`STEP N3-verify exit=0`, and no import overrides
+no unexpected files in `$VENV/bin`, `loaded_module_origins` from a
+base-interpreter probe of the pinned body with startup disabled (each origin
+under stdlib or a hash-verified wheel file), no bytecode under the installed
+package, `STEP N3-verify exit=0`, `STEP N3-version exit=0`, and no import
+overrides
 (`PYTHONPATH` / `PYTHONHOME` / `PYTHONSTARTUP` / `PYTHONPYCACHEPREFIX` unset,
 `PYTHONNOUSERSITE=1`, `PYTHONDONTWRITEBYTECODE=1`,
 no executable `.pth` import, no leftover setuptools shim, no sitecustomize

@@ -207,9 +207,17 @@ class EventLog:
 
         class _Guard:
             def __enter__(self_inner):
-                fcntl.flock(fd, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
-                if exclusive:
-                    self._ensure_file_unlocked()
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+                    if exclusive:
+                        self._ensure_file_unlocked()
+                except BaseException:
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_UN)
+                    except OSError:
+                        pass
+                    os.close(fd)
+                    raise
                 return fd
 
             def __exit__(self_inner, exc_type, exc, tb):

@@ -1,0 +1,17 @@
+{
+  "artifacts": {
+    "runspecimen-0.2.0rc15-py3-none-any.whl": "12ee0b246b6229be59f4b780f2f0394efd4570eb08c3bafec886e9bf6b66074e",
+    "runspecimen-0.2.0rc15.tar.gz": "d0ff198f581a0c5bebacb2e7d5214116dfb8eed961b27ea23b6383f561b97640",
+    "runspecimen-plugin-0.2.0-rc.15.zip": "ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb"
+  },
+  "checks": [
+    "unit-tests-partial",
+    "source-compile",
+    "source-archive-contents"
+  ],
+  "ok": true,
+  "platform": "linux",
+  "plugin_version": "0.2.0-rc.15",
+  "python": "3.12.3",
+  "version": "0.2.0rc15"
+}

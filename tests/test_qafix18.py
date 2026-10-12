@@ -249,6 +249,13 @@ class Qafix18VerifierTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
+            if created.returncode != 0:
+                stderr = created.stderr.lower()
+                if "no such file or directory" in stderr and "/lib/python" in stderr:
+                    self.skipTest(
+                        "relocatable Python: venv creation failed due to missing "
+                        f"lib path ({created.stderr.strip()!r})"
+                    )
             self.assertEqual(created.returncode, 0, created.stderr)
             cfg_path = venv_dir / "pyvenv.cfg"
             # Debian records home as the symlink directory and executable as

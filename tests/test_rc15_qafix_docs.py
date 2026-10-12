@@ -30,7 +30,7 @@ HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 CANDIDATE_MANIFEST = ROOT / "docs" / "CANDIDATE_MANIFEST.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
-PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-11-qafix22"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-12-qafix23"
 QAFIX11_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-09-qafix11"
 QAFIX10_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix10"
 QAFIX9_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix9"
@@ -188,7 +188,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("command -v runspecimen", text)
         self.assertIn("mktemp -d", text)
         self.assertIn('test ! -e "$VENV"', text)
-        self.assertIn("0.2.0rc15-2026-10-11-qafix22", text)
+        self.assertIn("0.2.0rc15-2026-10-12-qafix23", text)
         self.assertIn("--no-index --no-deps --force-reinstall --no-compile", text)
         self.assertIn("scripts/verify_installed_wheel.py", text)
         self.assertIn("--launcher", text)
@@ -256,9 +256,8 @@ class Rc15QaDocfixTests(unittest.TestCase):
         if CANDIDATE_MANIFEST.is_file():
             manifest = CANDIDATE_MANIFEST.read_text(encoding="utf-8")
             self.assertIn("| Candidate (this pass) |", manifest)
-            self.assertIn("PR #63 head that records the qafix22 pack", manifest)
-            self.assertIn("8015b6d8017e5566f7558cc916dc0ee470c653ad", manifest)
-            self.assertIn("artifacts/0.2.0rc15-2026-10-11-qafix22/", manifest)
+            self.assertIn("qafix23", manifest)
+            self.assertIn("artifacts/0.2.0rc15-2026-10-12-qafix23/", manifest)
         self.assertIn("Homebrew", text)
         self.assertIn("STEP $1 exit=$2", text)
         command_lines = [
@@ -293,7 +292,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
     def _assert_n3_missing_launcher_stops(self, shell: str) -> None:
         text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
         helpers = _helper_functions(text)
-        n3 = _fence_containing(text, "rs_ok N3-version")
+        n3 = _fence_containing(text, "rs_ok N3-verify")
         pin = _pin_wheel()
         with tempfile.TemporaryDirectory(prefix="rs-ha-n3-missing-") as root:
             missing = Path(root) / "missing-runspecimen"
@@ -318,7 +317,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
             )
             output = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0, output)
-            self.assertIn("STEP N3-version exit=", output)
+            self.assertIn("STEP N3-verify exit=", output)
             self.assertIn("FAIL:", output)
             self.assertNotIn("REACHED_NEXT_STEP", output)
 
@@ -1044,7 +1043,7 @@ def _acceptance_sheet_script(markdown: str, pack: Path) -> str:
         parts.append(block.rstrip() + "\n")
     script = "".join(parts)
     replaced, count = re.subn(
-        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-11-qafix22"',
+        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-12-qafix23"',
         f"export PACK={shlex.quote(str(pack))}",
         script,
         count=1,

@@ -93,7 +93,7 @@ _ERROR_HINTS: tuple[tuple[str, str], ...] = (
     ),
     (
         "interactive TTY",
-        "Open a real terminal (not a pipe, not CI). Plugins and agents cannot approve through the app. Planted or edited approvals show up as broken receipts.",
+        "Open a real terminal (not a pipe, not CI). Plugins and agents cannot approve through the app. Inconsistent edits to local records can be detected, but a program that can rewrite those files can fabricate consistent evidence; signing with an inaccessible key lets you verify authenticity afterward.",
     ),
     (
         "refuse re-entry",
