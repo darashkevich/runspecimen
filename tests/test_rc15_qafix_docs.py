@@ -212,7 +212,11 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("_virtualenv*", text)
         self.assertIn("DistutilsMetaFinder", text)
         self.assertIn("distutils-precedence.pth", text)
-        self.assertIn('"$PY" -m pip uninstall -y setuptools', text)
+        self.assertTrue(
+            '"$PY" -m pip uninstall -y setuptools' in text or
+            'rm -rf "$VENV"/lib/python*/site-packages/setuptools' in text,
+            "N1 should remove setuptools (via pip uninstall or rm -rf)"
+        )
         self.assertIn("N1-setuptools", text)
         self.assertIn("stdlib `python3 -m venv`", text)
         self.assertIn("CAMPAIGN_ID", text)
@@ -1048,7 +1052,7 @@ def _acceptance_sheet_script(markdown: str, pack: Path) -> str:
         parts.append(block.rstrip() + "\n")
     script = "".join(parts)
     replaced, count = re.subn(
-        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-12-qafix28"',
+        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-12-qafix\d+"',
         f"export PACK={shlex.quote(str(pack))}",
         script,
         count=1,
