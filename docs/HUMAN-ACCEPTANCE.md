@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-12-qafix30/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-12-qafix31/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-12-qafix30/` (pip-free install; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix29/` (QA28 sheet fixes; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix28/` (sheet fixes; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix27/` (CI-reproducible rebuild; not this sheet),
@@ -42,10 +43,10 @@ Record these identities at the top of your notes before N1 (fill in from this
 machine; N2 prints the full wheel digest):
 
 - Candidate SHA: `git rev-parse HEAD` of this checkout
-- Pack: `artifacts/0.2.0rc15-2026-10-12-qafix30/`
+- Pack: `artifacts/0.2.0rc15-2026-10-12-qafix31/`
 - Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
 - python3: `command -v python3` and `python3 --version`
-- Wheel SHA-256: `25c6fa06c194146e5750c0a6c05f7cba2ae7e406512639491d455bcae4b462a5` (must match N2 `wheel_sha256` and pack SHA256SUMS). This is the setuptools 82.0.1 file. Its payload matches the qafix29 wheel `3759ea01…`; the whole-file hash moved with the `WHEEL` Generator line. `src/` was not changed. N3 runs the verifier in this checkout.
+- Wheel SHA-256: `d9d0c9dfc978beb29ac34901d788e647812d3f663c703281da35d2172ac4f048` (must match N2 `wheel_sha256` and pack SHA256SUMS). This is the setuptools 82.0.1 file. Its payload differs from the qafix30 wheel `25c6fa06…` in `runspecimen/present.py`, `runspecimen/certificate.py`, and the metadata that records those bytes. The plugin zip is byte-identical to qafix30. N3 runs the verifier in this checkout.
 
 You can paste this whole sheet into a fresh macOS Terminal (zsh, the default)
 or into bash. You do not need extra wrappers, and you do not need to turn
@@ -82,8 +83,15 @@ shadow stdlib because the real launcher puts `bin/` on `sys.path[0]`). CPython
 3.14 `python -m venv` also creates the exact `𝜋thon` symlink (U+1D70B); that
 name is allowlisted. The verifier reads the venv before it runs anything there.
 `python`, `python3`, `python3.X`, and that `𝜋thon` name must be a link to the
-real interpreter named by `pyvenv.cfg`, or an exact copy of that file. A wrapper
-script is refused before it can run. A `.pth` line that names a folder or a zip
+real interpreter named by `pyvenv.cfg`. A byte copy is admitted only when its
+relative loader dependencies still resolve to that interpreter's libraries. A
+copy that moves `@executable_path` or `$ORIGIN` dependencies is refused. Equal
+executable bytes are not a runtime layout. A wrapper
+script is refused before it can run. A `pyvenv.cfg` `home` whose adjacent
+`lib/pythonX.Y` is not the trusted standard library is refused. A home that
+only aliases the interpreter, with no separate library tree, still uses the
+trusted standard library. The check does not start the suspect interpreter to
+discover that layout. A `.pth` line that names a folder or a zip
 is followed, and those locations are read for `sitecustomize` and `usercustomize`
 in every form Python can import. On Debian, the interpreter's own sitecustomize
 imports another module; a copy of that module in the venv is refused, and the
@@ -126,7 +134,7 @@ refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
 Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix30"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix31"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 _RS_PY3="$(command -v python3)"
 case "$_RS_PY3" in
@@ -240,11 +248,18 @@ N3-version is the first execution of the installed launcher; run the verifier
 before it. N3-version confirms the launcher starts; if missing or corrupt, it
 prints `FAIL`.
 
-Abort unless every hashed RECORD member in the wheel, and every
-`runspecimen/*.py` in that zip, matches the file installed under the absolute
-launcher's own interpreter, every loaded `runspecimen.*` origin (including
-`runspecimen.approve`, `runspecimen.present`, and the CLI) is realpath-equal to the hashed installed
-member, the sanitized environment has no import overrides, and the target
+Abort unless three separate stages succeed. The authenticated install reads
+each wheel member once and compares those bytes to the wheel. Every file under
+the installed `runspecimen` package, including a native extension, must be one
+of those members. The permitted runtime layout binds `pyvenv.cfg` home and the
+venv interpreters to the trusted base without starting the suspect interpreter.
+The authenticated probe then imports only those captured bytes and the launcher
+body that matched the pinned template. It does not reread the live tree and
+treat the new bytes as verified. Loaded `runspecimen.*` origins (including
+`runspecimen.approve`, `runspecimen.present`, and the CLI) are realpath-equal
+to that authenticated snapshot, not to a later copy of the installed files.
+N3-version is the first execution of the installed launcher, and only after
+N3-verify. The sanitized environment has no import overrides, and the target
 venv has no extra startup code. The launcher body after the shebang must
 byte-match the pinned pip console-script template (shebang checked
 separately). The verifier's probe runs with `-I -S -B` and refuses any
@@ -259,12 +274,9 @@ A stdlib finder is identified by its class living in a stdlib module whose
 realpath is under the interpreter's stdlib dir, not by name.
 There is no RECORD-based trust of `_distutils_hack`. The script prints the
 installed dist-info `RECORD` and `direct_url.json`. `__version__ ==
-0.2.0rc15` is not sufficient: the 2026-10-06-bump wheel reports the same
-version and must fail this step when `$WHEEL` is the qafix23 pin. A
+0.2.0rc15` is not sufficient. A
 same-version tree selected via inside-venv `PYTHONPATH`, a `.pth` prepend,
 sitecustomize, or an executable `.pth` import must also fail.
-
-Record the `command -v runspecimen` path; it must not be the binary you invoke.
 
 ## N4 — disposable workspace
 
@@ -405,14 +417,17 @@ immediately. `command -v` is informational and does not gate. Keep the
 printed `STEP` lines in your notes. Do not reconstruct earlier exit codes
 from a previous session that did not print them.
 
-N3 must show: the absolute launcher (`$RS`) run, its interpreter and prefix,
-every loaded `runspecimen.*` origin bound to the hashed installed member
-(realpath-equal, including `runspecimen.approve` and the CLI), the
-installed-file comparison, installed `RECORD` and `direct_url.json`,
-the pinned launcher template (`console_script_target` `runspecimen.cli:main`),
-no unexpected files in `$VENV/bin`, `loaded_module_origins` from a
-base-interpreter probe of a private copy of the pinned body with startup disabled
-(each origin under stdlib or that private copy), no bytecode under the installed
+N3-verify must show the authenticated install, the permitted runtime layout,
+and the authenticated probe as separate results. The installed-file comparison
+is the bytes read for the wheel check. `loaded_module_origins` come from a
+base-interpreter probe of that authenticated snapshot (a private copy of those
+bytes and of the pinned launcher body, with startup disabled). Each origin is
+under the stdlib or that snapshot. Those origins are not a claim that the
+probe executed the installed launcher. N3-version is that later execution.
+Also record the absolute launcher (`$RS`), its interpreter and prefix, installed
+`RECORD` and `direct_url.json`, the pinned launcher template
+(`console_script_target` `runspecimen.cli:main`), no unexpected files in
+`$VENV/bin`, no unmanifested package file, no bytecode under the installed
 package, `STEP N3-verify exit=0`, `STEP N3-version exit=0`, and no import
 overrides
 (`PYTHONPATH` / `PYTHONHOME` / `PYTHONSTARTUP` / `PYTHONPYCACHEPREFIX` unset,

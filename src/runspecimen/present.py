@@ -58,7 +58,7 @@ _ERROR_HINTS: tuple[tuple[str, str], ...] = (
     ),
     (
         "This receipt has no bound approval event",
-        "This receipt is not bound to a recorded approve step. Planted or edited approvals cannot verify. "
+        "This receipt is not bound to a recorded approve step. Inconsistent edits to local records can be detected, but a program that can rewrite those files can fabricate consistent evidence. "
         "A bound approval event is a recorded local step, not cryptographic proof of a human. "
         "A program running as you that can edit RunSpecimen's files can still add a fake approval to the record. Signing with a key the agent can't access lets you check afterwards that a receipt is authentic, when a signature is required and checked; it does not stop a program running as you from adding a fake approval or running the job.",
     ),

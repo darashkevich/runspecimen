@@ -2,12 +2,15 @@
 """Compare the installed runspecimen tree to a pinned wheel's bytes.
 
 Version strings are not proof. Two unpublished 0.2.0rc15 wheels can differ.
-Exit 0 only when every hashed RECORD member (and every runspecimen/*.py in the
-zip) matches the file installed under the absolute launcher's interpreter, the
-effective origins of runspecimen, runspecimen.cli, runspecimen.approve, and
-every other loaded runspecimen.* module realpath-equal the hashed installed
-members, the environment has no import overrides, and the target venv has no
-extra startup code.
+Exit 0 only when three stages succeed. The authenticated install reads each
+wheel member once and matches those bytes to the installed files, and every
+file under the installed package is one of those members. The permitted
+runtime layout binds pyvenv.cfg home and the venv interpreters to the trusted
+base without starting the suspect interpreter. The authenticated probe then
+imports those captured bytes and the launcher body that matched the pinned
+template. Loaded origins are realpath-equal to that snapshot. The environment
+has no import overrides, and the target venv has no extra startup code. A
+later reread is not treated as verified.
 
 Trusted-interpreter assumption: this helper trusts **only the Python
 interpreter and its stdlib**. It is not a promise to resist arbitrary
@@ -61,7 +64,9 @@ package), bytecode under ``dist-packages``, unexpected ``bin/`` files, a
 launcher body that is not a pinned pip template, and a ``pyvenv.cfg`` whose
 ``home`` is not that base interpreter or that turns on system site-packages.
 ``python``, ``python3``, ``python3.X``, and the CPython 3.14 ``𝜋thon`` name
-must be a symlink to that base interpreter, or a byte-for-byte copy of it.
+must be a symlink to that base interpreter. A byte copy is admitted only
+when its relative loader dependencies still resolve to that interpreter's
+libraries.
 Only a clean static phase runs a probe, and the probe uses the base
 interpreter with ``-I -S`` and an explicit site-packages path. It does not
 execute the venv's Python, so site hooks and the Debian ``sitecustomize``
@@ -87,8 +92,9 @@ runspecimen launchers). CPython 3.14 ``python -m venv`` also writes the exact
 name ``𝜋thon`` (U+1D70B MATHEMATICAL ITALIC SMALL PI + ``thon``; gh-119535);
 that name is allowlisted. A ``json.py`` (or any ``.py`` / ``.pyc`` / ``.so`` /
 directory) there is refused because the real launcher puts ``bin/`` on
-``sys.path[0]``. Module origins are taken from the real launcher process
-(``runspecimen doctor``), not from ``python -c``.
+``sys.path[0]``. Module origins are taken from the authenticated probe of
+the captured launcher body, not from a later execution of the installed
+launcher.
 
 Start this script with the base interpreter, not the venv's python. The
 venv's python runs site hooks before the first line of this file. Follow
@@ -113,6 +119,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import sysconfig
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -573,7 +580,87 @@ def _parse_record(text: str) -> list[str]:
     return names
 
 
-def verify_site_against_wheel(*, site_packages: Path, wheel: Path) -> dict[str, Any]:
+def _package_inventory(package_dir: Path) -> list[str]:
+    """Logical files under the installed package, including a symlinked root.
+
+    Names stay relative to ``site-packages``. A nested directory is followed
+    so an extension inside it is visible. Symlink loops are not walked twice.
+    """
+    if not package_dir.exists() and not package_dir.is_symlink():
+        return []
+    found: list[str] = []
+    seen: set[tuple[int, int]] = set()
+    stack: list[tuple[Path, tuple[str, ...]]] = [(package_dir, ())]
+    while stack:
+        current, relative = stack.pop()
+        try:
+            info = current.stat()
+        except OSError:
+            found.append("runspecimen/" + "/".join(relative) if relative else "runspecimen")
+            continue
+        if stat.S_ISDIR(info.st_mode):
+            key = (info.st_dev, info.st_ino)
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                children = list(current.iterdir())
+            except OSError:
+                found.append("runspecimen/" + "/".join((*relative, current.name)))
+                continue
+            for child in children:
+                stack.append((child, relative + (child.name,)))
+            continue
+        if not relative:
+            continue
+        found.append("runspecimen/" + "/".join(relative))
+    return found
+
+
+def _import_shadow_suffixes() -> tuple[str, ...]:
+    """Suffixes CPython tries for a top-level module before a package directory."""
+    import importlib.machinery
+
+    return tuple(
+        importlib.machinery.EXTENSION_SUFFIXES
+        + importlib.machinery.SOURCE_SUFFIXES
+        + importlib.machinery.BYTECODE_SUFFIXES
+    )
+
+
+def _shadowing_package_files(site_packages: Path) -> list[str]:
+    """Importable site-packages files that can be loaded instead of the package.
+
+    An inert ``runspecimen.egg-link`` is not one of those files. A native
+    extension, source file, or bytecode file whose name imports as
+    ``runspecimen`` is.
+    """
+    try:
+        entries = list(site_packages.iterdir())
+    except OSError as exc:
+        return [f"cannot list site-packages: {exc}"]
+    suffixes = _import_shadow_suffixes()
+    shadows: list[str] = []
+    for path in entries:
+        name = path.name
+        if name in {"runspecimen", "__pycache__"} or name.endswith(".dist-info"):
+            continue
+        if any(name == f"runspecimen{suffix}" for suffix in suffixes):
+            shadows.append(name)
+    cache = site_packages / "__pycache__"
+    try:
+        cached = list(cache.iterdir()) if cache.is_dir() else []
+    except OSError as exc:
+        return shadows + [f"cannot list site-packages/__pycache__: {exc}"]
+    for path in cached:
+        if path.name.startswith("runspecimen.") and path.suffix == ".pyc":
+            shadows.append("__pycache__/" + path.name)
+    return shadows
+
+
+def verify_site_against_wheel(
+    *, site_packages: Path, wheel: Path
+) -> tuple[dict[str, Any], dict[str, bytes]]:
     """Return a report. ``ok`` is True only when installed bytes match the wheel."""
     wheel = wheel.resolve()
     site_packages = site_packages.resolve()
@@ -590,20 +677,22 @@ def verify_site_against_wheel(*, site_packages: Path, wheel: Path) -> dict[str, 
         "direct_url_json": None,
         "hashed_py_members": [],
         "hashed_members": [],
+        "extra_files": [],
     }
     if not wheel.is_file():
         report["message"] = f"wheel not found: {wheel}"
-        return report
+        return report, {}
     if not site_packages.is_dir():
         report["message"] = f"site-packages not found: {site_packages}"
-        return report
+        return report, {}
 
+    authenticated: dict[str, bytes] = {}
     with zipfile.ZipFile(wheel) as archive:
         names = set(archive.namelist())
         record_members = [name for name in names if name.endswith(".dist-info/RECORD")]
         if len(record_members) != 1:
             report["message"] = f"expected one RECORD in the wheel, got {record_members}"
-            return report
+            return report, {}
         record_name = record_members[0]
         record_files = _parse_record(archive.read(record_name).decode("utf-8"))
         to_check = []
@@ -623,14 +712,21 @@ def verify_site_against_wheel(*, site_packages: Path, wheel: Path) -> dict[str, 
             if name not in names:
                 missing.append(name)
                 continue
-            expected = sha256_bytes(archive.read(name))
+            expected_bytes = archive.read(name)
+            expected = sha256_bytes(expected_bytes)
             installed = site_packages / name
-            if not installed.is_file():
+            try:
+                data = installed.read_bytes() if installed.is_file() else None
+            except OSError:
+                data = None
+            if data is None:
                 missing.append(name)
                 continue
-            got = sha256_file(installed)
+            got = sha256_bytes(data)
             if got != expected:
                 mismatches.append(f"{name}: installed {got} != wheel {expected}")
+            else:
+                authenticated[name] = data
             report["checked"] += 1
 
         wheel_py = {
@@ -638,18 +734,21 @@ def verify_site_against_wheel(*, site_packages: Path, wheel: Path) -> dict[str, 
             for name in names
             if name.startswith("runspecimen/") and name.endswith(".py")
         }
-        pkg = site_packages / "runspecimen"
-        installed_py = set()
-        if pkg.is_dir():
-            for path in pkg.rglob("*.py"):
-                if "__pycache__" in path.parts:
-                    continue
-                installed_py.add(path.relative_to(site_packages).as_posix())
+        wheel_package = {
+            name
+            for name in names
+            if name.startswith("runspecimen/") and not name.endswith("/")
+        }
+        installed_files = _package_inventory(site_packages / "runspecimen")
+        installed_py = {name for name in installed_files if name.endswith(".py")}
         extra_py = sorted(installed_py - wheel_py)
+        extra_files = sorted(set(installed_files) - wheel_package - set(extra_py))
+        extra_files.extend(_shadowing_package_files(site_packages))
         missing_py = sorted(wheel_py - installed_py)
         report["mismatches"] = mismatches
         report["missing"] = missing + missing_py
         report["extra_py"] = extra_py
+        report["extra_files"] = extra_files
         report["hashed_py_members"] = sorted(wheel_py)
         report["hashed_members"] = sorted(to_check)
 
@@ -671,7 +770,9 @@ def verify_site_against_wheel(*, site_packages: Path, wheel: Path) -> dict[str, 
                 "text": direct_url.read_text(encoding="utf-8"),
             }
 
-    report["ok"] = not report["mismatches"] and not report["missing"] and not report["extra_py"]
+    report["ok"] = not (
+        report["mismatches"] or report["missing"] or report["extra_py"] or report["extra_files"]
+    )
     if report["ok"]:
         report["message"] = (
             f"installed tree matches wheel {report['wheel_sha256']} "
@@ -681,9 +782,10 @@ def verify_site_against_wheel(*, site_packages: Path, wheel: Path) -> dict[str, 
         report["message"] = (
             "installed tree does not match the pinned wheel "
             f"(missing={len(report['missing'])} mismatches={len(report['mismatches'])} "
-            f"extra_py={len(report['extra_py'])})"
+            f"extra_py={len(report['extra_py'])} extra_files={len(report['extra_files'])})"
         )
-    return report
+        authenticated = {}
+    return report, authenticated
 
 
 def sanitized_env(base: dict[str, str] | None = None) -> dict[str, str]:
@@ -1030,7 +1132,8 @@ def selected_interpreter_findings(bin_dir: Path, base: Path) -> list[str]:
 
     An accepted file name or console-script template is not interpreter
     identity. pip* and runspecimen* launchers, including symlinks, must select
-    a venv interpreter that is the base file or a byte-for-byte copy of it.
+    a venv interpreter that is the base file, or a byte copy whose loader
+    dependencies still resolve to that file's libraries.
     This walk does not execute the interpreter.
     """
     if not bin_dir.is_dir():
@@ -1079,7 +1182,29 @@ def selected_interpreter_findings(bin_dir: Path, base: Path) -> list[str]:
                 f"launcher {path.name} selects {selected}, which is not the trusted "
                 f"base interpreter {base}"
             )
+            continue
+        problem = copied_interpreter_problem(resolved, base)
+        if problem:
+            findings.append(problem)
     return findings
+
+
+# Tests replace this with a filesystem mutation after the authenticated read
+# and before the drift check. Production leaves it unset. The probe receives
+# the authenticated buffers, never the bytes from a later reread.
+after_authenticated_read: Any = None
+
+
+def _authenticated_launcher_body(launcher: Path) -> bytes | None:
+    """Read the launcher once and keep the body only when it is a known template."""
+    try:
+        data = launcher.read_bytes()
+    except OSError:
+        return None
+    body = launcher_body_after_shebang(data)
+    if body in KNOWN_CONSOLE_SCRIPT_BODIES:
+        return body
+    return None
 
 
 def capture_member_bytes(site: Path, members: list[str]) -> tuple[dict[str, bytes] | None, str | None]:
@@ -1182,23 +1307,24 @@ def probe_launcher_doctor(
     *,
     base: Path,
     extra_paths: list[Path],
+    body: bytes,
     expected_body: bytes | None = None,
 ) -> dict[str, Any]:
-    """Run the known launcher body on the verified base interpreter.
+    """Run an already authenticated launcher body on the verified base interpreter.
+
+    ``body`` is the buffer matched to a known console-script template. This
+    function does not read ``launcher``. A later reread is not evidence.
 
     The venv's ``bin/python`` is not executed. ``-S`` skips site startup, so
     a ``.pth`` file, ``sitecustomize``, and Debian's apport hook do not run.
-
-    IMPORTANT: The launcher file itself is NOT executed. Only the verified body
-    bytes (after the first LF) are written to a temp file and run. This ensures
-    the shebang line (including any content between CR and LF that Python's
-    universal newlines would otherwise execute) is never run by the probe.
     """
-    launcher_data = launcher.read_bytes()
-    body = launcher_body_after_shebang(launcher_data)
     if expected_body is not None and body != expected_body:
         raise RuntimeError(
             "launcher body changed after the check; the probe was not started"
+        )
+    if body not in KNOWN_CONSOLE_SCRIPT_BODIES:
+        raise RuntimeError(
+            "launcher body is not an authenticated template; the probe was not started"
         )
     script = (
         "import runpy, sys\n"
@@ -2001,6 +2127,47 @@ def _pyvenv_names_base(home: str, executable: str, base: Path) -> bool:
     return True
 
 
+def _home_stdlib_findings(home: str, venv_root: Path) -> list[str]:
+    """Refuse a home whose adjacent standard library is not the trusted base.
+
+    CPython joins ``home`` as written in ``pyvenv.cfg``. A directory that only
+    aliases the interpreter, with no library tree beside it, still uses the
+    base interpreter's compiled-in standard library. A library tree that is a
+    different directory, even when ``os.py`` is a symlink into the real
+    library, is not that layout. This function does not start an interpreter.
+    """
+    if not home:
+        return []
+    major, minor = sys.version_info[:2]
+    root = Path(home).parent
+    candidate = root / "lib" / f"python{major}.{minor}"
+    landmark = candidate / "os.py"
+    zip_path = root / "lib" / f"python{major}{minor}.zip"
+    trusted = Path(sysconfig.get_path("stdlib"))
+    findings: list[str] = []
+    try:
+        landmark_present = landmark.is_file() or landmark.is_symlink()
+    except OSError as exc:
+        return [f"pyvenv.cfg home standard library cannot be read: {candidate} ({exc})"]
+    if landmark_present and not _same_file(candidate, trusted):
+        findings.append(
+            "pyvenv.cfg home selects a standard library that is not the trusted "
+            f"base: {candidate}"
+        )
+    trusted_zip = Path(sys.base_prefix) / "lib" / f"python{major}{minor}.zip"
+    try:
+        zip_present = zip_path.exists()
+    except OSError as exc:
+        return findings + [f"pyvenv.cfg home zip cannot be read: {zip_path} ({exc})"]
+    if zip_present and not _same_file(zip_path, trusted_zip):
+        findings.append(
+            "pyvenv.cfg home selects a standard-library zip that is not the trusted "
+            f"base: {zip_path}"
+        )
+    del venv_root
+    return findings
+
+
 def validate_pyvenv(venv_root: Path, base: Path) -> list[str]:
     """Refuse a venv whose config does not name this base interpreter."""
     path = venv_root / "pyvenv.cfg"
@@ -2026,6 +2193,8 @@ def validate_pyvenv(venv_root: Path, base: Path) -> list[str]:
             "pyvenv.cfg does not name the Python that is running this check: "
             f"{path}"
         )
+    else:
+        findings.extend(_home_stdlib_findings(home, venv_root))
     if cfg.get("include-system-site-packages", "").lower() != "false":
         findings.append(f"include-system-site-packages is turned on: {path}")
     version = cfg.get("version", "")
@@ -2618,12 +2787,112 @@ def _final_regular_file(path: Path) -> tuple[Path | None, str | None]:
     return None, f"followed too many links while checking the venv interpreter: {path}"
 
 
+def _loader_relative_deps(binary: Path) -> list[str] | None:
+    """Relative loader dependencies of ``binary``, or None if they cannot be read.
+
+    The binary is not executed. Absolute dependencies are omitted because a
+    copy does not move them. An empty list means a byte copy keeps the same
+    loader closure.
+    """
+    if sys.platform == "darwin":
+        return _macho_relative_deps(binary)
+    if sys.platform.startswith("linux"):
+        return _elf_relative_deps(binary)
+    return None
+
+
+def _macho_relative_deps(binary: Path) -> list[str] | None:
+    try:
+        result = subprocess.run(
+            ["/usr/bin/otool", "-L", os.fspath(binary)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    deps: list[str] = []
+    for raw in result.stdout.splitlines()[1:]:
+        dep = raw.split(" (", 1)[0].strip()
+        if dep.startswith(("@executable_path/", "@loader_path/", "@rpath/")) and dep not in deps:
+            deps.append(dep)
+    return deps
+
+
+def _elf_relative_deps(binary: Path) -> list[str] | None:
+    readelf = shutil.which("readelf")
+    if not readelf:
+        return None
+    try:
+        result = subprocess.run(
+            [readelf, "-d", os.fspath(binary)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    deps: list[str] = []
+    for raw in result.stdout.splitlines():
+        if "$ORIGIN" in raw or "${ORIGIN}" in raw:
+            text = raw.strip()
+            if text and text not in deps:
+                deps.append(text)
+    return deps
+
+
+def _resolve_loader_dep(origin_dir: Path, dep: str) -> Path | None:
+    for prefix in ("@executable_path/", "@loader_path/"):
+        if dep.startswith(prefix):
+            return origin_dir / dep[len(prefix) :]
+    return None
+
+
+def copied_interpreter_problem(copy: Path, base: Path) -> str | None:
+    """Refuse a byte copy whose relative loader dependencies are not the base's.
+
+    Equal executable bytes are not a runtime layout. ``@executable_path`` and
+    ``$ORIGIN`` move with the copy. This does not execute the copy.
+    """
+    deps = _loader_relative_deps(base)
+    if deps is None:
+        return (
+            f"copied interpreter {copy} is not a supported layout: "
+            "its loader dependencies could not be read without executing it"
+        )
+    for dep in deps:
+        if dep.startswith("@rpath/") or "$ORIGIN" in dep or "${ORIGIN}" in dep:
+            return (
+                f"copied interpreter {copy} uses a relative loader dependency ({dep}); "
+                "a byte copy is not the trusted base's runtime layout"
+            )
+        base_target = _resolve_loader_dep(base.parent, dep)
+        copy_target = _resolve_loader_dep(copy.parent, dep)
+        if (
+            base_target is None
+            or copy_target is None
+            or not _same_file(base_target, copy_target)
+        ):
+            return (
+                f"copied interpreter {copy} does not keep loader dependency {dep} "
+                "on the trusted base's library"
+            )
+    return None
+
+
 def scan_venv_interpreters(bin_dir: Path, base: Path) -> list[str]:
     """Refuse a venv Python entry that is not the base interpreter.
 
     A symlink must resolve, by filesystem identity, to ``base``. A regular
-    file must be a byte-for-byte copy (Windows copies mode or a hard link).
-    The file is not executed.
+    file with the same bytes is admitted only when its relative loader
+    dependencies still resolve to the base's libraries. A hard link is the
+    same file. The file is not executed.
     """
     if not bin_dir.is_dir():
         return []
@@ -2664,6 +2933,10 @@ def scan_venv_interpreters(bin_dir: Path, base: Path) -> list[str]:
                 "venv interpreter is not the base interpreter named by pyvenv.cfg: "
                 f"{path}"
             )
+            continue
+        problem = copied_interpreter_problem(final, base)
+        if problem:
+            findings.append(problem)
     return findings
 
 
@@ -2778,7 +3051,10 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         report["message"] = f"absolute launcher not found: {launcher or '(discovered)'}"
         return report
     report["launcher"] = str(resolved_launcher)
-    report["console_script_target"] = console_script_target(resolved_launcher)
+    authenticated_body = _authenticated_launcher_body(resolved_launcher)
+    report["console_script_target"] = (
+        PINNED_CONSOLE_SCRIPT_TARGET if authenticated_body is not None else None
+    )
     bin_findings = scan_venv_bin(resolved_launcher.parent)
     report["bin_findings"] = bin_findings
     try:
@@ -2799,6 +3075,7 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
     exclusions: list[Path] = []
     site: Path | None = None
     package_dir: Path | None = None
+    authenticated_members: dict[str, bytes] = {}
     layout_error: str | None = None
     version_text = ".".join(str(part) for part in sys.version_info[:3])
     if not pyvenv_findings:
@@ -2818,12 +3095,15 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
             package_dir = (site / "runspecimen").resolve()
             report["prefix"] = str(venv_root.resolve())
             report["verified_package_dir"] = str(package_dir)
-            report.update(verify_site_against_wheel(site_packages=site, wheel=wheel))
+            tree, authenticated_members = verify_site_against_wheel(site_packages=site, wheel=wheel)
+            report.update(tree)
             report["import_overrides"] = incoming_overrides
             report["launcher"] = str(resolved_launcher)
             report["interpreter"] = str(interpreter)
             report["prefix"] = str(venv_root.resolve())
-            report["console_script_target"] = console_script_target(resolved_launcher)
+            report["console_script_target"] = (
+                PINNED_CONSOLE_SCRIPT_TARGET if authenticated_body is not None else None
+            )
             report["verified_package_dir"] = str(package_dir)
             seen_pth: set[tuple[str, int, str]] = set()
             stdlib_roots = [Path(str(item)).resolve() for item in layout.get("stdlib") or []]
@@ -2866,7 +3146,7 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
     bin_findings = list(bin_findings) + scan_venv_interpreters(resolved_launcher.parent, base)
     bin_findings.extend(selected_interpreter_findings(resolved_launcher.parent, base))
     report["bin_findings"] = bin_findings
-    target = console_script_target(resolved_launcher)
+    target = PINNED_CONSOLE_SCRIPT_TARGET if authenticated_body is not None else None
     report["console_script_target"] = target
 
     hashed_py_members = list(report.get("hashed_py_members") or [])
@@ -2908,24 +3188,28 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
     report["probe_executed_private_copy"] = False
     if package_dir is not None:
         report["installed_package_dir"] = str(package_dir)
-    if not static_blocked and package_dir is not None and site is not None:
-        captured, capture_error = capture_member_bytes(site, [str(member) for member in hashed_members])
-        changed = changed_member(site, captured) if captured is not None else None
-        if capture_error or captured is None:
-            bind_error = capture_error or "checked bytes were not captured"
-        elif changed:
-            bind_error = changed + "; probe not started"
+    if not static_blocked and package_dir is not None and site is not None and authenticated_body is not None:
+        hook = after_authenticated_read
+        if hook is not None:
+            hook()
+        changed = changed_member(site, authenticated_members)
+        try:
+            current_body = launcher_body_after_shebang(resolved_launcher.read_bytes())
+        except OSError as exc:
+            current_body = None
+            bind_error = f"launcher unreadable before probe: {exc}"
         else:
-            try:
-                expected_body = launcher_body_after_shebang(resolved_launcher.read_bytes())
-            except OSError as exc:
-                expected_body = b""
-                bind_error = f"launcher unreadable before probe: {exc}"
+            if current_body != authenticated_body:
+                bind_error = "launcher body changed after the check; the probe was not started"
+            elif changed:
+                bind_error = changed + "; probe not started"
+            elif not authenticated_members:
+                bind_error = "checked bytes were not captured"
             else:
                 snapshot_dir = tempfile.mkdtemp(prefix="rs-verify-copy-")
                 try:
-                    probe_site = write_private_site(Path(snapshot_dir), captured)
-                    drifted = changed_member(probe_site, captured)
+                    probe_site = write_private_site(Path(snapshot_dir), authenticated_members)
+                    drifted = changed_member(probe_site, authenticated_members)
                     if drifted:
                         bind_error = drifted + "; probe not started"
                         probe_site = None
@@ -2946,7 +3230,7 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
                             env,
                             base=base,
                             extra_paths=[probe_site],
-                            expected_body=expected_body,
+                            body=authenticated_body,
                         )
                         loaded_module_origins = dict(doctor.get("loaded_module_origins") or {})
                         launcher_module_findings = launcher_module_origin_findings(
@@ -3160,6 +3444,7 @@ def main(argv: list[str] | None = None) -> int:
             "missing",
             "mismatches",
             "extra_py",
+            "extra_files",
         )
         if key in report
     }

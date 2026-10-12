@@ -86,7 +86,8 @@ and it does not replace the contract backend.
 
 - **Hash-chained events + certificate_id** — integrity of recorded local evidence.
   The chain is unkeyed. An `approval` event must carry a canonical hash of
-  `approval.json`; preflight, run, and verify refuse a planted or edited file.
+  `approval.json`. Inconsistent edits to that local record can be detected.
+  A writer who controls the evidence can fabricate a consistent record.
   A program running as you that can edit RunSpecimen's files can still add a
   fake approval to the record. Signing with a key the agent can't access lets
   you check afterwards that a receipt is authentic, when a signature is
@@ -141,11 +142,18 @@ file that is not a readable zip. A repeated `home` or `executable` in
 `pyvenv.cfg` is refused; this check does not guess which copy to keep.
 `python`,
 `python3`, `python3.X`, and `𝜋thon` must be a symlink to the base interpreter
-named by `pyvenv.cfg`, or a byte-for-byte copy of that file. Following too
+named by `pyvenv.cfg`. A byte-for-byte copy is admitted only when every
+relative loader dependency still names that interpreter's libraries. A copy
+whose `@executable_path` or `$ORIGIN` dependency moves is refused. Equal
+bytes are not a runtime layout. The copy is not executed to discover this.
+Following too
 many links is a refusal with that reason. `pyvenv.cfg`
 must name the real file that was started (`home` plus the interpreter's file
 name, and `executable` when it is present), so a venv created through a
-symlink is accepted when that file is the Python running the check. A
+symlink is accepted when that file is the Python running the check. A `home`
+with its own `lib/pythonX.Y` is accepted only when that directory is the
+trusted standard library. The check does not start the suspect interpreter
+to find that library. A
 mismatch names `pyvenv.cfg` and is not described as extra startup code. The
 file must not turn on system site-packages. When that switch is on, the
 message names the `pyvenv.cfg` file. Any of those findings stops the check
@@ -160,10 +168,13 @@ interpreter's real library directories, is not a site-packages or
 dist-packages directory, and is not inside the virtual environment. Sharing a
 parent folder with the standard library is not enough.
 
-Only after that reading is clean does the check run the launcher body on the
-base interpreter with site startup turned off (`-I -S`), and look at where
-the loaded modules came from. The venv's Python is not executed, so site
-hooks and Debian's `sitecustomize` import chain do not run.
+Only after that reading is clean does the check run the authenticated launcher
+body and the authenticated package bytes on the base interpreter with site
+startup turned off (`-I -S`). Those are the buffers that matched the wheel and
+the known template. A later reread of the live tree is not the probe. The
+venv's Python is not executed, so site hooks and Debian's `sitecustomize`
+import chain do not run. The probe is not the installed launcher. That
+launcher runs only if a later command starts it.
 
 ## Residual risks
 

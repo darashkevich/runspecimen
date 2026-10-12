@@ -122,8 +122,9 @@ you need concurrency. There is no built-in worker pool or scheduler.
 ## Is the hash chain a signature?
 
 **No.** Events and certificates are SHA-256 hash-chained and locally
-recomputable. They detect planted or edited `approval.json` files and casual
-tampering of the evidence set. The chain is unkeyed: a program running as you
+recomputable. Inconsistent edits to local records can be detected. A writer
+who controls the evidence can fabricate a consistent record. The chain is
+unkeyed: a program running as you
 that can edit RunSpecimen's files can still add a fake approval to the record.
 Signing with a key the agent can't access lets you check afterwards that a
 receipt is authentic, when a signature is required and checked

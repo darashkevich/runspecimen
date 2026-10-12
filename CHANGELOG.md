@@ -4,6 +4,7 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
+- The wheel check has three stages: an authenticated install (one read of each member, no unmanifested package file), a permitted runtime layout (home and loader dependencies, without starting the suspect interpreter), and an authenticated probe of those captured bytes. A later reread is not treated as verified. The installer writes through directory descriptors and refuses a symlinked path component. The check remains point-in-time. qafix31 pack.
 - The acceptance sheet creates a pip-free venv with the trusted base interpreter (`-I -S`) and installs the pinned wheel with a stdlib installer. It does not run the target venv's Python or pip before verification, and it does not delete setuptools with a glob. The wheel check is point-in-time: a same-user rewrite during or after the check is not blocked. qafix30 pack.
 
 - RQ21-01 and RQ21-02: a `.pth` file is refused unless every byte is printable ASCII or a newline. A CRLF pair is a newline. A lone CR is not. A byte-order mark, a non-ASCII name, and a character that can split a line are refused before the line is read. `pyvenv.cfg` uses the same rule, except that `home`, `executable`, and `command` may contain ordinary non-ASCII path characters. qafix22 pack.

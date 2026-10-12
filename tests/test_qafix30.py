@@ -277,6 +277,7 @@ class CanaryRefusalTests(unittest.TestCase):
                     {},
                     base=Path(sys.executable),
                     extra_paths=[],
+                    body=module.launcher_body_after_shebang(launcher.read_bytes()),
                     expected_body=expected,
                 )
             self.assertIn("not started", str(ctx.exception))

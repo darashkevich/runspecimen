@@ -8,8 +8,10 @@ Start this only with the trusted base interpreter::
 
 ``-I`` does not disable site startup. ``-S`` is required as well. This process
 never executes the venv interpreter, pip, or any byte from the wheel. It does
-not import installed code to choose a destination. A same-user process can
-still rewrite the venv after this write; that is outside this installer.
+not import installed code to choose a destination. Writes go through directory
+descriptors and refuse a symlink at every component, so replacing a directory
+after the first check cannot move a file outside the venv. A same-user process
+can still rewrite the venv after this write; that is outside this installer.
 """
 
 from __future__ import annotations
@@ -78,9 +80,11 @@ def install_pinned_wheel(wheel: Path, venv: Path, expected_sha256: str) -> None:
     _require_real_directory(venv_path, purelib)
     _refuse_existing_install(purelib, venv_path)
     members = _validated_members(data, wheel_path.name)
-    _write_members(purelib, members)
-    _write_direct_url(purelib, members, wheel_path, expected)
-    _write_launcher(venv_path, members)
+    version = _pyvenv_version(venv_path)
+    purelib_parts = ("lib", f"python{version[0]}.{version[1]}", "site-packages")
+    _write_members(venv_path, purelib_parts, members)
+    _write_direct_url(venv_path, purelib_parts, members, wheel_path, expected)
+    _write_launcher(venv_path)
 
 
 def _read_bounded(path: Path, limit: int, label: str) -> bytes:
@@ -289,24 +293,136 @@ def _console_scripts(text: str) -> list[tuple[str, str]]:
     return scripts
 
 
-def _write_members(purelib: Path, members: list[tuple[str, bytes]]) -> None:
-    for name, payload in members:
-        dest = purelib.joinpath(*name.split("/"))
+def _dir_open_flags() -> int:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    return flags
+
+
+def _open_anchor(path: Path) -> int:
+    """Open a directory without following its final symlink.
+
+    Later writes use this descriptor. They do not resolve the path again, so
+    replacing a child with a symlink cannot move the write outside.
+    """
+    try:
+        return os.open(os.fspath(path), _dir_open_flags())
+    except OSError as exc:
+        raise InstallRefusal(
+            f"refusing a symlinked or unreadable directory: {path} ({exc})"
+        ) from exc
+
+
+def _open_child_dir(parent_fd: int, name: str, *, create: bool) -> int:
+    if name in {"", ".", ".."} or "/" in name or "\\" in name or "\x00" in name:
+        raise InstallRefusal(f"refusing path component {name!r}")
+    try:
+        return os.open(name, _dir_open_flags(), dir_fd=parent_fd)
+    except FileNotFoundError:
+        if not create:
+            raise InstallRefusal(f"missing directory component: {name}")
         try:
-            dest.relative_to(purelib)
-        except ValueError as exc:
-            raise InstallRefusal(f"refusing to write outside site-packages: {name}") from exc
-        parent = dest.parent
-        if parent.is_symlink() or not _is_under(parent, purelib):
-            raise InstallRefusal(f"refusing to write through a link: {parent}")
-        parent.mkdir(parents=True, exist_ok=True)
-        if parent.is_symlink():
-            raise InstallRefusal(f"destination parent became a link: {parent}")
-        _write_exclusive(dest, payload, 0o644)
+            os.mkdir(name, dir_fd=parent_fd)
+        except OSError as exc:
+            raise InstallRefusal(f"cannot create {name}: {exc}") from exc
+        try:
+            return os.open(name, _dir_open_flags(), dir_fd=parent_fd)
+        except OSError as exc:
+            raise InstallRefusal(f"refusing to follow {name}: {exc}") from exc
+    except OSError as exc:
+        raise InstallRefusal(f"refusing to follow {name}: {exc}") from exc
+
+
+def _walk_dirs(root_fd: int, parts: tuple[str, ...] | list[str], *, create: bool) -> int:
+    fd = os.dup(root_fd)
+    try:
+        for part in parts:
+            nxt = _open_child_dir(fd, part, create=create)
+            os.close(fd)
+            fd = nxt
+        kept = fd
+        fd = -1
+        return kept
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def _write_exclusive_at(parent_fd: int, name: str, payload: bytes, mode: int) -> None:
+    if name in {"", ".", ".."} or "/" in name or "\\" in name or "\x00" in name:
+        raise InstallRefusal(f"refusing path component {name!r}")
+    flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    try:
+        fd = os.open(name, flags, mode, dir_fd=parent_fd)
+    except OSError as exc:
+        raise InstallRefusal(f"refusing to overwrite {name}: {exc}") from exc
+    try:
+        view = payload
+        while view:
+            wrote = os.write(fd, view)
+            if wrote <= 0:
+                raise InstallRefusal(f"short write of {name}")
+            view = view[wrote:]
+        os.lseek(fd, 0, os.SEEK_SET)
+        got = bytearray()
+        while True:
+            chunk = os.read(fd, 1024 * 1024)
+            if not chunk:
+                break
+            got.extend(chunk)
+            if len(got) > len(payload):
+                break
+        if bytes(got) != payload:
+            raise InstallRefusal(f"written bytes do not match the wheel member: {name}")
+    except OSError as exc:
+        raise InstallRefusal(f"cannot write {name}: {exc}") from exc
+    finally:
+        os.close(fd)
+
+
+def _write_tree_file(root_fd: int, parts: list[str], payload: bytes, mode: int) -> None:
+    if len(parts) < 1 or any(part in {"", ".", ".."} for part in parts):
+        raise InstallRefusal(f"refusing to write {parts!r}")
+    parent = os.dup(root_fd)
+    try:
+        for part in parts[:-1]:
+            nxt = _open_child_dir(parent, part, create=True)
+            os.close(parent)
+            parent = nxt
+        _write_exclusive_at(parent, parts[-1], payload, mode)
+    finally:
+        os.close(parent)
+
+
+def _write_members(
+    venv: Path,
+    purelib_parts: tuple[str, ...],
+    members: list[tuple[str, bytes]],
+) -> None:
+    root = _open_anchor(venv)
+    try:
+        pure = _walk_dirs(root, purelib_parts, create=False)
+        try:
+            for name, payload in members:
+                _write_tree_file(pure, name.split("/"), payload, 0o644)
+        finally:
+            os.close(pure)
+    finally:
+        os.close(root)
 
 
 def _write_direct_url(
-    purelib: Path,
+    venv: Path,
+    purelib_parts: tuple[str, ...],
     members: list[tuple[str, bytes]],
     wheel: Path,
     digest: str,
@@ -318,7 +434,6 @@ def _write_direct_url(
         raise InstallRefusal(f"expected one dist-info directory, got {dist_names}")
     if any(name == f"{dist_names[0]}/direct_url.json" for name, _payload in members):
         return
-    dest = purelib / dist_names[0] / "direct_url.json"
     url = Path(os.path.abspath(wheel)).as_uri()
     payload = (
         '{"archive_info":{"hashes":{"sha256":"'
@@ -327,11 +442,18 @@ def _write_direct_url(
         + url
         + '"}\n'
     ).encode("utf-8")
-    _write_exclusive(dest, payload, 0o644)
+    root = _open_anchor(venv)
+    try:
+        pure = _walk_dirs(root, purelib_parts, create=False)
+        try:
+            _write_tree_file(pure, [dist_names[0], "direct_url.json"], payload, 0o644)
+        finally:
+            os.close(pure)
+    finally:
+        os.close(root)
 
 
-def _write_launcher(venv: Path, members: list[tuple[str, bytes]]) -> None:
-    del members
+def _write_launcher(venv: Path) -> None:
     python = venv / "bin" / "python"
     shebang_path = os.path.abspath(python)
     if not shebang_path.startswith("/") or shebang_path.startswith("//"):
@@ -348,41 +470,15 @@ def _write_launcher(venv: Path, members: list[tuple[str, bytes]]) -> None:
             "launcher path is longer than the kernel shebang limit; "
             "refusing to write a shell wrapper"
         )
-    dest = venv / "bin" / "runspecimen"
-    _write_exclusive(dest, shebang + CONSOLE_SCRIPT_BODY, 0o755)
-
-
-def _write_exclusive(path: Path, payload: bytes, mode: int) -> None:
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
+    root = _open_anchor(venv)
     try:
-        fd = os.open(str(path), flags, mode)
-    except OSError as exc:
-        raise InstallRefusal(f"refusing to overwrite {path}: {exc}") from exc
-    try:
-        view = payload
-        while view:
-            wrote = os.write(fd, view)
-            view = view[wrote:]
-    except OSError as exc:
-        raise InstallRefusal(f"cannot write {path}: {exc}") from exc
+        bindir = _walk_dirs(root, ("bin",), create=False)
+        try:
+            _write_exclusive_at(bindir, "runspecimen", shebang + CONSOLE_SCRIPT_BODY, 0o755)
+        finally:
+            os.close(bindir)
     finally:
-        os.close(fd)
-    try:
-        written = path.read_bytes()
-    except OSError as exc:
-        raise InstallRefusal(f"cannot re-read {path}: {exc}") from exc
-    if written != payload:
-        raise InstallRefusal(f"written bytes do not match the wheel member: {path}")
-
-
-def _is_under(path: Path, root: Path) -> bool:
-    try:
-        path.resolve().relative_to(root.resolve())
-    except (OSError, ValueError):
-        return False
-    return True
+        os.close(root)
 
 
 def main(argv: list[str] | None = None) -> int:
