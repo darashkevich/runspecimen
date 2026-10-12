@@ -30,7 +30,7 @@ HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 CANDIDATE_MANIFEST = ROOT / "docs" / "CANDIDATE_MANIFEST.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
-PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-12-qafix25"
+PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-12-qafix26"
 QAFIX11_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-09-qafix11"
 QAFIX10_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix10"
 QAFIX9_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix9"
@@ -256,8 +256,8 @@ class Rc15QaDocfixTests(unittest.TestCase):
         if CANDIDATE_MANIFEST.is_file():
             manifest = CANDIDATE_MANIFEST.read_text(encoding="utf-8")
             self.assertIn("| Candidate (this pass) |", manifest)
-            self.assertIn("qafix23", manifest)
-            self.assertIn("artifacts/0.2.0rc15-2026-10-12-qafix23/", manifest)
+            self.assertIn("qafix26", manifest)
+            self.assertIn("artifacts/0.2.0rc15-2026-10-12-qafix26/", manifest)
         self.assertIn("Homebrew", text)
         self.assertIn("STEP $1 exit=$2", text)
         command_lines = [
@@ -422,7 +422,7 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertRegex(
             result.stdout + result.stderr,
-            r"unsupported shebang|env-based|/usr/bin/env",
+            r"unsupported shebang|env-based|/usr/bin/env|whitespace",
         )
 
     def test_installed_wheel_provenance_accepts_absolute_shebang_with_old_python_on_path(self) -> None:
@@ -652,7 +652,12 @@ class Rc15QaDocfixTests(unittest.TestCase):
             )
             with self.assertRaises(module.UnsupportedShebangError) as ctx:
                 module.interpreter_from_launcher(launcher)
-            self.assertIn("unsupported shebang", str(ctx.exception))
+            # env-based shebang has a space, so it's now refused for whitespace
+            err = str(ctx.exception).lower()
+            self.assertTrue(
+                "unsupported shebang" in err or "whitespace" in err,
+                f"Expected shebang refusal: {ctx.exception}"
+            )
 
     def test_interpreter_from_launcher_accepts_venv_absolute_shebang(self) -> None:
         module = _load_verify_module()
@@ -1043,7 +1048,7 @@ def _acceptance_sheet_script(markdown: str, pack: Path) -> str:
         parts.append(block.rstrip() + "\n")
     script = "".join(parts)
     replaced, count = re.subn(
-        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-12-qafix25"',
+        r'export PACK="\$PWD/artifacts/0\.2\.0rc15-2026-10-12-qafix26"',
         f"export PACK={shlex.quote(str(pack))}",
         script,
         count=1,

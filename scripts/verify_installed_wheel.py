@@ -102,6 +102,7 @@ import errno
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -747,29 +748,50 @@ def interpreter_from_launcher(launcher: Path) -> Path:
             f"launcher {launcher} shebang has no newline within the first 256 bytes; "
             "the kernel would not parse it as a valid interpreter path"
         )
+    # QA24-03: Line 1 must byte-equal b'#!' + path + b'\n' exactly.
+    # The path must be printable ASCII, no spaces, no 'coding:' or 'coding='.
+    # Never decode or strip. Accept only what the kernel and identity check accept.
     shebang_line = data[2:lf_pos]
     if b"\r" in shebang_line:
         raise UnsupportedShebangError(
             f"launcher {launcher} shebang contains a carriage return before the newline; "
             "CR-injection in the shebang line is not accepted"
         )
-    first = shebang_line.decode("utf-8", "replace").strip()
-    if not first:
+    if not shebang_line:
         raise UnsupportedShebangError(
             f"launcher {launcher} has an empty shebang; "
             "env-based and missing shebangs are not accepted"
         )
-    parts = first.split()
-    shebang = Path(parts[0])
+    # QA24-02/03: Refuse coding cookies and non-printable-ASCII paths.
+    # The shebang path must be exactly the bytes after #! and before \n.
+    # No leading/trailing spaces, no arguments, no decoding, no stripping.
+    if b"coding:" in shebang_line or b"coding=" in shebang_line:
+        raise UnsupportedShebangError(
+            f"launcher {launcher} shebang contains a PEP 263 coding cookie pattern; "
+            "encoding-injection in the shebang path is not accepted"
+        )
+    # Refuse any space in the path (would be arguments or padding the kernel interprets).
+    if b" " in shebang_line or b"\t" in shebang_line:
+        raise UnsupportedShebangError(
+            f"launcher {launcher} shebang contains whitespace; "
+            "only an absolute path with no arguments or padding is accepted"
+        )
+    # Refuse non-printable-ASCII bytes (0x00-0x1F except nothing, 0x7F-0xFF).
+    # Printable ASCII is 0x20-0x7E, but we already refused space above, so 0x21-0x7E.
+    for byte in shebang_line:
+        if byte < 0x21 or byte > 0x7E:
+            raise UnsupportedShebangError(
+                f"launcher {launcher} shebang contains non-printable-ASCII byte 0x{byte:02x}; "
+                "only printable ASCII paths are accepted"
+            )
+    # At this point shebang_line is pure printable ASCII bytes (no spaces).
+    # Safe to decode as ASCII for display and Path construction.
+    first = shebang_line.decode("ascii")
+    shebang = Path(first)
     if shebang.name in {"env", "env.exe"} or not shebang.is_absolute():
         raise UnsupportedShebangError(
             f"launcher {launcher} uses unsupported shebang {first!r}; "
             "only an absolute path to the venv's own Python is accepted"
-        )
-    if len(parts) > 1:
-        raise UnsupportedShebangError(
-            f"launcher {launcher} shebang {first!r} has extra interpreter args; "
-            "only an absolute path with no arguments is accepted"
         )
     try:
         shebang.lstat()
@@ -852,6 +874,12 @@ def scan_venv_bin(bin_dir: Path) -> list[str]:
             # python/python3 are expected symlinks; still name-check.
             if not is_allowed_venv_bin_name(name):
                 findings.append(f"unexpected symlink in venv bin: {path}")
+                continue
+            # QA24-01: Refuse symlink whose target is a directory.
+            # Interpreter symlinks point at a regular file (or another symlink to one).
+            # A symlink to a package directory (e.g. runspecimen/) would shadow imports.
+            if path.is_dir():
+                findings.append(f"symlink in venv bin points at a directory: {path}")
             continue
         if path.is_dir() or name == "__pycache__":
             findings.append(f"unexpected directory in venv bin: {path}")
