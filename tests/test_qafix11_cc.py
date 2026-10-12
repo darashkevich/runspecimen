@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import py_compile
@@ -379,8 +380,12 @@ class CC05BytecodeRefusalTests(unittest.TestCase):
         kwargs = {"doraise": True}
         if hash_based:
             kwargs["invalidation_mode"] = py_compile.PycInvalidationMode.UNCHECKED_HASH
-        py_compile.compile(str(cli), **kwargs)
         cache = cli.parent / "__pycache__"
+        cache.mkdir(exist_ok=True)
+        # Xcode CPython redirects the default cache to ~/Library/Caches. The
+        # verifier scans the package tree, so the plant names that file directly.
+        cfile = cache / Path(importlib.util.cache_from_source(str(cli))).name
+        py_compile.compile(str(cli), cfile=str(cfile), **kwargs)
         pycs = list(cache.glob("cli*.pyc"))
         if not pycs:
             raise AssertionError(f"no pyc produced under {cache}")

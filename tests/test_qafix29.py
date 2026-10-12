@@ -291,36 +291,38 @@ class Qa2805BasepyPreVerificationTests(unittest.TestCase):
         text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
 
         in_n2_section = False
+        found = False
         for line in text.split("\n"):
             if "## N2" in line:
                 in_n2_section = True
             elif line.startswith("## N") and in_n2_section:
                 break
-            elif in_n2_section and "pip install" in line:
-                self.assertTrue(
-                    "-I" in line or "isolated" in line.lower(),
-                    f"N2-install should use isolated mode: {line}"
-                )
+            elif in_n2_section and "install_pinned_wheel.py" in line:
+                found = True
+                self.assertIn("basepy", line)
+                self.assertNotIn("pip install", line)
+        self.assertTrue(found, "N2-install should call install_pinned_wheel.py via basepy")
 
 
 class Qa2902DocConsistencyTests(unittest.TestCase):
-    """QA29: HUMAN-ACCEPTANCE.md pack references must be qafix29."""
+    """The sheet names the current pack, and keeps qafix29 as history."""
 
     def test_pack_references_qafix29(self) -> None:
-        """All qafix pack references in HUMAN-ACCEPTANCE.md should be qafix29."""
+        """qafix29 stays in the history list. Identity lines name qafix30."""
         if not HUMAN_ACCEPTANCE.is_file():
             self.skipTest("HUMAN-ACCEPTANCE.md not found")
         text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
 
-        self.assertIn("qafix29", text, "HUMAN-ACCEPTANCE.md should reference qafix29")
+        self.assertIn("qafix29", text, "HUMAN-ACCEPTANCE.md should keep qafix29 in history")
 
         identity_lines = []
         for line in text.split("\n"):
-            if "Candidate pack:" in line or "Pack: `artifacts/" in line:
+            if "Candidate pack:" in line or line.startswith("- Pack: `artifacts/"):
                 identity_lines.append(line)
 
+        self.assertTrue(identity_lines)
         for line in identity_lines:
-            self.assertIn("qafix29", line, f"Identity line should reference qafix29: {line}")
+            self.assertIn("qafix30", line, f"Identity line should reference qafix30: {line}")
 
     def test_export_pack_matches_identity(self) -> None:
         """The export PACK= line should match the identity pack."""
@@ -337,7 +339,7 @@ class Qa2902DocConsistencyTests(unittest.TestCase):
         if export_line is None:
             self.skipTest("export PACK line not found")
 
-        self.assertIn("qafix29", export_line, f"export PACK should use qafix29: {export_line}")
+        self.assertIn("qafix30", export_line, f"export PACK should use qafix30: {export_line}")
 
     def test_backtick_closed_at_line_75(self) -> None:
         """The backtick for /./' at line 75 should be properly closed."""

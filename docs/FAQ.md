@@ -96,12 +96,12 @@ run, or count a model call unless the skipped task was a model judgment. See
 `verify`) deliberately exclude `approve`. A human must run
 `runspecimen approve --workspace … --contract …` in a real terminal.
 
-RunSpecimen stops agents from approving through the app and makes planted or
-edited approvals show up as broken receipts. A program running as you that can
-edit RunSpecimen's files can still add a fake approval to the record. Signing
-with a key the agent can't access lets you check afterwards that a receipt is
-authentic, when a signature is required and checked; it does not stop a program
-running as you from adding a fake approval or running the job.
+RunSpecimen stops agents from approving through the app. Inconsistent edits to
+local records can be detected, but a program that can rewrite those files can
+fabricate consistent evidence. Signing with a key the agent can't access lets
+you check afterwards that a receipt is authentic, when a signature is required
+and checked; it does not stop a program running as you from adding a fake
+approval or running the job.
 
 ## Why does verify fail after I clone the repo?
 

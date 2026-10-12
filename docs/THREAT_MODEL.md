@@ -19,8 +19,10 @@ trusted. The Codex, Cursor, Claude Code, and Grok Build adapters do not expand
 this boundary; they call the
 same CLI and cannot approve through the app.
 
-RunSpecimen stops agents from approving through the app and makes planted or
-edited approvals show up as broken receipts. A program running as you that can
+RunSpecimen stops agents from approving through the app. An inconsistent
+planted or edited approval is detected. Someone who can rewrite the local
+records can still fabricate a consistent record; authenticity requires an
+independently trusted signature that is actually checked. A program running as you that can
 edit RunSpecimen's files can still add a fake approval to the record. Signing
 with a key the agent can't access lets you check afterwards that a receipt is
 authentic, when a signature is required and checked; it does not stop a program
@@ -37,6 +39,17 @@ themselves, prove that:
 
 Those child-process boundaries must be tested and documented before any
 “sandboxed execution” claim.
+
+## Installed-wheel check
+
+The acceptance-sheet check is point-in-time. It authenticates a pinned wheel,
+writes it with the trusted base interpreter (`-I -S`; `-I` alone does not
+disable site startup), and compares the installed tree to that wheel before
+any target-venv command. If it then runs code, it runs a private copy of the
+bytes it already matched, and it does not start that run when those bytes
+have changed. A process running as the same user can still rewrite the live
+environment during or after the check. The check is not persistent execution
+protection and does not create a protected boundary.
 
 ## Explicitly out of scope
 

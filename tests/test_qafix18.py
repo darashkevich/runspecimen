@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shlex
@@ -15,6 +16,7 @@ from pathlib import Path
 
 from tests.test_rc15_qafix_docs import (
     HUMAN_ACCEPTANCE,
+    INSTALL_PINNED,
     VERIFY_INSTALLED,
     _helper_functions,
     _install_and_verify,
@@ -23,7 +25,6 @@ from tests.test_rc15_qafix_docs import (
     _require_zsh,
     _sanitized_env,
     _site_packages,
-    _uninstall_setuptools,
     _venv_launcher,
 )
 
@@ -161,13 +162,15 @@ class Qafix18VerifierTests(unittest.TestCase):
 
     def test_rq1702_sheet_basepy_does_not_execute_venv_python(self) -> None:
         text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
+        venv_line = 'basepy -m venv --without-pip "$VENV"'
+        self.assertNotIn('python3 -m venv "$VENV"', text)
         self.assertLess(
             text.index('_RS_PY3="$(command -v python3)"'),
-            text.index('python3 -m venv "$VENV"'),
+            text.index(venv_line),
         )
         self.assertLess(
             text.index('"$BASE_PY" -I -S "$@"'),
-            text.index('python3 -m venv "$VENV"'),
+            text.index(venv_line),
         )
         basepy_line = next(line for line in text.splitlines() if line.startswith("basepy()"))
         self.assertIn('"$BASE_PY"', basepy_line)
@@ -244,7 +247,7 @@ class Qafix18VerifierTests(unittest.TestCase):
             link.symlink_to(real)
             venv_dir = root / "venv"
             created = subprocess.run(
-                [str(link), "-m", "venv", str(venv_dir)],
+                [str(link), "-I", "-S", "-m", "venv", "--without-pip", str(venv_dir)],
                 check=False,
                 capture_output=True,
                 text=True,
@@ -275,31 +278,32 @@ class Qafix18VerifierTests(unittest.TestCase):
                 raise AssertionError(cfg_path.read_text(encoding="utf-8"))
             cfg_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
             env = _sanitized_env()
-            py = venv_dir / "bin" / "python"
-            _uninstall_setuptools(py, env)
+            digest = hashlib.sha256(pin.read_bytes()).hexdigest()
             install = subprocess.run(
                 [
-                    str(py),
-                    "-m",
-                    "pip",
-                    "install",
-                    "--no-index",
-                    "--no-deps",
-                    "--no-compile",
-                    "--force-reinstall",
+                    sys.executable,
+                    "-I",
+                    "-S",
+                    str(INSTALL_PINNED),
+                    "--wheel",
                     str(pin.resolve()),
+                    "--venv",
+                    str(venv_dir),
+                    "--expected-sha256",
+                    digest,
                 ],
                 check=False,
                 capture_output=True,
                 text=True,
                 env=env,
             )
-            self.assertEqual(install.returncode, 0, install.stderr)
+            self.assertEqual(install.returncode, 0, install.stderr + install.stdout)
             launcher = _venv_launcher(venv_dir)
             result = subprocess.run(
                 [
                     str(real),
                     "-I",
+                    "-S",
                     str(VERIFY_INSTALLED),
                     "--wheel",
                     str(pin.resolve()),

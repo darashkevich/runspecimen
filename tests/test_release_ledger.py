@@ -42,6 +42,44 @@ class HolderStageTests(unittest.TestCase):
                 "compiled holder stage assertions were not run and were not weakened"
             )
 
+    def _bundle_runner_layout_runnable(self, executable: Path) -> bool:
+        """Match the stage script when ``/usr/bin/realpath`` is absent.
+
+        The script then resolves ``@executable_path`` next to the path it was
+        given. A venv symlink into Xcode's Python fails that check. A framework
+        binary whose libraries sit beside it still passes.
+        """
+        linked = subprocess.run(
+            ["/usr/bin/otool", "-L", str(executable)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if linked.returncode != 0:
+            return False
+        directories = [Path(os.path.realpath(str(executable.parent)))]
+        if Path("/usr/bin/realpath").is_file():
+            resolved = subprocess.run(
+                ["/usr/bin/realpath", str(executable)],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if resolved.returncode == 0 and resolved.stdout.strip():
+                directories.append(Path(resolved.stdout.strip()).parent)
+        for raw in linked.stdout.splitlines()[1:]:
+            dep = raw.split(" (", 1)[0].strip()
+            if not dep or dep.endswith(":"):
+                continue
+            if dep.startswith("@executable_path/"):
+                rel = dep[len("@executable_path/") :]
+                if not any((directory / rel).exists() for directory in directories):
+                    return False
+            elif dep.startswith("/") and not dep.startswith(("/usr/lib/", "/System/")):
+                if not Path(dep).exists():
+                    return False
+        return True
+
     def test_dangerous_build_directories_are_not_deleted(self) -> None:
         script = f"""
 set -euo pipefail
@@ -333,6 +371,12 @@ exit $fail
         kind = subprocess.run(["/usr/bin/file", "-b", str(source_exec)], capture_output=True, text=True, timeout=10)
         if "Mach-O" not in kind.stdout:
             self.skipTest("the test interpreter is not a Mach-O payload")
+        if not self._bundle_runner_layout_runnable(Path(sys.executable)):
+            self.skipTest(
+                "bundle runner layout is not runnable for this interpreter; "
+                "the stage script refuses before copying. A framework CPython "
+                "whose @executable_path libraries resolve still runs this test."
+            )
         before = self._live_mtimes()
         with tempfile.TemporaryDirectory(prefix="rs-runtime-src-") as td:
             source = Path(td) / "python3"

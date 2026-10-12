@@ -702,12 +702,53 @@ print(str(package_file))
         raise SystemExit(f"installed identity probe did not report site-packages: {installed}")
 
 
+def trusted_base_executable() -> str:
+    """Base interpreter for venv creation, install, and the static check.
+
+    The process that built the archives may be a tools virtual environment.
+    That environment is not the interpreter the check accepts.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "verify_installed_wheel_base",
+        ROOT / "scripts" / "verify_installed_wheel.py",
+    )
+    if spec is None or spec.loader is None:
+        raise SystemExit("cannot load verify_installed_wheel.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    found = module.base_interpreter()
+    if found is None:
+        raise SystemExit(
+            "release smoke must start the wheel check with the base interpreter; "
+            f"{sys.executable} is a virtual environment and its base was not found"
+        )
+    return str(found)
+
+
 def smoke_install(wheel: Path, source: Path, temp: Path, env: dict[str, str]) -> None:
+    base = trusted_base_executable()
     venv = temp / "venv"
-    run(sys.executable, "-m", "venv", str(venv), cwd=temp, env=env)
+    run(base, "-I", "-S", "-m", "venv", "--without-pip", str(venv), cwd=temp, env=env)
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    installer = ROOT / "scripts" / "install_pinned_wheel.py"
+    verifier = ROOT / "scripts" / "verify_installed_wheel.py"
+    run(
+        base, "-I", "-S", str(installer),
+        "--wheel", str(wheel),
+        "--venv", str(venv),
+        "--expected-sha256", digest,
+        cwd=temp,
+        env=env,
+    )
     python = venv / "bin/python"
     cli = venv / "bin/runspecimen"
-    run(str(python), "-m", "pip", "install", "--no-index", "--no-deps", str(wheel), cwd=temp, env=env)
+    run(
+        base, "-I", "-S", str(verifier),
+        "--wheel", str(wheel),
+        "--launcher", str(cli),
+        cwd=temp,
+        env=env,
+    )
     smoke_env = dict(env, PATH=str(venv / "bin") + os.pathsep + env.get("PATH", ""))
     if smoke_env.get("PYTHONPATH"):
         raise SystemExit("release smoke must run with an empty PYTHONPATH")
@@ -867,11 +908,13 @@ def main(argv: list[str] | None = None) -> int:
     check_versions()
     ensure_build_backend()
     env = offline_env()
-    # Darwin 3.11 with ~711 tests plus two in-suite archive rebuilds can
-    # exceed 300s (PR run 37781319560 timed out on that matrix cell).
+    # Darwin 3.11 with the holder-stage test can pass 600s while still copying
+    # files. Push run 38279619647 timed out there; pull request run 38279624560
+    # finished. 900s is the cap for that progress, not a claim that both runs
+    # were green.
     run(
         sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v",
-        env=env, timeout=600,
+        env=env, timeout=900,
     )
     with tempfile.TemporaryDirectory(prefix="runspecimen-release-") as directory:
         temp = Path(directory)

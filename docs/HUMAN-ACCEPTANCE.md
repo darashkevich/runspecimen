@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-12-qafix29/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-12-qafix30/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-12-qafix29/` (QA28 sheet fixes; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix28/` (sheet fixes; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix27/` (CI-reproducible rebuild; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix26/` (strict shebang; not this sheet),
@@ -41,10 +42,10 @@ Record these identities at the top of your notes before N1 (fill in from this
 machine; N2 prints the full wheel digest):
 
 - Candidate SHA: `git rev-parse HEAD` of this checkout
-- Pack: `artifacts/0.2.0rc15-2026-10-12-qafix29/`
+- Pack: `artifacts/0.2.0rc15-2026-10-12-qafix30/`
 - Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
 - python3: `command -v python3` and `python3 --version`
-- Wheel SHA-256: `3759ea01c7032b2b8f37482fbb32825fdef0508568cd4b505847a9f463c241f8` (must match N2 `wheel_sha256` and pack SHA256SUMS). The `src/` tree changed in qafix24/qafix25 (dashboard.py wording), so this wheel differs from the qafix14–qafix23 wheel. The verifier script in this checkout also changed (CR-injection fix, probe runs only body bytes) and is what N3 runs.
+- Wheel SHA-256: `25c6fa06c194146e5750c0a6c05f7cba2ae7e406512639491d455bcae4b462a5` (must match N2 `wheel_sha256` and pack SHA256SUMS). This is the setuptools 82.0.1 file. Its payload matches the qafix29 wheel `3759ea01…`; the whole-file hash moved with the `WHEEL` Generator line. `src/` was not changed. N3 runs the verifier in this checkout.
 
 You can paste this whole sheet into a fresh macOS Terminal (zsh, the default)
 or into bash. You do not need extra wrappers, and you do not need to turn
@@ -86,8 +87,12 @@ script is refused before it can run. A `.pth` line that names a folder or a zip
 is followed, and those locations are read for `sitecustomize` and `usercustomize`
 in every form Python can import. On Debian, the interpreter's own sitecustomize
 imports another module; a copy of that module in the venv is refused, and the
-probe does not run it. The probe runs the launcher body on the real interpreter
-with site startup turned off, and only after that reading is clean.
+probe does not run it. The probe runs a private copy of the launcher body on the real interpreter
+with site startup turned off, and only after that reading is clean. The copy
+is the bytes that matched the wheel. If those bytes change before the probe
+starts, the probe does not start. This is a point-in-time check. It does not
+stop another process running as you from rewriting the environment during or
+after the check, and it is not persistent execution protection.
 `python -m runspecimen` from an untrusted cwd is not a supported verified
 path; this sheet only invokes the absolute launcher. The venv's `activate`,
 `activate.csh`, `activate.fish`, and related shell scripts are outside the
@@ -107,8 +112,10 @@ as they are; do not go back and invent exit codes that were not printed then.
 ## N1 — brand-new venv (abort if the target already exists)
 
 Paste this first. It remembers the pack path and defines four tiny helpers.
-`rs` and `py` always use the venv copies, with a clean Python environment.
-`basepy` is only for the provenance script. It runs the real program recorded
+`rs` is the absolute launcher. `py` is defined so an old paste cannot silently
+call a different program, and this sheet does not call it. `basepy` is the
+trusted interpreter for the venv, the installer, the provenance script, and
+JSON edits. It runs the real program recorded
 in `BASE_PY`: the absolute file `python3` itself reports, not a shell
 function, an alias, or a path that is not a real program. It does not follow
 `$PY`, and it does not run anything inside the venv or anything `$PY` points
@@ -119,7 +126,7 @@ refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
 Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix29"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix30"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 _RS_PY3="$(command -v python3)"
 case "$_RS_PY3" in
@@ -165,21 +172,18 @@ rs_ok N1-venv-absent $?
 ```
 
 ```
-python3 -m venv "$VENV"
+basepy -m venv --without-pip "$VENV"
 rs_ok N1-venv $?
 ```
 
-```
-rm -rf "$VENV"/lib/python*/site-packages/setuptools* "$VENV"/lib/python*/site-packages/_distutils_hack "$VENV"/lib/python*/site-packages/distutils-precedence.pth 2>/dev/null || true
-rs_ok N1-setuptools $?
-```
-
-The only bare `python3` on this sheet is the `venv` line above, which creates
-the venv. After it, do not call `python3` or `runspecimen`. `test ! -e "$VENV"`
-must run before `venv`; a leftover directory is an abort, not an upgrade.
-Remove setuptools before the wheel so `distutils-precedence.pth` and the
-`_distutils_hack` shim are gone. Python 3.12+ venvs do not ship setuptools;
-the removal is then a no-op and still prints `STEP N1-setuptools exit=0`.
+The venv is created by `BASE_PY` with `-I -S` and `--without-pip`. That does
+not run a second interpreter inside the new venv, and it does not install
+pip or setuptools. Do not remove files from a venv you did not just create,
+and do not continue if `$VENV` already exists. There is no cleanup command:
+a glob such as `setuptools*` can walk a symlinked ancestor, zsh can reject
+an unmatched glob, and `|| true` would hide that failure. A reused or
+partial directory is an abort. After this step, do not call `python3`,
+`"$PY"`, or `runspecimen` until N3-verify has printed `STEP N3-verify exit=0`.
 
 ## N2 — hash the pinned wheel, then install only that file
 
@@ -189,15 +193,18 @@ rs_ok N2-hash $?
 ```
 
 ```
-"$PY" -I -m pip install --no-index --no-deps --force-reinstall --no-compile "$WHEEL"
+basepy "$PWD/scripts/install_pinned_wheel.py" --wheel "$WHEEL" --venv "$VENV" --expected-sha256 "$(awk -v name="$(basename "$WHEEL")" '$2==name {print $1; exit}' "$PACK/SHA256SUMS")"
 rs_ok N2-install $?
 ```
 
-The N2-hash step uses `basepy` (not `py`) because the hash check only needs the
-standard library. The N2-install step uses `"$PY" -I` (isolated mode) because
-pip needs site-packages but `-I` prevents user site-packages and ignores
-`PYTHON*` environment variables. Do not use the `py` helper before N3; it runs
-the venv Python which could execute site hooks before the verifier runs.
+N2-hash and N2-install both use `basepy`, which is `BASE_PY` with `-I -S`.
+`-I` alone does not turn site startup off. The installer authenticates the
+pinned wheel before it writes, refuses links, traversal, duplicates, and
+overwrites, and writes only inside the new venv. It does not execute the
+venv's Python or pip, and it does not import the wheel to choose a path.
+Do not use the `py` helper on this sheet. JSON edits below use `basepy` too.
+The first execution of the installed launcher is `rs --version`, and only
+after N3-verify has succeeded.
 
 Do not upgrade pip in this venv. Do not install from PyPI or another path.
 `--no-compile` and `PYTHONDONTWRITEBYTECODE=1` keep bytecode off the hashed
@@ -247,7 +254,7 @@ an executable `import` line (any name or owner, including leftover setuptools
 `distutils-precedence.pth` / DistutilsMetaFinder), a `.pth` file that is not plain ASCII text, a `.pth` line with a leading or trailing space, any importable
 sitecustomize or usercustomize that is not the interpreter's own stdlib, any
 non-stdlib `sys.meta_path` or `sys.path_hooks` entry after startup, and any
-`_virtualenv*`. This sheet uses stdlib `python3 -m venv`, which creates none.
+`_virtualenv*`. This sheet uses stdlib `venv --without-pip`, which creates none.
 A stdlib finder is identified by its class living in a stdlib module whose
 realpath is under the interpreter's stdlib dir, not by name.
 There is no RECORD-based trust of `_distutils_hack`. The script prints the
@@ -267,7 +274,7 @@ rs_ok N4 $?
 ```
 
 ```
-py -c "import json, os, pathlib; p=pathlib.Path(os.environ['WS'])/'contract.json'; doc=json.loads(p.read_text()); doc['campaign_id']=os.environ['CAMPAIGN_ID']; doc['run_id']=os.environ['RUN_ID']; p.write_text(json.dumps(doc, indent=2)+'\n')"
+basepy -c "import json, os, pathlib; p=pathlib.Path(os.environ['WS'])/'contract.json'; doc=json.loads(p.read_text()); doc['campaign_id']=os.environ['CAMPAIGN_ID']; doc['run_id']=os.environ['RUN_ID']; p.write_text(json.dumps(doc, indent=2)+'\n')"
 rs_ok N4-ids $?
 ```
 
@@ -340,7 +347,7 @@ _rs_out=$(rs verify --workspace "$WS" --contract "$WS/contract.json" --campaign-
 printf '%s\n' "$_rs_out"
 rs_ok N9-verify "$_rs_n"
 printf '%s\n' "$_rs_out" > "$WORK/verify.json"
-py -c "import json, os, pathlib; v=json.loads(pathlib.Path(os.environ['WORK']).joinpath('verify.json').read_text()); c=json.loads((pathlib.Path(os.environ['WS'])/'.runspecimen'/'runs'/os.environ['CAMPAIGN_ID']/os.environ['RUN_ID']/'certificate.json').read_text()); print('certificate_id', v.get('certificate_id')); print('event_chain', v.get('event_chain')); print('confirm_channel', v.get('confirm_channel')); print('approval_expires_at_unix', c.get('approval_expires_at_unix')); print('schema_version', c.get('schema_version')); print('live_ok', v.get('ok'))"
+basepy -c "import json, os, pathlib; v=json.loads(pathlib.Path(os.environ['WORK']).joinpath('verify.json').read_text()); c=json.loads((pathlib.Path(os.environ['WS'])/'.runspecimen'/'runs'/os.environ['CAMPAIGN_ID']/os.environ['RUN_ID']/'certificate.json').read_text()); print('certificate_id', v.get('certificate_id')); print('event_chain', v.get('event_chain')); print('confirm_channel', v.get('confirm_channel')); print('approval_expires_at_unix', c.get('approval_expires_at_unix')); print('schema_version', c.get('schema_version')); print('live_ok', v.get('ok'))"
 rs_ok N9-cert-fields $?
 ```
 
@@ -360,7 +367,7 @@ string means an older install was invoked. No prompt.
 export WS10="/tmp/rs-ha-rc15-n10-$$"
 rs init-demo --workspace "$WS10"
 rs_ok N10-init $?
-py -c "import json, os, pathlib; p=pathlib.Path(os.environ['WS10'])/'contract.json'; doc=json.loads(p.read_text()); doc['execution_approval']='local'; p.write_text(json.dumps(doc, indent=2)+'\n')"
+basepy -c "import json, os, pathlib; p=pathlib.Path(os.environ['WS10'])/'contract.json'; doc=json.loads(p.read_text()); doc['execution_approval']='local'; p.write_text(json.dumps(doc, indent=2)+'\n')"
 rs_ok N10-edit $?
 ```
 
@@ -381,7 +388,7 @@ Expected: `contract contains unknown field(s): not_a_real_contract_field`.
 export WSUNK="/tmp/rs-ha-rc15-unk-$$"
 rs init-demo --workspace "$WSUNK"
 rs_ok UNK-init $?
-py -c "import json, os, pathlib; p=pathlib.Path(os.environ['WSUNK'])/'contract.json'; doc=json.loads(p.read_text()); doc['not_a_real_contract_field']=True; p.write_text(json.dumps(doc, indent=2)+'\n')"
+basepy -c "import json, os, pathlib; p=pathlib.Path(os.environ['WSUNK'])/'contract.json'; doc=json.loads(p.read_text()); doc['not_a_real_contract_field']=True; p.write_text(json.dumps(doc, indent=2)+'\n')"
 rs_ok UNK-edit $?
 ```
 
@@ -404,8 +411,8 @@ every loaded `runspecimen.*` origin bound to the hashed installed member
 installed-file comparison, installed `RECORD` and `direct_url.json`,
 the pinned launcher template (`console_script_target` `runspecimen.cli:main`),
 no unexpected files in `$VENV/bin`, `loaded_module_origins` from a
-base-interpreter probe of the pinned body with startup disabled (each origin
-under stdlib or a hash-verified wheel file), no bytecode under the installed
+base-interpreter probe of a private copy of the pinned body with startup disabled
+(each origin under stdlib or that private copy), no bytecode under the installed
 package, `STEP N3-verify exit=0`, `STEP N3-version exit=0`, and no import
 overrides
 (`PYTHONPATH` / `PYTHONHOME` / `PYTHONSTARTUP` / `PYTHONPYCACHEPREFIX` unset,

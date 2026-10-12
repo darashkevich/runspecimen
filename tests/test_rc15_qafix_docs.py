@@ -30,6 +30,7 @@ HUMAN_ACCEPTANCE = ROOT / "docs" / "HUMAN-ACCEPTANCE.md"
 CANDIDATE_MANIFEST = ROOT / "docs" / "CANDIDATE_MANIFEST.md"
 PLUGIN_README = ROOT / "plugins" / "runspecimen" / "README.md"
 VERIFY_INSTALLED = ROOT / "scripts" / "verify_installed_wheel.py"
+INSTALL_PINNED = ROOT / "scripts" / "install_pinned_wheel.py"
 PIN_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-12-qafix28"
 QAFIX11_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-09-qafix11"
 QAFIX10_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix10"
@@ -120,7 +121,9 @@ def _python_for_installed_check(test: unittest.TestCase) -> str:
 
     candidate = sys.executable
     if sys.prefix != sys.base_prefix or looks_like_venv(candidate):
-        candidate = str(getattr(sys, "_base_executable", "") or "")
+        module = _load_verify_module()
+        found = module.base_interpreter()
+        candidate = str(found) if found is not None else ""
     if not candidate or not os.path.isfile(candidate) or looks_like_venv(candidate):
         test.skipTest(
             "the suite interpreter is a virtual environment and its base "
@@ -189,7 +192,12 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("mktemp -d", text)
         self.assertIn('test ! -e "$VENV"', text)
         self.assertIn("0.2.0rc15-2026-10-12-qafix23", text)
-        self.assertIn("--no-index --no-deps --force-reinstall --no-compile", text)
+        self.assertIn("scripts/install_pinned_wheel.py", text)
+        self.assertIn("--without-pip", text)
+        self.assertIn("--expected-sha256", text)
+        fences = "\n".join(re.findall(r"```(?:bash|sh)?\n(.*?)```", text, flags=re.S))
+        self.assertNotIn("|| true", fences)
+        self.assertNotIn("setuptools*", fences)
         self.assertIn("scripts/verify_installed_wheel.py", text)
         self.assertIn("--launcher", text)
         self.assertIn("wheel_sha256", text)
@@ -212,13 +220,10 @@ class Rc15QaDocfixTests(unittest.TestCase):
         self.assertIn("_virtualenv*", text)
         self.assertIn("DistutilsMetaFinder", text)
         self.assertIn("distutils-precedence.pth", text)
-        self.assertTrue(
-            '"$PY" -m pip uninstall -y setuptools' in text or
-            'rm -rf "$VENV"/lib/python*/site-packages/setuptools' in text,
-            "N1 should remove setuptools (via pip uninstall or rm -rf)"
-        )
-        self.assertIn("N1-setuptools", text)
-        self.assertIn("stdlib `python3 -m venv`", text)
+        self.assertNotIn("N1-setuptools", text)
+        self.assertIn("stdlib `venv --without-pip`", text)
+        self.assertIn("point-in-time", text)
+        self.assertNotIn('"$PY" -I -m pip install', text)
         self.assertIn("CAMPAIGN_ID", text)
         self.assertIn("RUN_ID", text)
         self.assertIn("cannot qualify this changed lifecycle", text)
@@ -280,8 +285,8 @@ class Rc15QaDocfixTests(unittest.TestCase):
         for line in command_lines:
             self.assertNotIn(" #", line, f"trailing comment on command line: {line}")
             self.assertNotRegex(line, r"(^|\s)runspecimen\s", "bare runspecimen on a command line")
-            if "python3" in line:
-                self.assertIn("python3 -m venv", line)
+            self.assertNotIn("python3 -m venv", line)
+            self.assertNotIn('"$PY"', line)
 
     def test_human_acceptance_n3_fails_when_launcher_is_missing(self) -> None:
         if not HUMAN_ACCEPTANCE.is_file():
@@ -746,7 +751,6 @@ class Rc15QaDocfixTests(unittest.TestCase):
                 "N1-wheel",
                 "N1-venv-absent",
                 "N1-venv",
-                "N1-setuptools",
                 "N2-hash",
                 "N2-install",
                 "N3-version",
@@ -1114,10 +1118,16 @@ def _sanitized_env() -> dict[str, str]:
 
 
 def _plant_older_tree(py: Path, venv_dir: Path, older_wheel: Path, env: dict[str, str]) -> Path:
+    """Install a side tree with the test interpreter.
+
+    ``py`` is the pip-free target venv. Using it would execute that environment.
+    The side tree is not the admitted install.
+    """
+    del py
     target = venv_dir / "older"
     planted = subprocess.run(
         [
-            str(py),
+            sys.executable,
             "-m",
             "pip",
             "install",
@@ -1493,14 +1503,14 @@ def _symlink_approve_older_bytes(hook: _ProvHook) -> None:
 
 
 def _site_packages(py: Path, env: dict[str, str]) -> Path:
-    result = subprocess.run(
-        [str(py), "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
-        check=True,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    return Path(result.stdout.strip()).resolve()
+    del env
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("install_pinned_wheel", INSTALL_PINNED)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.venv_purelib(py.parent.parent)
 
 
 def _uninstall_setuptools(py: Path, env: dict[str, str]) -> None:
@@ -1518,20 +1528,28 @@ def _uninstall_setuptools(py: Path, env: dict[str, str]) -> None:
 def _create_venv_and_install(venv_dir: Path, wheel: Path, env: dict[str, str]) -> Path:
     if venv_dir.exists():
         raise AssertionError(f"venv target already exists: {venv_dir}")
-    venv.create(venv_dir, with_pip=True, symlinks=True)
-    py = _venv_python(venv_dir)
-    _uninstall_setuptools(py, env)
+    created = subprocess.run(
+        [sys.executable, "-I", "-S", "-m", "venv", "--without-pip", str(venv_dir)],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if created.returncode != 0:
+        raise AssertionError(f"venv --without-pip failed: {created.stderr}")
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
     install = subprocess.run(
         [
-            str(py),
-            "-m",
-            "pip",
-            "install",
-            "--no-index",
-            "--no-deps",
-            "--no-compile",
-            "--force-reinstall",
+            sys.executable,
+            "-I",
+            "-S",
+            str(INSTALL_PINNED),
+            "--wheel",
             str(wheel.resolve()),
+            "--venv",
+            str(venv_dir),
+            "--expected-sha256",
+            digest,
         ],
         check=False,
         capture_output=True,
@@ -1539,8 +1557,8 @@ def _create_venv_and_install(venv_dir: Path, wheel: Path, env: dict[str, str]) -
         env=env,
     )
     if install.returncode != 0:
-        raise AssertionError(f"pip install failed: {install.stderr}")
-    return py
+        raise AssertionError(f"pinned install failed: {install.stderr}")
+    return _venv_python(venv_dir)
 
 
 def _base_interpreter(venv_dir: Path) -> Path:
@@ -1623,6 +1641,7 @@ def _install_and_verify(
             [
                 str(base),
                 "-I",
+                "-S",
                 str(VERIFY_INSTALLED),
                 "--wheel",
                 str(pin_wheel.resolve()),

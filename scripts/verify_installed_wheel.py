@@ -12,7 +12,13 @@ extra startup code.
 Trusted-interpreter assumption: this helper trusts **only the Python
 interpreter and its stdlib**. It is not a promise to resist arbitrary
 replacement of Python, of this verifier script, or of the operator's own
-decision to run a different interpreter. Venv-local metadata is not trust:
+decision to run a different interpreter. The check is point-in-time. It does
+not stop another same-user process from rewriting the venv during or after
+the check, and it is not persistent execution protection. When the check
+later runs code, it runs a private copy of the bytes it already matched to
+the wheel, and it refuses without running them if those bytes changed. That
+still does not freeze the live venv for a later command. Venv-local metadata
+is not trust:
 setuptools RECORD does not hash itself (``RECORD,,``) and is writable by the
 same attacker who can replace ``_distutils_hack``. Any trust anchored in
 venv-local metadata is attacker-controlled.
@@ -103,6 +109,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -984,6 +991,10 @@ def scan_venv_bin(bin_dir: Path) -> list[str]:
                         )
                     if stem.startswith("pip"):
                         _check_pip_body(resolved, findings)
+                        findings.append(
+                            "unnecessary executable in venv bin: "
+                            f"{path} (a verified environment is pip-free)"
+                        )
             continue
         if path.is_dir() or name == "__pycache__":
             findings.append(f"unexpected directory in venv bin: {path}")
@@ -1007,7 +1018,109 @@ def scan_venv_bin(bin_dir: Path) -> list[str]:
             # QA28-01: Also check pip* body templates for regular files.
             if stem.startswith("pip"):
                 _check_pip_body(path, findings)
+                findings.append(
+                    "unnecessary executable in venv bin: "
+                    f"{path} (a verified environment is pip-free)"
+                )
     return findings
+
+
+def selected_interpreter_findings(bin_dir: Path, base: Path) -> list[str]:
+    """Refuse a launcher whose shebang interpreter is not the trusted base.
+
+    An accepted file name or console-script template is not interpreter
+    identity. pip* and runspecimen* launchers, including symlinks, must select
+    a venv interpreter that is the base file or a byte-for-byte copy of it.
+    This walk does not execute the interpreter.
+    """
+    if not bin_dir.is_dir():
+        return []
+    findings: list[str] = []
+    try:
+        base_digest = sha256_file(base)
+    except OSError as exc:
+        return [f"cannot read the base interpreter {base}: {exc}"]
+    try:
+        entries = sorted(bin_dir.iterdir(), key=lambda item: item.name.lower())
+    except OSError as exc:
+        return [f"cannot list venv bin directory {bin_dir}: {exc}"]
+    for path in entries:
+        stem = path.name[:-4] if path.name.endswith(".exe") else path.name
+        if stem != "runspecimen" and not stem.startswith("pip") and not stem.startswith("runspecimen"):
+            continue
+        final, walk_error = _final_regular_file(path)
+        if walk_error or final is None:
+            findings.append(walk_error or f"launcher {path.name} is not a regular file")
+            continue
+        try:
+            selected = interpreter_from_launcher(final)
+        except (OSError, UnsupportedShebangError) as exc:
+            findings.append(f"launcher {path.name} does not select the trusted base: {exc}")
+            continue
+        resolved, selected_error = _final_regular_file(selected)
+        if selected_error or resolved is None:
+            findings.append(
+                selected_error
+                or f"launcher {path.name} selects an interpreter that is not a regular file"
+            )
+            continue
+        try:
+            same = _same_file(resolved, base)
+        except OSError:
+            same = False
+        if same:
+            continue
+        try:
+            copied = sha256_file(resolved) == base_digest
+        except OSError:
+            copied = False
+        if not copied:
+            findings.append(
+                f"launcher {path.name} selects {selected}, which is not the trusted "
+                f"base interpreter {base}"
+            )
+    return findings
+
+
+def capture_member_bytes(site: Path, members: list[str]) -> tuple[dict[str, bytes] | None, str | None]:
+    """Read the files the wheel check just hashed. Do not import them."""
+    captured: dict[str, bytes] = {}
+    for member in members:
+        path = site / member
+        try:
+            captured[member] = path.read_bytes()
+        except OSError as exc:
+            return None, f"cannot read checked file {path}: {exc}"
+    return captured, None
+
+
+def changed_member(site: Path, captured: dict[str, bytes]) -> str | None:
+    """Return a reason when the live tree no longer matches the checked bytes."""
+    for member, data in captured.items():
+        path = site / member
+        try:
+            got = path.read_bytes()
+        except OSError as exc:
+            return f"checked bytes unreadable before execution: {path} ({exc})"
+        if got != data:
+            return f"checked bytes changed before execution: {path}"
+    return None
+
+
+def write_private_site(root: Path, captured: dict[str, bytes]) -> Path:
+    """Materialize checked bytes where the probe will import them."""
+    site = root / "site-packages"
+    site.mkdir(parents=True)
+    for member, data in captured.items():
+        parts = Path(member).parts
+        if not parts or any(part in {"", ".", ".."} for part in parts):
+            raise RuntimeError(f"refusing to materialize {member}")
+        dest = site.joinpath(*parts)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        if dest.read_bytes() != data:
+            raise RuntimeError(f"private copy does not match checked bytes: {member}")
+    return site
 
 
 def scan_package_bytecode(package_dir: Path) -> list[str]:
@@ -1069,6 +1182,7 @@ def probe_launcher_doctor(
     *,
     base: Path,
     extra_paths: list[Path],
+    expected_body: bytes | None = None,
 ) -> dict[str, Any]:
     """Run the known launcher body on the verified base interpreter.
 
@@ -1082,6 +1196,10 @@ def probe_launcher_doctor(
     """
     launcher_data = launcher.read_bytes()
     body = launcher_body_after_shebang(launcher_data)
+    if expected_body is not None and body != expected_body:
+        raise RuntimeError(
+            "launcher body changed after the check; the probe was not started"
+        )
     script = (
         "import runpy, sys\n"
         "from pathlib import Path\n"
@@ -1097,6 +1215,11 @@ def probe_launcher_doctor(
         workspace.mkdir()
         body_file = Path(raw) / "body.py"
         body_file.write_bytes(body)
+        if body_file.read_bytes() != body:
+            raise RuntimeError(
+                "private launcher body does not match the checked bytes; "
+                "the probe was not started"
+            )
         result = subprocess.run(
             [
                 str(base),
@@ -1793,6 +1916,49 @@ def running_interpreter_problem() -> str | None:
         "This check was started with a virtual environment's Python. "
         "Start it with the base Python, using -I -S, so site hooks do not run."
     )
+
+
+def base_interpreter() -> Path | None:
+    """The interpreter that may start this check.
+
+    A tools virtual environment is not that interpreter. ``sys._base_executable``
+    stays inside the venv when ``bin/python`` is a symlink, so the home line in
+    ``pyvenv.cfg`` is the name to use.
+    """
+    current = Path(sys.executable)
+    try:
+        if sys.prefix == sys.base_prefix and _pyvenv_cfg_above(current) is None:
+            return current
+    except OSError:
+        return None
+    cfg = Path(sys.prefix) / "pyvenv.cfg"
+    home = ""
+    version = ""
+    if cfg.is_file():
+        for raw in cfg.read_text(encoding="utf-8").splitlines():
+            if "=" not in raw:
+                continue
+            key, value = (part.strip() for part in raw.split("=", 1))
+            if key == "home":
+                home = value
+            elif key == "version":
+                version = value
+    names: list[str] = []
+    parts = version.split(".")
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+        names.append(f"python{parts[0]}.{parts[1]}")
+    names.extend(("python3", "python"))
+    candidates: list[Path] = [Path(home) / name for name in names] if home else []
+    explicit = getattr(sys, "_base_executable", "") or ""
+    if explicit:
+        candidates.append(Path(explicit))
+    for candidate in candidates:
+        try:
+            if candidate.is_file() and _pyvenv_cfg_above(candidate) is None:
+                return candidate
+        except OSError:
+            return None
+    return None
 
 
 def _interpreter_names_for_home(base: Path, executable: str) -> list[str]:
@@ -2698,6 +2864,7 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
     report["pth_findings"] = pth_findings
     report["bytecode_findings"] = bytecode_findings
     bin_findings = list(bin_findings) + scan_venv_interpreters(resolved_launcher.parent, base)
+    bin_findings.extend(selected_interpreter_findings(resolved_launcher.parent, base))
     report["bin_findings"] = bin_findings
     target = console_script_target(resolved_launcher)
     report["console_script_target"] = target
@@ -2726,46 +2893,89 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
     )
 
     # --- probe phase: only after a clean static phase ---
+    # The probe imports a private copy of the bytes matched to the wheel.
+    # It does not import the live venv tree. A same-user rewrite of that live
+    # tree during or after this check is still possible; this is not a
+    # persistent execution boundary.
     launcher_module_findings: list[str] = []
     loaded_module_origins: dict[str, Any] = {}
     origins: dict[str, Any] | None = None
     bind_error: str | None = "effective origins were not probed"
     bound = False
+    probe_site = site
+    probe_package = package_dir
+    snapshot_dir: str | None = None
+    report["probe_executed_private_copy"] = False
+    if package_dir is not None:
+        report["installed_package_dir"] = str(package_dir)
     if not static_blocked and package_dir is not None and site is not None:
-        try:
-            doctor = probe_launcher_doctor(
-                resolved_launcher,
-                env,
-                base=base,
-                extra_paths=[site],
-            )
-            loaded_module_origins = dict(doctor.get("loaded_module_origins") or {})
-            launcher_module_findings = launcher_module_origin_findings(
-                loaded_module_origins or None,
-                stdlib_roots=stdlib_roots,
-                hashed_files=hashed_files,
-                launcher=resolved_launcher,
-                venv_prefix=venv_root,
-                exclusions=exclusions,
-            )
-        except (RuntimeError, json.JSONDecodeError, KeyError, TypeError) as exc:
-            launcher_module_findings = [str(exc)]
-        try:
-            origins = probe_effective_origins(
-                base,
-                env,
-                trusted_stdlib=stdlib_roots,
-                exclusions=exclusions,
-                extra_paths=[site],
-            )
-        except (RuntimeError, json.JSONDecodeError, KeyError) as exc:
-            origins = None
-            bind_error = str(exc)
+        captured, capture_error = capture_member_bytes(site, [str(member) for member in hashed_members])
+        changed = changed_member(site, captured) if captured is not None else None
+        if capture_error or captured is None:
+            bind_error = capture_error or "checked bytes were not captured"
+        elif changed:
+            bind_error = changed + "; probe not started"
+        else:
+            try:
+                expected_body = launcher_body_after_shebang(resolved_launcher.read_bytes())
+            except OSError as exc:
+                expected_body = b""
+                bind_error = f"launcher unreadable before probe: {exc}"
+            else:
+                snapshot_dir = tempfile.mkdtemp(prefix="rs-verify-copy-")
+                try:
+                    probe_site = write_private_site(Path(snapshot_dir), captured)
+                    drifted = changed_member(probe_site, captured)
+                    if drifted:
+                        bind_error = drifted + "; probe not started"
+                        probe_site = None
+                except (OSError, RuntimeError) as exc:
+                    bind_error = str(exc)
+                    probe_site = None
+                if probe_site is not None:
+                    probe_package = probe_site / "runspecimen"
+                    report["verified_package_dir"] = str(probe_package)
+                    snap_hashed = {
+                        (probe_site / member).resolve()
+                        for member in hashed_members
+                        if (probe_site / member).is_file()
+                    }
+                    try:
+                        doctor = probe_launcher_doctor(
+                            resolved_launcher,
+                            env,
+                            base=base,
+                            extra_paths=[probe_site],
+                            expected_body=expected_body,
+                        )
+                        loaded_module_origins = dict(doctor.get("loaded_module_origins") or {})
+                        launcher_module_findings = launcher_module_origin_findings(
+                            loaded_module_origins or None,
+                            stdlib_roots=stdlib_roots,
+                            hashed_files=snap_hashed,
+                            launcher=resolved_launcher,
+                            venv_prefix=venv_root,
+                            exclusions=exclusions,
+                        )
+                        report["probe_executed_private_copy"] = True
+                    except (RuntimeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+                        launcher_module_findings = [str(exc)]
+                    try:
+                        origins = probe_effective_origins(
+                            base,
+                            env,
+                            trusted_stdlib=stdlib_roots,
+                            exclusions=exclusions,
+                            extra_paths=[probe_site],
+                        )
+                    except (RuntimeError, json.JSONDecodeError, KeyError) as exc:
+                        origins = None
+                        bind_error = str(exc)
     report["loaded_module_origins"] = loaded_module_origins
     report["launcher_module_findings"] = launcher_module_findings
 
     # --- evidence / verdict ---
-    if origins is not None and package_dir is not None and site is not None:
+    if origins is not None and probe_package is not None and probe_site is not None:
         rs_file = Path(origins["runspecimen_file"])
         cli_file = Path(origins["cli_file"])
         report["runspecimen_file"] = str(rs_file)
@@ -2786,8 +2996,8 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         bound, bind_error = origins_bound_to_package(
             runspecimen_file=rs_file,
             cli_file=cli_file,
-            package_dir=package_dir,
-            site_packages=site,
+            package_dir=probe_package,
+            site_packages=probe_site,
             loaded=merged,
             hashed_py_members=hashed_py_members,
         )
@@ -2833,7 +3043,7 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
         )
     if bin_findings:
         failures.append(
-            "venv bin contains files that python -m venv plus pip plus this "
+            "venv bin contains files that python -m venv --without-pip plus this "
             "wheel do not create: " + "; ".join(bin_findings)
         )
     if launcher_module_findings:
@@ -2877,6 +3087,8 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
     elif site is None and not pyvenv_findings and not layout_error:
         failures.append("installed tree does not match the pinned wheel")
 
+    if snapshot_dir is not None:
+        shutil.rmtree(snapshot_dir, ignore_errors=True)
     if failures:
         report["ok"] = False
         report["message"] = "; ".join(failures)
@@ -2884,8 +3096,9 @@ def verify_launcher_install(*, wheel: Path, launcher: Path | None) -> dict[str, 
     report["ok"] = True
     report["message"] = (
         f"installed tree matches wheel {report['wheel_sha256']} "
-        f"({report['checked']} files); origins bound to {package_dir}; "
-        "no import overrides"
+        f"({report['checked']} files); probe ran a private copy of those bytes "
+        f"from {probe_package}; this check is point-in-time and does not stop a "
+        "same-user rewrite of the live environment; no import overrides"
     )
     return report
 
@@ -2921,6 +3134,8 @@ def main(argv: list[str] | None = None) -> int:
             "wheel_sha256",
             "site_packages",
             "verified_package_dir",
+            "installed_package_dir",
+            "probe_executed_private_copy",
             "launcher",
             "interpreter",
             "prefix",

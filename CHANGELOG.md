@@ -4,6 +4,8 @@
 
 These notes describe source on the unpublished candidate. They are not a public release.
 
+- The acceptance sheet creates a pip-free venv with the trusted base interpreter (`-I -S`) and installs the pinned wheel with a stdlib installer. It does not run the target venv's Python or pip before verification, and it does not delete setuptools with a glob. The wheel check is point-in-time: a same-user rewrite during or after the check is not blocked. qafix30 pack.
+
 - RQ21-01 and RQ21-02: a `.pth` file is refused unless every byte is printable ASCII or a newline. A CRLF pair is a newline. A lone CR is not. A byte-order mark, a non-ASCII name, and a character that can split a line are refused before the line is read. `pyvenv.cfg` uses the same rule, except that `home`, `executable`, and `command` may contain ordinary non-ASCII path characters. qafix22 pack.
 - RQ21-03: a `.pth` file that is not a regular file, including a FIFO, is refused before it is opened. A path named by a `.pth` line is treated the same way. qafix22 pack.
 - RQ20-01: a `.pth` line with leading or trailing whitespace, or a control character, is refused in plain English. This check does not strip the line and look at a different directory. qafix21 pack.
