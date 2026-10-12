@@ -23,16 +23,18 @@ Pack `artifacts/0.2.0rc15-2026-10-12-qafix32/`. Built by Xcode CPython 3.9.6, se
 | File | SHA-256 |
 | --- | --- |
 | `runspecimen-0.2.0rc15-py3-none-any.whl` | `d9d0c9dfc978beb29ac34901d788e647812d3f663c703281da35d2172ac4f048` |
-| `runspecimen-0.2.0rc15.tar.gz` | `bb86f1a161c6654faedb874c6222caa3eae201fcf066afdfc1fc6374c20e5ac1` |
+| `runspecimen-0.2.0rc15.tar.gz` | `7abe59f54e974140e305f3b31f24767ca078eaafe0b606c26f606cb1ece9e63b` |
 | `runspecimen-plugin-0.2.0-rc.15.zip` | `ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb` |
-| `release-report.json` | `b420c546c9d9612b22fd351bdd4106ae6f39da517bc06140eb10c1e54a998452` |
-| `SHA256SUMS` | `46e00221bdd5bf48ad6221485a99a5eb4e9624269760da1e22884281bb7ab478` |
+| `release-report.json` | `b1b08fe4846d4be9f18e2e1e0ee58051607f88e256349e69ffda1229c9d63968` |
+| `SHA256SUMS` | `dd8b9d3057b060910476f683baf358b03c151ccf39c41267ad05eed8a18cc593` |
 
 `shasum -a 256 -c SHA256SUMS` matched. A second build of the same tree reproduced the wheel and the sdist. The plugin is byte-identical to qafix31 (`cmp`). qafix31 was not overwritten.
 
 Local `release_check.py --output-dir /tmp/rs-qafix32-out` exited 0: 938 tests, 36 skipped, 0 failed, then 4 distribution tests. The 938 count is the previous 933 plus the five qafix32 tests, collected once. Skips: 29 PyNaCl (24 `PyNaCl not installed`, 5 `pip install 'runspecimen[ed25519]'`), 3 bwrap, 2 Linux `ldd`, 1 pytest, and the holder Mach-O relocation test (this tools-venv layout is not runnable and `/usr/bin/realpath` is absent; a framework CPython whose `@executable_path` libraries resolve still runs that test). Default JSON and `--pretty` refusal tests passed, including the exact N10 line `RunSpecimen error: execution policy local has no typed-phrase fallback` and the separate unknown-field line `contract contains unknown field(s): not_a_real_contract_field`.
 
 A clean `/usr/bin/python3` 3.9.6 venv, created with `-I -S -m venv --without-pip`, installed the pinned wheel without running the venv, verified with this checkout's verifier, and then `bin/runspecimen --version` printed `runspecimen 0.2.0rc15` and exited 0. python.org 3.11–3.14 are not installed here. Homebrew is installed and has no Python formula. This host is not Debian or Ubuntu. Those combinations are unverified on this machine. Mocks were not used as a substitute.
+
+The first push of this branch, `e201ae36d6b20bc12a19865e9a426a39f8aa2eed`, failed only Ubuntu 3.12 release-check (push run 38320877479, pull request run 38320885566). `test_rq1703_symlinked_interpreter_home_is_accepted` expected acceptance, and the verifier refused because the `/tmp` home walk selects `/lib/python3.12`, which is not the trusted library on that runner. The other jobs on that SHA passed, including Ubuntu 3.9, 3.10, 3.11, 3.13, and 3.14 and macOS 3.11 and 3.14. The test now expects that refusal when the walk selects a foreign library, and still expects acceptance when the walk finds no landmark. This host's framework 3.9 has no such landmark, and the test still accepts the fixture here.
 
 ## What this pack does not decide
 

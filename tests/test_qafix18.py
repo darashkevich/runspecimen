@@ -29,6 +29,57 @@ from tests.test_rc15_qafix_docs import (
 )
 
 
+def _home_walk_selects_foreign_stdlib(home: Path) -> bool:
+    """True when CPython's upward home search would leave the trusted library.
+
+    Zip landmarks are searched before ``os.py`` / ``os.pyc``. This is the
+    oracle for the symlink-home fixture. It does not start an interpreter.
+    """
+    major, minor = sys.version_info[:2]
+    plat = sysconfig.get_config_var("platlibdir") or "lib"
+    trusted = Path(sysconfig.get_path("stdlib"))
+    zip_rel = f"{plat}/python{major}{minor}.zip"
+    stdlib_rels = (
+        f"{plat}/python{major}.{minor}/os.py",
+        f"{plat}/python{major}.{minor}/os.pyc",
+    )
+
+    def first(relatives: tuple[str, ...]) -> tuple[Path, str] | None:
+        current = home
+        for _ in range(64):
+            for relative in relatives:
+                candidate = current.joinpath(*relative.split("/"))
+                try:
+                    present = candidate.is_file()
+                except OSError:
+                    return current, relative
+                if present:
+                    return current, relative
+            parent = current.parent
+            if parent == current:
+                break
+            current = parent
+        return None
+
+    found = first((zip_rel,))
+    if found is None:
+        found = first(stdlib_rels)
+    if found is None:
+        return False
+    prefix, relative = found
+    stdlib_dir = prefix / plat / f"python{major}.{minor}"
+    try:
+        if stdlib_dir.is_dir():
+            return not os.path.samefile(stdlib_dir, trusted)
+        if relative.endswith(".zip"):
+            trusted_zip = Path(sys.base_prefix) / plat / f"python{major}{minor}.zip"
+            zip_path = prefix.joinpath(*relative.split("/"))
+            return not os.path.samefile(zip_path, trusted_zip)
+    except OSError:
+        return True
+    return False
+
+
 def _canary_source(marker: Path) -> str:
     return f"open({str(marker)!r}, 'w').write('ran')\n"
 
@@ -318,8 +369,20 @@ class Qafix18VerifierTests(unittest.TestCase):
             output = result.stdout + result.stderr
             self.assertNotIn("Traceback", output)
             payload = json.loads(result.stdout.split("---")[0])
-            self.assertTrue(payload["ok"], payload)
-            self.assertEqual(result.returncode, 0, output)
+            # The symlink directory is not an ancestor of the trusted library.
+            # When that walk finds no landmark, CPython uses the compiled-in
+            # library and the venv is accepted. Ubuntu's own Python 3.12 puts
+            # a landmark at /lib/python3.12, so the same /tmp home selects that
+            # library. That is a relocated layout and must be refused. The
+            # check does not start the interpreter.
+            if _home_walk_selects_foreign_stdlib(linkdir):
+                self.assertFalse(payload["ok"], payload)
+                self.assertIn("standard library", payload["message"])
+                self.assertFalse(payload.get("probe_executed_private_copy"))
+                self.assertNotEqual(result.returncode, 0, output)
+            else:
+                self.assertTrue(payload["ok"], payload)
+                self.assertEqual(result.returncode, 0, output)
 
     def test_rq1704_nul_pth_is_a_json_refusal(self) -> None:
         def plant(hook: object, marker: Path) -> None:
