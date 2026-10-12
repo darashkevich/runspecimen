@@ -354,12 +354,12 @@ class Qa2404DocConsistencyTests(unittest.TestCase):
     """QA24-04: HUMAN-ACCEPTANCE.md pack references must be consistent."""
 
     def test_pack_references_consistent(self) -> None:
-        """All qafix pack references in HUMAN-ACCEPTANCE.md should be qafix26."""
+        """All qafix pack references in HUMAN-ACCEPTANCE.md should be qafix27."""
         if not HUMAN_ACCEPTANCE.is_file():
             self.skipTest("HUMAN-ACCEPTANCE.md not found")
         text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
         
-        self.assertIn("qafix26", text, "HUMAN-ACCEPTANCE.md should reference qafix26")
+        self.assertIn("qafix27", text, "HUMAN-ACCEPTANCE.md should reference qafix27")
         
         identity_lines = []
         for line in text.split("\n"):
@@ -367,7 +367,7 @@ class Qa2404DocConsistencyTests(unittest.TestCase):
                 identity_lines.append(line)
         
         for line in identity_lines:
-            self.assertIn("qafix26", line, f"Identity line should reference qafix26: {line}")
+            self.assertIn("qafix27", line, f"Identity line should reference qafix27: {line}")
 
     def test_export_pack_matches_identity(self) -> None:
         """The export PACK= line should match the identity pack."""
@@ -384,7 +384,7 @@ class Qa2404DocConsistencyTests(unittest.TestCase):
         if export_line is None:
             self.skipTest("export PACK line not found")
         
-        self.assertIn("qafix26", export_line, f"export PACK should use qafix26: {export_line}")
+        self.assertIn("qafix27", export_line, f"export PACK should use qafix27: {export_line}")
 
 
 if __name__ == "__main__":

@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-12-qafix26/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-12-qafix27/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-12-qafix26/` (strict shebang; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix25/` (CI-reproducible sdist; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix24/` (CR-injection fix; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix23/` (shebang args, interpreter names, lock; not this sheet),
@@ -38,7 +39,7 @@ Record these identities at the top of your notes before N1 (fill in from this
 machine; N2 prints the full wheel digest):
 
 - Candidate SHA: `git rev-parse HEAD` of this checkout
-- Pack: `artifacts/0.2.0rc15-2026-10-12-qafix26/`
+- Pack: `artifacts/0.2.0rc15-2026-10-12-qafix27/`
 - Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
 - python3: `command -v python3` and `python3 --version`
 - Wheel SHA-256: `3759ea01c7032b2b8f37482fbb32825fdef0508568cd4b505847a9f463c241f8` (must match N2 `wheel_sha256` and pack SHA256SUMS). The `src/` tree changed in qafix24/qafix25 (dashboard.py wording), so this wheel differs from the qafix14–qafix23 wheel. The verifier script in this checkout also changed (CR-injection fix, probe runs only body bytes) and is what N3 runs.
@@ -111,7 +112,7 @@ refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
 Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix26"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix27"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 _RS_PY3="$(command -v python3)"
 case "$_RS_PY3" in
