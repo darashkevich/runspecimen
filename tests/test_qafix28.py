@@ -362,40 +362,15 @@ class Qa2605NonAsciiPathTests(unittest.TestCase):
 
 
 class Qa2606DocConsistencyTests(unittest.TestCase):
-    """QA26-06: HUMAN-ACCEPTANCE.md ASCII path rule and qafix28 pin."""
+    """QA26-06: HUMAN-ACCEPTANCE.md ASCII path rule. Doc pack pin moved to test_qafix29."""
 
-    def test_pack_references_qafix28(self) -> None:
-        """All qafix pack references in HUMAN-ACCEPTANCE.md should be qafix28."""
+    def test_qafix28_in_historical_list(self) -> None:
+        """qafix28 should be in the historical packs list."""
         if not HUMAN_ACCEPTANCE.is_file():
             self.skipTest("HUMAN-ACCEPTANCE.md not found")
         text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
 
-        self.assertIn("qafix28", text, "HUMAN-ACCEPTANCE.md should reference qafix28")
-
-        identity_lines = []
-        for line in text.split("\n"):
-            if "Candidate pack:" in line or "Pack: `artifacts/" in line:
-                identity_lines.append(line)
-
-        for line in identity_lines:
-            self.assertIn("qafix28", line, f"Identity line should reference qafix28: {line}")
-
-    def test_export_pack_matches_identity(self) -> None:
-        """The export PACK= line should match the identity pack."""
-        if not HUMAN_ACCEPTANCE.is_file():
-            self.skipTest("HUMAN-ACCEPTANCE.md not found")
-        text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
-
-        export_line = None
-        for line in text.split("\n"):
-            if line.strip().startswith('export PACK="$PWD/artifacts/'):
-                export_line = line
-                break
-
-        if export_line is None:
-            self.skipTest("export PACK line not found")
-
-        self.assertIn("qafix28", export_line, f"export PACK should use qafix28: {export_line}")
+        self.assertIn("qafix28", text, "HUMAN-ACCEPTANCE.md should mention qafix28 in history")
 
     def test_ascii_path_rule_documented(self) -> None:
         """The ASCII path rule should be documented in HUMAN-ACCEPTANCE.md."""

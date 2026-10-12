@@ -204,12 +204,11 @@ class Qa2402CodingCookieTests(unittest.TestCase):
 
             with self.assertRaises(module.UnsupportedShebangError) as cm:
                 module.interpreter_from_launcher(launcher)
-            # QA26-05: High bytes (>=0x80) now get "non-ascii" error; 0x7F gets
-            # "non-printable-ascii" or "non-ascii" depending on the byte value.
+            # QA28-03: 0x7F (DEL) gets "control character" error; high bytes get "non-ascii".
             msg = str(cm.exception).lower()
             self.assertTrue(
-                "non-printable-ascii" in msg or "non-ascii" in msg,
-                f"Expected non-ASCII or non-printable-ASCII error: {cm.exception}"
+                "non-printable-ascii" in msg or "non-ascii" in msg or "control character" in msg,
+                f"Expected control character, non-ASCII, or non-printable-ASCII error: {cm.exception}"
             )
 
 
@@ -237,7 +236,11 @@ class Qa2403UnicodeWhitespaceTests(unittest.TestCase):
 
             with self.assertRaises(module.UnsupportedShebangError) as cm:
                 module.interpreter_from_launcher(launcher)
-            self.assertIn("non-printable-ascii", str(cm.exception).lower())
+            msg = str(cm.exception).lower()
+            self.assertTrue(
+                "non-printable-ascii" in msg or "control character" in msg,
+                f"Expected control character or non-printable-ASCII error: {cm.exception}"
+            )
 
     def test_vertical_tab_trailing_refused(self) -> None:
         """A shebang with trailing vertical tab (\\x0b) before LF is refused."""
@@ -260,7 +263,11 @@ class Qa2403UnicodeWhitespaceTests(unittest.TestCase):
 
             with self.assertRaises(module.UnsupportedShebangError) as cm:
                 module.interpreter_from_launcher(launcher)
-            self.assertIn("non-printable-ascii", str(cm.exception).lower())
+            msg = str(cm.exception).lower()
+            self.assertTrue(
+                "non-printable-ascii" in msg or "control character" in msg,
+                f"Expected control character or non-printable-ASCII error: {cm.exception}"
+            )
 
     def test_nbsp_trailing_refused(self) -> None:
         """A shebang with trailing NBSP (U+00A0) before LF is refused."""
@@ -367,40 +374,15 @@ class Qa2403UnicodeWhitespaceTests(unittest.TestCase):
 
 
 class Qa2404DocConsistencyTests(unittest.TestCase):
-    """QA24-04: HUMAN-ACCEPTANCE.md pack references must be consistent."""
+    """QA24-04: HUMAN-ACCEPTANCE.md pack references. Current pack pin in test_qafix29."""
 
-    def test_pack_references_consistent(self) -> None:
-        """All qafix pack references in HUMAN-ACCEPTANCE.md should be qafix28."""
+    def test_qafix26_in_historical_list(self) -> None:
+        """qafix26 should be in the historical packs list."""
         if not HUMAN_ACCEPTANCE.is_file():
             self.skipTest("HUMAN-ACCEPTANCE.md not found")
         text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
-        
-        self.assertIn("qafix28", text, "HUMAN-ACCEPTANCE.md should reference qafix28")
-        
-        identity_lines = []
-        for line in text.split("\n"):
-            if "Candidate pack:" in line or "Pack: `artifacts/" in line:
-                identity_lines.append(line)
-        
-        for line in identity_lines:
-            self.assertIn("qafix28", line, f"Identity line should reference qafix28: {line}")
 
-    def test_export_pack_matches_identity(self) -> None:
-        """The export PACK= line should match the identity pack."""
-        if not HUMAN_ACCEPTANCE.is_file():
-            self.skipTest("HUMAN-ACCEPTANCE.md not found")
-        text = HUMAN_ACCEPTANCE.read_text(encoding="utf-8")
-        
-        export_line = None
-        for line in text.split("\n"):
-            if line.strip().startswith('export PACK="$PWD/artifacts/'):
-                export_line = line
-                break
-        
-        if export_line is None:
-            self.skipTest("export PACK line not found")
-        
-        self.assertIn("qafix28", export_line, f"export PACK should use qafix28: {export_line}")
+        self.assertIn("qafix26", text, "HUMAN-ACCEPTANCE.md should mention qafix26 in history")
 
 
 if __name__ == "__main__":

@@ -5,8 +5,9 @@ does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
-Candidate pack: `artifacts/0.2.0rc15-2026-10-12-qafix28/`. Engine identity:
+Candidate pack: `artifacts/0.2.0rc15-2026-10-12-qafix29/`. Engine identity:
 `0.2.0rc15` (never published). Prior packs, including
+`artifacts/0.2.0rc15-2026-10-12-qafix28/` (sheet fixes; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix27/` (CI-reproducible rebuild; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix26/` (strict shebang; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix25/` (CI-reproducible sdist; not this sheet),
@@ -40,7 +41,7 @@ Record these identities at the top of your notes before N1 (fill in from this
 machine; N2 prints the full wheel digest):
 
 - Candidate SHA: `git rev-parse HEAD` of this checkout
-- Pack: `artifacts/0.2.0rc15-2026-10-12-qafix28/`
+- Pack: `artifacts/0.2.0rc15-2026-10-12-qafix29/`
 - Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
 - python3: `command -v python3` and `python3 --version`
 - Wheel SHA-256: `3759ea01c7032b2b8f37482fbb32825fdef0508568cd4b505847a9f463c241f8` (must match N2 `wheel_sha256` and pack SHA256SUMS). The `src/` tree changed in qafix24/qafix25 (dashboard.py wording), so this wheel differs from the qafix14–qafix23 wheel. The verifier script in this checkout also changed (CR-injection fix, probe runs only body bytes) and is what N3 runs.
@@ -72,7 +73,7 @@ module (including `runspecimen.approve`) to the hashed installed files, using
 the absolute launcher's own interpreter. That interpreter must be named by an
 absolute shebang; `#!/usr/bin/env python3` is refused. The shebang path must
 be printable ASCII only (non-ASCII venv paths are not portable), normalized
-(no `/./', `//`, or trailing `/`), and must not be a shell wrapper (`#!/bin/sh`
+(no `/./'`, `//`, or trailing `/`), and must not be a shell wrapper (`#!/bin/sh`
 indicates pip needed a path longer than 127 bytes; move the venv). The launcher body after
 the shebang must byte-match the pinned pip console-script template. The
 verifier also refuses unexpected files in `$VENV/bin` (a `json.py` there would
@@ -88,7 +89,9 @@ imports another module; a copy of that module in the venv is refused, and the
 probe does not run it. The probe runs the launcher body on the real interpreter
 with site startup turned off, and only after that reading is clean.
 `python -m runspecimen` from an untrusted cwd is not a supported verified
-path; this sheet only invokes the absolute launcher. The
+path; this sheet only invokes the absolute launcher. The venv's `activate`,
+`activate.csh`, `activate.fish`, and related shell scripts are outside the
+verified CLI; this sheet never sources them. The
 trusted interpreter assumption: the check trusts **only the Python interpreter and its stdlib**. It does not claim to resist someone replacing Python itself.
 Venv-local metadata (setuptools RECORD, `_distutils_hack`) is not trust:
 RECORD does not hash itself and is writable by the same attacker. Bytecode is
@@ -116,7 +119,7 @@ refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
 Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix28"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix29"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 _RS_PY3="$(command -v python3)"
 case "$_RS_PY3" in
@@ -167,28 +170,34 @@ rs_ok N1-venv $?
 ```
 
 ```
-"$PY" -m pip uninstall -y setuptools
+rm -rf "$VENV"/lib/python*/site-packages/setuptools* "$VENV"/lib/python*/site-packages/_distutils_hack "$VENV"/lib/python*/site-packages/distutils-precedence.pth 2>/dev/null || true
 rs_ok N1-setuptools $?
 ```
 
 The only bare `python3` on this sheet is the `venv` line above, which creates
 the venv. After it, do not call `python3` or `runspecimen`. `test ! -e "$VENV"`
 must run before `venv`; a leftover directory is an abort, not an upgrade.
-Uninstall setuptools before the wheel so `distutils-precedence.pth` and the
+Remove setuptools before the wheel so `distutils-precedence.pth` and the
 `_distutils_hack` shim are gone. Python 3.12+ venvs do not ship setuptools;
-the uninstall is then a no-op and still prints `STEP N1-setuptools exit=0`.
+the removal is then a no-op and still prints `STEP N1-setuptools exit=0`.
 
 ## N2 — hash the pinned wheel, then install only that file
 
 ```
-py -c "import hashlib, os, pathlib, sys; wheel=pathlib.Path(os.environ['WHEEL']).resolve(); sums=pathlib.Path(os.environ['PACK'])/'SHA256SUMS'; expected=next((line.split()[0] for line in sums.read_text().splitlines() if line.endswith('  '+wheel.name)), None); got=hashlib.sha256(wheel.read_bytes()).hexdigest(); print('wheel_sha256', got); print('expected_wheel', expected); sys.exit(0 if expected==got else 1)"
+basepy -c "import hashlib, os, pathlib, sys; wheel=pathlib.Path(os.environ['WHEEL']).resolve(); sums=pathlib.Path(os.environ['PACK'])/'SHA256SUMS'; expected=next((line.split()[0] for line in sums.read_text().splitlines() if line.endswith('  '+wheel.name)), None); got=hashlib.sha256(wheel.read_bytes()).hexdigest(); print('wheel_sha256', got); print('expected_wheel', expected); sys.exit(0 if expected==got else 1)"
 rs_ok N2-hash $?
 ```
 
 ```
-py -m pip install --no-index --no-deps --force-reinstall --no-compile "$WHEEL"
+"$PY" -I -m pip install --no-index --no-deps --force-reinstall --no-compile "$WHEEL"
 rs_ok N2-install $?
 ```
+
+The N2-hash step uses `basepy` (not `py`) because the hash check only needs the
+standard library. The N2-install step uses `"$PY" -I` (isolated mode) because
+pip needs site-packages but `-I` prevents user site-packages and ignores
+`PYTHON*` environment variables. Do not use the `py` helper before N3; it runs
+the venv Python which could execute site hooks before the verifier runs.
 
 Do not upgrade pip in this venv. Do not install from PyPI or another path.
 `--no-compile` and `PYTHONDONTWRITEBYTECODE=1` keep bytecode off the hashed
