@@ -38,7 +38,7 @@ machine; N2 prints the full wheel digest):
 - Pack: `artifacts/0.2.0rc15-2026-10-12-qafix23/`
 - Shell: `$SHELL` and `echo $ZSH_VERSION` or `echo $BASH_VERSION`
 - python3: `command -v python3` and `python3 --version`
-- Wheel SHA-256: `3759ea01c7032b2b8f37482fbb32825fdef0508568cd4b505847a9f463c241f8` (must match N2 `wheel_sha256` and pack SHA256SUMS). The `src/` tree changed in qafix24 (dashboard.py wording), so this wheel differs from the qafix14–qafix23 wheel. The verifier script in this checkout also changed (CR-injection fix, probe runs only body bytes) and is what N3 runs.
+- Wheel SHA-256: `3759ea01c7032b2b8f37482fbb32825fdef0508568cd4b505847a9f463c241f8` (must match N2 `wheel_sha256` and pack SHA256SUMS). The `src/` tree changed in qafix24/qafix25 (dashboard.py wording), so this wheel differs from the qafix14–qafix23 wheel. The verifier script in this checkout also changed (CR-injection fix, probe runs only body bytes) and is what N3 runs.
 
 You can paste this whole sheet into a fresh macOS Terminal (zsh, the default)
 or into bash. You do not need extra wrappers, and you do not need to turn
@@ -108,7 +108,7 @@ refusals later. `CAMPAIGN_ID` / `RUN_ID` are set once and used for N4–N9.
 Do not reuse an earlier session's run ID.
 
 ```
-export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix24"
+export PACK="$PWD/artifacts/0.2.0rc15-2026-10-12-qafix25"
 export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"
 _RS_PY3="$(command -v python3)"
 case "$_RS_PY3" in
