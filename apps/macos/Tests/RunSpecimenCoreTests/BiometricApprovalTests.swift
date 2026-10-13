@@ -1419,6 +1419,17 @@ final class PolicyBoundApprovalTests: XCTestCase {
         XCTAssertEqual(pinned.state, BiometricEnrollmentRecord.active)
         XCTAssertEqual(pinned.generation, 1)
 
+        XCTAssertThrowsError(try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            payload(state: BiometricEnrollmentRecord.revoked, generation: "1"),
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .malformed("generation"))
+        }
+        XCTAssertEqual(
+            try BiometricEnrollmentDirectory.load(keyID: "carried-phone-key", directory: directory).state,
+            BiometricEnrollmentRecord.active
+        )
+
         let revokedImport = try BiometricEnrollmentDirectory.pinCarriedCompanion(
             payload(state: BiometricEnrollmentRecord.revoked, generation: "2"),
             directory: directory
@@ -1437,10 +1448,10 @@ final class PolicyBoundApprovalTests: XCTestCase {
             XCTAssertEqual(error as? BiometricApprovalError, .revoked)
         }
         XCTAssertThrowsError(try BiometricEnrollmentDirectory.pinCarriedCompanion(
-            payload(state: BiometricEnrollmentRecord.revoked, generation: "1"),
+            payload(state: BiometricEnrollmentRecord.revoked, generation: "3"),
             directory: directory
         )) { error in
-            XCTAssertEqual(error as? BiometricApprovalError, .malformed("generation"))
+            XCTAssertEqual(error as? BiometricApprovalError, .revoked)
         }
     }
 
