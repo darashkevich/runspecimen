@@ -7,7 +7,7 @@ import SwiftUI
 /// require Face ID authentication before proceeding.
 enum CompanionHardwareHints {
     static let revoke = "Asks for Face ID and revokes this iPhone key. If Face ID is cancelled, nothing changes. Does not approve a Mac run."
-    static let rotate = "Asks for Face ID to create a replacement key, then asks for Face ID again to revoke the current key. If Face ID is cancelled at either step, nothing changes. Does not approve a Mac run."
+    static let rotate = "Asks for Face ID once, then creates a replacement key and revokes the current key. If Face ID is cancelled or any step fails, the old key stays active and nothing changes. Does not approve a Mac run."
 }
 
 struct CompanionHardwareApprovalView: View {
@@ -120,16 +120,9 @@ struct CompanionHardwareApprovalView: View {
             let carried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: record.keyID, directory: directory)
             pairingText = String(decoding: carried, as: UTF8.self)
             message = "Replacement key generation \(record.generation) is enrolled. The previous key is revoked. This did not approve a run."
-        } catch let error as CompanionHardwareRefusal {
-            if case .malformed("rotation-incomplete") = error {
-                message = "The replacement key was enrolled, and the previous key was not revoked. No run was approved."
-            } else {
-                pairingText = ""
-                message = "Rotation did not finish. No Mac run was approved."
-            }
         } catch {
             pairingText = ""
-            message = "Rotation did not finish. No Mac run was approved."
+            message = "Rotation did not finish. The old key is still active. No Mac run was approved."
         }
     }
 

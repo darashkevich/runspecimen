@@ -341,12 +341,13 @@ public enum BiometricEnrollmentDirectory {
         try data.write(to: recordURL(directory, record.keyID), options: .atomic)
     }
 
-    /// Stores an active public key from a file a person carried.
+    /// Stores a public key from a file a person carried.
     ///
-    /// The pairing schema accepts `active` or `revoked`. This pin accepts only
-    /// `active`. A missing, revoked, or other state is refused before any
-    /// enrollment file is written. A locally revoked record is not replaced by
-    /// a later active import, including one with another generation. The file's
+    /// The pairing schema accepts `active` or `revoked`. A locally revoked
+    /// record is not replaced by a later active import, including one with
+    /// another generation. However, an active local record CAN be updated to
+    /// revoked when importing a revoked file with a higher generation. This
+    /// allows the Mac to sync revocation state from the iPhone. The file's
     /// backend and provenance strings are ignored. A label of `secure-enclave`
     /// does not make the key production enrollment. This is not installed
     /// admission.
@@ -374,10 +375,7 @@ public enum BiometricEnrollmentDirectory {
         guard let state = object["state"] else {
             throw BiometricApprovalError.malformed("state")
         }
-        if state == BiometricEnrollmentRecord.revoked {
-            throw BiometricApprovalError.revoked
-        }
-        guard state == BiometricEnrollmentRecord.active else {
+        guard state == BiometricEnrollmentRecord.active || state == BiometricEnrollmentRecord.revoked else {
             throw BiometricApprovalError.malformed("state")
         }
         let record = BiometricEnrollmentRecord(
@@ -393,11 +391,18 @@ public enum BiometricEnrollmentDirectory {
             let url = recordURL(directory, keyID)
             if FileManager.default.fileExists(atPath: url.path) {
                 let existing = try load(keyID: keyID, directory: directory)
-                guard existing.state == BiometricEnrollmentRecord.active else {
-                    throw BiometricApprovalError.revoked
-                }
                 guard existing.publicKey == publicKey else {
                     throw BiometricApprovalError.malformed("public_key")
+                }
+                if existing.state == BiometricEnrollmentRecord.revoked {
+                    return existing
+                }
+                if state == BiometricEnrollmentRecord.revoked {
+                    guard generation > existing.generation else {
+                        throw BiometricApprovalError.malformed("generation")
+                    }
+                    try save(record, directory: directory)
+                    return record
                 }
                 guard existing.generation == generation else {
                     throw BiometricApprovalError.malformed("generation")

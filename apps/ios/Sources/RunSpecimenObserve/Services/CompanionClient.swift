@@ -30,8 +30,19 @@ enum CompanionClientError: LocalizedError {
 
 /// HTTP client for the Mac-side companion endpoint.
 /// No plugin-style approve/run helpers — only observe + optional remote-confirm settle.
-struct CompanionClient {
-    var config: PairingConfig
+final class CompanionClient {
+    let config: PairingConfig
+    private var pinnedSession: URLSession?
+    private var sessionDelegate: CompanionTLSPinningDelegate?
+    private let sessionLock = NSLock()
+
+    init(config: PairingConfig) {
+        self.config = config
+    }
+
+    deinit {
+        pinnedSession?.finishTasksAndInvalidate()
+    }
 
     private func endpoint(_ path: String) throws -> URL {
         let root = config.baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -42,13 +53,21 @@ struct CompanionClient {
         return url
     }
 
-    private func makeSession() throws -> (URLSession, Bool) {
+    private func getSession() throws -> URLSession {
         let scheme = (config.baseURL.scheme ?? "").lowercased()
         if scheme == "https" {
+            sessionLock.lock()
+            defer { sessionLock.unlock() }
+            if let existing = pinnedSession {
+                return existing
+            }
             let pin = (config.tlsFingerprint ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !pin.isEmpty else { throw CompanionClientError.tlsPinRequired }
             let delegate = CompanionTLSPinningDelegate(expectedFingerprint: pin)
-            return (URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil), true)
+            let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+            sessionDelegate = delegate
+            pinnedSession = session
+            return session
         }
         if scheme == "http" {
             let host = (config.baseURL.host ?? "").lowercased()
@@ -59,7 +78,7 @@ struct CompanionClient {
                 )
             }
         }
-        return (URLSession.shared, false)
+        return URLSession.shared
     }
 
     private func request(path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
@@ -72,12 +91,7 @@ struct CompanionClient {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         req.timeoutInterval = 8
-        let (session, shouldInvalidate) = try makeSession()
-        defer {
-            if shouldInvalidate {
-                session.finishTasksAndInvalidate()
-            }
-        }
+        let session = try getSession()
         do {
             let (data, response) = try await session.data(for: req)
             guard let http = response as? HTTPURLResponse else {

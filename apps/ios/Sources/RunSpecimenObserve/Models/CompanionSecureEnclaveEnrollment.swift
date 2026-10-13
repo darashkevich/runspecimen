@@ -151,33 +151,41 @@ public enum CompanionSecureEnclaveEnrollment {
     }
 
     /// Enrolls the new key first. If that fails, the old key stays. If revoking
-    /// the old key fails, the new key is left in place and the error says so.
-    /// Both enroll and revoke require Face ID authentication.
+    /// the old key fails after enrollment, the new key is rolled back and the old
+    /// key stays active. A single Face ID prompt is required up front.
     public static func rotate(from oldKeyID: String, to newKeyID: String, directory: URL) throws -> CompanionPairingRecord {
         try validateKeyID(oldKeyID)
         try validateKeyID(newKeyID)
         guard oldKeyID != newKeyID else {
             throw CompanionHardwareRefusal.malformed("enrollment")
         }
+        try authenticateWithBiometrics(reason: "Authenticate to rotate this iPhone key")
         let created = try enroll(keyID: newKeyID, directory: directory)
         do {
-            try revokeAfterRotation(keyID: oldKeyID, directory: directory)
+            try revokeWithoutAuthentication(keyID: oldKeyID, directory: directory)
         } catch {
-            throw CompanionHardwareRefusal.malformed("rotation-incomplete")
+            rollbackEnrollment(keyID: newKeyID, directory: directory)
+            throw CompanionHardwareRefusal.automationRefused
         }
         return created
     }
 
-    /// Revokes a key during rotation. The caller has already authenticated for the new key enrollment.
-    /// A second Face ID prompt is required to revoke the old key.
-    private static func revokeAfterRotation(keyID: String, directory: URL) throws {
-        try authenticateWithBiometrics(reason: "Authenticate to revoke the previous key")
+    /// Revokes a key without requiring additional Face ID. The caller has already
+    /// authenticated. Used during atomic rotation.
+    private static func revokeWithoutAuthentication(keyID: String, directory: URL) throws {
         try withLock(directory) {
             let record = try load(keyID: keyID, directory: directory)
             _ = try persistRevocation(record, directory: directory) { _ in
                 try deleteBlob(keyID: keyID)
             }
         }
+    }
+
+    /// Best-effort cleanup of a newly enrolled key. Used during rotation rollback.
+    private static func rollbackEnrollment(keyID: String, directory: URL) {
+        try? deleteBlob(keyID: keyID)
+        let fileURL = directory.appendingPathComponent(keyID + ".pairing.json")
+        try? FileManager.default.removeItem(at: fileURL)
     }
 
     public static func carriedPairing(keyID: String, directory: URL) throws -> Data {

@@ -399,10 +399,25 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertTrue(CompanionHardwareHints.revoke.contains("Asks for Face ID"))
         XCTAssertTrue(CompanionHardwareHints.revoke.contains("revokes this iPhone key"))
         XCTAssertTrue(CompanionHardwareHints.revoke.contains("If Face ID is cancelled"))
-        XCTAssertTrue(CompanionHardwareHints.rotate.contains("Asks for Face ID"))
-        XCTAssertTrue(CompanionHardwareHints.rotate.contains("Face ID again"))
-        XCTAssertTrue(CompanionHardwareHints.rotate.contains("revoke the current key"))
+        XCTAssertTrue(CompanionHardwareHints.rotate.contains("Asks for Face ID once"))
+        XCTAssertTrue(CompanionHardwareHints.rotate.contains("revokes the current key"))
         XCTAssertTrue(CompanionHardwareHints.rotate.contains("If Face ID is cancelled"))
+        XCTAssertTrue(CompanionHardwareHints.rotate.contains("old key stays active"))
+    }
+
+    func testRotationRollsBackNewKeyWhenRevocationFails() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-rollback-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let oldKey = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(oldKey, directory: directory) {}
+        let newKeyURL = directory.appendingPathComponent("new-key.pairing.json")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: newKeyURL.path))
+        let oldKeyURL = directory.appendingPathComponent("phone-vector.pairing.json")
+        let originalOldData = try Data(contentsOf: oldKeyURL)
+        let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: oldKey.keyID, directory: directory)
+        XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.active)
+        XCTAssertEqual(stored.generation, 1)
+        XCTAssertEqual(try Data(contentsOf: oldKeyURL), originalOldData)
     }
 
     private func sampleRecord(state: String, generation: Int) -> CompanionPairingRecord {

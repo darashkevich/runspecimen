@@ -1351,7 +1351,6 @@ final class PolicyBoundApprovalTests: XCTestCase {
         }
         try refuse(payload(state: nil), .malformed("state"))
         try refuse(payload(state: "pending"), .malformed("state"))
-        try refuse(payload(state: BiometricEnrollmentRecord.revoked), .revoked)
 
         let pinned = try BiometricEnrollmentDirectory.pinCarriedCompanion(
             payload(state: BiometricEnrollmentRecord.active, generation: "2"),
@@ -1395,6 +1394,97 @@ final class PolicyBoundApprovalTests: XCTestCase {
         XCTAssertEqual(after.state, BiometricEnrollmentRecord.revoked)
         XCTAssertEqual(after.generation, 3)
         XCTAssertNotEqual(after.state, BiometricEnrollmentRecord.active)
+    }
+
+    func testCarriedRevokedKeyUpdatesActiveLocalKey() throws {
+        let phone = P256.Signing.PrivateKey()
+        let publicKey = phone.publicKey.x963Representation
+        func payload(state: String, generation: String, key: Data = publicKey) throws -> Data {
+            var object: [String: String] = [
+                "backend": EnrollmentIdentity.backendSecureEnclave,
+                "provenance": EnrollmentIdentity.provenanceProduction,
+                "role": EnrollmentIdentity.roleCompanion,
+                "key_id": "sync-key",
+                "generation": generation,
+                "public_key_x963_b64": key.base64EncodedString(),
+                "state": state,
+            ]
+            return try JSONSerialization.data(withJSONObject: object)
+        }
+        let active = try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            payload(state: BiometricEnrollmentRecord.active, generation: "1"),
+            directory: directory
+        )
+        XCTAssertEqual(active.state, BiometricEnrollmentRecord.active)
+        XCTAssertEqual(active.generation, 1)
+        let synced = try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            payload(state: BiometricEnrollmentRecord.revoked, generation: "2"),
+            directory: directory
+        )
+        XCTAssertEqual(synced.state, BiometricEnrollmentRecord.revoked)
+        XCTAssertEqual(synced.generation, 2)
+        let loaded = try BiometricEnrollmentDirectory.load(keyID: "sync-key", directory: directory)
+        XCTAssertEqual(loaded.state, BiometricEnrollmentRecord.revoked)
+        XCTAssertEqual(loaded.generation, 2)
+        XCTAssertThrowsError(try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            payload(state: BiometricEnrollmentRecord.active, generation: "3"),
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .revoked)
+        }
+        let stillRevoked = try BiometricEnrollmentDirectory.load(keyID: "sync-key", directory: directory)
+        XCTAssertEqual(stillRevoked.state, BiometricEnrollmentRecord.revoked)
+        XCTAssertEqual(stillRevoked.generation, 2)
+    }
+
+    func testCarriedRevokedKeyRefusesLowerGeneration() throws {
+        let phone = P256.Signing.PrivateKey()
+        let publicKey = phone.publicKey.x963Representation
+        func payload(state: String, generation: String) throws -> Data {
+            var object: [String: String] = [
+                "backend": EnrollmentIdentity.backendSecureEnclave,
+                "provenance": EnrollmentIdentity.provenanceProduction,
+                "role": EnrollmentIdentity.roleCompanion,
+                "key_id": "gen-key",
+                "generation": generation,
+                "public_key_x963_b64": publicKey.base64EncodedString(),
+                "state": state,
+            ]
+            return try JSONSerialization.data(withJSONObject: object)
+        }
+        _ = try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            payload(state: BiometricEnrollmentRecord.active, generation: "3"),
+            directory: directory
+        )
+        XCTAssertThrowsError(try BiometricEnrollmentDirectory.pinCarriedCompanion(
+            payload(state: BiometricEnrollmentRecord.revoked, generation: "2"),
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? BiometricApprovalError, .malformed("generation"))
+        }
+        let unchanged = try BiometricEnrollmentDirectory.load(keyID: "gen-key", directory: directory)
+        XCTAssertEqual(unchanged.state, BiometricEnrollmentRecord.active)
+        XCTAssertEqual(unchanged.generation, 3)
+    }
+
+    func testCarriedRevokedKeyForNewEnrollmentSavesAsRevoked() throws {
+        let phone = P256.Signing.PrivateKey()
+        let publicKey = phone.publicKey.x963Representation
+        let object: [String: String] = [
+            "backend": EnrollmentIdentity.backendSecureEnclave,
+            "provenance": EnrollmentIdentity.provenanceProduction,
+            "role": EnrollmentIdentity.roleCompanion,
+            "key_id": "new-revoked-key",
+            "generation": "2",
+            "public_key_x963_b64": publicKey.base64EncodedString(),
+            "state": BiometricEnrollmentRecord.revoked,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: object)
+        let record = try BiometricEnrollmentDirectory.pinCarriedCompanion(data, directory: directory)
+        XCTAssertEqual(record.state, BiometricEnrollmentRecord.revoked)
+        XCTAssertEqual(record.generation, 2)
+        let loaded = try BiometricEnrollmentDirectory.load(keyID: "new-revoked-key", directory: directory)
+        XCTAssertEqual(loaded.state, BiometricEnrollmentRecord.revoked)
     }
 
     func testPostAuthenticationRejectsAChangedOrExpiredEnrollment() throws {
