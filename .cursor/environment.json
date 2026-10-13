@@ -1,0 +1,4 @@
+{
+  "name": "RunSpecimen",
+  "install": "sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap && sudo python3 -m pip install --break-system-packages -U 'setuptools>=77' && sudo python3 -m pip install --break-system-packages '.[ed25519]' && runspecimen --version"
+}

@@ -16,14 +16,14 @@ Consult current Apple docs before each submission:
 
 | Channel | Role | Verdict |
 | --- | --- | --- |
-| **Target A — Mac App Store** | **Primary** | `./Scripts/build_app.sh --mas` (a future frozen helper **must match** `src/runspecimen/__version__`, now **0.2.0rc14**; build 8 froze **0.2.0rc12** and stays in review) → `./Scripts/archive_mas.sh` → `RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh` for a local Store pkg, or default destination `upload` after Yahor decides |
+| **Target A — Mac App Store** | **Primary** | `./Scripts/build_app.sh --mas` (a future frozen helper **must match** `src/runspecimen/__version__`, now **0.2.0rc15**; build 8 froze **0.2.0rc12** and stays in review) → `./Scripts/archive_mas.sh` → `RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh` for a local Store pkg, or default destination `upload` after Yahor decides |
 | **Target B — Developer ID + notarization** | Secondary / direct download | Optional after MAS; same sandbox entitlements preferred. **Not** a Store-validation substitute |
 
 ### Why MAS-first now
 
 1. **Guideline 2.4.5(viii)** — Store builds embed a **frozen Mach-O** helper
    (`Contents/Resources/RunSpecimenEngine/`, PyInstaller **onedir** + `_internal/`)
-   built from the current engine (`0.2.0rc14` on this branch). **Onefile is not used**
+   built from the current engine (`0.2.0rc15` on this branch). **Onefile is not used**
    — its bootloader needs SysV semaphores denied by App Sandbox. No host Python /
    optionally installed PyPI CLI is required for Store builds. `--from-src`
    host-Python launchers are **local/CI only** and are rejected at runtime when
@@ -130,7 +130,7 @@ Operator steps (once per machine; no credential handling in git):
 6. Verify: `pkgutil --check-signature` (installer chain), then extract and
    `codesign --verify --strict` the `.app` and nested helper; entitlements
    sandbox + inherit; `RSDistributionChannel=mas`.
-7. Build **8** (`0.1.3`) is already uploaded and `WAITING_FOR_REVIEW`. Do not upload another build or Submit for Review from this script while that submission is waiting.
+7. The recorded submission is **0.1.4 (9)**. Do not upload another build or Submit for Review from this script while that submission is the one on file. **0.1.3 (8)** was rejected.
 
 ASC paste pack (metadata / screenshots checklist / reviewer demo):
 [asc-kit/](asc-kit/) — mark screenshot PNGs and Connect record as **pending** until Yahor fills them.
@@ -205,7 +205,7 @@ Shipped under `Resources/PrivacyInfo.xcprivacy`:
 | Short version | `0.1.3` (bump per ship) |
 | Build | `8` in review (builds **5**–**6** rejected; **7** uploaded then superseded) |
 | Min macOS | 14.0 |
-| Bundled engine | source `__version__` is `0.2.0rc14`; build 8 in review froze `0.2.0rc12` |
+| Bundled engine | source `__version__` is `0.2.0rc15`; build 8 in review froze `0.2.0rc12` |
 | Icon | `Resources/AppIcon.icns` (+ iconset / 1024 for Connect) |
 
 ## Review notes (paste into App Review)
@@ -263,7 +263,7 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 - [x] `./Scripts/test_mas_sandbox_e2e.sh` (actual APPROVE prompt + still waiting; never types APPROVE)
 - [x] Store export fail-closed (`assert_store_export_ready.sh` + `test_store_export_gate.sh` negatives)
 - [x] Apple Distribution signing + **local** Store pkg export (see asc-kit evidence) — Connect **replace/upload** still Yahor
-- [x] Connect upload of **0.1.3 (8)** — `WAITING_FOR_REVIEW` since 2026-09-21 (submission `9c19e1cd-…`). Do not upload another build from automation.
+- [x] Connect upload of **0.1.4 (9)** — recorded `WAITING_FOR_REVIEW` (submission `f0bb3ab1-…`, package `584f6868…`). **0.1.3 (8)** was rejected. Do not upload another build from automation.
 - [x] Privacy policy URL in-app (Connect field **pending** Yahor)
 - [ ] Screenshots uploaded into Connect Media — **pending Yahor** (local PNGs ready in [asc-kit/screenshots/](asc-kit/screenshots/))
 - [x] Reviewer demo notes paste-ready ([asc-kit/reviewer-demo.md](asc-kit/reviewer-demo.md))
@@ -271,8 +271,8 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 
 ## Remaining Yahor-only blockers
 
-1. **Leave** App Store Connect **0.1.3 (8)** in `WAITING_FOR_REVIEW`. Builds 5 and 6 were already rejected. Automation will not withdraw or upload a replacement.
-2. Product site pins public GitHub + PyPI `0.2.0rc14`. The Mac App Store binary in review remains 0.1.3 (8) with engine `0.2.0rc12`.
+1. **Leave** the recorded App Store Connect submission **0.1.4 (9)** alone. Automation will not withdraw it or upload a replacement.
+2. Product site pins public GitHub + PyPI `0.2.0rc14`. The Mac App Store package recorded as in review is **0.1.4 (9)** with engine `0.2.0rc14` and does not include evidence expansion.
    Add an `apps.apple.com` link only when Apple returns a working URL.
 3. Screenshots / privacy URL already pasted in Connect: confirm; do not Submit
    a second time from scripts.

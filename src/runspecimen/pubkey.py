@@ -38,9 +38,9 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from runspecimen.atomic import atomic_write_json, read_json
-from runspecimen.errors import SigningError
+from runspecimen.errors import PathEscapeError, SigningError
 from runspecimen.hashutil import canonical_json_bytes
-from runspecimen.paths import ensure_dir
+from runspecimen.paths import ensure_dir, open_regular_nofollow
 from runspecimen.schema import assert_supported_receipt_schema
 from runspecimen.signing import (
     validate_certificate_schema,
@@ -317,8 +317,10 @@ def hold_keys_dir_lock(
         raise SigningError("Ed25519 key locks require a POSIX platform with fcntl")
     control = _ensure_control_plane(workspace)
     lock_path = control / _KEYS_LOCK_NAME
-    lock_path.touch(exist_ok=True)
-    fd = os.open(str(lock_path), os.O_RDWR)
+    try:
+        fd = open_regular_nofollow(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+    except PathEscapeError as exc:
+        raise SigningError(f"refusing to follow a symlink: {lock_path}") from exc
     flags = fcntl.LOCK_EX if blocking else (fcntl.LOCK_EX | fcntl.LOCK_NB)
     try:
         fcntl.flock(fd, flags)

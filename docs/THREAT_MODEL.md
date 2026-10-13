@@ -17,7 +17,17 @@ The human invoking the TTY approval, the local operating-system account, the
 RunSpecimen installation, Python runtime, workspace filesystem, and workload are
 trusted. The Codex, Cursor, Claude Code, and Grok Build adapters do not expand
 this boundary; they call the
-same CLI and cannot manufacture an approval.
+same CLI and cannot approve through the app.
+
+RunSpecimen stops agents from approving through the app. An inconsistent
+planted or edited approval is detected. Someone who can rewrite the local
+records can still fabricate a consistent record; authenticity requires an
+independently trusted signature that is actually checked. A program running as you that can
+edit RunSpecimen's files can still add a fake approval to the record. Signing
+with a key the agent can't access lets you check afterwards that a receipt is
+authentic, when a signature is required and checked; it does not stop a program
+running as you from adding a fake approval or running the job. D1/D2 stay
+fail-closed; E2 is not closed.
 
 A native macOS (or other) companion UI that shells to the CLI does not move the
 enforcement boundary into the UI process. App Sandbox entitlements on a companion
@@ -29,6 +39,17 @@ themselves, prove that:
 
 Those child-process boundaries must be tested and documented before any
 “sandboxed execution” claim.
+
+## Installed-wheel check
+
+The acceptance-sheet check is point-in-time. It authenticates a pinned wheel,
+writes it with the trusted base interpreter (`-I -S`; `-I` alone does not
+disable site startup), and compares the installed tree to that wheel before
+any target-venv command. If it then runs code, it runs a private copy of the
+bytes it already matched, and it does not start that run when those bytes
+have changed. A process running as the same user can still rewrite the live
+environment during or after the check. The check is not persistent execution
+protection and does not create a protected boundary.
 
 ## Explicitly out of scope
 
@@ -64,11 +85,100 @@ and it does not replace the contract backend.
 ## Receipt authentication vs signatures
 
 - **Hash-chained events + certificate_id** — integrity of recorded local evidence.
+  The chain is unkeyed. An `approval` event must carry a canonical hash of
+  `approval.json`. Inconsistent edits to that local record can be detected.
+  A writer who controls the evidence can fabricate a consistent record.
+  A program running as you that can edit RunSpecimen's files can still add a
+  fake approval to the record. Signing with a key the agent can't access lets
+  you check afterwards that a receipt is authentic, when a signature is
+  required and checked; it does not stop a program running as you from adding
+  a fake approval or running the job. D1/D2 stay fail-closed; E2 is not closed.
 - **HMAC-SHA256** (optional) — shared-secret MAC; verifiers who hold the key can
   also forge; useful for controlled sharing, not independent third-party trust.
 - **Ed25519** (optional extra, shipped) — offline public-key verification without
   sharing the private key; still depends on key custody and does not prove
   scientific truth. See `docs/ED25519_RECEIPTS.md`.
+
+## Installed-wheel check
+
+The check that compares an installed copy to the pinned wheel trusts only the
+base Python interpreter and that interpreter's own standard library. It does
+not trust files inside the virtual environment.
+
+Before anything in that environment runs, the check asks the base interpreter
+which directories Python's site startup would use. That list covers Debian
+and Ubuntu `dist-packages` directories, paths named by `pyvenv.cfg`, every
+folder or zip a `.pth` line would add (followed again when those folders
+have their own `.pth` lines), and the user site when this environment would
+actually turn the user site on. A normal venv leaves the user site off. A
+path that does not exist is not scanned and is not counted. The check does
+not stop after a fixed number of directories and leave the rest unread. If
+there are more existing directories than it can safely read, it refuses in
+plain English and does not run the environment. The
+check then reads those locations for startup hooks: a `.pth` file with an
+`import` line, `sitecustomize` or `usercustomize` in every form Python can
+import (source, bytecode, an extension, or a package), a module that the
+base interpreter's own `sitecustomize` would import (on Debian, that is
+`apport_python_hook`), and bytecode that does not belong. A `.pth` file is refused unless every byte is printable ASCII or a
+newline. A Windows `\r\n` pair counts as a newline. A lone `\r` does not.
+That rule rejects a byte-order mark, every non-ASCII byte, and every
+character another Python version might treat as a line break, before any
+line is read. The report is still the usual JSON. A `.pth` line with a
+leading or trailing space is still refused. This check does not treat that
+line as a different directory. Python keeps a leading space as part of the
+name. A `.pth` file that is not a regular file, including a FIFO, is refused
+before it is opened. The same is true of a path named by a `.pth` line.
+`pyvenv.cfg` follows the same byte rule, except that `home`, `executable`,
+and `command` may contain ordinary non-ASCII path characters. A byte-order
+mark, a control character, or a character that can split a line is refused
+there too. An `import` line is refused whatever the file is named, including
+`distutils-precedence.pth`, `_virtualenv.pth`, an editable `__editable__*.pth`,
+and the import lines shipped by packages such as pywin32 and matplotlib. A
+plain-ASCII directory line is still scanned. A `.pth` file or zip that cannot be read is refused
+the same way. A `.pth` line that names a file or folder which exists, but
+cannot be fully read, is refused. That includes a permission error, a
+symlink loop, something that is not a regular file or a directory, and a
+file that is not a readable zip. A repeated `home` or `executable` in
+`pyvenv.cfg` is refused; this check does not guess which copy to keep.
+`python`,
+`python3`, `python3.X`, and `𝜋thon` must be a symlink that lands on the base
+interpreter's own path. A hard link in another directory is not that path:
+`@executable_path` follows the hard link's location. A byte-for-byte copy or
+hard link is admitted only when every relative loader dependency still names
+that interpreter's libraries. A copy whose `@executable_path` or `$ORIGIN`
+dependency moves is refused. Equal bytes are not a runtime layout. The copy
+is not executed to discover this.
+Following too
+many links is a refusal with that reason. `pyvenv.cfg`
+must name the real file that was started (`home` plus the interpreter's file
+name, and `executable` when it is present), so a venv created through a
+symlink is accepted when that file is the Python running the check. From
+`home`, the check walks upward for `lib/pythonXY.zip` and for
+`lib/pythonX.Y/os.py` or `os.pyc`. The first landmark is accepted only when
+it is the trusted standard library. No landmark on that walk means the
+compiled-in library. The check does not start the suspect interpreter
+to find that library. A
+mismatch names `pyvenv.cfg` and is not described as extra startup code. The
+file must not turn on system site-packages. When that switch is on, the
+message names the `pyvenv.cfg` file. Any of those findings stops the check
+immediately. The acceptance sheet records an absolute `python3` program,
+asks that program for its real path with `-I -S`, and starts this check the
+same way. A shell function or alias named `python3` stops the sheet. The
+check also refuses when it was itself started by a virtual environment's
+Python. It does not run the venv's `python`.
+
+A path counts as the standard library only when it is inside the base
+interpreter's real library directories, is not a site-packages or
+dist-packages directory, and is not inside the virtual environment. Sharing a
+parent folder with the standard library is not enough.
+
+Only after that reading is clean does the check run the authenticated launcher
+body and the authenticated package bytes on the base interpreter with site
+startup turned off (`-I -S`). Those are the buffers that matched the wheel and
+the known template. A later reread of the live tree is not the probe. The
+venv's Python is not executed, so site hooks and Debian's `sitecustomize`
+import chain do not run. The probe is not the installed launcher. That
+launcher runs only if a later command starts it.
 
 ## Residual risks
 

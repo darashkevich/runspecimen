@@ -17,6 +17,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from runspecimen.dashboard import (
+    _evidence_panel,
     _lifecycle_states,
     _presentation,
     dashboard_document,
@@ -62,6 +63,20 @@ class TestDashboard(RunSpecimenTestCase):
         self.assertIn("Auto-refresh every 5s", page)
         self.assertNotIn("/api/run", page)
         self.assertNotIn('method="post"', page.lower())
+        self.assertIn('id="ev-load-error"', page)
+
+    def test_evidence_panel_records_a_read_error(self) -> None:
+        contract_path = write_contract(self.ws, "contract.json", base_contract())
+        contract = load_contract(contract_path)
+        panel = _evidence_panel(workspace=self.ws, contract=contract)
+        self.assertIn("could not be read", panel["load_error"])
+        self.assertNotIn("verify passed", panel["load_error"].lower())
+        page = dashboard_document(
+            workspace=self.ws.resolve(),
+            contract_path=contract_path.resolve(),
+            status={"phase": "none", "workspace": str(self.ws)},
+        )
+        self.assertIn("could not be read", page)
 
     def test_dashboard_lifecycle_states_follow_evidence(self) -> None:
         self.assertEqual(

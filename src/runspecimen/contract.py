@@ -11,6 +11,7 @@ from runspecimen.errors import ContractError, PathEscapeError
 from runspecimen.hashutil import hash_contract_file, sha256_bytes
 from runspecimen.paths import ensure_within, resolve_workspace, validate_id
 from runspecimen.schema import assert_supported_contract_version
+from runspecimen.terminaltext import UNSAFE_DISPLAY_REFUSAL, has_unsafe_display_chars
 
 # Hard caps enforced by the tool (unsafe if contract exceeds these).
 MAX_WALL_TIMEOUT_SEC = 24 * 60 * 60
@@ -55,11 +56,22 @@ def _require_id(obj: Any, label: str) -> str:
         raise ContractError(f"{label} is not a path-safe id: {exc}") from exc
 
 
+def _refuse_display_controls(value: str, label: str) -> None:
+    """Refuse C0/C1/DEL/bidi/format characters in contract strings.
+
+    Display code also escapes these (defence in depth) so a TTY cannot be
+    rewritten if a value ever reaches approve review or pretty output.
+    """
+    if has_unsafe_display_chars(value):
+        raise ContractError(f"{label} {UNSAFE_DISPLAY_REFUSAL}")
+
+
 def _require_str(obj: Any, label: str) -> str:
     if not isinstance(obj, str) or not obj:
         raise ContractError(f"{label} must be a non-empty string")
     if "\x00" in obj:
         raise ContractError(f"{label} must not contain NUL bytes")
+    _refuse_display_controls(obj, label)
     if len(obj) > MAX_STRING_CHARS:
         raise ContractError(
             f"{label} exceeds max length {MAX_STRING_CHARS} characters"
@@ -161,6 +173,15 @@ class PolicyRef:
 
 
 @dataclass(frozen=True)
+class TaskManifestRef:
+    """Optional bound task manifest. Bytes are part of the contract hash."""
+
+    id: str
+    path: str
+    sha256: str
+
+
+@dataclass(frozen=True)
 class Contract:
     version: int
     campaign_id: str
@@ -176,9 +197,11 @@ class Contract:
     runtime: RuntimeSpec | None
     isolation: IsolationSpec
     policy: PolicyRef | None
+    task_manifest: TaskManifestRef | None
     path: Path
     contract_hash: str
     raw: dict[str, Any] = field(repr=False)
+    execution_approval: str | None = None
 
 
     @property
@@ -215,6 +238,21 @@ def _parse_isolation(raw: Any) -> IsolationSpec:
     return IsolationSpec(backend=backend, network=network)
 
 
+_EXECUTION_APPROVALS = frozenset({"local", "companion", "dual"})
+
+
+def _parse_execution_approval(raw: Any) -> str | None:
+    """Biometric execution policy. Absent keeps the typed-phrase gate."""
+    if raw is None:
+        return None
+    value = _require_str(raw, "execution_approval")
+    if value not in _EXECUTION_APPROVALS:
+        raise ContractError(
+            "execution_approval must be local, companion, or dual"
+        )
+    return value
+
+
 def _parse_policy(raw: Any) -> PolicyRef | None:
     if raw is None:
         return None
@@ -228,6 +266,25 @@ def _parse_policy(raw: Any) -> PolicyRef | None:
         raise ContractError("policy.path must be a relative path inside the workspace")
     digest = _require_sha256_hex(obj.get("sha256"), "policy.sha256")
     return PolicyRef(id=policy_id, path=path, sha256=digest)
+
+
+def _parse_task_manifest_ref(raw: Any) -> TaskManifestRef | None:
+    if raw is None:
+        return None
+    obj = _require_dict(raw, "task_manifest")
+    _reject_unknown(obj, {"id", "path", "sha256"}, "task_manifest")
+    mid = _require_str(obj.get("id"), "task_manifest.id")
+    if any(ch.isspace() for ch in mid) or "/" in mid or "\\" in mid:
+        raise ContractError(
+            "task_manifest.id must be a single token without path separators"
+        )
+    path = _require_str(obj.get("path"), "task_manifest.path")
+    if path.startswith("/") or path.startswith("~"):
+        raise ContractError(
+            "task_manifest.path must be a relative path inside the workspace"
+        )
+    digest = _require_sha256_hex(obj.get("sha256"), "task_manifest.sha256")
+    return TaskManifestRef(id=mid, path=path, sha256=digest)
 
 
 def validate_caps(caps: CapsSpec) -> None:
@@ -269,6 +326,8 @@ def parse_contract(
             "runtime",
             "isolation",
             "policy",
+            "task_manifest",
+            "execution_approval",
         },
         "contract",
     )
@@ -287,6 +346,11 @@ def parse_contract(
     for i, item in enumerate(argv_raw):
         if not isinstance(item, str) or item == "":
             raise ContractError(f"argv[{i}] must be a non-empty string")
+        # Preferred refuse point for terminal-control injection in argv
+        # (CC-01). Display still escapes as defence in depth.
+        if "\x00" in item:
+            raise ContractError(f"argv[{i}] must not contain NUL bytes")
+        _refuse_display_controls(item, f"argv[{i}]")
         argv.append(item)
 
     cwd = _require_str(data.get("cwd", "."), "cwd")
@@ -447,6 +511,8 @@ def parse_contract(
 
     isolation = _parse_isolation(data.get("isolation"))
     policy = _parse_policy(data.get("policy"))
+    task_manifest = _parse_task_manifest_ref(data.get("task_manifest"))
+    execution_approval = _parse_execution_approval(data.get("execution_approval"))
 
     if contract_hash is None:
         contract_hash = hash_contract_file(path)
@@ -465,9 +531,11 @@ def parse_contract(
         runtime=runtime_spec,
         isolation=isolation,
         policy=policy,
+        task_manifest=task_manifest,
         path=path.resolve(),
         contract_hash=contract_hash,
         raw=data,
+        execution_approval=execution_approval,
     )
 
 
@@ -513,3 +581,7 @@ def check_contract_paths(contract: Contract, workspace: Path) -> None:
         ensure_within(workspace, Path(assertion.path), label=f"json_equals path {assertion.path!r}")
     if contract.policy is not None:
         ensure_within(workspace, Path(contract.policy.path), label="policy.path")
+    if contract.task_manifest is not None:
+        ensure_within(
+            workspace, Path(contract.task_manifest.path), label="task_manifest.path"
+        )

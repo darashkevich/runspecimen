@@ -10,6 +10,14 @@
 #   ./Scripts/build_app.sh --mas            # MAS-first: frozen helper REQUIRED (fail closed)
 set -euo pipefail
 
+# Release qualification freezes only inside archive_mas.sh, after the reviewed
+# commit is isolated. This script builds the live tree and must not run then.
+if [[ "${RS_RELEASE_GATE:-}" == "1" ]]; then
+  echo "ERROR: RS_RELEASE_GATE=1 refuses build_app.sh before any compilation." >&2
+  echo "ERROR: use archive_mas.sh so helper freeze starts from the isolated candidate." >&2
+  exit 1
+fi
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD="$ROOT/build"
 APP="$BUILD/RunSpecimen.app"
@@ -179,6 +187,16 @@ cp "$ROOT/Resources/Info.plist" "$CONTENTS/Info.plist"
   || /usr/libexec/PlistBuddy -c "Add :RSDistributionChannel string $CHANNEL" "$CONTENTS/Info.plist"
 
 cp "$ROOT/Resources/PrivacyInfo.xcprivacy" "$RES/PrivacyInfo.xcprivacy"
+
+# App Review first launch opens this workspace. Exclude local receipts.
+DEMO_SRC="$ROOT/Resources/ReviewerDemo"
+if [[ ! -f "$DEMO_SRC/contract.json" ]]; then
+  echo "ERROR: Missing Resources/ReviewerDemo/contract.json" >&2
+  exit 1
+fi
+rm -rf "$RES/ReviewerDemo"
+mkdir -p "$RES/ReviewerDemo"
+rsync -a --delete --exclude '.runspecimen' --exclude '.DS_Store' "$DEMO_SRC/" "$RES/ReviewerDemo/"
 
 # App icon (marketplace brand assets — opaque RGB, not pre-rounded).
 if [[ -f "$ROOT/Resources/AppIcon.icns" ]]; then

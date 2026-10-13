@@ -38,6 +38,9 @@ targets:
         SKIP_INSTALL: YES
         DEFINES_MODULE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen.core
+        # Do not set RUNSPECIMEN_TEST_HOOKS on this target. Store Debug and
+        # Release builds must not contain the test seams. `swift test` defines
+        # the flag for its own Debug build in Package.swift.
   RunSpecimen:
     type: application
     platform: macOS
@@ -66,8 +69,8 @@ targets:
         CFBundleIdentifier: com.darashkevich.runspecimen
         CFBundleName: RunSpecimen
         CFBundlePackageType: APPL
-        CFBundleShortVersionString: "0.1.4"
-        CFBundleVersion: "9"
+        CFBundleShortVersionString: "0.1.5"
+        CFBundleVersion: "13"
         ITSAppUsesNonExemptEncryption: false
         RSDistributionChannel: mas
         LSApplicationCategoryType: public.app-category.developer-tools
@@ -91,8 +94,8 @@ targets:
         # Frozen Homebrew runtime is arm64. Do not advertise an Intel slice
         # whose engine cannot launch. A universal runtime needs its own QA.
         ARCHS: arm64
-        MARKETING_VERSION: "0.1.4"
-        CURRENT_PROJECT_VERSION: "9"
+        MARKETING_VERSION: "0.1.5"
+        CURRENT_PROJECT_VERSION: "13"
         INFOPLIST_FILE: Config/Info-mas.plist
         PRODUCT_NAME: RunSpecimen
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

@@ -1,8 +1,15 @@
 # RunSpecimen user guide
 
-Practical how-to for the local CLI. This guide matches the installed
-`runspecimen` commands and current release-candidate limits
-(`0.2.0rc14`, published on GitHub and PyPI). For a short product overview see
+Practical how-to for the local CLI. The published install is
+`0.2.0rc14` (GitHub and PyPI). This branch's engine is unpublished
+`0.2.0rc15`. Approved Mac App Store **0.1.4 (9)** freezes that published
+engine. The local successor label on this branch is **0.1.5 (13)** and is
+not uploaded; **0.1.5 (10)**, **(11)**, and **(12)** are earlier packages.
+Commands under "Requirements, evidence, and freshness" exist
+on this branch and are absent from published rc14. Isolation, `retain`,
+`digest`, and `diff` do ship in published rc14. The Mac app sandbox versus
+the payload is [apps/macos/docs/SECURITY_BOUNDARY.md](../apps/macos/docs/SECURITY_BOUNDARY.md).
+For a short product overview see
 [ABOUT.md](ABOUT.md); for product intent see
 [PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
 
@@ -30,8 +37,49 @@ mandatory postflight before a successor; tamper-evident hash-chained receipts.
   means the approved contract ran under recorded provenance and assertions
   passed.
 
-Approval always requires an interactive TTY. Agents and adapters must not
-enter `APPROVE` for you.
+Approval always requires an interactive TTY. Agents and adapters cannot
+approve through the app. Planted or edited `approval.json` files fail preflight,
+run, and verify. The hash chain is unkeyed: a program running as you that can
+edit RunSpecimen's files can still add a fake approval to the record. Signing
+with a key the agent can't access lets you check afterwards that a receipt is
+authentic, when a signature is required and checked; it does not stop a program
+running as you from adding a fake approval or running the job.
+
+## Requirements, evidence, and freshness (ADR-005)
+
+These commands are on unpublished `0.2.0rc15`. Published `0.2.0rc14` does
+not include them. They are separate from `verify`:
+
+```bash
+runspecimen requirements validate --manifest task_manifest.json
+runspecimen requirements check --workspace . --contract contract.json --manifest task_manifest.json
+runspecimen requirements report --workspace . --campaign-id CAMP --run-id RUN
+runspecimen freshness check --workspace . --contract contract.json --manifest task_manifest.json
+runspecimen freshness evaluate --workspace . --contract contract.json
+```
+
+`requirements check` writes an evidence report. Exit 0 means `checks_passed`
+(aggregate passed and `final_state_certifiable`). `receipt_bound` stays false
+until postflight binds the digest. Exit 1 means the checks did not pass.
+Exit 2 means the check was refused. The report's `authenticity` field is
+unchanged by that exit code. `freshness check` writes `freshness_report.json`.
+`freshness evaluate` and the MCP `freshness_check` tool compute applicability
+and do not write that file.
+
+Outcomes are provider-collected (`unittest`, optional `pytest`, `command_status`).
+Skipped, collection errors, and manual/unverifiable requirements are **not**
+success. Passing configured checks is not universal correctness. Source changes
+during checks refuse final-state certification. Freshness marks evidence
+**stale** without rewriting historical outcomes. The dashboard shows check
+outcome and applicability as distinct from receipt authenticity.
+
+Config sync is explicit: `runspecimen config preview|apply|export|rollback`.
+`doctor` never silently syncs. Snapshots restore to a separate directory by
+default (`runspecimen snapshot …`). Usage imports keep unknown amounts unknown
+(`runspecimen usage import|summarize`). Cross-repo readiness and eval compare
+are bounded (`coordination`, `eval`). Opt-in exact-match fast path:
+`runspecimen eval complete --config … --input …` (see [FASTPATH.md](FASTPATH.md)).
+Local demo: `runspecimen scenes`.
 
 ## Install
 
@@ -151,6 +199,7 @@ sh scripts/demo_rc.sh
 | Command | Role | Takes workspace lease? |
 | --- | --- | --- |
 | `about` | Product summary + documentation URLs | No |
+| `quickstart` | Copy-pasteable first-run command sequence (human text) | No |
 | `init-demo` | Create a new unapproved demo directory | N/A (new path) |
 | `doctor` | Host/workspace readiness JSON (includes docs URLs) | No (probes only) |
 | `validate` | Contract paths + runtime provenance | No |
@@ -162,9 +211,14 @@ sh scripts/demo_rc.sh
 | `status` | Phase, approval, lease, chain health (JSON) | No |
 | `dashboard` | Loopback read-only UI with About + docs links (blocking) | No |
 
-Global flag: `runspecimen --version`.
+Global flags: `runspecimen --version`. Opt-in human view: `--pretty` and
+`--color auto|always|never` (also accepted after the subcommand, e.g.
+`runspecimen status --pretty …`). JSON remains the **default** for every
+command so tests and agents keep a stable contract. `--pretty` never changes
+exit codes, hashes, or approval behavior.
 
-There is no `status --brief` flag. `status` prints a single JSON document.
+`status` without `--pretty` still prints a single JSON document. `status --pretty`
+is a human diagnosis view; it is not live `verify`.
 
 ## Contracts
 
@@ -178,7 +232,7 @@ Start from `examples/demo_contract.json`. Minimal surface (version 1):
 | `source.roots` / `excludes` | Deterministic source hashing / provenance |
 | `outputs.required` | Must be absent at preflight; present at postflight when required |
 | `caps.*` | Wall timeout + bounded stdout/stderr capture |
-| `approval.ttl_sec` | Approval expiry bound into the approval document |
+| `approval.ttl_sec` | Approval expiry bound into the approval document and the latest chained `approval` event. A TTY re-approve while `phase=approved` (or `preflighted`) is a TTL refresh: it appends a new approval event and the latest event governs. Remote confirm cannot refresh. |
 | `predecessor` | Gate on a prior run’s postflight / failure, or `null` |
 | `postflight.*` | Exit code, output existence/SHA, JSON field equality, source unchanged |
 | `isolation` | Optional. `backend`: `none` (default), `sandbox-exec`, or `bwrap`. `network: true` is refused when backend is `none` |
@@ -190,9 +244,13 @@ The approval receipt records the local OS user as `approver`. That is not an
 SSO identity.
 
 `runspecimen digest` prints recorded certificate fields. `runspecimen diff`
-compares two receipts in one workspace. Neither checks the event chain or
-signatures; `verify` does that. `digest --live` only compares output file
-bytes to `output_digests`. A diff that finds differences still exits 0.
+compares two receipts in one workspace. Neither checks the event chain,
+HMAC or Ed25519 signatures, or live provenance. `verify` checks receipt
+integrity, the event chain, and live provenance; it does not check HMAC or
+Ed25519 signatures. `verify-signature` does that, and requires its trust
+inputs (`--contract` for HMAC; `--public-key` or `--key-id` for Ed25519).
+`digest --live` only compares output file bytes to `output_digests`. A diff
+that finds differences still exits 0.
 
 These commands and fields ship in `0.2.0rc14`. Published `0.2.0rc12`
 rejects `isolation` and `policy` as unknown and does not provide `digest`,
@@ -255,10 +313,21 @@ external signature.
 
 ## Doctor, validate, status
 
+Verified acceptance uses the absolute venv launcher
+(`$VENV/bin/runspecimen`). `python -m runspecimen` from an untrusted cwd is
+not a supported verified path: a `json.py` in that cwd can shadow stdlib.
+
+After approve, `run` launches the job with an explicit environment built from
+the bound `runtime.env_allowlist` values plus a documented minimal set
+(`HOME`, `PATH`, `LANG` / locale, `TZ`, `TMPDIR`, `USER`, `LOGNAME`, `TERM`,
+and Windows `SYSTEMROOT` / `SYSTEMDRIVE` / `WINDIR` / `COMSPEC` / `PATHEXT`).
+Parent `PYTHONPATH` and `PYTHONHOME` are not inherited. If an allowlisted
+variable's current value differs from the bound value, run refuses.
+
 ```bash
 runspecimen doctor --workspace .
 # { ok, platform, python, workspace, workspace_writable,
-#   workspace_lease_held, active_lease }
+#   workspace_lease_held, active_lease, loaded_module_origins }
 
 runspecimen validate --workspace . --contract path/to/contract.json
 # { ok, campaign_id, run_id, contract_hash, runtime }
@@ -282,7 +351,7 @@ runspecimen dashboard --workspace . --contract path/to/contract.json --open
 - **Read-only**: first viewport answers what the run is, what happened, whether
   it is safe to continue, and the next CLI step; shows contract review, a trust
   ladder (recorded history ≠ live verification), and exact lifecycle commands.
-  It cannot approve or execute.
+  It cannot approve or execute through the app.
 - **Blocks** in the foreground (`serve_forever`). Background it (`&`), detach
   it, or use another terminal if you still need the shell for `approve` /
   lifecycle commands. Agents must not wait on it in the main turn.
@@ -296,8 +365,10 @@ Package root: `plugins/runspecimen`. The plugin is an **adapter**; the CLI on
 
 Install:
 
-- **Codex:** install the `runspecimen` plugin from the Codex plugin listing
-  (skill under `skills/runspecimen/`). Confirm `runspecimen` is on `PATH` in
+- **Codex:** not submitted and not listed. There is no public Codex plugin
+  listing. Install from this repository: symlink or copy `plugins/runspecimen`
+  (package root; skill under `skills/runspecimen/`) into the local Codex
+  plugins directory this host uses. Confirm `runspecimen` is on `PATH` in
   the environment Codex uses, and that `which runspecimen` is the intended
   install (Homebrew vs a shadowed `~/.local/bin` shim — see Install above).
 - **Cursor (local):** symlink `plugins/runspecimen` to
@@ -323,25 +394,22 @@ Adapter limits (`scripts/runspecimen_adapter.py` and `scripts/runspecimen_mcp.py
 
 ## Showcase refresh (host-bound)
 
-`examples/showcase/` holds a regeneratable postflight receipt. Verify:
+`examples/showcase/` holds a regeneratable postflight receipt with
+`outputs/result.json`. Live `verify` binds this machine's interpreter hash, so
+lead with a refresh (or treat the committed receipt as host-specific):
 
 ```bash
+python3 scripts/refresh_showcase.py
 runspecimen verify --workspace examples/showcase \
   --contract examples/showcase/contract.json \
   --campaign-id showcase-campaign --run-id run-001
 ```
 
-Refresh without a TTY (library test hook `skip_tty_check` — **not** for
-production approvals):
-
-```bash
-python3 scripts/refresh_showcase.py
-```
-
-Live verify binds this machine’s resolved interpreter hash. After cloning onto
-another host, re-run `refresh_showcase.py` (or an interactive approve/run path)
-before expecting verify to pass. Historical pre-`runtime` certificates from
-earlier RCs are not verifiable on current builds.
+`refresh_showcase.py` uses the library test hook `skip_tty_check` — **not** for
+production approvals. After cloning onto another host, re-run
+`refresh_showcase.py` (or an interactive approve/run path) before expecting
+verify to pass. Historical pre-`runtime` certificates from earlier RCs are
+not verifiable on current builds.
 
 ## Integrating a research script
 
@@ -365,7 +433,7 @@ adversarially review docs **without** using Cursor’s in-chat model alone, use
 | --- | --- |
 | Connect | Composio toolkit `grok` + xAI API key from [console.x.ai](https://console.x.ai) |
 | Chat | Prefer tools whose slug starts with `GROK_` (e.g. `GROK_CREATE_RESPONSE`) |
-| Log | Append only real replies to [GROK_TANDEM.md](GROK_TANDEM.md) |
+| Log | Append only real replies to a review log in your own notes (no Grok log file is committed in this repository) |
 | ChatGPT history | [CHATGPT_TANDEM.md](CHATGPT_TANDEM.md) (often quota-blocked) |
 
 **Footgun:** Composio search often confuses **Grok / Groq / OpenAI**. Reject any
@@ -379,7 +447,13 @@ advice in the artifact (`## Grok evaluation`).
 
 **Hard stop:** Grok (and ChatGPT, Gemini, Cursor agents) must **not** type
 `APPROVE`. RunSpecimen approval stays an interactive TTY action; adapters
-exclude `approve`.
+exclude `approve` and cannot approve through the app.
+
+## Store approval and the Developer ID holder
+
+The Mac App Store app is guarantee (1). An ordinary contract is bound when a person types `APPROVE` in a real terminal. That phrase does not authorize a contract whose policy is local, companion, or dual.
+
+Guarantee (2) is a separate Developer ID holder. It is not in the Store app, it is not installed from this guide, and a software test double is not Touch ID or Face ID. Do not describe the approved 0.1.4 (9) app as the protected holder. A biometric press does not close holder engineering. Apple's current guidance says a root launchd daemon cannot create a Secure Enclave key, so installed admission stays closed. A holder signature over a caller-supplied key is not that proof. A Mac-session signature proves possession of the pinned key and does not by itself prove that protected holder state committed that key. Phone review of an exact run is not physical presence at the Mac.
 
 ## Troubleshooting
 
@@ -404,6 +478,5 @@ exclude `approve`.
 - [THREAT_MODEL.md](THREAT_MODEL.md)
 - [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)
 - [Integrations](INTEGRATIONS.md) — adapter status ledger + frontier research
-- [GROK_TANDEM.md](GROK_TANDEM.md) — external Grok review log
 - [CHATGPT_TANDEM.md](CHATGPT_TANDEM.md) — ChatGPT tandem history
 - [SECURITY.md](../SECURITY.md)

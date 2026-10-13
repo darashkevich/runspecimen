@@ -10,12 +10,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
-from runspecimen.atomic import atomic_write_json, read_json
-from runspecimen.errors import LeaseError
+from runspecimen.atomic import atomic_write_json, read_json_nofollow
+from runspecimen.errors import LeaseError, PathEscapeError
 from runspecimen.paths import (
     LEASE_FILENAME,
     LEASE_META_FILENAME,
     ensure_dir,
+    open_regular_nofollow,
     resolve_workspace,
     workspace_state_root,
 )
@@ -73,8 +74,10 @@ class Lease:
     def acquire(self, *, blocking: bool = False) -> None:
         if self._fd is not None:
             return
-        self.lock_path.touch(exist_ok=True)
-        fd = os.open(str(self.lock_path), os.O_RDWR)
+        try:
+            fd = open_regular_nofollow(self.lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+        except PathEscapeError as exc:
+            raise LeaseError(f"refusing to follow a symlink: {self.lock_path}") from exc
         flags = fcntl.LOCK_EX
         if not blocking:
             flags |= fcntl.LOCK_NB
@@ -109,7 +112,9 @@ class Lease:
         if not self.meta_path.exists():
             return None
         try:
-            return LeaseMeta.from_dict(read_json(self.meta_path))
+            return LeaseMeta.from_dict(read_json_nofollow(self.meta_path))
+        except PathEscapeError:
+            raise
         except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
             return None
 
@@ -118,8 +123,10 @@ class Lease:
         if self._fd is not None:
             return False
         ensure_dir(self.lock_dir)
-        self.lock_path.touch(exist_ok=True)
-        fd = os.open(str(self.lock_path), os.O_RDWR)
+        try:
+            fd = open_regular_nofollow(self.lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+        except PathEscapeError as exc:
+            raise LeaseError(f"refusing to follow a symlink: {self.lock_path}") from exc
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:

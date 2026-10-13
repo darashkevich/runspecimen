@@ -52,4 +52,4 @@ Not a chatbot. Not App Intents / system confirmation provider (that stays Veto).
 }
 ```
 
-Channel is read from `approval.json` or the last `approval` event. Omitted only when no approval exists (verify of a postflighted run should normally have one).
+Channel is read from the certificate (bound into `certificate_id`) and cross-checked against the latest chained `approval` event. It is never taken from an unbound `approval.json` side file. Omitted only for holder receipts that have no TTY/remote confirm channel. Verify of a postflighted ordinary run must have a bound approval.

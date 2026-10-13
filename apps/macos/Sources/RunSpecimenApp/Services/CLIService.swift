@@ -4,11 +4,47 @@ import Foundation
 import RunSpecimenCore
 #endif
 
+/// Replacement for `BoundedProcessCapture.run` so tests can return a synthetic capture.
+protocol ProcessCapturing: Sendable {
+    func capture(
+        executable: URL,
+        arguments: [String],
+        environment: [String: String],
+        currentDirectory: URL?,
+        isCancelled: @escaping @Sendable () -> Bool
+    ) throws -> BoundedProcessCapture.Output
+}
+
+struct LiveProcessCapture: ProcessCapturing {
+    func capture(
+        executable: URL,
+        arguments: [String],
+        environment: [String: String],
+        currentDirectory: URL?,
+        isCancelled: @escaping @Sendable () -> Bool
+    ) throws -> BoundedProcessCapture.Output {
+        try BoundedProcessCapture.run(
+            executable: executable,
+            arguments: arguments,
+            environment: environment,
+            currentDirectory: currentDirectory,
+            byteLimit: 8 * 1024 * 1024,
+            timeout: 15 * 60,
+            isCancelled: isCancelled
+        )
+    }
+}
+
 /// Invokes the user-selected (or bundled / PATH-discovered) `runspecimen` binary.
 /// Does not weaken engine gates: mutating commands go through the real CLI.
 actor CLIService {
+    private let processes: any ProcessCapturing
     private(set) var cliURL: URL?
     private(set) var resolutionSource: CLIResolutionSource?
+
+    init(processes: any ProcessCapturing = LiveProcessCapture()) {
+        self.processes = processes
+    }
     /// Tracked dashboard child so we can terminate it on app quit (App Store 2.4.5(iii)).
     private var dashboardProcess: Process?
 
@@ -73,19 +109,23 @@ actor CLIService {
     func version() async throws -> CLIIdentity {
         let url = try requireCLI()
         let output = try await run(arguments: ["--version"], expectJSON: false)
-        let version = (output.stdout + "\n" + output.stderr)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if version.lowercased().contains("need python") {
-            throw AppError(message: CLIVersionGate.failureMessage(for: .unparseable(raw: version)) ?? version)
-        }
-        guard version.lowercased().contains("runspecimen") || version.contains(".") else {
-            throw AppError(message: "Selected binary did not report a RunSpecimen version:\n\(version)\n(exit \(output.exitCode))")
-        }
-        let evaluation = CLIVersionGate.evaluate(versionOutput: version)
-        if let message = CLIVersionGate.failureMessage(for: evaluation) {
-            throw AppError(message: message)
+        let version: String
+        do {
+            version = try CLIVersionGate.acceptedVersion(from: output.capture)
+        } catch let error as EngineReportError {
+            throw AppError(message: error.message)
         }
         return CLIIdentity(path: url, version: version, source: resolutionSource ?? .manual)
+    }
+
+    func captureReadOnly(_ arguments: [String]) async -> String {
+        do {
+            let payload = try await runJSON(arguments: arguments)
+            return payload.pretty
+        } catch {
+            let message = (error as? AppError)?.message ?? error.localizedDescription
+            return message
+        }
     }
 
     func doctor(workspace: URL) async throws -> DoctorReport {
@@ -248,7 +288,7 @@ actor CLIService {
             throw AppError(
                 message: channel.requiresBundledHelper
                     ? "Bundled runspecimen engine is not selected. Use Prefer Bundled Helper. Store builds do not install a host CLI."
-                    : "runspecimen CLI not selected. Use “Select runspecimen CLI” (Open panel), install 0.2.0rc14+, or stage a bundled helper under Contents/Helpers."
+                    : "runspecimen CLI not selected. Use “Select runspecimen CLI” (Open panel). This build's engine is unpublished 0.2.0rc15. The published pin remains runspecimen==0.2.0rc14."
             )
         }
         let fm = FileManager.default
@@ -256,7 +296,7 @@ actor CLIService {
             throw AppError(
                 message: channel.requiresBundledHelper
                     ? "Bundled runspecimen engine is missing or not executable at:\n\(cliURL.path)\nUse Prefer Bundled Helper. Store builds do not install a host CLI."
-                    : "runspecimen CLI is missing or not executable at:\n\(cliURL.path)\nRe-select it via Open panel, or reinstall 0.2.0rc14+."
+                    : "runspecimen CLI is missing or not executable at:\n\(cliURL.path)\nRe-select it via Open panel. This build's engine is unpublished 0.2.0rc15."
             )
         }
         // Enforce MAS source restriction at execution, not only in Settings UI.
@@ -330,6 +370,7 @@ actor CLIService {
         var exitCode: Int32
         var stdout: String
         var stderr: String
+        var capture: BoundedProcessCapture.Output
     }
 
     private struct JSONPayload {
@@ -339,57 +380,50 @@ actor CLIService {
 
     private func runJSON(arguments: [String]) async throws -> JSONPayload {
         let result = try await run(arguments: arguments, expectJSON: true)
-        if result.exitCode != 0 {
-            throw AppError(message: result.stderr.isEmpty ? result.stdout : result.stderr)
+        do {
+            let decoded = try EngineReportDecoder.jsonPayload(from: result.capture)
+            return JSONPayload(object: decoded.object, pretty: decoded.pretty)
+        } catch let error as EngineReportError {
+            throw AppError(message: error.message)
         }
-        let raw = result.stdout.data(using: .utf8) ?? Data()
-        let obj = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] ?? [:]
-        let pretty: String
-        if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]),
-           let text = String(data: data, encoding: .utf8) {
-            pretty = text
-        } else {
-            pretty = result.stdout
-        }
-        return JSONPayload(object: obj, pretty: pretty)
     }
 
     private func run(arguments: [String], expectJSON: Bool) async throws -> ProcessResult {
         let url = try requireCLI()
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let process = Process()
-                    let invocation = Self.processInvocation(for: url, arguments: arguments)
-                    process.executableURL = invocation.executable
-                    process.arguments = invocation.arguments
-                    process.environment = Self.augmentedEnvironment()
-                    // Bundled Helpers live next to the launcher; keep cwd stable for relative paths.
-                    if url.path.contains("/Contents/Helpers/") || url.path.contains("/RunSpecimenEngine/") {
-                        process.currentDirectoryURL = url.deletingLastPathComponent()
+        let flag = ProcessCancellationFlag()
+        let processes = self.processes
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let box = ContinuationBox(continuation)
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do {
+                        let invocation = Self.processInvocation(for: url, arguments: arguments)
+                        var directory: URL?
+                        if url.path.contains("/Contents/Helpers/") || url.path.contains("/RunSpecimenEngine/") {
+                            directory = url.deletingLastPathComponent()
+                        }
+                        let output = try processes.capture(
+                            executable: invocation.executable,
+                            arguments: invocation.arguments,
+                            environment: Self.augmentedEnvironment(),
+                            currentDirectory: directory,
+                            isCancelled: { flag.isCancelled }
+                        )
+                        _ = expectJSON
+                        let reported = EngineReportDecoder.plainText(from: output)
+                        box.resume(returning: ProcessResult(
+                            exitCode: reported.exitCode,
+                            stdout: reported.stdout,
+                            stderr: reported.stderr,
+                            capture: output
+                        ))
+                    } catch {
+                        box.resume(throwing: AppError(message: error.localizedDescription))
                     }
-
-                    let out = Pipe()
-                    let err = Pipe()
-                    process.standardOutput = out
-                    process.standardError = err
-                    process.standardInput = FileHandle.nullDevice
-
-                    try process.run()
-                    process.waitUntilExit()
-
-                    let stdout = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                    let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                    _ = expectJSON
-                    continuation.resume(returning: ProcessResult(
-                        exitCode: process.terminationStatus,
-                        stdout: stdout,
-                        stderr: stderr
-                    ))
-                } catch {
-                    continuation.resume(throwing: AppError(message: error.localizedDescription))
                 }
             }
+        } onCancel: {
+            flag.cancel()
         }
     }
 
@@ -469,6 +503,49 @@ actor CLIService {
             return URL(fileURLWithPath: String(cString: dir), isDirectory: true)
         }
         return FileManager.default.homeDirectoryForCurrentUser
+    }
+}
+
+/// Resumes a checked continuation at most once, including when capture throws.
+private final class ContinuationBox<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, Error>?
+
+    init(_ continuation: CheckedContinuation<T, Error>) {
+        self.continuation = continuation
+    }
+
+    func resume(returning value: T) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: value)
+    }
+
+    func resume(throwing error: Error) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(throwing: error)
+    }
+}
+
+private final class ProcessCancellationFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
     }
 }
 

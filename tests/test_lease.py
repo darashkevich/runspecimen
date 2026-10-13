@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import multiprocessing
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -95,6 +96,29 @@ class TestLease(RunSpecimenTestCase):
             self.assertEqual(lease.meta.holder, "t")
         self.assertFalse(lease.held)
         self.assertIsNone(lease.read_meta())
+
+    def test_same_user_unlink_replaces_the_held_lease(self) -> None:
+        """A workspace lease is not guarantee (2). flock follows the inode, not the path."""
+        first = Lease.for_workspace(self.ws, holder="first")
+        first.acquire()
+        assert first.meta is not None
+        held_inode = first.lock_path.stat().st_ino
+        os.unlink(first.lock_path)
+        second = Lease.for_workspace(self.ws, holder="second")
+        second.acquire()
+        assert second.meta is not None
+        self.assertTrue(first.held)
+        self.assertTrue(second.held)
+        self.assertNotEqual(held_inode, second.lock_path.stat().st_ino)
+        self.assertEqual(second.meta.holder, "second")
+        saved = (self.ws / ".runspecimen" / "consumed-marker")
+        saved.write_bytes(b"consumed\n")
+        copy = saved.read_bytes()
+        saved.unlink()
+        saved.write_bytes(copy)
+        self.assertEqual(saved.read_bytes(), b"consumed\n")
+        first.release()
+        second.release()
 
     def test_status_metadata_only_describes_active_holder(self) -> None:
         from runspecimen.status import status_for

@@ -3,6 +3,10 @@
 Python/plugin cut currently public: **`0.2.0rc14`** / **`v0.2.0-rc.14`**.
 This file records what shipped; it does not authorize App Store Connect changes.
 
+Candidate source on this branch identifies as **`0.2.0rc15`** / **`0.2.0-rc.15`**. That cut is not published. Its bytes are not the rc14 wheel, sdist, or plugin zip. The Homebrew formula in this tree still installs the published rc14 sdist.
+
+App Store Connect macOS **0.1.4 (9)** was queried on 2026-09-28 as `READY_FOR_SALE` and `downloadable=true` (build `51a18894-02e3-4846-86f5-29cc345567f0`, review item `APPROVED`). That release is unchanged. A later **0.1.6 (1)** store update is a proposal, not an agreed scope.
+
 ## What is live today
 
 | Channel | Identity | Evidence |
@@ -11,7 +15,7 @@ This file records what shipped; it does not authorize App Store Connect changes.
 | PyPI | **`0.2.0rc14`** (identical SHA-256 to GitHub) | https://pypi.org/project/runspecimen/0.2.0rc14/ |
 | Homebrew tap | **`0.2.0rc14`** (same sdist URL + sha256) | https://github.com/darashkevich/homebrew-runspecimen · `brew tap darashkevich/runspecimen && brew install runspecimen` |
 | Product site | `python3 -m pip install runspecimen==0.2.0rc14` | https://runspecimen.darashkevich.com/ (pin update may lag the package publish) |
-| Mac App Store | **not public** | Connect macOS **0.1.3 (8)** is `IN_REVIEW` (submission `9c19e1cd-ebd1-4705-b683-5a5fdc2671f6`, submitted 2026-09-21T05:36:49Z). That binary froze engine **0.2.0rc12**. Builds 5 and 6 were rejected and cancelled. |
+| Mac App Store | **0.1.4 (9)** `READY_FOR_SALE` (queried 2026-09-28); no public `apps.apple.com` URL in this file | Build `51a18894-02e3-4846-86f5-29cc345567f0`, package SHA-256 `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d`. Source was `0f50a2c` plus the rejection fixes, engine **0.2.0rc14**, and it does **not** include evidence expansion. **0.1.3 (8)** was rejected on 2026-09-23. The 2026-09-24 `WAITING_FOR_REVIEW` note is historical. |
 
 Install pin is required: pip will not select an RC without `==0.2.0rc14`.
 
@@ -32,7 +36,7 @@ Install pin is required: pip will not select an RC without `==0.2.0rc14`.
 | GitHub Release | **`v0.2.0-rc.13`** (published prerelease) | https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.13 · tag peels to `3601934c850dd0405590a392ccd4c052cd7a16e4` |
 | PyPI | **`0.2.0rc13`** (identical SHA-256 to GitHub) | https://pypi.org/project/runspecimen/0.2.0rc13/ |
 | Product site at publication | pinned `runspecimen==0.2.0rc13` | https://runspecimen.darashkevich.com/ now pins rc14 after site update |
-| Mac App Store | **not public** | Connect macOS **0.1.3 (8)** is `IN_REVIEW` (submission `9c19e1cd-ebd1-4705-b683-5a5fdc2671f6`, submitted 2026-09-21T05:36:49Z). Builds 5 and 6 were rejected and cancelled. |
+| Mac App Store | **not public** | Historical: **0.1.3 (8)** was submitted 2026-09-21 and later rejected. It is not the package in review. |
 
 Install pin is required: pip will not select an RC without `==0.2.0rc13`.
 
@@ -54,4 +58,4 @@ rc10 GitHub Release bytes and PyPI bytes were produced by **separate rebuilds**.
 
 ## Website / Store language
 
-Product page install commands match **rc14**. Add an `apps.apple.com` link only when Apple returns a working public URL. The binary in review is **0.1.3 (8)** with engine **0.2.0rc12**. Do not upload another build while that submission is in review.
+Product page install commands match **rc14**. Do not add an `apps.apple.com` link until Apple publishes a working URL. Approved **0.1.4 (9)** freezes engine **0.2.0rc14** and does not include evidence expansion. Local **0.1.5 (10)**, Store package **0.1.5 (11)** from `3a0f483` (SHA-256 `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309`), and **0.1.5 (12)** from `c400f2d` (SHA-256 `6b3e9b3e1db219aafd834dd894b4ce04a8269cedb34dc116a4a154c22bb09a38`) are earlier packages. This branch's local successor label is **0.1.5 (13)** and is not uploaded. Do not upload another build while **0.1.4 (9)** is the approved Store app. Public website copy should keep the rc14 install pin and must not describe 0.1.5 as available or approved.

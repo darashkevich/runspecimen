@@ -9,14 +9,14 @@ auto-approve, type `APPROVE`, or settle remote-confirm.
 | Surface | Package / path | Status | Notes |
 | --- | --- | --- | --- |
 | Codex plugin | `plugins/runspecimen/.codex-plugin/` | Shipped in-repo; marketplace **not submitted** | Skill + adapter; see `docs/SUBMISSION.md` |
-| Cursor plugin | `plugins/runspecimen/.cursor-plugin/` + `.cursor-plugin/marketplace.json` | Shipped in-repo; marketplace **not submitted** | Skill + rule + logo |
-| Claude Code plugin | `plugins/runspecimen/.claude-plugin/` + `.claude-plugin/marketplace.json` | Shipped in-repo; community marketplace **not submitted** | Skills, commands, PreToolUse approve-gate, stdio MCP |
+| Cursor plugin | `plugins/runspecimen/.cursor-plugin/` + `.cursor-plugin/marketplace.json` | Shipped in-repo; marketplace form submitted 2026-09-21, **not listed** (not re-checked since) | Skill + rule + logo |
+| Claude Code plugin | `plugins/runspecimen/.claude-plugin/` + `.claude-plugin/marketplace.json` | Shipped in-repo; directory form submitted 2026-09-21, **not listed** (not re-checked since) | Skills, commands, PreToolUse approve-gate, stdio MCP |
 | Claude Desktop MCP | `plugins/runspecimen/.mcp.json` → `scripts/runspecimen_mcp.py` | Shipped (local stdio) | Same allow-list as adapter; no `approve` tool |
 | Grok Build (xAI) | Claude-compat + `plugins/runspecimen/grok/` | Shipped via Claude-compat path | Symlink to `~/.grok/plugins/`; optional `AGENTS.md` |
-| Gemini CLI / Code Assist | `gemini-extension.json` + `GEMINI.md` + `gemini/` | Shipped in-repo; gallery **not submitted** | Skills, TOML commands, BeforeTool gate, MCP; Code Assist via MCP + instructions |
+| Gemini CLI / Code Assist | `gemini-extension.json` + `GEMINI.md` + `gemini/` | Shipped in-repo; gallery is crawler-indexed (topic + root manifest on `main`), **not indexed** as of 2026-09-21 | Skills, TOML commands, BeforeTool gate, MCP; Code Assist via MCP + instructions |
 | Antigravity CLI (`agy`) | `plugins/runspecimen/antigravity/` | Shipped in-repo; gallery / marketplace **not submitted** | Native plugin (`plugin.json`, `mcp_config.json`, `PreToolUse` hooks) + documented `agy plugin import gemini` path |
 | Meta Muse Code | `plugins/runspecimen/muse/` | Shipped in-repo; marketplace **not submitted** | Skill + MCP fragment; PreToolUse gate marked **beta** |
-| JetBrains Junie | `.junie-extension/marketplace.json` + `extension.json` + `jetbrains/` | Shipped in-repo; JetBrains marketplace **not submitted** | Claude-compat + native Junie catalog; guidelines + MCP |
+| JetBrains Junie | `.junie-extension/marketplace.json` + `extension.json` + `jetbrains/` | Shipped in-repo; catalog PR [JetBrains/junie-extensions#16](https://github.com/JetBrains/junie-extensions/pull/16) open, **not merged** (checked 2026-10-06); IntelliJ Marketplace **not submitted** | Claude-compat + native Junie catalog; guidelines + MCP |
 | JetBrains IntelliJ scaffold | `jetbrains/intellij-plugin/` | Scaffold + local install docs | Tools menu shells to CLI; **no** in-IDE Approve |
 | Windsurf (Cascade) | `plugins/runspecimen/windsurf/` | Shipped in-repo; store **not submitted** | Skills + rules for `.windsurf/` / `~/.codeium/windsurf/`; optional MCP |
 | Homebrew tap | [`darashkevich/homebrew-runspecimen`](https://github.com/darashkevich/homebrew-runspecimen) | Live; installs `0.2.0rc14` | `brew tap darashkevich/runspecimen && brew install runspecimen`. In-repo formula at `packaging/homebrew/`. Default backend `none` is unconfined |

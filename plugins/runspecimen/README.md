@@ -11,10 +11,12 @@ does not ship the enforcement binary.
 
 ## Install paths
 
-- **Codex marketplace / plugin directory:** install the `runspecimen` plugin from
-  the Codex plugin listing (package root `plugins/runspecimen`, skill under
-  `skills/runspecimen/`). After install, confirm `runspecimen` remains on `PATH`
-  in the environment Codex uses.
+- **Codex (local / repository only):** not submitted and not listed. There is
+  no public Codex plugin listing. Install from this repository: symlink or copy
+  this directory (package root `plugins/runspecimen`, skill under
+  `skills/runspecimen/`) into the local Codex plugins directory this host uses.
+  After install, confirm `runspecimen` remains on `PATH` in the environment
+  Codex uses.
 - **Cursor (local):** symlink this directory to
   `~/.cursor/plugins/local/runspecimen`, reload Cursor, and confirm that the
   RunSpecimen skill and rule appear in Customize. Repo marketplace metadata lives
@@ -77,8 +79,12 @@ Approve-safety layers in this package:
 ## MCP (Claude / Gemini / Antigravity / Muse / Junie / Desktop / Grok / Windsurf)
 
 `.mcp.json` (and Gemini/Junie/Antigravity/Muse mirrors) starts a local stdio
-MCP server (`scripts/runspecimen_mcp.py`) that exposes only: `about`, `doctor`,
-`validate`, `status`, `preflight`, `run`, `postflight`, `verify`, `dashboard`.
+MCP server (`scripts/runspecimen_mcp.py`) that exposes: `about`, `doctor`,
+`validate`, `status`, `preflight`, `run`, `postflight`, `verify`, `dashboard`,
+plus read-only `decisions_search`, `requirements_report`, and `freshness_check`
+(`freshness evaluate`, which does not write `freshness_report.json`;
+`freshness check` remains the writing CLI).
+There is still **no** `approve` / settle tool.
 No network phone-home. For hosts outside a plugin install, point an MCP server
 entry at the same script with an absolute path.
 

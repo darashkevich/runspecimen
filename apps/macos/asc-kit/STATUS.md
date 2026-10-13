@@ -1,6 +1,26 @@
 # ASC kit status (honest)
 
-## Current: 0.1.4 (9) WAITING_FOR_REVIEW (submitted 2026-09-24)
+## Current: 0.1.4 (9) READY_FOR_SALE (queried 2026-09-28)
+
+App Store Connect, app `6813492506`:
+
+| Connect field | Value |
+| --- | --- |
+| Version | **0.1.4** id `6cfe298b-92c1-460d-b83b-5687a67f2cff` |
+| State | `appStoreState=READY_FOR_SALE`, `appVersionState=READY_FOR_DISTRIBUTION`, `downloadable=true` |
+| Release | `AFTER_APPROVAL` (released when Apple approved; not held for a later developer release) |
+| Build | **9** id `51a18894-02e3-4846-86f5-29cc345567f0` `VALID` `expired=false` uploaded 2026-09-24T05:32:21-07:00 |
+| Review item | submission `f0bb3ab1-c283-4463-8c27-e5702a35ac6a` item state `APPROVED` |
+| Source | `0f50a2c` plus the rejection fixes. Excludes PR #34 and this integrated branch |
+| Package SHA-256 | `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` |
+
+Ready for Sale is public availability in Connect, not merely an approval waiting on a release button. The iTunes lookup API returned no Mac listing for this bundle in the US or GB at query time, so this file does not claim an apps.apple.com URL. Do not withdraw, replace, or edit version 0.1.4. No newer build is attached.
+
+A symbol scan of the archived approved app, not a new package, is [evidence/scan-0.1.4-9.json](evidence/scan-0.1.4-9.json): 48 Mach-O files, each `arm64`, 0 violations. That scan does not replace the recorded package hash above, and it is not an identity attestation of the installer.
+
+The historical note below recorded this same version as `WAITING_FOR_REVIEW` on 2026-09-24. That was the state then.
+
+## Historical: 0.1.4 (9) WAITING_FOR_REVIEW (submitted 2026-09-24)
 
 Confirmed rejection of **0.1.3 (8)** (submission `9c19e1cd-…`, review 2026-09-23):
 **2.5.1** private/deprecated API refs in Apple Python 3.9 (`TrustEvaluationAgent`,
@@ -21,7 +41,26 @@ plus macOS rejection fixes only — **does not include PR #34**.
 
 ASC URL: https://appstoreconnect.apple.com/apps/6813492506/distribution/macos/version/inflight
 
-## Resubmitted 2026-09-21 (waiting for review)
+In-flight note: that `/inflight` URL is historical (saved while **0.1.4 (9)** was waiting). The current Connect state in this file is `READY_FOR_SALE` for **0.1.4 (9)** — see the top section. This integrated branch is unpublished **0.1.5 (13)** / engine **0.2.0rc15** and is not that Store package. Do not withdraw, replace, or claim a new Store submission from this note.
+
+These identities are different artifacts. Do not treat them as the same package because an older local build reused the text **0.1.4 (9)**.
+
+| Artifact | Version | Source | Engine features | Package SHA-256 | Apple build |
+| --- | --- | --- | --- | --- | --- |
+| Submitted, recorded `WAITING_FOR_REVIEW` on 2026-09-24 | **0.1.4 (9)** | `0f50a2c` plus rejection fixes. Excludes evidence expansion | **0.2.0rc14** | `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` | `51a18894-02e3-4846-86f5-29cc345567f0` |
+| Local candidate that reused the same version label | **0.1.4 (9)** | evidence-expansion tip plus local macOS edits | rc14 plus evidence expansion | `758f8d4651ccc4240410d9618a906fdc9cbbb9974c5c53976b9abb646138cf7f` | not submitted |
+| Earlier local signed app | **0.1.5 (10)** | `b467c63` | rc14 plus evidence expansion and read-only native pane | zip `705ced0fa79ca98f951455f68e6fa4a8d08624b686c6579b60678b43e6aac8b0` | not submitted |
+| Local Store package, not uploaded | **0.1.5 (11)** | `3a0f48351b5717fb68168be6c56ac3038f2ea11e` | rc14 plus native workflows. No confirmation-claim or pipe-drain fix | pkg `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309` | not uploaded |
+| Next local candidate | **0.1.5 (12)** | `c400f2d0ca82b21f2663df92f3f0c262a1ba09af` | rc14 plus native workflows, confirmation claim, and concurrent pipe drain. Receipt digest, diff, and retain stay CLI-only | pkg `6b3e9b3e1db219aafd834dd894b4ce04a8269cedb34dc116a4a154c22bb09a38` | not uploaded |
+| Unpublished integrated candidate | **0.1.5 (13)** | `cursor/evidence-expansion-coherence` after #39/`e2a3216`, #47/`329e08b`, #49/`18ef461` (`cursor/integrated-release-candidate` historical at `a0dc233`) | engine **0.2.0rc15**. Packaged CryptoKit P-256 verifier is ad-hoc and hash-pinned, not a Secure Enclave. Development GUI remains the build of `27bb0c7` app sources | not a Store package | not uploaded |
+
+App Store Connect was not queried on 2026-09-25: the local API key file is present, and the issuer ID is not stored beside it, so no request was sent. Do not upload **0.1.5 (11)** while the recorded submission is still **0.1.4 (9)**.
+
+The **0.1.5 (11)** installer package is at `/Users/yahor/Documents/Codex/2026-08-24/runspecimen-candidates/0.1.5-11/RunSpecimen.pkg`. The matching archive is `RunSpecimen.xcarchive` in that same directory. Export used `destination=export` and did not upload. It is a Mac App Store package signed by `3rd Party Mac Developer Installer`, not a Developer ID build and not an app ZIP. Acceptance notes: [evidence/0.1.5-11-acceptance.md](evidence/0.1.5-11-acceptance.md).
+
+## Resubmitted 2026-09-21 (historical snapshot; build 8 was later rejected)
+
+The table below is the Connect state on 2026-09-21. It is not the current submission.
 
 Monday 02:08 CEST email: “There's an issue with your RunSpecimen (macos) submission”
 for `cd198ca0` / **0.1.3 (6)**. Resolution Center text is still not in the public
@@ -78,7 +117,7 @@ What the rejected binary asked reviewers to do (build 5 / rc10):
 That is a 2.1 completeness / 2.4.5(ii)(viii) fail even without Apple’s paragraph.
 Fix in this tree: bundled `Resources/ReviewerDemo`, MAS empty state **Open Reviewer Demo**,
 no pip/Select-CLI on Store builds, metadata keywords no longer lead with “sandbox”.
-That fix shipped as **0.1.3 (6)** (rejected) and again as **0.1.3 (8)**, which is the binary now in review. Engine **0.2.0rc12**.
+That fix shipped as **0.1.3 (6)** (rejected) and again as **0.1.3 (8)**, which Apple rejected on 2026-09-23. Engine **0.2.0rc12**. The package recorded as waiting is **0.1.4 (9)**.
 
 Account Holder still owns: Resolution Center reply if Apple writes back, and the
 EU DSA trader declaration (Business → Compliance). Do not cancel the build 8 submission.
@@ -90,7 +129,7 @@ records public Connect identifiers, not secrets.
 
 ## Historical: Connect build 5 (2026-09-18)
 
-This section records what Apple had when build 5 was in review. It is **not** the current binary. The submission now in review is **0.1.3 (8)** — see the top of this file.
+This section records what Apple had when build 5 was in review. It is **not** the current binary. The package recorded as waiting is **0.1.4 (9)** — see the top of this file.
 The ASC API does **not** store a git SHA. Identity below is reconstructed from
 Connect timestamps + the git timeline.
 
@@ -135,7 +174,7 @@ Commits that **cannot** be inside Apple’s binary (all after 15:38 CEST):
 
 ### Recommendation (superseded)
 
-Build **8** is already `WAITING_FOR_REVIEW` (submitted 2026-09-21). Do not cancel it and do not attach another build from automation. The paragraphs above describe why build 5 was the wrong binary to leave in review.
+Build **8** was rejected on 2026-09-23. Do not cancel the **0.1.4 (9)** submission from automation. The paragraphs above describe why build 5 was the wrong binary to leave in review.
 
 ## Packaging checklist (this operator Mac)
 
@@ -153,13 +192,13 @@ Build **8** is already `WAITING_FOR_REVIEW` (submitted 2026-09-21). Do not cance
 | Distribution-signed archive | **Done** — `RS_MAS_EXPORT=0 ./Scripts/archive_mas.sh` from `/tmp/rs-clean-checkout` (`44ddfed`). App + helper `TeamIdentifier=UN6KF8636A`, Authority `Apple Distribution`, `codesign --verify --strict`, App Sandbox + helper inherit, `Assets.car` + `AppIcon.icns`. |
 | Local MAS `.pkg` export | **Done** — `RS_EXPORT_DESTINATION=export` + `installerSigningCertificate` + profile **UUID** (display name `RunSpecimen MAS` is not what `exportArchive` resolves). Proof: [evidence/export-mas-local-pkg-ok.txt](evidence/export-mas-local-pkg-ok.txt). SHA-256 `e6ea0a7f12f4094ed430ea1ebc956ad6db2d67ecfa0f52e1eb0ebb66283f1bbf`. Extracted app **0.1.3 (5)** `mas`, both binaries `--verify --strict`, sandbox + inherit. **This local pkg is not what Apple is reviewing** (exported after PR #15 packaging fixes). First attempt without installer cert / UUID: [evidence/export-mas-local-pkg-installer-profile-mismatch.txt](evidence/export-mas-local-pkg-installer-profile-mismatch.txt). |
 | `ExportOptions.mas.plist` committed `teamID` | Still placeholder `TEAMID`; `export_mas.sh` rewrites a temp copy (team ID + profile UUID). Default `destination=upload` — set `RS_EXPORT_DESTINATION=export` for a local pkg. Never `-allowProvisioningUpdates` without Yahor. |
-| Connect upload | **0.1.3 (8)** `WAITING_FOR_REVIEW` since 2026-09-21. Do not upload a replacement while it is waiting. |
+| Connect upload | **0.1.4 (9)** recorded `WAITING_FOR_REVIEW` since 2026-09-24. **0.1.3 (8)** was rejected. Do not upload a replacement from automation. |
 
 State ladder (do not collapse these):
 
 1. **Uploaded** — build 8 is in Connect (`c5575ef9-2444-4452-aec8-c9afdc7dd611`).
 2. **Processing** — finished; `VALID`.
-3. **Waiting for review** — current state (submission `9c19e1cd-…`, 2026-09-21).
+3. **Waiting for review** — recorded state for **0.1.4 (9)** (submission `f0bb3ab1-…`, 2026-09-24). Build 8's earlier waiting state ended in rejection.
 4. **Approved** — not yet.
 5. **Publicly available** — not yet (`AFTER_APPROVAL` will still need Apple to release it).
 

@@ -1,0 +1,8 @@
+{
+  "version": "0.2.0rc15",
+  "wheel_sha256": "3759ea01c7032b2b8f37482fbb32825fdef0508568cd4b505847a9f463c241f8",
+  "sdist_sha256": "517613049784fd1cd3cdac0cb144228b62ae3eed17bc2772f6adc7dd9ba68905",
+  "plugin_sha256": "ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb",
+  "created": "2026-10-12T15:21:04.412787+00:00",
+  "pack": "qafix28"
+}

@@ -19,6 +19,13 @@ final class AppModel: ObservableObject {
     @Published var showSettings = false
     @Published var showAbout = false
     @Published var pathProbeNote: String?
+    /// Why a saved contract was not shown again. Does not clear receipts.
+    @Published var sessionNote: String?
+    /// Read-only evidence-expansion output. Never an approval or a run.
+    @Published var expansionReadout: String = ""
+    @Published var showWorkflows = false
+    /// Consequential workflow waiting for an explicit human confirmation.
+    @Published var pendingWorkflow: WorkflowRequest?
     /// Persistent banner when CLI is missing, stale bookmark, or below 0.2.0rc9.
     @Published var cliSetupIssue: String?
     @Published var cliSourceLabel: String?
@@ -116,19 +123,41 @@ final class AppModel: ObservableObject {
             if channel.requiresBundledHelper {
                 cliSetupIssue = "Mac App Store build: bundled runspecimen helper missing or not executable. This build fails closed — no host Python / PATH / pip fallback."
             } else {
-                cliSetupIssue = "runspecimen CLI not found. Install 0.2.0rc14+ then select the binary:\npython3 -m pip install 'runspecimen==0.2.0rc14'\n\nOr stage a helper into Contents/Helpers (see Helpers/README.md)."
+                cliSetupIssue = "runspecimen CLI not found. This build's engine is unpublished 0.2.0rc15. The published pin remains:\npython3 -m pip install 'runspecimen==0.2.0rc14'\n\nOr stage a helper into Contents/Helpers (see Helpers/README.md)."
             }
         }
 
         if let ws = bookmarks.loadWorkspace() {
             workspaceURL = ws
+            restoreSavedContract(in: ws)
         } else if channel.requiresBundledHelper, ReviewerDemoWorkspace.bundledRoot() != nil {
             // App Review Macs have a clean container. Opening the bundled
             // workspace here means the reviewer never lands on an empty CTA.
             await openReviewerDemo()
         }
 
+        if contractURL != nil {
+            await loadContractSummary()
+            await runDoctor()
+            await refreshStatus()
+        }
+
         await refreshDashboardFlag()
+    }
+
+    /// Reloads the last contract when it still resolves inside the workspace.
+    /// Does not materialize the Reviewer Demo or start a lifecycle action.
+    private func restoreSavedContract(in workspace: URL) {
+        guard !isBusy else { return }
+        let hadBookmark = UserDefaults.standard.data(forKey: "rs.bookmark.contract") != nil
+        guard let saved = bookmarks.loadContract(relativeTo: workspace) else {
+            if hadBookmark {
+                sessionNote = "Saved contract is no longer inside this workspace, so it was not selected."
+            }
+            return
+        }
+        contractURL = saved
+        sessionNote = nil
     }
 
     /// Open (or reopen) the bundled Reviewer Demo.
@@ -154,6 +183,13 @@ final class AppModel: ObservableObject {
             }
             workspaceURL = dest
             contractURL = dest.appendingPathComponent(ReviewerDemoWorkspace.contractName)
+            expansionReadout = ""
+            dropUnstartedWorkflowForContextChange()
+            do {
+                try bookmarks.saveContract(contractURL!, relativeTo: dest)
+            } catch {
+                sessionNote = error.localizedDescription
+            }
             contract = nil
             status = nil
             statusError = nil
@@ -169,15 +205,32 @@ final class AppModel: ObservableObject {
         guard let url = PanelPicker.pickWorkspace() else { return }
         do {
             try bookmarks.saveWorkspace(url)
-            workspaceURL = url
-            contractURL = nil
-            contract = nil
-            status = nil
-            statusError = nil
+            bookmarks.clearContract()
+            noteWorkspaceSelection(url)
             await runDoctor()
         } catch {
             self.error = AppError(message: error.localizedDescription)
         }
+    }
+
+    /// The workspace half of `chooseWorkspace`, without the open panel.
+    func noteWorkspaceSelection(_ url: URL) {
+        workspaceURL = url
+        contractURL = nil
+        sessionNote = nil
+        contract = nil
+        status = nil
+        statusError = nil
+        expansionReadout = ""
+        dropUnstartedWorkflowForContextChange()
+    }
+
+    /// The contract half of `chooseContract`, without the open panel.
+    func noteContractSelection(_ url: URL) {
+        contractURL = url
+        sessionNote = nil
+        statusError = nil
+        dropUnstartedWorkflowForContextChange()
     }
 
     func chooseCLI() async {
@@ -245,9 +298,22 @@ final class AppModel: ObservableObject {
     }
 
     func chooseContract() async {
+        guard let workspaceURL else {
+            self.error = AppError(message: "Select a workspace first.")
+            return
+        }
         guard let url = PanelPicker.pickContract(startingAt: workspaceURL) else { return }
-        contractURL = url
-        statusError = nil
+        guard SessionRestore.containedContract(contract: url, workspace: workspaceURL) != nil else {
+            self.error = AppError(message: SessionRestoreError.contractOutsideWorkspace.localizedDescription)
+            return
+        }
+        do {
+            try bookmarks.saveContract(url, relativeTo: workspaceURL)
+        } catch {
+            self.error = AppError(message: error.localizedDescription)
+            return
+        }
+        noteContractSelection(url)
         await loadContractSummary()
         await refreshStatus()
     }
@@ -258,6 +324,120 @@ final class AppModel: ObservableObject {
         await loadContractSummary()
         await refreshStatus()
         await refreshDashboardFlag()
+    }
+
+    /// Reads stored evidence, freshness, decisions, config, and usage.
+    /// Does not approve, run, apply config, restore a snapshot, or type APPROVE.
+    func refreshEvidenceDetails() async {
+        guard !isBusy, let workspaceURL else { return }
+        isBusy = true
+        defer { isBusy = false }
+        _ = bookmarks.startAccessingWorkspace()
+        var sections: [String] = []
+        sections.append(await labeled("Config inspect", ["config", "inspect", "--workspace", workspaceURL.path]))
+        sections.append(await labeled("Decisions", ["decisions", "list", "--workspace", workspaceURL.path]))
+        sections.append(await labeled("Usage", ["usage", "summarize", "--workspace", workspaceURL.path]))
+        if let contract {
+            let campaign = contract.campaignID
+            let run = contract.runID
+            if !campaign.isEmpty, !run.isEmpty {
+                sections.append(await labeled(
+                    "Requirements report",
+                    ["requirements", "report", "--workspace", workspaceURL.path, "--campaign-id", campaign, "--run-id", run]
+                ))
+                sections.append(await labeled(
+                    "Freshness report",
+                    ["freshness", "show", "--workspace", workspaceURL.path, "--campaign-id", campaign, "--run-id", run]
+                ))
+            }
+        }
+        expansionReadout = sections.joined(separator: "\n\n")
+    }
+
+    private func labeled(_ title: String, _ arguments: [String]) async -> String {
+        let body = await cli.captureReadOnly(arguments)
+        return "## \(title)\n\(body)"
+    }
+
+    /// Runs one expansion command and shows its JSON or error. Does not approve.
+    func runWorkflow(_ arguments: [String]) async {
+        guard !isBusy else {
+            expansionReadout = "Wait until the current action finishes."
+            return
+        }
+        guard workspaceURL != nil else {
+            expansionReadout = "Select a workspace first."
+            return
+        }
+        isBusy = true
+        defer { isBusy = false }
+        _ = bookmarks.startAccessingWorkspace()
+        expansionReadout = await cli.captureReadOnly(arguments)
+    }
+
+    private var workflowGate = WorkflowConfirmationGate()
+
+    func stageWorkflow(_ request: WorkflowRequest) {
+        var bound = request
+        bound.workspacePath = workspaceURL?.path ?? ""
+        bound.contractPath = contractURL?.path ?? ""
+        workflowGate.present(bound)
+        pendingWorkflow = workflowGate.pending
+    }
+
+    /// Dialog dismissal drops only an unclaimed request.
+    func cancelWorkflow() {
+        workflowGate.cancel()
+        pendingWorkflow = workflowGate.pending
+    }
+
+    /// Dialog close clears an unclaimed request and leaves a claim that was
+    /// already taken. A workspace or contract change uses
+    /// `dropUnstartedWorkflowForContextChange` instead, which also drops a
+    /// claim that has not started.
+    func dropUnstartedWorkflowForContextChange() {
+        workflowGate.dropUnstartedWorkForContextChange()
+        pendingWorkflow = workflowGate.pending
+    }
+
+    /// Call this synchronously from the confirm button, before any `Task`.
+    /// The claim is refused when the live workspace or contract is no longer
+    /// the one stored on the request.
+    func claimConfirmedWorkflow(matching id: UUID) -> WorkflowRequest? {
+        guard !isBusy else { return nil }
+        let workspace = workspaceURL?.path ?? ""
+        let contract = contractURL?.path ?? ""
+        if let pending = workflowGate.pending, pending.id == id,
+           pending.workspacePath != workspace || pending.contractPath != contract {
+            workflowGate.dropPendingIfContextDiffers(workspace: workspace, contract: contract)
+            pendingWorkflow = workflowGate.pending
+            return nil
+        }
+        let claimed = workflowGate.confirm(matching: id)
+        pendingWorkflow = workflowGate.pending
+        return claimed
+    }
+
+    /// Between claim and this call the workspace or contract may change.
+    /// A mismatch drops the unstarted claim and does not run the command.
+    /// Once `beginExecution` has started, the captured arguments are what run.
+    func performClaimedWorkflow(_ request: WorkflowRequest) async {
+        let workspace = workspaceURL?.path ?? ""
+        let contract = contractURL?.path ?? ""
+        if request.workspacePath != workspace || request.contractPath != contract {
+            _ = workflowGate.takeUnstartedClaim(request)
+            expansionReadout = "The workspace or contract changed before this workflow ran. Nothing was written."
+            pendingWorkflow = workflowGate.pending
+            return
+        }
+        guard workflowGate.beginExecution(of: request) else { return }
+        if isBusy {
+            workflowGate.abandonExecution()
+            expansionReadout = "Wait until the current action finishes."
+            return
+        }
+        defer { workflowGate.finishExecution() }
+        await runWorkflow(request.arguments)
     }
 
     func refreshCLIIdentity(presentAlert: Bool = false) async {
