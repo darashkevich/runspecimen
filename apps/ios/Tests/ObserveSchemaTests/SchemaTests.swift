@@ -300,6 +300,7 @@ final class ObserveSchemaTests: XCTestCase {
         let record = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
         try CompanionSecureEnclaveEnrollment.storeEnrollment(record, directory: directory) {}
         CompanionSecureEnclaveEnrollment.clock = { 1_600_000_000 }
+        CompanionSecureEnclaveEnrollment.skipBiometricCheck = true
         let holding = DispatchSemaphore(value: 0)
         let release = DispatchSemaphore(value: 0)
         CompanionSecureEnclaveEnrollment.beforeFinalSignatureDecision = {
@@ -309,6 +310,7 @@ final class ObserveSchemaTests: XCTestCase {
         defer {
             CompanionSecureEnclaveEnrollment.beforeFinalSignatureDecision = nil
             CompanionSecureEnclaveEnrollment.clock = { Int(Date().timeIntervalSince1970) }
+            CompanionSecureEnclaveEnrollment.skipBiometricCheck = false
         }
         let finishedDecision = expectation(description: "decision")
         var decisionError: Error?
@@ -354,6 +356,8 @@ final class ObserveSchemaTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let record = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
         try CompanionSecureEnclaveEnrollment.storeEnrollment(record, directory: directory) {}
+        CompanionSecureEnclaveEnrollment.skipBiometricCheck = true
+        defer { CompanionSecureEnclaveEnrollment.skipBiometricCheck = false }
         try CompanionSecureEnclaveEnrollment.revoke(keyID: record.keyID, directory: directory)
         CompanionSecureEnclaveEnrollment.clock = { 1_600_000_000 }
         defer { CompanionSecureEnclaveEnrollment.clock = { Int(Date().timeIntervalSince1970) } }
@@ -395,12 +399,23 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(stored.generation, 1)
     }
 
-    func testRevokeAndRotateHintsDoNotClaimAFaceIDPromptForRevocation() {
-        XCTAssertFalse(CompanionHardwareHints.revoke.contains("Asks for Face ID"))
-        XCTAssertTrue(CompanionHardwareHints.revoke.contains("without asking for Face ID"))
-        XCTAssertFalse(CompanionHardwareHints.rotate.contains("Asks for Face ID"))
-        XCTAssertTrue(CompanionHardwareHints.rotate.contains("without asking for Face ID"))
+    func testRevokeAndRotateHintsPromiseFaceIDPrompt() {
+        XCTAssertTrue(CompanionHardwareHints.revoke.contains("Asks for Face ID"))
+        XCTAssertTrue(CompanionHardwareHints.revoke.contains("revokes"))
+        XCTAssertFalse(CompanionHardwareHints.revoke.contains("without asking for Face ID"))
+        XCTAssertTrue(CompanionHardwareHints.rotate.contains("Asks for Face ID"))
         XCTAssertTrue(CompanionHardwareHints.rotate.contains("revokes the current key"))
+        XCTAssertFalse(CompanionHardwareHints.rotate.contains("without asking for Face ID"))
+    }
+
+    func testBiometryCancelledErrorLeavesNoStoredState() throws {
+        let error = CompanionHardwareRefusal.biometryCancelled
+        switch error {
+        case .biometryCancelled:
+            break
+        default:
+            XCTFail("biometryCancelled case not handled")
+        }
     }
 
     private func sampleRecord(state: String, generation: Int) -> CompanionPairingRecord {

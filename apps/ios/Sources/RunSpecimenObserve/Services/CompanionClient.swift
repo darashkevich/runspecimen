@@ -73,8 +73,12 @@ struct CompanionClient {
         }
         req.timeoutInterval = 8
         let session = try makeSession()
+        let needsInvalidation = session !== URLSession.shared
         do {
             let (data, response) = try await session.data(for: req)
+            if needsInvalidation {
+                session.finishTasksAndInvalidate()
+            }
             guard let http = response as? HTTPURLResponse else {
                 throw CompanionClientError.transport("Non-HTTP response")
             }
@@ -84,8 +88,14 @@ struct CompanionClient {
             }
             return data
         } catch let error as CompanionClientError {
+            if needsInvalidation {
+                session.finishTasksAndInvalidate()
+            }
             throw error
         } catch {
+            if needsInvalidation {
+                session.finishTasksAndInvalidate()
+            }
             throw CompanionClientError.transport(error.localizedDescription)
         }
     }

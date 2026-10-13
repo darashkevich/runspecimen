@@ -3,12 +3,11 @@ import SwiftUI
 /// Buttons on this screen call the Secure Enclave directly.
 ///
 /// Nothing calls it until the person taps. The tap is only the call site.
-/// Face ID on the key operation is the authentication. Revoke does not evaluate
-/// that context. Rotate enrolls the replacement through `enroll`, then revokes
-/// the current key without a second prompt.
+/// Face ID is required before Rotate or Revoke changes any state.
+/// If Face ID is cancelled, nothing changes.
 enum CompanionHardwareHints {
-    static let revoke = "Revokes the enrolled key without asking for Face ID. Does not approve a Mac run."
-    static let rotate = "Enrolls the replacement key through the same Secure Enclave enrollment as Enroll, then revokes the current key without asking for Face ID. Does not approve a Mac run."
+    static let revoke = "Asks for Face ID, then revokes the enrolled key. Does not approve a Mac run."
+    static let rotate = "Asks for Face ID, enrolls the replacement key, then revokes the current key. Does not approve a Mac run."
 }
 
 struct CompanionHardwareApprovalView: View {
@@ -122,9 +121,12 @@ struct CompanionHardwareApprovalView: View {
             pairingText = String(decoding: carried, as: UTF8.self)
             message = "Replacement key generation \(record.generation) is enrolled. The previous key is revoked. This did not approve a run."
         } catch let error as CompanionHardwareRefusal {
-            if case .malformed("rotation-incomplete") = error {
+            switch error {
+            case .biometryCancelled:
+                message = "Face ID was cancelled. Nothing was changed."
+            case .malformed("rotation-incomplete"):
                 message = "The replacement key was enrolled, and the previous key was not revoked. No run was approved."
-            } else {
+            default:
                 pairingText = ""
                 message = "Rotation did not finish. No Mac run was approved."
             }
@@ -140,6 +142,13 @@ struct CompanionHardwareApprovalView: View {
             try CompanionSecureEnclaveEnrollment.revoke(keyID: keyID, directory: directory)
             pairingText = ""
             message = "This iPhone key is revoked. A later signature with the old generation will not verify."
+        } catch let error as CompanionHardwareRefusal {
+            switch error {
+            case .biometryCancelled:
+                message = "Face ID was cancelled. Nothing was changed."
+            default:
+                message = "Revocation did not finish. The previous key was not replaced."
+            }
         } catch {
             message = "Revocation did not finish. The previous key was not replaced."
         }

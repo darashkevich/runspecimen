@@ -10,6 +10,8 @@ public enum CompanionHardwareRefusal: Error, Equatable {
     case malformed(String)
     case staleRequest
     case alreadyEnrolled
+    /// Face ID was required but the person cancelled. Nothing was changed.
+    case biometryCancelled
 }
 
 /// Public pairing material for one iPhone Secure Enclave key.
@@ -70,6 +72,8 @@ public enum CompanionSecureEnclaveEnrollment {
     #if RUNSPECIMEN_TEST_HOOKS
     /// Runs after the fail-fast load and before the decision reload, while the enrollment lock is held.
     static var beforeFinalSignatureDecision: (() -> Void)?
+    /// When true, skips the biometric prompt in revoke and rotate. Tests set this.
+    static var skipBiometricCheck = false
     #endif
 
     public static func automationRefused() throws -> Never {
@@ -139,7 +143,74 @@ public enum CompanionSecureEnclaveEnrollment {
         return try sign(fields: fresh, displayedCanonical: bytes, directory: directory)
     }
 
+    /// Revokes the enrolled key after Face ID authentication.
+    /// If Face ID is cancelled, throws `biometryCancelled` and nothing changes.
     public static func revoke(keyID: String, directory: URL) throws {
+        try validateKeyID(keyID)
+        try withLock(directory) {
+            let record = try load(keyID: keyID, directory: directory)
+            guard record.state == active else {
+                throw CompanionHardwareRefusal.malformed("enrollment")
+            }
+            try authenticateBiometric(reason: "Revoke this iPhone key")
+            _ = try persistRevocation(record, directory: directory) { _ in
+                try deleteBlob(keyID: keyID)
+            }
+        }
+    }
+
+    /// Synchronous Face ID authentication. Throws `biometryCancelled` if declined.
+    private static func authenticateBiometric(reason: String) throws {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if skipBiometricCheck { return }
+        #endif
+        let context = LAContext()
+        context.localizedFallbackTitle = ""
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
+            if let laError = error, laError.code == LAError.biometryNotAvailable.rawValue {
+                throw CompanionHardwareRefusal.malformed("biometry")
+            }
+            throw CompanionHardwareRefusal.malformed("biometry")
+        }
+        let semaphore = DispatchSemaphore(value: 0)
+        var authSuccess = false
+        var authError: NSError?
+        context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, evalError in
+            authSuccess = success
+            authError = evalError as NSError?
+            semaphore.signal()
+        }
+        semaphore.wait()
+        if !authSuccess {
+            if let laError = authError, laError.code == LAError.userCancel.rawValue || laError.code == LAError.appCancel.rawValue {
+                throw CompanionHardwareRefusal.biometryCancelled
+            }
+            throw CompanionHardwareRefusal.malformed("biometry")
+        }
+    }
+
+    /// Enrolls the new key first after Face ID authentication. If that fails, the old key stays.
+    /// If revoking the old key fails, the new key is left in place and the error says so.
+    /// If Face ID is cancelled, throws `biometryCancelled` and nothing changes.
+    public static func rotate(from oldKeyID: String, to newKeyID: String, directory: URL) throws -> CompanionPairingRecord {
+        try validateKeyID(oldKeyID)
+        try validateKeyID(newKeyID)
+        guard oldKeyID != newKeyID else {
+            throw CompanionHardwareRefusal.malformed("enrollment")
+        }
+        try authenticateBiometric(reason: "Rotate to a new iPhone key")
+        let created = try enroll(keyID: newKeyID, directory: directory)
+        do {
+            try revokeWithoutBiometricPrompt(keyID: oldKeyID, directory: directory)
+        } catch {
+            throw CompanionHardwareRefusal.malformed("rotation-incomplete")
+        }
+        return created
+    }
+
+    /// Internal revoke without a biometric prompt. Called from rotate after Face ID was already verified.
+    private static func revokeWithoutBiometricPrompt(keyID: String, directory: URL) throws {
         try validateKeyID(keyID)
         try withLock(directory) {
             let record = try load(keyID: keyID, directory: directory)
@@ -147,23 +218,6 @@ public enum CompanionSecureEnclaveEnrollment {
                 try deleteBlob(keyID: keyID)
             }
         }
-    }
-
-    /// Enrolls the new key first. If that fails, the old key stays. If revoking
-    /// the old key fails, the new key is left in place and the error says so.
-    public static func rotate(from oldKeyID: String, to newKeyID: String, directory: URL) throws -> CompanionPairingRecord {
-        try validateKeyID(oldKeyID)
-        try validateKeyID(newKeyID)
-        guard oldKeyID != newKeyID else {
-            throw CompanionHardwareRefusal.malformed("enrollment")
-        }
-        let created = try enroll(keyID: newKeyID, directory: directory)
-        do {
-            try revoke(keyID: oldKeyID, directory: directory)
-        } catch {
-            throw CompanionHardwareRefusal.malformed("rotation-incomplete")
-        }
-        return created
     }
 
     public static func carriedPairing(keyID: String, directory: URL) throws -> Data {
