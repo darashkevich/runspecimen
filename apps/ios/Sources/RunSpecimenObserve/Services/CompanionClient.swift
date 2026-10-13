@@ -42,13 +42,13 @@ struct CompanionClient {
         return url
     }
 
-    private func makeSession() throws -> URLSession {
+    private func makeSession() throws -> (URLSession, Bool) {
         let scheme = (config.baseURL.scheme ?? "").lowercased()
         if scheme == "https" {
             let pin = (config.tlsFingerprint ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !pin.isEmpty else { throw CompanionClientError.tlsPinRequired }
             let delegate = CompanionTLSPinningDelegate(expectedFingerprint: pin)
-            return URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+            return (URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil), true)
         }
         if scheme == "http" {
             let host = (config.baseURL.host ?? "").lowercased()
@@ -59,7 +59,7 @@ struct CompanionClient {
                 )
             }
         }
-        return URLSession.shared
+        return (URLSession.shared, false)
     }
 
     private func request(path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
@@ -72,7 +72,12 @@ struct CompanionClient {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         req.timeoutInterval = 8
-        let session = try makeSession()
+        let (session, shouldInvalidate) = try makeSession()
+        defer {
+            if shouldInvalidate {
+                session.finishTasksAndInvalidate()
+            }
+        }
         do {
             let (data, response) = try await session.data(for: req)
             guard let http = response as? HTTPURLResponse else {

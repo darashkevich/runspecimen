@@ -141,6 +141,7 @@ public enum CompanionSecureEnclaveEnrollment {
 
     public static func revoke(keyID: String, directory: URL) throws {
         try validateKeyID(keyID)
+        try authenticateWithBiometrics(reason: "Authenticate to revoke this iPhone key")
         try withLock(directory) {
             let record = try load(keyID: keyID, directory: directory)
             _ = try persistRevocation(record, directory: directory) { _ in
@@ -151,6 +152,7 @@ public enum CompanionSecureEnclaveEnrollment {
 
     /// Enrolls the new key first. If that fails, the old key stays. If revoking
     /// the old key fails, the new key is left in place and the error says so.
+    /// Both enroll and revoke require Face ID authentication.
     public static func rotate(from oldKeyID: String, to newKeyID: String, directory: URL) throws -> CompanionPairingRecord {
         try validateKeyID(oldKeyID)
         try validateKeyID(newKeyID)
@@ -159,11 +161,23 @@ public enum CompanionSecureEnclaveEnrollment {
         }
         let created = try enroll(keyID: newKeyID, directory: directory)
         do {
-            try revoke(keyID: oldKeyID, directory: directory)
+            try revokeAfterRotation(keyID: oldKeyID, directory: directory)
         } catch {
             throw CompanionHardwareRefusal.malformed("rotation-incomplete")
         }
         return created
+    }
+
+    /// Revokes a key during rotation. The caller has already authenticated for the new key enrollment.
+    /// A second Face ID prompt is required to revoke the old key.
+    private static func revokeAfterRotation(keyID: String, directory: URL) throws {
+        try authenticateWithBiometrics(reason: "Authenticate to revoke the previous key")
+        try withLock(directory) {
+            let record = try load(keyID: keyID, directory: directory)
+            _ = try persistRevocation(record, directory: directory) { _ in
+                try deleteBlob(keyID: keyID)
+            }
+        }
     }
 
     public static func carriedPairing(keyID: String, directory: URL) throws -> Data {
@@ -346,6 +360,28 @@ public enum CompanionSecureEnclaveEnrollment {
         guard flock(fd, LOCK_EX) == 0 else { throw CompanionHardwareRefusal.malformed("lock") }
         defer { _ = flock(fd, LOCK_UN) }
         return try body()
+    }
+
+    /// Requires Face ID authentication before proceeding. Blocks until authentication
+    /// completes or the user cancels. If cancelled, throws `CompanionHardwareRefusal.automationRefused`.
+    private static func authenticateWithBiometrics(reason: String) throws {
+        let context = LAContext()
+        context.localizedFallbackTitle = ""
+        var authError: Error?
+        let semaphore = DispatchSemaphore(value: 0)
+        context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, error in
+            if !success {
+                authError = error
+            }
+            semaphore.signal()
+        }
+        semaphore.wait()
+        if let authError {
+            if let laError = authError as? LAError, laError.code == .userCancel || laError.code == .appCancel || laError.code == .systemCancel {
+                throw CompanionHardwareRefusal.automationRefused
+            }
+            throw CompanionHardwareRefusal.malformed("biometric")
+        }
     }
 
     private static func createEnclaveKey(keyID: String) throws -> Data {

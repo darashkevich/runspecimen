@@ -3,12 +3,11 @@ import SwiftUI
 /// Buttons on this screen call the Secure Enclave directly.
 ///
 /// Nothing calls it until the person taps. The tap is only the call site.
-/// Face ID on the key operation is the authentication. Revoke does not evaluate
-/// that context. Rotate enrolls the replacement through `enroll`, then revokes
-/// the current key without a second prompt.
+/// Face ID on the key operation is the authentication. Revoke and Rotate both
+/// require Face ID authentication before proceeding.
 enum CompanionHardwareHints {
-    static let revoke = "Revokes the enrolled key without asking for Face ID. Does not approve a Mac run."
-    static let rotate = "Enrolls the replacement key through the same Secure Enclave enrollment as Enroll, then revokes the current key without asking for Face ID. Does not approve a Mac run."
+    static let revoke = "Asks for Face ID and revokes this iPhone key. If Face ID is cancelled, nothing changes. Does not approve a Mac run."
+    static let rotate = "Asks for Face ID to create a replacement key, then asks for Face ID again to revoke the current key. If Face ID is cancelled at either step, nothing changes. Does not approve a Mac run."
 }
 
 struct CompanionHardwareApprovalView: View {
