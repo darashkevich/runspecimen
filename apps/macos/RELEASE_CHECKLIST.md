@@ -7,9 +7,7 @@ Short operator path for shipping the macOS companion. Detail:
 **Invariants:** no telemetry; Approve never auto-types `APPROVE`; receipts ≠
 digital signatures; payload is **not** OS-sandboxed by the UI sandbox alone.
 
-**Engine:** a future MAS freeze must match `src/runspecimen/__version__` (**`0.2.0rc14`**). Build **8** in review froze **`0.2.0rc12`**. Do not upload another build while it is waiting.
-
-**Do not** upload or Submit another Mac App Store build while **0.1.3 (8)** is `WAITING_FOR_REVIEW`.
+**Engine:** a future MAS freeze must match `src/runspecimen/__version__` (**`0.2.0rc15`**). Build **9** shipped with engine **`0.2.0rc14`** and is now **READY_FOR_SALE**.
 
 ## Yahor-only prerequisites
 
@@ -78,7 +76,7 @@ test -f build/RunSpecimen.app/Contents/Resources/AppIcon.icns
    ```
    Or `RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh` (local Store pkg;
    UUID + installer cert; no upload). Default destination still `upload`.
-3. ASC: version `0.1.3` / build **8** is already `WAITING_FOR_REVIEW` (submitted 2026-09-21). Do not upload another build or Submit again while that submission is waiting.
+3. ASC: version `0.1.4` / build **9** is **READY_FOR_SALE**. Ready for the next build when needed.
 
 Optional: `brew install xcodegen` then `./Scripts/generate_xcodeproj.sh` if
 `project.yml` changed (committed `RunSpecimen.xcodeproj` is the default Archive input).

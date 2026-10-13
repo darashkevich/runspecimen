@@ -53,9 +53,9 @@ runspecimen,evidence,approval,local,cli,developer,receipt,preflight,control
 
 | Key | Value |
 | --- | --- |
-| Short version | 0.1.4 (9) WAITING_FOR_REVIEW |
-| Build | 9 |
-| Bundled engine | 0.2.0rc14 source plus candidate fixes; verify exact frozen build before upload |
+| Short version | 0.1.5 (14) |
+| Build | 14 |
+| Bundled engine | 0.2.0rc15 source; verify exact frozen build before upload |
 | Min macOS | 14.0 |
 
 ## App Privacy

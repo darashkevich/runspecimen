@@ -58,7 +58,7 @@ Published on GitHub as `v0.2.0-rc.12` and on PyPI as `0.2.0rc12` (identical byte
 - Fix `AppIcon.appiconset`: catalog filenames are real `icon_*@2x.png` files
   with matching pixel sizes (128@2x is 256px). `verify_app_icon.sh` checks
   Contents.json and a warning-free `actool` compile.
-- Mac App Store **0.1.3 (8)** is `WAITING_FOR_REVIEW` (submitted 2026-09-21). Builds 5 and 6 were rejected. Do not upload another binary while build 8 is waiting.
+- Mac App Store **0.1.4 (9)** is **READY_FOR_SALE**. Builds 5–8 were rejected or superseded.
 
 ### Packaging
 

@@ -1,25 +1,23 @@
 # ASC kit status (honest)
 
-## Current: 0.1.4 (9) WAITING_FOR_REVIEW (submitted 2026-09-24)
+## Current: 0.1.4 (9) READY_FOR_SALE
 
-Confirmed rejection of **0.1.3 (8)** (submission `9c19e1cd-…`, review 2026-09-23):
-**2.5.1** private/deprecated API refs in Apple Python 3.9 (`TrustEvaluationAgent`,
-`_lzma` symbols), **Design 4** missing main-window reopen menu, **2.4.5(i)** unused
-`network.server`. See [REJECTION-2026-09-23.md](REJECTION-2026-09-23.md).
+**0.1.4 (9)** is now **READY_FOR_SALE** on the Mac App Store.
 
-Replacement **0.1.4 (9)** built from **origin/main** `0f50a2c` (engine **0.2.0rc14**)
-plus macOS rejection fixes only — **does not include PR #34**.
+Built from **origin/main** `0f50a2c` (engine **0.2.0rc14**) plus macOS rejection fixes.
 
 | Connect field | Value |
 | --- | --- |
-| Version | **0.1.4** `WAITING_FOR_REVIEW` (id `6cfe298b-92c1-460d-b83b-5687a67f2cff`) |
-| Build | **9** id `51a18894-02e3-4846-86f5-29cc345567f0` `VALID` uploaded 2026-09-24T05:32:21-07:00 |
-| Submission | `f0bb3ab1-c283-4463-8c27-e5702a35ac6a` submitted 2026-09-24T12:36:01Z `WAITING_FOR_REVIEW` |
-| Prior rejection | `9c19e1cd-…` cancelled → `COMPLETE` |
+| Version | **0.1.4** `READY_FOR_SALE` (id `6cfe298b-92c1-460d-b83b-5687a67f2cff`) |
+| Build | **9** id `51a18894-02e3-4846-86f5-29cc345567f0` `VALID` |
 | Package SHA-256 | `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` |
-| Delivery / buildUpload | `51a18894-02e3-4846-86f5-29cc345567f0` |
 
-ASC URL: https://appstoreconnect.apple.com/apps/6813492506/distribution/macos/version/inflight
+## Historical: 0.1.3 (8) rejection (2026-09-23)
+
+Rejection of **0.1.3 (8)** (submission `9c19e1cd-…`, review 2026-09-23):
+**2.5.1** private/deprecated API refs in Apple Python 3.9 (`TrustEvaluationAgent`,
+`_lzma` symbols), **Design 4** missing main-window reopen menu, **2.4.5(i)** unused
+`network.server`. See [REJECTION-2026-09-23.md](REJECTION-2026-09-23.md).
 
 ## Resubmitted 2026-09-21 (waiting for review)
 
@@ -80,8 +78,7 @@ Fix in this tree: bundled `Resources/ReviewerDemo`, MAS empty state **Open Revie
 no pip/Select-CLI on Store builds, metadata keywords no longer lead with “sandbox”.
 That fix shipped as **0.1.3 (6)** (rejected) and again as **0.1.3 (8)**, which is the binary now in review. Engine **0.2.0rc12**.
 
-Account Holder still owns: Resolution Center reply if Apple writes back, and the
-EU DSA trader declaration (Business → Compliance). Do not cancel the build 8 submission.
+Account Holder still owns the EU DSA trader declaration (Business → Compliance).
 
 App Store Connect queried **2026-09-18** via the App Store Connect API
 (`GET /v1/apps?filter[bundleId]=com.darashkevich.runspecimen` and included
@@ -135,7 +132,7 @@ Commits that **cannot** be inside Apple’s binary (all after 15:38 CEST):
 
 ### Recommendation (superseded)
 
-Build **8** is already `WAITING_FOR_REVIEW` (submitted 2026-09-21). Do not cancel it and do not attach another build from automation. The paragraphs above describe why build 5 was the wrong binary to leave in review.
+Build **9** (`0.1.4`) is now **READY_FOR_SALE**. Builds 5–8 were rejected or superseded.
 
 ## Packaging checklist (this operator Mac)
 
@@ -153,7 +150,7 @@ Build **8** is already `WAITING_FOR_REVIEW` (submitted 2026-09-21). Do not cance
 | Distribution-signed archive | **Done** — `RS_MAS_EXPORT=0 ./Scripts/archive_mas.sh` from `/tmp/rs-clean-checkout` (`44ddfed`). App + helper `TeamIdentifier=UN6KF8636A`, Authority `Apple Distribution`, `codesign --verify --strict`, App Sandbox + helper inherit, `Assets.car` + `AppIcon.icns`. |
 | Local MAS `.pkg` export | **Done** — `RS_EXPORT_DESTINATION=export` + `installerSigningCertificate` + profile **UUID** (display name `RunSpecimen MAS` is not what `exportArchive` resolves). Proof: [evidence/export-mas-local-pkg-ok.txt](evidence/export-mas-local-pkg-ok.txt). SHA-256 `e6ea0a7f12f4094ed430ea1ebc956ad6db2d67ecfa0f52e1eb0ebb66283f1bbf`. Extracted app **0.1.3 (5)** `mas`, both binaries `--verify --strict`, sandbox + inherit. **This local pkg is not what Apple is reviewing** (exported after PR #15 packaging fixes). First attempt without installer cert / UUID: [evidence/export-mas-local-pkg-installer-profile-mismatch.txt](evidence/export-mas-local-pkg-installer-profile-mismatch.txt). |
 | `ExportOptions.mas.plist` committed `teamID` | Still placeholder `TEAMID`; `export_mas.sh` rewrites a temp copy (team ID + profile UUID). Default `destination=upload` — set `RS_EXPORT_DESTINATION=export` for a local pkg. Never `-allowProvisioningUpdates` without Yahor. |
-| Connect upload | **0.1.3 (8)** `WAITING_FOR_REVIEW` since 2026-09-21. Do not upload a replacement while it is waiting. |
+| Connect upload | **0.1.4 (9)** `READY_FOR_SALE`. |
 
 State ladder (do not collapse these):
 

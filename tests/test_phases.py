@@ -255,12 +255,12 @@ class DistributionArtifactTests(unittest.TestCase):
         text = (ROOT / "packaging" / "homebrew" / "runspecimen.rb").read_text(encoding="utf-8")
         identity = (ROOT / "docs" / "RELEASE_IDENTITY.md").read_text(encoding="utf-8")
         self.assertIn(
-            "https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/runspecimen-0.2.0rc14.tar.gz",
+            "https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-0.2.0rc15.tar.gz",
             text,
         )
         self.assertIn("6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3", text)
         self.assertIn("6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3", identity)
-        self.assertIn('assert_match "0.2.0rc14"', text)
+        self.assertIn('assert_match "0.2.0rc15"', text)
         self.assertIn("0a807d65e73adfc2af2c8e5679706ed7c4d881ffefdc36e9222507cf5168f5c5", identity)
         self.assertNotIn("unreleased", text.lower())
 

@@ -21,7 +21,7 @@ Queried **2026-09-22** via App Store Connect API (local AuthKey; no secrets in t
 
 ## Leave alone
 
-- Mac App Store `com.darashkevich.runspecimen` **0.1.3 (8)** remains `WAITING_FOR_REVIEW` (submission `9c19e1cd-ebd1-4705-b683-5a5fdc2671f6`). Do not cancel/resubmit while waiting.
+- Mac App Store `com.darashkevich.runspecimen` **0.1.4 (9)** is **READY_FOR_SALE**.
 
 ## Safety
 
