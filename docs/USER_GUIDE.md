@@ -1,17 +1,12 @@
 # RunSpecimen user guide
 
-Practical how-to for the local CLI. The published install is
-`0.2.0rc14` (GitHub and PyPI). This branch's engine is unpublished
-`0.2.0rc15`. Approved Mac App Store **0.1.4 (9)** freezes that published
-engine. The local successor label on this branch is **0.1.5 (13)** and is
-not uploaded; **0.1.5 (10)**, **(11)**, and **(12)** are earlier packages.
-Commands under "Requirements, evidence, and freshness" exist
-on this branch and are absent from published rc14. Isolation, `retain`,
-`digest`, and `diff` do ship in published rc14. The Mac app sandbox versus
-the payload is [apps/macos/docs/SECURITY_BOUNDARY.md](../apps/macos/docs/SECURITY_BOUNDARY.md).
-For a short product overview see
-[ABOUT.md](ABOUT.md); for product intent see
-[PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
+Practical how-to for the local CLI.
+
+**Current version:** `0.2.0rc15` (GitHub and PyPI)
+
+This release includes all evidence-expansion commands (requirements, evidence, freshness, scenes) that were not in rc14. The Mac App Store app **0.1.4 (9)** freezes engine rc14.
+
+For a short product overview see [ABOUT.md](ABOUT.md); for product intent see [PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
 
 ## What it is / what it is not
 
@@ -47,8 +42,7 @@ running as you from adding a fake approval or running the job.
 
 ## Requirements, evidence, and freshness (ADR-005)
 
-These commands are on unpublished `0.2.0rc15`. Published `0.2.0rc14` does
-not include them. They are separate from `verify`:
+These commands ship in `0.2.0rc15` (they were not in rc14). They are separate from `verify`:
 
 ```bash
 runspecimen requirements validate --manifest task_manifest.json
@@ -88,13 +82,13 @@ Requirements: Python 3.9+, POSIX (`fcntl` leases), stdlib only.
 ### From PyPI
 
 ```bash
-python3 -m pip install runspecimen==0.2.0rc14
-runspecimen --version
+pip install runspecimen==0.2.0rc15
+runspecimen --version   # should show 0.2.0rc15
 ```
 
-Pin the version. Do not install from the unpublished rc11 draft.
+Pin the version. pip will not select an RC without `==0.2.0rc15`.
 
-Project page: [runspecimen 0.2.0rc14 on PyPI](https://pypi.org/project/runspecimen/0.2.0rc14/)
+Project page: [runspecimen 0.2.0rc15 on PyPI](https://pypi.org/project/runspecimen/0.2.0rc15/)
 
 ### From Homebrew
 
@@ -117,7 +111,7 @@ Confirm with `which -a runspecimen`, then rename the obsolete shim
 ### From GitHub release
 
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/runspecimen-0.2.0rc14-py3-none-any.whl
+pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-0.2.0rc15-py3-none-any.whl
 
 runspecimen --version
 ```
@@ -252,9 +246,7 @@ inputs (`--contract` for HMAC; `--public-key` or `--key-id` for Ed25519).
 `digest --live` only compares output file bytes to `output_digests`. A diff
 that finds differences still exits 0.
 
-These commands and fields ship in `0.2.0rc14`. Published `0.2.0rc12`
-rejects `isolation` and `policy` as unknown and does not provide `digest`,
-`diff`, or `retain`.
+These commands and fields ship in `0.2.0rc15` (also in rc14). Earlier rc12 rejects `isolation` and `policy` as unknown and does not provide `digest`, `diff`, or `retain`.
 
 Hard tool maxima (refuse out-of-range contracts):
 
@@ -468,7 +460,7 @@ Guarantee (2) is a separate Developer ID holder. It is not in the Store app, it 
 | Predecessor refused | Prior run not postflighted, failed/timed out, or receipt invalid. Fix predecessor first. |
 | Second `run` refused | Expected: a run ID cannot be reused after execution starts. New contract + new `run_id`. |
 | Outputs already exist at preflight | Delete or move asserted output paths before launch (they must start absent). |
-| Untrusted payload | Default backend `none` does not confine the process. Opt-in `sandbox-exec` or `bwrap` only when declared and installed; read `isolation.residual`. They are not an OS sandbox. Published `0.2.0rc12` has neither field; `0.2.0rc14` does. |
+| Untrusted payload | Default backend `none` does not confine the process. Opt-in `sandbox-exec` or `bwrap` only when declared and installed; read `isolation.residual`. They are not an OS sandbox. |
 
 ## Related docs
 

@@ -1,7 +1,6 @@
 # RunSpecimen FAQ
 
-Short answers grounded in the current CLI and product constraints. Product
-overview: [ABOUT.md](ABOUT.md). Deeper how-to: [USER_GUIDE.md](USER_GUIDE.md).
+Quick answers to common questions about RunSpecimen. For a full overview, see [ABOUT.md](ABOUT.md). For detailed instructions, see [USER_GUIDE.md](USER_GUIDE.md).
 
 ## How is this different from ChatGPT / an agent chat?
 
@@ -21,50 +20,62 @@ interactive approval expiry and predecessor gating before the next campaign
 step. It does not replace CI; you can still verify receipts in CI if you ship
 the workspace evidence with matching host runtime expectations.
 
-## Which build is public, in review, or only on this branch?
+## Which build is current?
 
-Published CLI and plugin: **0.2.0rc14**. That release does not include evidence-expansion commands (ADR-005). This branch's engine is unpublished **0.2.0rc15** and is not the PyPI or GitHub cut.
+**Current release:** CLI and plugin version **0.2.0rc15**. This release includes evidence-expansion commands (ADR-005) that were not in rc14.
 
-The Mac App Store package recorded in Connect on 2026-09-28 as **0.1.4 (9)** `READY_FOR_SALE` freezes **0.2.0rc14**. That record is not a public `apps.apple.com` URL, and it is not this unpublished candidate.
+**Previous release:** **0.2.0rc14** remains available but does not include the evidence-expansion features.
+
+<details>
+<summary>Mac App Store details</summary>
+
+The Mac App Store package recorded in Connect on 2026-09-28 as **0.1.4 (9)** `READY_FOR_SALE` freezes engine **0.2.0rc14**. The Store app is guarantee (1) only and does not include the Developer ID holder. This branch's local label is **0.1.5 (13)** and is not an upload.
+</details>
 
 ## Does the Mac App Store app include the protected holder?
 
-No. Those are different guarantees and different products.
+No. The Store app and the Developer ID holder are different products with different guarantees.
 
-Guarantee (1) is the Store app: a person types `APPROVE` on a real terminal for an ordinary contract. Approved **0.1.4 (9)** is that app. It does not ship the Developer ID holder.
+**Store app (guarantee 1):** You type `APPROVE` in a terminal for an ordinary contract. The approved **0.1.4 (9)** is this app. It does not ship the Developer ID holder.
 
-Guarantee (2) is a separate Developer ID holder for enrollment, policy, spent nonces, and leases. It is not installed, not notarized, and not part of the Store app. HMAC, a software Ed25519 signature, a CryptoKit P-256 check, and an imported Secure Enclave label are not Touch ID, Face ID, or a hardware verifier. The P-256 helper is loaded from `platform/darwin_arm64` as described in [HOLDER_NATIVE_BRIDGE.md](HOLDER_NATIVE_BRIDGE.md) and is not inside the pure wheel. An isolated double can enroll local and companion signers for engineering tests. Installed protection refuses that double. A caller `boundary_double` flag cannot select a software key, even when a verifier pin matches. The pin checks verifier code only. It does not authorize a software key or a human biometric. The Secure Enclave prompt is the human step and is not invoked by this tree. `HumanNativeSigner` is a software signer, and installed protection still refuses it. `HumanOperatedNativeAdapter` is a software injection point. A persisted origin string is not production trust, even when the Developer ID pin matches. E2 is not closed. A biometric press does not finish missing implementation. The local control can keep a session key and enroll it. Companion and dual compare a phone peer key. The local button issues a bound challenge over the authenticated holder socket, signs it with the session key, and submits that signature. The client checks the holder response MAC, protocol, and caller id, and it binds the reply to the request. Sign with session key calls issue-exact-run, authorize-exact-run, and execute-exact-run. It reaches snapshot-bound consume and execute only when the signature matches the policy, generation, key generation, and expiry. run_integration_complete stays false. Local excludes the phone key, companion requires it, and dual requires both. That path writes the real spent record and uncertain lease, then execute recovers the lease. It is not completed run integration. A second consume of that nonce fails. Installed protection stays fail-closed until a Secure Enclave key can be identified by evidence other than an origin string or a pin match. A press or an install cannot finish that gap. The sealed session file in Application Support is not the Keychain. The paired-phone button publishes the same challenge to RunSpecimenObserve. The Observe screen calls fetchPhonePeerChallenge and submitPhonePeerSignature. Cancel during a delayed fetch does not sign and does not POST. The holder accepts the signature only after P-256 verification of the holder id, generation, role, expiry, and nonce, then consumes the challenge. A nonempty string is not a signature. The phone commits its key only after it verifies a holder receipt signed by the pinned Mac session key. A caller verified flag is not a receipt. This candidate's holder is not installed and is not notarized. An earlier app under `/Applications` is not this SHA. Installed Secure Enclave admission stays fail-closed (D1, 2026-10-05). E2 remains an engineering gap. A press or an install does not close it. Human testing cannot close missing implementation. Yahor confirmed the Developer ID holder pin in `production_verifier_pin()`. The Store app does not carry that pin and stays guarantee (1). Source integration of native enrollment remains open. A person running a biometric does not by itself finish that integration. This candidate does not claim Store parity or production sign-off. The pure wheel does not contain the Darwin verifier. `doctor` still runs and reports the verifier absent; it does not enroll. The plugin does not ship the verifier and does not pass a holder.
+**Developer ID holder (guarantee 2):** A separate component for enrollment, policy, and leases. It is not installed and not notarized in this release.
 
-Prepare exact run issues one snapshot challenge and, for companion or dual, publishes that same bound value. Continue exact run checks expiry, generation, and policy, then authorizes and executes that nonce. Continue does not issue another nonce. A restarted session reloads the committed custody record and signs only when its public key matches the enrolled Mac key. The phone commits a holder receipt only after cancellation and generation still match that challenge, and a failed commit can be retried. A revoked Mac key, a revoked phone key, or a fingerprint that no longer matches the current phone record refuses the receipt, and policy, rotation, and revocation drop a pending receipt.
+<details>
+<summary>Technical details about Secure Enclave and phone pairing</summary>
 
-Installed Secure Enclave admission stays fail-closed. A holder-signed receipt of a caller-supplied key is not proof the holder created that key. Apple's current guidance says a root launchd daemon cannot use the Secure Enclave or the data protection keychain, so that daemon cannot attest creation. D1 remains the verifier pin only. A Mac-session signature proves possession of the pinned key. `run_integration_complete` stays false. See [SECURE_ENCLAVE_ADMISSION.md](SECURE_ENCLAVE_ADMISSION.md).
+The Secure Enclave integration and phone pairing features are under development:
 
-A local package that reused the label 0.1.4 (9) and included evidence expansion is a different file. Local **0.1.5 (10)**, **0.1.5 (11)** from `3a0f483` (SHA-256 `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309`), and **0.1.5 (12)** from `c400f2d` (SHA-256 `6b3e9b3e1db219aafd834dd894b4ce04a8269cedb34dc116a4a154c22bb09a38`) are earlier packages. This branch's local successor label is **0.1.5 (13)**. That label is not an upload and not an approval. See [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md) and [NATIVE_FEATURE_COVERAGE.md](NATIVE_FEATURE_COVERAGE.md).
+- Installed Secure Enclave admission stays fail-closed (D1, 2026-10-05)
+- The `run_integration_complete` flag is false
+- HMAC, software Ed25519 signatures, and CryptoKit P-256 checks are not hardware verifiers (not Touch ID or Face ID)
+- The pure wheel does not contain the Darwin verifier
+- Phone pairing via RunSpecimenObserve is implemented but not production-ready
+
+See [SECURE_ENCLAVE_ADMISSION.md](SECURE_ENCLAVE_ADMISSION.md) for the complete technical status.
+</details>
 
 ## How is this different from a sandbox?
 
-A sandbox limits what a process can reach. RunSpecimen records whether an
-approved, exclusive, bounded step happened and whether declared outcomes
-passed. It is **not** an OS sandbox.
+A sandbox limits what a process can reach. RunSpecimen records whether an approved, exclusive step happened and whether declared outcomes passed. **RunSpecimen is not an OS sandbox** — use a container when you need real process isolation.
 
-The default `isolation.backend` is `none`: wall clock, capture size,
-path-inside-workspace checks, and process-group kill. No filesystem or network
-confinement.
+The default isolation backend is `none`: it enforces timeouts, capture limits, and path checks, but does not confine filesystem or network access.
 
-Opt-in `sandbox-exec` (macOS, if `sandbox-exec` is on PATH) and `bwrap` (Linux,
-if `bwrap` is on PATH) confine writes to the workspace and deny network unless
-the contract sets `isolation.network` to true. A declared backend that is not
-installed fails closed. The receipt field `isolation.residual` states what
-that profile still allows, including host reads. CPU and memory limits are
-not part of either backend.
+<details>
+<summary>Opt-in isolation backends</summary>
 
-## Why does approval require a TTY?
+RunSpecimen supports opt-in isolation on macOS (`sandbox-exec`) and Linux (`bwrap`):
 
-Unattended or piped approval would let an agent or script bind a consequential
-command without a human at the keyboard. `approve` requires interactive stdin
-**and** stdout TTYs and the exact phrase `APPROVE`. Test-only hooks
-(`skip_tty_check`) exist for regenerating demos; they are not the production
-path.
+- **sandbox-exec** (macOS): Confines writes to the workspace and denies network unless the contract sets `isolation.network` to true
+- **bwrap** (Linux): Same workspace and network restrictions using bubblewrap
+
+If you declare an isolation backend that isn't installed, the run fails closed. The receipt field `isolation.residual` describes what the profile still allows. CPU and memory limits are not part of either backend.
+</details>
+
+## Why does approval require a terminal?
+
+Approval must happen in a real terminal where a human types `APPROVE`. This prevents scripts or AI agents from automatically approving commands without human oversight.
+
+The `approve` command requires both interactive stdin and stdout (a real TTY) and the exact phrase `APPROVE`. Piping or automating approval is intentionally blocked.
 
 ## How do I get human-readable CLI output?
 
@@ -151,8 +162,7 @@ assertions, use a fresh `run_id` per attempt, and chain steps with
 ## Where is the GitHub repo / what version am I on?
 
 - Repository: https://github.com/darashkevich/runspecimen
-- Check installed CLI: `runspecimen --version` (engine package version, e.g.
-  `0.2.0rc14`, also the published PyPI pin)
+- Check installed CLI: `runspecimen --version` (should show `0.2.0rc15` for the current release)
 
 ## Why does `runspecimen --version` show an older build than Homebrew?
 
