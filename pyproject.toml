@@ -8,7 +8,7 @@ version = "0.2.0rc15"
 description = "Bounded, approved, tamper-evident local research/engineering runs"
 readme = "README.md"
 requires-python = ">=3.9"
-authors = [{ name = "RunSpecimen Contributors" }]
+authors = [{ name = "Yahor Darashkevich" }]
 license = {text = "Apache-2.0"}
 dependencies = []
 keywords = ["agents", "automation", "provenance", "safety", "local-first"]

@@ -4,7 +4,7 @@
   "version": "0.2.0-rc.15",
   "description": "Approve, bound, run, postflight, and verify consequential local commands.",
   "author": {
-    "name": "RunSpecimen Contributors",
+    "name": "Yahor Darashkevich",
     "url": "https://github.com/darashkevich/runspecimen"
   },
   "homepage": "https://github.com/darashkevich/runspecimen",
