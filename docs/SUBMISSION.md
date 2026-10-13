@@ -365,11 +365,32 @@ from a draft. Do not publish the rc11 draft.
 
 ## 3b. Mac App Store (`com.darashkevich.runspecimen`)
 
-**Status (App Store Connect):** macOS version **0.1.4 (9)** is **READY_FOR_SALE**. Builds 5–8 were rejected or superseded. Publicly available on the Mac App Store.
+**Status (App Store Connect):** macOS version **0.1.4 (9)** is **READY_FOR_SALE**. Builds 5–8 were rejected or superseded. Publicly available on the Mac App Store. Build **14** (0.1.5) was uploaded; next upload is build **15**.
 
 The Mac App Store listing is now live with a public `apps.apple.com` URL.
 
-Details: `apps/macos/asc-kit/STATUS.md`.
+### Working MAS build path (Yahor's Mac)
+
+1. **Freeze the helper** with a Homebrew python3.12 venv that has pyinstaller>=6:
+   ```bash
+   RS_FREEZE_PYTHON=~/.venvs/freeze312/bin/python ./Scripts/freeze_helper.sh --enable --require --verify
+   ```
+
+2. **Archive with xcodebuild:**
+   ```bash
+   xcodebuild -project RunSpecimen.xcodeproj -scheme RunSpecimen -configuration Release \
+     -archivePath build/RunSpecimen.xcarchive archive
+   ```
+
+3. **Export with manual signing** (Apple Distribution + 3rd Party Mac Developer Installer + RunSpecimen MAS profile, destination upload):
+   ```bash
+   xcodebuild -exportArchive -archivePath build/RunSpecimen.xcarchive \
+     -exportOptionsPlist Config/ExportOptions.mas.plist -exportPath build/export
+   ```
+
+**Never use `-allowProvisioningUpdates`.** Manual signing only.
+
+Details: `apps/macos/asc-kit/STATUS.md`, `apps/macos/RELEASE_CHECKLIST.md`.
 
 ---
 

@@ -63,20 +63,56 @@ test -f build/RunSpecimen.app/Contents/Resources/AppIcon.icns
 
 ## C. Archive + upload to App Store Connect
 
-1. Freeze + structural Archive (ad-hoc OK without certs):
-   ```bash
-   ./Scripts/archive_mas.sh
-   # → apps/macos/build/RunSpecimen.xcarchive
-   ```
-2. For ASC upload, open project and set Team:
-   ```bash
-   ./Scripts/open_xcode.sh
-   # Signing & Capabilities: Team + Apple Distribution + MAS entitlements
-   # Product → Archive → Distribute App → App Store Connect → Upload
-   ```
-   Or `RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh` (local Store pkg;
-   UUID + installer cert; no upload). Default destination still `upload`.
-3. ASC: version `0.1.4` / build **9** is **READY_FOR_SALE**. Ready for the next build when needed.
+### 1. Freeze the helper
+
+Use a Homebrew python3.12 venv with pyinstaller>=6:
+
+```bash
+# One-time venv setup (if not already created)
+/opt/homebrew/opt/python@3.12/bin/python3.12 -m venv ~/.venvs/freeze312
+~/.venvs/freeze312/bin/pip install 'pyinstaller>=6'
+
+# Freeze the helper
+cd apps/macos
+RS_FREEZE_PYTHON=~/.venvs/freeze312/bin/python ./Scripts/freeze_helper.sh --enable --require --verify
+```
+
+### 2. Archive with xcodebuild
+
+```bash
+xcodebuild -project RunSpecimen.xcodeproj \
+  -scheme RunSpecimen \
+  -configuration Release \
+  -archivePath build/RunSpecimen.xcarchive \
+  archive
+```
+
+### 3. Export with manual signing (destination upload)
+
+Export uses **Apple Distribution** certificate, **3rd Party Mac Developer Installer**
+certificate, and the existing **RunSpecimen MAS** provisioning profile:
+
+```bash
+xcodebuild -exportArchive \
+  -archivePath build/RunSpecimen.xcarchive \
+  -exportOptionsPlist Config/ExportOptions.mas.plist \
+  -exportPath build/export
+```
+
+The `ExportOptions.mas.plist` must specify:
+- `method`: app-store
+- `signingStyle`: manual
+- `teamID`: UN6KF8636A
+- `provisioningProfiles`: UUID of the RunSpecimen MAS profile
+- `installerSigningCertificate`: 3rd Party Mac Developer Installer
+- `destination`: upload
+
+**Never use `-allowProvisioningUpdates`.** Manual signing only.
+
+### 4. Current status
+
+ASC: version `0.1.4` / build **9** is **READY_FOR_SALE**. Build **14** (0.1.5)
+was uploaded; next upload is build **15**.
 
 Optional: `brew install xcodegen` then `./Scripts/generate_xcodeproj.sh` if
 `project.yml` changed (committed `RunSpecimen.xcodeproj` is the default Archive input).
