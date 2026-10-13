@@ -78,7 +78,7 @@ targets:
         NSHighResolutionCapable: true
         NSSupportsAutomaticTermination: false
         NSSupportsSuddenTermination: false
-        NSHumanReadableCopyright: "Copyright © RunSpecimen Contributors. Apache-2.0."
+        NSHumanReadableCopyright: "Copyright © 2026 Yahor Darashkevich. Apache-2.0."
     entitlements:
       path: Entitlements/RunSpecimen.mas.entitlements
       properties:
@@ -143,6 +143,11 @@ targets:
           }
           mkdir -p "$DEST" "$RES_DEST"
           ENGINE_DEST="${RES_DEST}/RunSpecimenEngine"
+          # Copy the main NOTICE file from repo root to Resources.
+          if [[ -f "$REPO/NOTICE" ]]; then
+            cp -f "$REPO/NOTICE" "$RES_DEST/NOTICE"
+            echo "Staged NOTICE → $RES_DEST/NOTICE"
+          fi
           # Always stage icon + privacy manifest (XcodeGen resource sync can miss on some hosts).
           for f in AppIcon.icns AppIcon-1024.png PrivacyInfo.xcprivacy; do
             if [[ -f "${SRCROOT}/Resources/$f" ]]; then
