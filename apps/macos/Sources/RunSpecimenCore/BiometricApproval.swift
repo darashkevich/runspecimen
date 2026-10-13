@@ -395,6 +395,9 @@ public enum BiometricEnrollmentDirectory {
                     throw BiometricApprovalError.malformed("public_key")
                 }
                 if existing.state == BiometricEnrollmentRecord.revoked {
+                    if state == BiometricEnrollmentRecord.active {
+                        throw BiometricApprovalError.revoked
+                    }
                     return existing
                 }
                 if state == BiometricEnrollmentRecord.revoked {
