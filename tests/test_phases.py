@@ -258,9 +258,9 @@ class DistributionArtifactTests(unittest.TestCase):
             "https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-0.2.0rc15.tar.gz",
             text,
         )
+        self.assertIn("7abe59f54e974140e305f3b31f24767ca078eaafe0b606c26f606cb1ece9e63b", text)
+        self.assertIn("7abe59f54e974140e305f3b31f24767ca078eaafe0b606c26f606cb1ece9e63b", identity)
         self.assertIn('assert_match "0.2.0rc15"', text)
-        if "(to be determined" not in text:
-            self.assertRegex(text, r'sha256 "[0-9a-f]{64}"')
         self.assertIn("d720bf5163a2b250699c30e804f89708e71c1c0d22682fbb43a4644b59c45948", identity)
         self.assertNotIn("unreleased", text.lower())
 

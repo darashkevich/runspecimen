@@ -19,11 +19,11 @@ Install pin is required: pip will not select an RC without `==0.2.0rc15`.
 
 | Artifact | SHA-256 (GitHub Release = PyPI) |
 | --- | --- |
-| `runspecimen-0.2.0rc15-py3-none-any.whl` | (to be determined after release) |
-| `runspecimen-0.2.0rc15.tar.gz` | (to be determined after release) |
-| `runspecimen-plugin-0.2.0-rc.15.zip` | (to be determined after release; GitHub only) |
+| `runspecimen-0.2.0rc15-py3-none-any.whl` | `d9d0c9dfc978beb29ac34901d788e647812d3f663c703281da35d2172ac4f048` |
+| `runspecimen-0.2.0rc15.tar.gz` | `7abe59f54e974140e305f3b31f24767ca078eaafe0b606c26f606cb1ece9e63b` |
+| `runspecimen-plugin-0.2.0-rc.15.zip` | `ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb` (GitHub only) |
 
-`publish-pypi.yml` downloads GitHub assets and uploads the wheel and sdist without rebuilding. Provenance is **checksum-only**: no SLSA attestation on the wheel.
+`publish-pypi.yml` downloaded those GitHub assets and uploaded the wheel and sdist without rebuilding. Provenance is **checksum-only**: no SLSA attestation on the wheel.
 
 ## Previous public cut
 
