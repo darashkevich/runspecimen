@@ -1,25 +1,54 @@
 # RunSpecimen
 
-RunSpecimen is a local safety and evidence layer for consequential agent-driven
-research and engineering commands.
+RunSpecimen is a local safety and evidence layer for AI-driven research and engineering commands.
 
-**Current package version (this branch):** `0.2.0rc15` (not published)  
-**Published release, unchanged:** [v0.2.0-rc.14](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.14) / PyPI `runspecimen==0.2.0rc14` (identical bytes; checksum-only, not SLSA-attested). Do not replace those artifacts.  
-**Mac App Store:** approved **0.1.4 (9)** freezes published engine `0.2.0rc14` and stays guarantee (1). The local label on this branch is **0.1.5 (13)** and is not an upload. Earlier **0.1.5 (10)**, **(11)**, and **(12)** are not this candidate.  
-Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `v0.2.0-rc.12`. See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
+When you let an AI agent run commands on your machine, you want to know exactly what was approved, what ran, and whether it succeeded. RunSpecimen makes sure one human-approved command runs at a time and creates a receipt you can check later.
 
-## Core promise
+**Current version:** `0.2.0rc15`  
+**GitHub release:** [v0.2.0-rc.15](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15)  
+**PyPI:** `runspecimen==0.2.0rc15`  
+**Homebrew:** `brew install darashkevich/runspecimen/runspecimen`
 
-Exactly **one** approved, bounded run at a time, with:
+<details>
+<summary>Release identity details</summary>
 
-1. **Approved provenance** — interactive TTY approval binds contract, source, and resolved executable hashes with expiry
-2. **Crash-safe state** — atomic JSON state writes
-3. **Mandatory postflight** — successor runs refuse an unpostflighted / failed predecessor
-4. **Tamper-evident receipts** — append-only SHA-256 hash-chained event log + verifiable certificate. The chain is unkeyed.
+- **Previous release:** [v0.2.0-rc.14](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.14) / PyPI `runspecimen==0.2.0rc14` (identical bytes; checksum-only, not SLSA-attested).
+- **Mac App Store:** approved **0.1.4 (9)** freezes engine `0.2.0rc14` and is guarantee (1) only. The local label on this branch is **0.1.5 (13)** and is not an upload.
+- Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `v0.2.0-rc.12`. See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
+</details>
 
-No watchers, no recurring scheduler, no parallel workers.
+## What it does
 
-`0.2.0rc14` includes opt-in `isolation` (`none` by default), a workspace `policy` file, `retain`, `digest`, and `diff`. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md). `none` does not confine the process. `sandbox-exec` and `bwrap` are not an OS sandbox. Published `0.2.0rc12` rejects `isolation` and `policy`. Evidence-expansion commands (`requirements`, `freshness`, `scenes`, and the rest of ADR-005) are on this unpublished `0.2.0rc15` branch. Published rc14 does not include them.
+RunSpecimen ensures exactly **one** approved command runs at a time, with a clear record of what happened:
+
+1. **You approve first** — type `APPROVE` in a terminal to authorize the command, binding the contract, source code, and executable with an expiry
+2. **One run at a time** — a workspace lock prevents duplicate or overlapping runs
+3. **Check results** — mandatory postflight step verifies outputs before allowing the next command
+4. **Keep receipts** — creates a tamper-evident log you can verify later
+
+No background watchers, no recurring jobs, no parallel workers.
+
+<details>
+<summary>What's new in 0.2.0rc15</summary>
+
+This release adds evidence-expansion commands for richer verification workflows:
+
+- **`requirements`** — check that declared requirements are met
+- **`freshness`** — assess whether evidence still applies to current state
+- **`scenes`** — run a local demo walkthrough
+- **`config`** — inspect, preview, apply, export, and rollback configuration
+- **`usage`** — import and summarize usage data
+
+Also includes opt-in `isolation` backends (`sandbox-exec` on macOS, `bwrap` on Linux), workspace `policy` files, `retain`, `digest`, and `diff`. The default isolation backend is `none`, which does not confine the process. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
+</details>
+
+<details>
+<summary>Technical details: hash chains and state</summary>
+
+- Crash-safe atomic JSON state writes
+- Append-only SHA-256 hash-chained event log plus verifiable certificate
+- The chain is unkeyed: a program with write access to RunSpecimen's files can fabricate consistent evidence. Signing with a key the agent can't access lets you check afterwards that a receipt is authentic.
+</details>
 
 ## Requirements
 
@@ -53,46 +82,59 @@ No watchers, no recurring scheduler, no parallel workers.
 
 ## Install
 
-### From PyPI
-
-```bash
-python3 -m pip install runspecimen==0.2.0rc14
-runspecimen --version
-```
-
-Pin the version. pip will not select an RC without `==0.2.0rc14`. The rc11 draft tag must stay unpublished.
-
-PyPI project: [runspecimen 0.2.0rc14](https://pypi.org/project/runspecimen/0.2.0rc14/)
-
-### From Homebrew
+### Homebrew (recommended on macOS)
 
 ```bash
 brew tap darashkevich/runspecimen
 brew install runspecimen
+runspecimen --version   # should show 0.2.0rc15
+```
+
+Or as a one-liner: `brew install darashkevich/runspecimen/runspecimen`.
+
+Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen).
+
+<details>
+<summary>Homebrew version troubleshooting</summary>
+
+If `runspecimen --version` shows an older version than expected, check `which -a runspecimen`. An old pip install at `~/.local/bin/runspecimen` often shadows `/opt/homebrew/bin/runspecimen`. Rename the old shim and rehash:
+
+```bash
+mv ~/.local/bin/runspecimen ~/.local/bin/runspecimen.bak-shadow
+hash -r
 runspecimen --version
 ```
 
-Or: `brew install darashkevich/runspecimen/runspecimen`.
+Details in [docs/FAQ.md](docs/FAQ.md#why-does-runspecimen---version-show-an-older-build-than-homebrew).
+</details>
 
-Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen). Pins the same `v0.2.0-rc.14` sdist as the GitHub Release (not `main`).
+### pip or pipx
 
-If `runspecimen --version` lags brew, check `which -a runspecimen` — an old
-`~/.local/bin/runspecimen` often shadows `/opt/homebrew/bin/runspecimen`. Rename
-the shim and rehash; details in [docs/FAQ.md](docs/FAQ.md#why-does-runspecimen---version-show-an-older-build-than-homebrew).
+```bash
+pip install runspecimen==0.2.0rc15
+# or with pipx for isolated installs:
+pipx install runspecimen==0.2.0rc15
+
+runspecimen --version   # should show 0.2.0rc15
+```
+
+Pin the version explicitly. pip will not select an RC without `==0.2.0rc15`.
+
+PyPI project: [runspecimen 0.2.0rc15](https://pypi.org/project/runspecimen/0.2.0rc15/)
 
 ### From GitHub release
 
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/runspecimen-0.2.0rc14-py3-none-any.whl
+pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-0.2.0rc15-py3-none-any.whl
 ```
 
 Or from source tarball:
 
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/runspecimen-0.2.0rc14.tar.gz
+pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-0.2.0rc15.tar.gz
 ```
 
-Verify checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/SHA256SUMS)
+Verify checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/SHA256SUMS)
 
 ### From local clone
 
@@ -296,33 +338,42 @@ Contracts now support a `runtime` field for enhanced provenance binding:
 This binds environment variables, interpreter, and optionally linked libraries
 into the certificate's `runtime_id`.
 
+## What approval means
+
+When you type `APPROVE`, you're confirming:
+- You've reviewed the command, arguments, and working directory
+- You accept the source code that will run
+- You understand the expiry time (the approval is temporary)
+
+The AI agent can draft contracts and run lifecycle commands, but **only a human can approve**. Plugins for Cursor, Codex, Claude Code, and others deliberately exclude the approve command.
+
+<details>
+<summary>Security considerations</summary>
+
+RunSpecimen stops agents from approving through the app. However:
+
+- A program running as you that can edit RunSpecimen's files can still add a fake approval to the record
+- Signing with a key the agent can't access lets you check afterwards that a receipt is authentic
+- Default receipts use HMAC-SHA256 (shared-secret). Optional Ed25519 (`pip install 'runspecimen[ed25519]'`) enables offline public-key verification. See [docs/ED25519_RECEIPTS.md](docs/ED25519_RECEIPTS.md).
+</details>
+
 ## Release-candidate limitations
 
-- Default authenticated receipts use HMAC-SHA256 shared-secret MACs. Anyone with
-  the key can forge certificates. Optional Ed25519 offline public-key
-  verification is available via `pip install 'runspecimen[ed25519]'` (see
-  `docs/ED25519_RECEIPTS.md`). Trusted Ed25519 verify requires an external
-  public-key trust anchor; a key embedded only in the receipt is never enough
-  for `ok: true`. Soft keys on disk are not absolute non-repudiation.
-- Default `isolation.backend` is `none`: the workload is not confined. Published
-  `0.2.0rc14` accepts opt-in `sandbox-exec` and `bwrap` when the contract names
-  them and the tool is installed; a missing tool fails closed. Those backends
-  can confine writes to the workspace and deny network. They are not an OS
-  sandbox. Linux CI installs bubblewrap and runs a real `bwrap` spawn
-  regression when the tool is present; macOS does not execute `bwrap`.
-  CPU, memory, and
-  child-process limits are not part of either backend. Published `0.2.0rc12`
-  rejects the `isolation` field. Optional Ed25519 is not an OS sandbox. A
-  companion app’s UI sandbox (if any) does not imply payload confinement.
+**Not an OS sandbox.** The default isolation backend is `none`, which does not confine the workload. Opt-in `sandbox-exec` (macOS) and `bwrap` (Linux) can restrict filesystem and network access, but they are not a security boundary against a hostile payload. Use a container when you need real isolation.
 
-- RunSpecimen does not schedule work and does not prove scientific claims.
-- The resolved executable or interpreter is automatically hashed. Native
-  libraries, environment variables, and input datasets still need to be placed
-  in `source.roots` or otherwise asserted by the workload.
-- This release is licensed under Apache-2.0. The CLI remains the enforcement
-  boundary; Codex, Cursor, Claude Code, Grok Build, Gemini CLI, Junie, and
-  Windsurf integrations are
-  constrained adapters to it (no auto-approve).
+**Work in progress.** The following features are under development and not complete in this release:
+- Secure Enclave integration for hardware-backed signing
+- Phone pairing for remote confirmation
+- Exact-run integration (the `run_integration_complete` flag is false)
+
+<details>
+<summary>Other limitations</summary>
+
+- RunSpecimen does not schedule work and does not prove scientific claims
+- The resolved executable or interpreter is automatically hashed; native libraries, environment variables, and input datasets still need to be placed in `source.roots` or otherwise asserted by the workload
+- This release is licensed under Apache-2.0
+- The CLI remains the enforcement boundary; marketplace integrations are constrained adapters to it (no auto-approve)
+</details>
 
 ## Non-goals
 
