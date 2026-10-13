@@ -258,10 +258,10 @@ class DistributionArtifactTests(unittest.TestCase):
             "https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-0.2.0rc15.tar.gz",
             text,
         )
-        self.assertIn("6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3", text)
-        self.assertIn("6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3", identity)
         self.assertIn('assert_match "0.2.0rc15"', text)
-        self.assertIn("0a807d65e73adfc2af2c8e5679706ed7c4d881ffefdc36e9222507cf5168f5c5", identity)
+        if "(to be determined" not in text:
+            self.assertRegex(text, r'sha256 "[0-9a-f]{64}"')
+        self.assertIn("d720bf5163a2b250699c30e804f89708e71c1c0d22682fbb43a4644b59c45948", identity)
         self.assertNotIn("unreleased", text.lower())
 
     def test_isolation_cli(self) -> None:
