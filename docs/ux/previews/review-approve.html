@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>RunSpecimen — review and approve</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="window" role="img" aria-label="Review and approve sheet">
+    <div class="chrome">
+      <div class="dots" aria-hidden="true"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+      <div class="brand"><span class="seal">✓</span> Review and approve</div>
+      <span class="pill amber">You type this yourself</span>
+    </div>
+    <div class="stage" style="display:flex;flex-direction:column;gap:12px">
+      <p class="muted">This window is the real approval step. Read the plan, then type APPROVE when you are ready. Assistants cannot approve unattended.</p>
+      <div class="card">
+        <div class="kicker">What will run</div>
+        <div class="mono">python3 work/compute.py</div>
+      </div>
+      <div class="card" style="flex:1;background:#1c1814;color:#f3eee6">
+        <p style="color:#c4bba8;font-size:13px;margin-bottom:10px">Engine prompt (you still type APPROVE yourself)</p>
+        <pre class="mono" style="color:#f3eee6;white-space:pre-wrap;margin:0">Review this bounded run. Typing APPROVE binds the contract, source tree,
+and resolved executable below. Agents and plugins cannot approve for you.
+
+  Project        Weekend photos
+  This run       attempt 1
+  Command        python3 work/compute.py
+  Time limit     30 seconds
+
+Type 'APPROVE' to bind this approval:</pre>
+      </div>
+      <div class="field">
+        <input value="" placeholder="Type APPROVE to bind — nothing is sent automatically" readonly>
+        <button class="btn btn-primary">Send</button>
+        <button class="btn">Cancel</button>
+      </div>
+      <p class="note">Only you can approve. Assistants cannot type APPROVE, and this app will not type it for you.</p>
+      <div class="details">Show fingerprints and exact terms</div>
+    </div>
+  </div>
+</body>
+</html>

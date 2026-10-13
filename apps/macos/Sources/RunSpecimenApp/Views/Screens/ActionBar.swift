@@ -7,29 +7,41 @@ struct ActionBar: View {
         .validate, .approve, .preflight, .run, .postflight, .verify, .dashboard
     ]
 
+    private var highlighted: LifecycleAction? {
+        ConsumerNextStep.current(
+            phase: model.status?.phase ?? "none",
+            doctorOK: model.doctor?.ok,
+            hasCertificate: model.status?.certificateID != nil,
+            isBusy: model.isBusy,
+            leaseBusy: model.status?.leaseHeldByOther == true
+        ).action
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Divider().overlay(RSTheme.line)
             HStack(alignment: .center, spacing: 10) {
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 96), spacing: 8)],
+                    columns: [GridItem(.adaptive(minimum: 108), spacing: 8)],
                     alignment: .leading,
                     spacing: 8
                 ) {
                     ForEach(actions.filter { $0 != .dashboard || model.isBrowserDashboardAvailable }) { action in
-                        Button(action.title) {
+                        Button(action.consumerTitle) {
                             Task { await model.requestPerform(action) }
                         }
                         .buttonStyle(ActionChipStyle(
                             amber: action == .approve,
-                            destructive: action == .run
+                            destructive: action == .run,
+                            emphasized: action == highlighted
                         ))
                         .disabled(!model.isActionEnabled(action))
                         .help(help(for: action))
+                        .accessibilityLabel(action.consumerTitle)
                         .accessibilityHint(help(for: action))
                     }
                     if model.dashboardRunning {
-                        Button("Stop Dashboard") {
+                        Button("Close timeline") {
                             Task { await model.stopDashboard() }
                         }
                         .buttonStyle(ActionChipStyle())
@@ -38,7 +50,7 @@ struct ActionBar: View {
                 }
                 Spacer(minLength: 8)
                 if model.dashboardRunning {
-                    CapsuleLabel(text: "Dashboard on", tone: .amber)
+                    CapsuleLabel(text: "Timeline open", tone: .amber)
                         .accessibilityLabel("Dashboard running")
                 }
                 if model.isBusy {
@@ -48,27 +60,27 @@ struct ActionBar: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(RSTheme.bgElevated.opacity(0.9))
+            .padding(.vertical, 12)
+            .background(RSTheme.bgElevated.opacity(0.94))
         }
     }
 
     private func help(for action: LifecycleAction) -> String {
         switch action {
         case .approve:
-            return "Opens an interactive PTY sheet. You must type APPROVE yourself. Shortcut: ⇧⌘A"
+            return "Opens the review window. You must type APPROVE yourself. Shortcut: ⇧⌘A"
         case .dashboard:
-            return "Opens the loopback read-only dashboard. It cannot approve or execute. Shortcut: ⇧⌘D"
+            return "Opens the loopback read-only timeline. It cannot approve or execute. Shortcut: ⇧⌘D"
         case .run:
-            return "Executes one bounded run under the workspace lease (asks for confirmation). Shortcut: ⌘3"
+            return "Starts the approved command once (asks first). Shortcut: ⌘3"
         case .postflight:
-            return "Runs postflight assertions (asks for confirmation). Shortcut: ⌘4"
+            return "Checks that the run did what you allowed (asks first). Shortcut: ⌘4"
         case .validate:
-            return "Runs runspecimen validate. Shortcut: ⌘1"
+            return "Checks the run plan. Shortcut: ⌘1"
         case .preflight:
-            return "Runs runspecimen preflight. Shortcut: ⌘2"
+            return "Last check that your yes is still valid. Shortcut: ⌘2"
         case .verify:
-            return "Runs runspecimen verify. Shortcut: ⌘5"
+            return "Opens the checkable receipt. Shortcut: ⌘5"
         }
     }
 }
@@ -76,6 +88,7 @@ struct ActionBar: View {
 struct ActionChipStyle: ButtonStyle {
     var amber: Bool = false
     var destructive: Bool = false
+    var emphasized: Bool = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -83,30 +96,33 @@ struct ActionChipStyle: ButtonStyle {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(background.opacity(configuration.isPressed ? 0.7 : 1))
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(background.opacity(configuration.isPressed ? 0.75 : 1))
             )
             .foregroundStyle(foreground)
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(stroke, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(stroke, lineWidth: emphasized ? 1.5 : 1)
             )
     }
 
     private var background: Color {
-        if amber { return RSTheme.amber.opacity(0.18) }
-        if destructive { return RSTheme.signal.opacity(0.12) }
+        if emphasized { return RSTheme.brand.opacity(0.16) }
+        if amber { return RSTheme.amber.opacity(0.14) }
+        if destructive { return RSTheme.brand.opacity(0.08) }
         return RSTheme.bgPanel
     }
 
     private var foreground: Color {
+        if emphasized { return RSTheme.brand }
         if amber { return RSTheme.amber }
         return RSTheme.ink
     }
 
     private var stroke: Color {
-        if amber { return RSTheme.amber.opacity(0.45) }
-        if destructive { return RSTheme.signal.opacity(0.35) }
+        if emphasized { return RSTheme.brand.opacity(0.45) }
+        if amber { return RSTheme.amber.opacity(0.40) }
+        if destructive { return RSTheme.brand.opacity(0.22) }
         return RSTheme.line
     }
 }

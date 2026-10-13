@@ -50,72 +50,72 @@ struct RunSpecimenApp: App {
                 }
                 Divider()
             }
-            CommandMenu("Workspace") {
-                Button("Open Reviewer Demo") {
+            CommandMenu("Folder") {
+                Button("Try a sample run") {
                     Task { await model.openReviewerDemo() }
                 }
                 .keyboardShortcut("d", modifiers: [.command, .option, .shift])
-                Button("Open Workspace…") {
+                Button("Choose Folder…") {
                     Task { await model.chooseWorkspace() }
                 }
                 .keyboardShortcut("o", modifiers: [.command])
-                Button("Open Contract…") {
+                Button("Open Run Plan…") {
                     Task { await model.chooseContract() }
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
                 Divider()
-                Button("Refresh Status") {
+                Button("Refresh") {
                     Task { await model.refreshAll() }
                 }
                 .keyboardShortcut("r", modifiers: [.command])
-                Button("Refresh Evidence") {
+                Button("Refresh Receipt") {
                     Task { await model.refreshEvidenceDetails() }
                 }
                 .disabled(model.isBusy || !model.hasWorkspace)
-                Button("Workflows…") {
+                Button("Advanced Tools…") {
                     model.showWorkflows = true
                 }
                 .disabled(!model.hasWorkspace)
             }
-            CommandMenu("Lifecycle") {
-                Button("Validate") {
+            CommandMenu("This Run") {
+                Button("Check the Plan") {
                     Task { await model.requestPerform(.validate) }
                 }
                 .keyboardShortcut("1", modifiers: [.command])
                 .disabled(!model.isActionEnabled(.validate))
-                Button("Approve…") {
+                Button("Review & Approve…") {
                     Task { await model.requestPerform(.approve) }
                 }
                 .keyboardShortcut("a", modifiers: [.command, .shift])
                 .disabled(!model.isActionEnabled(.approve))
-                Button("Preflight") {
+                Button("Get Ready") {
                     Task { await model.requestPerform(.preflight) }
                 }
                 .keyboardShortcut("2", modifiers: [.command])
                 .disabled(!model.isActionEnabled(.preflight))
-                Button("Run…") {
+                Button("Start the Run…") {
                     Task { await model.requestPerform(.run) }
                 }
                 .keyboardShortcut("3", modifiers: [.command])
                 .disabled(!model.isActionEnabled(.run))
-                Button("Postflight…") {
+                Button("Check Results…") {
                     Task { await model.requestPerform(.postflight) }
                 }
                 .keyboardShortcut("4", modifiers: [.command])
                 .disabled(!model.isActionEnabled(.postflight))
-                Button("Verify") {
+                Button("Get the Receipt") {
                     Task { await model.requestPerform(.verify) }
                 }
                 .keyboardShortcut("5", modifiers: [.command])
                 .disabled(!model.isActionEnabled(.verify))
                 Divider()
                 if DistributionChannel.current.allowsBrowserDashboard {
-                    Button("Open Dashboard") {
+                    Button("Open the Timeline") {
                         Task { await model.requestPerform(.dashboard) }
                     }
                     .keyboardShortcut("d", modifiers: [.command, .shift])
                     .disabled(!model.isActionEnabled(.dashboard))
-                    Button("Stop Dashboard") {
+                    Button("Close Timeline") {
                         Task { await model.stopDashboard() }
                     }
                     .keyboardShortcut("d", modifiers: [.command, .option])
@@ -234,12 +234,12 @@ struct RootView: View {
                 BrandEmptyState()
             }
         }
-        .preferredColorScheme(.dark)
+        // Follows the system appearance. Light is the consumer default.
         .alert(item: $model.error) { err in
             Alert(title: Text("RunSpecimen"), message: Text(err.message), dismissButton: .default(Text("OK")))
         }
         .confirmationDialog(
-            model.pendingConfirmAction?.confirmationTitle ?? "Confirm",
+            model.pendingConfirmAction?.consumerConfirmationTitle ?? "Confirm",
             isPresented: Binding(
                 get: { model.pendingConfirmAction != nil },
                 set: { if !$0 { model.cancelPendingAction() } }
@@ -247,7 +247,7 @@ struct RootView: View {
             titleVisibility: .visible
         ) {
             if let action = model.pendingConfirmAction {
-                Button(action.title, role: action == .run ? .destructive : nil) {
+                Button(action.consumerTitle, role: action == .run ? .destructive : nil) {
                     Task { await model.confirmPendingAction() }
                 }
                 Button("Cancel", role: .cancel) {
@@ -255,7 +255,7 @@ struct RootView: View {
                 }
             }
         } message: {
-            Text(model.pendingConfirmAction?.confirmationMessage ?? "")
+            Text(model.pendingConfirmAction?.consumerConfirmationMessage ?? "")
         }
         .sheet(isPresented: $model.showApproveSheet) {
             ApproveSheet()

@@ -64,7 +64,9 @@ struct WorkflowSheet: View {
                     decisionSection
                     usageSection
                     receiptSection
-                    carriedSection
+                    DetailsDisclosure(title: "Carried approval (advanced)") {
+                        carriedSection
+                    }
                     resultSection
                 }
                 .padding(16)
@@ -104,10 +106,10 @@ struct WorkflowSheet: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Workflows")
-                    .font(.system(size: 18, weight: .semibold))
+                Text("Advanced tools")
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
                     .foregroundStyle(RSTheme.ink)
-                Text("Writes wait for confirmation. Nothing here types APPROVE or starts the selected run.")
+                Text("Extra tools for snapshots and notes. Writes wait for you. Nothing here types APPROVE or starts the selected run.")
                     .font(.system(size: 12))
                     .foregroundStyle(RSTheme.muted)
             }
