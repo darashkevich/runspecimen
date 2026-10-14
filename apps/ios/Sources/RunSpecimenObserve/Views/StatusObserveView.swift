@@ -172,7 +172,7 @@ struct StatusObserveView: View {
             actionButton("Sign phone peer challenge", tint: RSTheme.cyan) {
                 await session.signPhonePeerChallenge()
             }
-            actionButton("Cancel phone peer challenge", tint: RSTheme.danger) {
+            actionButton("Cancel phone peer challenge", tint: RSTheme.danger, alwaysEnabled: true) {
                 await session.cancelPhonePeerChallenge()
             }
             actionButton("Enroll phone key after verification", tint: RSTheme.ink.opacity(0.85)) {
@@ -344,7 +344,7 @@ struct StatusObserveView: View {
             actionButton("Sign reviewed exact run", tint: RSTheme.ink.opacity(0.85)) {
                 await session.approveReviewedExactRun()
             }
-            actionButton("Cancel exact run review", tint: RSTheme.danger) {
+            actionButton("Cancel exact run review", tint: RSTheme.danger, alwaysEnabled: true) {
                 session.cancelExactRunReview()
             }
         }
@@ -661,7 +661,7 @@ struct StatusObserveView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func actionButton(_ title: String, tint: Color, action: @escaping () async -> Void) -> some View {
+    private func actionButton(_ title: String, tint: Color, alwaysEnabled: Bool = false, action: @escaping () async -> Void) -> some View {
         Button {
             busy = true
             Task {
@@ -676,7 +676,7 @@ struct StatusObserveView: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(tint)
-        .disabled(busy)
+        .disabled(!alwaysEnabled && busy)
     }
 
     private func refreshWithTimestamp() async {
