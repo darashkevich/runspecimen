@@ -9,7 +9,7 @@
         "generation": "1",
         "key_id": "golden-active",
         "provenance": "production",
-        "public_key_x963_b64": "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "public_key_x963_b64": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
         "role": "companion",
         "state": "active"
       }
@@ -21,7 +21,7 @@
         "generation": "2",
         "key_id": "golden-revoked",
         "provenance": "production",
-        "public_key_x963_b64": "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "public_key_x963_b64": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
         "role": "companion",
         "state": "revoked"
       }
@@ -33,7 +33,7 @@
         "generation": "6",
         "key_id": "golden-rotated-new",
         "provenance": "production",
-        "public_key_x963_b64": "BQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ",
+        "public_key_x963_b64": "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
         "role": "companion",
         "state": "active"
       }
@@ -45,7 +45,7 @@
         "generation": "6",
         "key_id": "golden-rotated-old",
         "provenance": "production",
-        "public_key_x963_b64": "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "public_key_x963_b64": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
         "role": "companion",
         "state": "revoked"
       }
