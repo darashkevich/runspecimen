@@ -1249,6 +1249,10 @@ final class ObserveSchemaTests: XCTestCase {
 
     func testFailedRefreshShowsStaleWithoutAdvancingTimestamp() async throws {
         let session = await CompanionSession()
+
+        let statusBefore = await MainActor.run { session.status }
+        let isPairedBefore = await MainActor.run { session.isPaired }
+
         await MainActor.run {
             session.baseURLString = "http://localhost:9999"
             session.pairingToken = "test-token"
@@ -1258,26 +1262,71 @@ final class ObserveSchemaTests: XCTestCase {
 
         await MainActor.run {
             XCTAssertNil(session.status, "Status should be nil before refresh")
+            XCTAssertNil(session.lastError, "lastError should be nil before refresh")
         }
 
         await session.refresh()
 
         await MainActor.run {
             XCTAssertNotNil(session.lastError, "Failed refresh should set lastError")
+            XCTAssertNil(session.status, "Status should remain nil after failed refresh (Offline)")
+            XCTAssertTrue(session.isPaired, "isPaired should remain true after failed refresh")
         }
     }
 
     func testPhonePeerKeyStateRefreshesAfterHolderVerifiedCommit() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-commit-refresh-" + UUID().uuidString, isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let directory = root.appendingPathComponent("RunSpecimenObserve", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("custody.json"))
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("next.json"))
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("pending.bin"))
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("pending.pub"))
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("pending.owner"))
+        }
 
-        let stage = PhoneKeyStage(directory: directory)
-        try stage.stage(handle: Data("handle".utf8), publicKey: Data(repeating: 4, count: 65), challengeId: "test-challenge")
-        try stage.commit(ownedBy: "test-challenge", publicKey: Data(repeating: 4, count: 65))
+        let signer = RealLocationTestSigner()
+        try signer.cleanup()
 
-        let generation = try stage.committedGeneration()
-        XCTAssertEqual(generation, 1, "After commit, generation should be 1")
+        let session = await CompanionSession()
+        let mac = P256.Signing.PrivateKey()
+
+        await MainActor.run {
+            XCTAssertEqual(session.phonePeerKeyState, .noKey, "phonePeerKeyState should be .noKey before commit")
+            session.macSessionPublicKey = mac.publicKey.x963Representation.base64EncodedString()
+        }
+
+        let challenge = PhonePeerChallengeMessage(
+            challengeId: "test-challenge-1",
+            challenge: "Y2hhbGxlbmdl",
+            generation: 1,
+            holderId: "holder",
+            expiry: 1,
+            role: "phone"
+        )
+
+        let peer = MockPhonePeerTransport()
+        peer.verification = try signedPhoneReceipt(
+            key: mac,
+            challenge: challenge,
+            phonePublicKey: signer.publicKeyBase64
+        )
+
+        await MainActor.run {
+            session.phoneChallenge = challenge
+            session.signedPhonePublicKey = signer.publicKeyBase64
+            session.isPaired = true
+        }
+
+        await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
+
+        await MainActor.run {
+            XCTAssertEqual(session.phonePeerKeyState, .enrolled(generation: 1),
+                "phonePeerKeyState should be .enrolled(generation: 1) after holder-verified commit")
+            XCTAssertNil(session.phoneChallenge, "phoneChallenge should be cleared after commit")
+        }
+
+        try signer.cleanup()
     }
 
     private func package() throws -> [String: String] {
@@ -1296,4 +1345,111 @@ final class ObserveSchemaTests: XCTestCase {
             "companion_generation": "1",
         ]
     }
+}
+
+final class RealLocationTestSigner: PhoneChallengeSigning {
+    let stage: PhoneKeyStage
+    let publicKey: Data
+    let publicKeyBase64: String
+
+    init() {
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let directory = root.appendingPathComponent("RunSpecimenObserve", isDirectory: true)
+        self.stage = PhoneKeyStage(directory: directory)
+        self.publicKey = Data(repeating: 4, count: 65)
+        self.publicKeyBase64 = publicKey.base64EncodedString()
+    }
+
+    func sign(message: Data) throws -> (publicKey: String, signature: String) {
+        try stage.stage(handle: Data("test-handle".utf8), publicKey: publicKey)
+        return (publicKeyBase64, "c2ln")
+    }
+
+    func signCommitted(message: Data) throws -> (publicKey: String, signature: String) {
+        (publicKeyBase64, "c2ln")
+    }
+
+    func bindStagedOwnership(challengeId: String, publicKey: String) throws {
+        guard let key = Data(base64Encoded: publicKey) else { return }
+        try stage.bindOwner(challengeId: challengeId, publicKey: key)
+    }
+
+    func commitEnrollment(ownedBy challengeId: String, publicKey: String) throws {
+        guard let key = Data(base64Encoded: publicKey) else {
+            throw CompanionClientError.transport("invalid key")
+        }
+        try stage.stage(handle: Data("test-handle".utf8), publicKey: key, challengeId: challengeId)
+        try stage.commit(ownedBy: challengeId, publicKey: key)
+    }
+
+    func discardStagedEnrollment() {
+        stage.discard()
+    }
+
+    func cleanup() throws {
+        stage.discard()
+        try? stage.revoke()
+    }
+}
+
+final class MockPhonePeerTransport: PhonePeerTransport {
+    var verification: PhoneHolderVerification?
+
+    func fetchPhonePeerChallenge() async throws -> PhonePeerChallengeMessage {
+        PhonePeerChallengeMessage(
+            challengeId: "test-challenge",
+            challenge: "Y2hhbGxlbmdl",
+            generation: 1,
+            holderId: "holder",
+            expiry: 1,
+            role: "phone"
+        )
+    }
+
+    func willSubmitPhonePeerSignature() async throws {}
+
+    func submitPhonePeerSignature(
+        challengeId: String,
+        challenge: String,
+        publicKey: String,
+        signature: String
+    ) async throws {}
+
+    func invalidatePhonePeerChallenge(challengeId: String) async throws {}
+
+    func fetchHolderVerification(challengeId: String) async throws -> PhoneHolderVerification {
+        verification ?? PhoneHolderVerification(verified: false, consumed: false, invalidated: false)
+    }
+}
+
+func signedPhoneReceipt(
+    key: P256.Signing.PrivateKey,
+    challenge: PhonePeerChallengeMessage,
+    phonePublicKey: String,
+    generation: Int? = nil,
+    challengeId: String? = nil
+) throws -> PhoneHolderVerification {
+    let mac = key.publicKey.x963Representation.base64EncodedString()
+    let canonical = phoneReceiptCanonical(
+        challenge: challenge.challenge,
+        challengeId: challengeId ?? challenge.challengeId,
+        generation: generation ?? challenge.generation,
+        holderId: challenge.holderId,
+        macPublicKey: mac,
+        phoneFingerprint: phoneKeyFingerprint(phonePublicKey)
+    )
+    let signature = try key.signature(for: Data(canonical.utf8)).rawRepresentation.base64EncodedString()
+    return PhoneHolderVerification(
+        verified: true,
+        consumed: true,
+        invalidated: false,
+        challengeId: challengeId ?? challenge.challengeId,
+        receipt: Data(canonical.utf8).base64EncodedString(),
+        signature: signature,
+        macPublicKey: mac,
+        phoneFingerprint: phoneKeyFingerprint(phonePublicKey),
+        holderId: challenge.holderId,
+        generation: generation ?? challenge.generation,
+        outcome: "verified-consumed"
+    )
 }
