@@ -634,6 +634,124 @@ final class ObserveSchemaTests: XCTestCase {
         )
     }
 
+    func testCapabilityValidatorRejectsApproveCapability() {
+        var caps = CompanionCapabilities(
+            product: "test",
+            mode: "observe",
+            canApprove: true,
+            canExecute: false,
+            canMutateLifecycle: false,
+            canRemoteConfirm: true,
+            boundary: "test"
+        )
+        let result = CapabilityValidator.validateForPairing(capabilities: caps)
+        if case .invalid(let reason) = result {
+            XCTAssertTrue(reason.contains("ADR-004"))
+        } else {
+            XCTFail("Expected invalid result")
+        }
+
+        caps.canApprove = false
+        caps.canExecute = true
+        let result2 = CapabilityValidator.validateForPairing(capabilities: caps)
+        XCTAssertNotEqual(result2, .valid)
+
+        caps.canExecute = false
+        caps.canMutateLifecycle = true
+        let result3 = CapabilityValidator.validateForPairing(capabilities: caps)
+        XCTAssertNotEqual(result3, .valid)
+
+        caps.canMutateLifecycle = false
+        let result4 = CapabilityValidator.validateForPairing(capabilities: caps)
+        XCTAssertEqual(result4, .valid)
+    }
+
+    func testCapabilityValidatorRejectsStatusWithApprove() {
+        let status = CompanionStatus(
+            phase: "active",
+            companion: CompanionFlags(canApprove: true)
+        )
+        let result = CapabilityValidator.validateForRefresh(status: status)
+        if case .invalid(let reason) = result {
+            XCTAssertTrue(reason.contains("approve/execute"))
+        } else {
+            XCTFail("Expected invalid result")
+        }
+    }
+
+    func testRemoteConfirmResultSuccessFields() {
+        let confirmed = RemoteConfirmResult(ok: true, settled: true, refused: false)
+        XCTAssertTrue(confirmed.confirmedSuccessfully)
+        XCTAssertFalse(confirmed.refusedSuccessfully)
+        XCTAssertFalse(confirmed.isAmbiguous)
+
+        let refused = RemoteConfirmResult(ok: true, settled: false, refused: true)
+        XCTAssertFalse(refused.confirmedSuccessfully)
+        XCTAssertTrue(refused.refusedSuccessfully)
+        XCTAssertFalse(refused.isAmbiguous)
+
+        let ambiguous1 = RemoteConfirmResult(ok: nil, settled: true)
+        XCTAssertFalse(ambiguous1.confirmedSuccessfully)
+        XCTAssertTrue(ambiguous1.isAmbiguous)
+
+        let ambiguous2 = RemoteConfirmResult(ok: true, settled: nil, refused: nil)
+        XCTAssertTrue(ambiguous2.isAmbiguous)
+
+        let ambiguous3 = RemoteConfirmResult(ok: true, settled: true, refused: true)
+        XCTAssertTrue(ambiguous3.isAmbiguous)
+    }
+
+    func testPhoneKeyStageValidatesStagedParts() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-staged-validation-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let stage = PhoneKeyStage(directory: directory)
+        XCTAssertThrowsError(try stage.validateStagedParts()) { error in
+            guard let clientError = error as? CompanionClientError,
+                  case .transport(let message) = clientError else {
+                XCTFail("Expected transport error")
+                return
+            }
+            XCTAssertTrue(message.contains("incomplete-stage"))
+        }
+
+        let handlePath = directory.appendingPathComponent("phone-session-handle.pending")
+        try Data().write(to: handlePath)
+        XCTAssertThrowsError(try stage.validateStagedParts()) { error in
+            guard let clientError = error as? CompanionClientError,
+                  case .transport(let message) = clientError else {
+                XCTFail("Expected transport error")
+                return
+            }
+            XCTAssertTrue(message.contains("incomplete-stage"))
+        }
+
+        let publicPath = directory.appendingPathComponent("phone-session-public.pending")
+        try Data(repeating: 1, count: 64).write(to: publicPath)
+        XCTAssertThrowsError(try stage.validateStagedParts()) { error in
+            guard let clientError = error as? CompanionClientError,
+                  case .transport(let message) = clientError else {
+                XCTFail("Expected transport error")
+                return
+            }
+            XCTAssertTrue(message.contains("empty"))
+        }
+
+        try Data(repeating: 1, count: 32).write(to: handlePath)
+        XCTAssertThrowsError(try stage.validateStagedParts()) { error in
+            guard let clientError = error as? CompanionClientError,
+                  case .transport(let message) = clientError else {
+                XCTFail("Expected transport error")
+                return
+            }
+            XCTAssertTrue(message.contains("malformed"))
+        }
+
+        try Data(repeating: 4, count: 65).write(to: publicPath)
+        XCTAssertNoThrow(try stage.validateStagedParts())
+    }
+
     private func package() throws -> [String: String] {
         [
             "version": "RSBA2",

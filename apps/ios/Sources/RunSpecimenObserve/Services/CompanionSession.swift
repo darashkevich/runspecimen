@@ -24,6 +24,7 @@ final class CompanionSession: ObservableObject {
     @Published var macSessionPublicKey: String = ""
     /// Entered by the person from the Mac. A holder id inside a mailbox request is not this pin.
     @Published var pinnedHolderId: String = ""
+    @Published var phonePeerKeyState: PhonePeerKeyState = .unknown
     var phoneChallenge: PhonePeerChallengeMessage?
     var signedPhonePublicKey: String?
     private var phoneSignGeneration = 0
@@ -31,12 +32,68 @@ final class CompanionSession: ObservableObject {
     private var reviewedExactRun: ParsedExactRun?
     private var acceptedReceiptSignatures: Set<String> = []
 
+    private var activeRefreshTask: Task<Void, Never>?
+    private var activePhonePeerTask: Task<Void, Never>?
+    private var activeExactRunTask: Task<Void, Never>?
+    private var activeRemoteConfirmTask: Task<Void, Never>?
+
     private let defaultsKey = "rs.observe.pairing"
     private let holderPinKey = "rs.observe.pinnedHolderId"
+
+    enum PhonePeerKeyState: Equatable {
+        case unknown
+        case noKey
+        case enrolled(generation: Int)
+        case error(String)
+
+        var isEnrolled: Bool {
+            if case .enrolled = self { return true }
+            return false
+        }
+    }
 
     init() {
         load()
         pinnedHolderId = UserDefaults.standard.string(forKey: holderPinKey) ?? ""
+        refreshPhonePeerKeyState()
+    }
+
+    func refreshPhonePeerKeyState() {
+        let signer = LivePhoneSecureEnclaveSigner()
+        do {
+            let generation = try signer.stage.committedGeneration()
+            phonePeerKeyState = .enrolled(generation: generation)
+        } catch {
+            phonePeerKeyState = .noKey
+        }
+    }
+
+    func revokePhonePeerKey() {
+        let signer = LivePhoneSecureEnclaveSigner()
+        signer.revokeEnrollment()
+        phonePeerKeyState = .noKey
+        phoneChallenge = nil
+        signedPhonePublicKey = nil
+        phonePeerNote = "Phone-peer key revoked. Re-enroll by signing a new challenge."
+    }
+
+    func rotatePhonePeerKey() throws {
+        let signer = LivePhoneSecureEnclaveSigner()
+        try signer.rotateEnrollment()
+        try signer.stage.commit()
+        refreshPhonePeerKeyState()
+        phonePeerNote = "Phone-peer key rotated. The Mac must accept the new key."
+    }
+
+    func cancelAllTasks() {
+        activeRefreshTask?.cancel()
+        activePhonePeerTask?.cancel()
+        activeExactRunTask?.cancel()
+        activeRemoteConfirmTask?.cancel()
+        activeRefreshTask = nil
+        activePhonePeerTask = nil
+        activeExactRunTask = nil
+        activeRemoteConfirmTask = nil
     }
 
     func rememberPinnedHolderId() {
@@ -80,8 +137,11 @@ final class CompanionSession: ObservableObject {
         let client = CompanionClient(config: config)
         do {
             let caps = try await client.fetchCapabilities()
-            if caps.canApprove || caps.canExecute || caps.canMutateLifecycle {
-                lastError = "Refusing pair: companion advertised plugin-style approve/execute (violates ADR-004)."
+            switch CapabilityValidator.validateForPairing(capabilities: caps) {
+            case .valid:
+                break
+            case .invalid(let reason):
+                lastError = "Refusing pair: \(reason)"
                 isPaired = false
                 return
             }
@@ -101,8 +161,11 @@ final class CompanionSession: ObservableObject {
         if let caps = try? await client.fetchCapabilities() {
             capabilities = caps
         }
-        if status?.companion?.canApprove == true || status?.companion?.canExecute == true {
-            lastError = "Server claimed approve/execute capability; disconnecting."
+        switch CapabilityValidator.validateForRefresh(status: status!) {
+        case .valid:
+            break
+        case .invalid(let reason):
+            lastError = "\(reason) Disconnecting."
             disconnect()
         }
     }
@@ -446,6 +509,14 @@ final class CompanionSession: ObservableObject {
         }
         do {
             let result = try await client.submitRemoteConfirm(challenge: challenge, phrase: phrase)
+            if result.isAmbiguous {
+                lastError = "Server returned ambiguous confirm response. Refresh status to check state."
+                return
+            }
+            guard result.confirmedSuccessfully else {
+                lastError = result.note ?? "Confirm was not accepted by the server."
+                return
+            }
             lastRemoteConfirmNote = result.note
                 ?? "Remote human confirm settled. This is not equivalent to local TTY APPROVE."
             challengeInput = ""
@@ -479,6 +550,14 @@ final class CompanionSession: ObservableObject {
         }
         do {
             let result = try await client.submitRemoteRefuse(challenge: challenge, reason: reason)
+            if result.isAmbiguous {
+                lastError = "Server returned ambiguous refuse response. Refresh status to check state."
+                return
+            }
+            guard result.refusedSuccessfully else {
+                lastError = result.note ?? "Refuse was not accepted by the server."
+                return
+            }
             lastRemoteConfirmNote = result.note
                 ?? "Pending refused. Re-arm or use local TTY APPROVE. Not an approval."
             challengeInput = ""
@@ -491,12 +570,24 @@ final class CompanionSession: ObservableObject {
     }
 
     func disconnect() {
+        cancelAllTasks()
         isPaired = false
         capabilities = nil
         status = nil
         challengeInput = ""
         approvePhraseInput = ""
         refuseReasonInput = ""
+        phoneSignGeneration += 1
+        exactRunGeneration += 1
+        phoneChallenge = nil
+        signedPhonePublicKey = nil
+        reviewedExactRun = nil
+        reviewedExactRunLines = []
+        lastError = nil
+        lastAttentionNote = nil
+        lastRemoteConfirmNote = nil
+        phonePeerNote = "No phone-peer signature has been returned. Signing uses the published challenge. It does not approve a run."
+        exactRunNote = "No exact run is waiting for review. Phone approval is not physical presence at the Mac."
         UserDefaults.standard.removeObject(forKey: defaultsKey)
     }
 
@@ -824,6 +915,23 @@ struct PhoneKeyStage {
         try encoded.write(to: pendingOwner, options: .atomic)
     }
 
+    func validateStagedParts() throws {
+        guard FileManager.default.fileExists(atPath: pendingHandle.path) else {
+            throw CompanionClientError.transport("phone key handle not staged (incomplete-stage)")
+        }
+        guard FileManager.default.fileExists(atPath: pendingPublic.path) else {
+            throw CompanionClientError.transport("phone key public key not staged (incomplete-stage)")
+        }
+        let handle = try Data(contentsOf: pendingHandle)
+        guard !handle.isEmpty else {
+            throw CompanionClientError.transport("phone key handle is empty (incomplete-stage)")
+        }
+        let publicKey = try Data(contentsOf: pendingPublic)
+        guard publicKey.count == 65 else {
+            throw CompanionClientError.transport("phone key public key is malformed (incomplete-stage)")
+        }
+    }
+
     func commit(ownedBy challengeId: String, publicKey: Data, failAfterFirstWrite: Bool = false) throws {
         guard FileManager.default.fileExists(atPath: pendingOwner.path) else {
             throw CompanionClientError.transport("staged phone key belongs to another challenge")
@@ -840,6 +948,7 @@ struct PhoneKeyStage {
         guard staged == publicKey else {
             throw CompanionClientError.transport("staged phone key belongs to another challenge")
         }
+        try validateStagedParts()
         try commit(failAfterFirstWrite: failAfterFirstWrite)
     }
 
@@ -848,6 +957,7 @@ struct PhoneKeyStage {
         guard FileManager.default.fileExists(atPath: pendingHandle.path),
               FileManager.default.fileExists(atPath: pendingPublic.path)
         else { return }
+        try validateStagedParts()
         let handle = try Data(contentsOf: pendingHandle)
         let publicKey = try Data(contentsOf: pendingPublic)
         let generation = ((try? committedGeneration()) ?? 0) + 1
