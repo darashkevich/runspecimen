@@ -38,6 +38,9 @@ final class CompanionSession: ObservableObject {
     private var activeExactRunTask: Task<Void, Never>?
     private var activeRemoteConfirmTask: Task<Void, Never>?
 
+    private var cachedClient: CompanionClient?
+    private var cachedClientConfig: PairingConfig?
+
     private let defaultsKey = "rs.observe.pairing"
     private let holderPinKey = "rs.observe.pinnedHolderId"
 
@@ -69,12 +72,16 @@ final class CompanionSession: ObservableObject {
         }
     }
 
-    func revokePhonePeerKey() {
+    func revokePhonePeerKey() throws {
         let signer = LivePhoneSecureEnclaveSigner()
-        signer.revokeEnrollment()
+        try signer.revokeEnrollment()
         phonePeerKeyState = .noKey
         phoneChallenge = nil
         signedPhonePublicKey = nil
+        exactRunGeneration += 1
+        reviewedExactRun = nil
+        reviewedExactRunLines = []
+        reviewedExactRunArgv = []
         phonePeerNote = "Phone-peer key revoked. Re-enroll by signing a new challenge."
     }
 
@@ -82,6 +89,10 @@ final class CompanionSession: ObservableObject {
         let signer = LivePhoneSecureEnclaveSigner()
         try signer.rotateEnrollment()
         try signer.stage.commit()
+        exactRunGeneration += 1
+        reviewedExactRun = nil
+        reviewedExactRunLines = []
+        reviewedExactRunArgv = []
         refreshPhonePeerKeyState()
         phonePeerNote = "Phone-peer key rotated. The Mac must accept the new key."
     }
@@ -185,6 +196,13 @@ final class CompanionSession: ObservableObject {
         peer: (any PhonePeerTransport)? = nil
     ) async {
         lastError = nil
+        switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
+        case .valid:
+            break
+        case .invalid(let reason):
+            lastError = "Action refused: \(reason)"
+            return
+        }
         let transport: any PhonePeerTransport
         if let peer {
             transport = peer
@@ -258,6 +276,13 @@ final class CompanionSession: ObservableObject {
         signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
         peer: (any PhonePeerTransport)? = nil
     ) async {
+        switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
+        case .valid:
+            break
+        case .invalid(let reason):
+            lastError = "Action refused: \(reason)"
+            return
+        }
         let transport: any PhonePeerTransport
         if let peer {
             transport = peer
@@ -298,6 +323,7 @@ final class CompanionSession: ObservableObject {
             try signer.commitEnrollment(ownedBy: challengeId, publicKey: phonePublicKey)
             acceptedReceiptSignatures.insert(signature)
             phoneChallenge = nil
+            refreshPhonePeerKeyState()
             phonePeerNote = "Holder receipt verified for challenge \(challengeId). The phone key is enrolled."
         } catch PhonePeerSignError.cancelled {
             phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
@@ -316,6 +342,13 @@ final class CompanionSession: ObservableObject {
         peer: (any ExactRunPhoneSigningTransport)? = nil
     ) async {
         lastError = nil
+        switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
+        case .valid:
+            break
+        case .invalid(let reason):
+            lastError = "Action refused: \(reason)"
+            return
+        }
         exactRunGeneration += 1
         let generation = exactRunGeneration
         reviewedExactRun = nil
@@ -371,6 +404,13 @@ final class CompanionSession: ObservableObject {
         beforeSubmit: (@MainActor () async -> Void)? = nil
     ) async {
         lastError = nil
+        switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
+        case .valid:
+            break
+        case .invalid(let reason):
+            lastError = "Action refused: \(reason)"
+            return
+        }
         guard let reviewed = reviewedExactRun else {
             exactRunNote = "Review the exact run before signing it."
             return
@@ -496,6 +536,13 @@ final class CompanionSession: ObservableObject {
     func submitRemoteConfirm() async {
         lastError = nil
         lastRemoteConfirmNote = nil
+        switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
+        case .valid:
+            break
+        case .invalid(let reason):
+            lastError = "Action refused: \(reason)"
+            return
+        }
         guard remoteConfirmPending else {
             lastError = "No Mac-armed remote confirm is pending."
             return
@@ -537,6 +584,13 @@ final class CompanionSession: ObservableObject {
     func submitRemoteRefuse() async {
         lastError = nil
         lastRemoteConfirmNote = nil
+        switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
+        case .valid:
+            break
+        case .invalid(let reason):
+            lastError = "Action refused: \(reason)"
+            return
+        }
         guard remoteConfirmPending else {
             lastError = "No Mac-armed remote confirm is pending."
             return
@@ -578,6 +632,7 @@ final class CompanionSession: ObservableObject {
 
     func disconnect() {
         cancelAllTasks()
+        invalidateCachedClient()
         isPaired = false
         capabilities = nil
         status = nil
@@ -605,14 +660,37 @@ final class CompanionSession: ObservableObject {
               !pairingToken.isEmpty
         else { return nil }
         let fingerprint = tlsFingerprint.trimmingCharacters(in: .whitespacesAndNewlines)
-        return CompanionClient(
-            config: PairingConfig(
-                baseURL: url,
-                pairingToken: pairingToken,
-                tlsFingerprint: fingerprint.isEmpty ? nil : fingerprint
-            )
+        let config = PairingConfig(
+            baseURL: url,
+            pairingToken: pairingToken,
+            tlsFingerprint: fingerprint.isEmpty ? nil : fingerprint
         )
+        if let cached = cachedClient, let cachedConfig = cachedClientConfig,
+           cachedConfig.baseURL == config.baseURL,
+           cachedConfig.pairingToken == config.pairingToken,
+           cachedConfig.tlsFingerprint == config.tlsFingerprint {
+            return cached
+        }
+        let client = CompanionClient(config: config)
+        cachedClient = client
+        cachedClientConfig = config
+        return client
     }
+
+    func invalidateCachedClient() {
+        cachedClient = nil
+        cachedClientConfig = nil
+    }
+
+    #if DEBUG
+    func testMakeClient() -> CompanionClient? {
+        makeClient()
+    }
+
+    var testExactRunGeneration: Int {
+        exactRunGeneration
+    }
+    #endif
 
     private func persist(_ config: PairingConfig) {
         baseURLString = config.baseURL.absoluteString
@@ -940,6 +1018,7 @@ struct PhoneKeyStage {
     }
 
     func commit(ownedBy challengeId: String, publicKey: Data, failAfterFirstWrite: Bool = false) throws {
+        try validateStagedParts()
         guard FileManager.default.fileExists(atPath: pendingOwner.path) else {
             throw CompanionClientError.transport("staged phone key belongs to another challenge")
         }
@@ -955,7 +1034,6 @@ struct PhoneKeyStage {
         guard staged == publicKey else {
             throw CompanionClientError.transport("staged phone key belongs to another challenge")
         }
-        try validateStagedParts()
         try commit(failAfterFirstWrite: failAfterFirstWrite)
     }
 
@@ -1011,10 +1089,26 @@ struct PhoneKeyStage {
         try stage(handle: handle, publicKey: publicKey)
     }
 
-    func revoke() {
+    func revoke() throws {
         discard()
-        try? FileManager.default.removeItem(at: recordURL)
-        try? FileManager.default.removeItem(at: nextRecordURL)
+        var errors: [Error] = []
+        do {
+            if FileManager.default.fileExists(atPath: recordURL.path) {
+                try FileManager.default.removeItem(at: recordURL)
+            }
+        } catch {
+            errors.append(error)
+        }
+        do {
+            if FileManager.default.fileExists(atPath: nextRecordURL.path) {
+                try FileManager.default.removeItem(at: nextRecordURL)
+            }
+        } catch {
+            errors.append(error)
+        }
+        if let first = errors.first {
+            throw CompanionClientError.transport("Phone key revocation failed: \(first.localizedDescription)")
+        }
     }
 
     private var pendingHandle: URL { directory.appendingPathComponent("phone-session-handle.pending") }
@@ -1121,8 +1215,8 @@ struct LivePhoneSecureEnclaveSigner: PhoneChallengeSigning {
         try stage.rotate(handle: key.dataRepresentation, publicKey: key.publicKey.x963Representation)
     }
 
-    func revokeEnrollment() {
-        stage.revoke()
+    func revokeEnrollment() throws {
+        try stage.revoke()
     }
 
     private static var support: URL {

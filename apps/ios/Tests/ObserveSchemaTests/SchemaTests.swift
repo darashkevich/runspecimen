@@ -1163,6 +1163,90 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertFalse(after.macUpdatePending, "Should not be pending after mark")
     }
 
+    func testTLSPinningDelegateRecordsMismatch() {
+        let delegate = CompanionTLSPinningDelegate(expectedFingerprint: "abc123")
+        XCTAssertFalse(delegate.hadPinMismatch, "Initially no mismatch")
+        delegate.clearMismatch()
+        XCTAssertFalse(delegate.hadPinMismatch, "Clear should not affect false state")
+    }
+
+    func testCapabilityValidatorValidateForAction() {
+        let badCaps = CompanionCapabilities(
+            product: "test",
+            mode: "observe",
+            canApprove: true,
+            canExecute: false,
+            canMutateLifecycle: false,
+            canRemoteConfirm: true,
+            boundary: "test"
+        )
+        let result = CapabilityValidator.validateForAction(capabilities: badCaps, status: nil)
+        XCTAssertNotEqual(result, .valid, "Should reject capabilities with approve")
+
+        let goodCaps = CompanionCapabilities(
+            product: "test",
+            mode: "observe",
+            canApprove: false,
+            canExecute: false,
+            canMutateLifecycle: false,
+            canRemoteConfirm: true,
+            boundary: "test"
+        )
+        let goodResult = CapabilityValidator.validateForAction(capabilities: goodCaps, status: nil)
+        XCTAssertEqual(goodResult, .valid, "Should accept valid capabilities")
+
+        let badStatus = CompanionStatus(phase: "active", companion: CompanionFlags(canApprove: true))
+        let statusResult = CapabilityValidator.validateForAction(capabilities: goodCaps, status: badStatus)
+        XCTAssertNotEqual(statusResult, .valid, "Should reject status with approve")
+    }
+
+    func testPhoneKeyStageValidatesStagedPartsBeforeOwnerCheck() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-staged-order-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let stage = PhoneKeyStage(directory: directory)
+        XCTAssertThrowsError(try stage.commit(ownedBy: "challenge-1", publicKey: Data(repeating: 4, count: 65))) { error in
+            guard let clientError = error as? CompanionClientError,
+                  case .transport(let message) = clientError else {
+                XCTFail("Expected transport error")
+                return
+            }
+            XCTAssertTrue(message.contains("incomplete-stage"), "Error should mention incomplete-stage before checking owner")
+        }
+    }
+
+    func testPhoneKeyStageRevokeThrowsOnFailure() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-revoke-throw-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let stage = PhoneKeyStage(directory: directory)
+        try stage.stage(handle: Data("handle".utf8), publicKey: Data(repeating: 4, count: 65))
+        try stage.commit()
+
+        XCTAssertNoThrow(try stage.revoke(), "Revoke should succeed when files exist")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("custody.json").path))
+    }
+
+    func testClientCachingReturnsTheSameInstance() async throws {
+        let session = await CompanionSession()
+        await MainActor.run {
+            session.baseURLString = "http://localhost:8080"
+            session.pairingToken = "test-token"
+            session.tlsFingerprint = ""
+            session.isPaired = true
+        }
+
+        let client1 = await MainActor.run { session.testMakeClient() }
+        let client2 = await MainActor.run { session.testMakeClient() }
+
+        XCTAssertTrue(client1 === client2, "makeClient should return the same cached instance")
+
+        await MainActor.run { session.invalidateCachedClient() }
+        let client3 = await MainActor.run { session.testMakeClient() }
+        XCTAssertFalse(client1 === client3, "After invalidation, a new instance should be returned")
+    }
+
     private func package() throws -> [String: String] {
         [
             "version": "RSBA2",

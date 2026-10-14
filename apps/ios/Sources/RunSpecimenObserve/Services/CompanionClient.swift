@@ -92,6 +92,9 @@ final class CompanionClient {
         }
         req.timeoutInterval = 8
         let session = try getSession()
+        sessionLock.lock()
+        sessionDelegate?.clearMismatch()
+        sessionLock.unlock()
         do {
             let (data, response) = try await session.data(for: req)
             guard let http = response as? HTTPURLResponse else {
@@ -105,6 +108,12 @@ final class CompanionClient {
         } catch let error as CompanionClientError {
             throw error
         } catch {
+            sessionLock.lock()
+            let hadMismatch = sessionDelegate?.hadPinMismatch ?? false
+            sessionLock.unlock()
+            if hadMismatch {
+                throw CompanionClientError.tlsPinMismatch
+            }
             throw CompanionClientError.transport(error.localizedDescription)
         }
     }
@@ -241,6 +250,26 @@ extension CompanionClient: ExactRunPhoneSigningTransport {}
 
 final class CompanionTLSPinningDelegate: NSObject, URLSessionDelegate {
     let expectedFingerprint: String
+    private let lock = NSLock()
+    private var _lastMismatch: Bool = false
+
+    var hadPinMismatch: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _lastMismatch
+    }
+
+    func clearMismatch() {
+        lock.lock()
+        defer { lock.unlock() }
+        _lastMismatch = false
+    }
+
+    private func recordMismatch() {
+        lock.lock()
+        defer { lock.unlock() }
+        _lastMismatch = true
+    }
 
     init(expectedFingerprint: String) {
         self.expectedFingerprint = Self.normalize(expectedFingerprint)
@@ -285,6 +314,7 @@ final class CompanionTLSPinningDelegate: NSObject, URLSessionDelegate {
         let digest = SHA256.hash(data: data)
         let compact = digest.map { String(format: "%02x", $0) }.joined()
         guard compact == expectedFingerprint else {
+            recordMismatch()
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }

@@ -110,12 +110,25 @@ struct StatusObserveView: View {
     }
 
     private var connectionStatus: some View {
-        HStack(spacing: 10) {
+        let hasError = session.lastError != nil
+        let statusLabel: String
+        let statusColor: Color
+        if session.status == nil {
+            statusLabel = "Offline"
+            statusColor = RSTheme.amber
+        } else if hasError {
+            statusLabel = "Stale"
+            statusColor = RSTheme.amber
+        } else {
+            statusLabel = "Connected"
+            statusColor = RSTheme.signal
+        }
+        return HStack(spacing: 10) {
             Circle()
-                .fill(session.status != nil ? RSTheme.signal : RSTheme.amber)
+                .fill(statusColor)
                 .frame(width: 10, height: 10)
             VStack(alignment: .leading, spacing: 2) {
-                Text(session.status != nil ? "Connected" : "Offline")
+                Text(statusLabel)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(RSTheme.ink)
                 if let time = lastRefreshTime {
@@ -297,9 +310,14 @@ struct StatusObserveView: View {
     private func revokePhonePeerKey() {
         feedbackGenerator.prepare()
         phonePeerRevokeOutcome = .inProgress
-        session.revokePhonePeerKey()
-        feedbackGenerator.notificationOccurred(.success)
-        phonePeerRevokeOutcome = .success("Phone-peer key revoked")
+        do {
+            try session.revokePhonePeerKey()
+            feedbackGenerator.notificationOccurred(.success)
+            phonePeerRevokeOutcome = .success("Phone-peer key revoked")
+        } catch {
+            feedbackGenerator.notificationOccurred(.error)
+            phonePeerRevokeOutcome = .failure(error.localizedDescription)
+        }
     }
 
     private func rotatePhonePeerKey() {
@@ -681,6 +699,8 @@ struct StatusObserveView: View {
 
     private func refreshWithTimestamp() async {
         await session.refresh()
-        lastRefreshTime = Date()
+        if session.lastError == nil {
+            lastRefreshTime = Date()
+        }
     }
 }

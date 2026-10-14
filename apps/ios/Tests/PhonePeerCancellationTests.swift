@@ -188,6 +188,8 @@ struct PhonePeerCancellationTests {
             try testPhoneKeyOwnershipRejectsADifferentChallenge()
             try testPhoneKeyStageRollsBackAndRevokes()
             try testPhoneKeyCommitFailureKeepsThePreviousGeneration()
+            try await testRevokePhonePeerKeyClearsExactRunState()
+            try await testRotatePhonePeerKeyClearsExactRunState()
             print("PhonePeerCancellationTests passed")
         } catch {
             fputs("PhonePeerCancellationTests failed: \(error)\n", stderr)
@@ -682,6 +684,52 @@ func testPhoneKeyStageRollsBackAndRevokes() throws {
     }
 }
 
+@MainActor
+func testRevokePhonePeerKeyClearsExactRunState() async throws {
+    let session = CompanionSession()
+    session.reviewedExactRunLines = ["test line"]
+    session.reviewedExactRunArgv = ["/usr/bin/test"]
+    
+    let previousGeneration = session.testExactRunGeneration
+    
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("revoke-exact-clear-" + UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    
+    do {
+        try session.revokePhonePeerKey()
+    } catch {
+    }
+    
+    if session.testExactRunGeneration <= previousGeneration {
+        throw TestFailure.exactRunNotCleared
+    }
+    if !session.reviewedExactRunLines.isEmpty || !session.reviewedExactRunArgv.isEmpty {
+        throw TestFailure.exactRunNotCleared
+    }
+}
+
+@MainActor
+func testRotatePhonePeerKeyClearsExactRunState() async throws {
+    let session = CompanionSession()
+    session.reviewedExactRunLines = ["test line"]
+    session.reviewedExactRunArgv = ["/usr/bin/test"]
+    
+    let previousGeneration = session.testExactRunGeneration
+    
+    do {
+        try session.rotatePhonePeerKey()
+    } catch {
+    }
+    
+    if session.testExactRunGeneration <= previousGeneration {
+        throw TestFailure.exactRunNotCleared
+    }
+    if !session.reviewedExactRunLines.isEmpty || !session.reviewedExactRunArgv.isEmpty {
+        throw TestFailure.exactRunNotCleared
+    }
+}
+
 enum TestFailure: Error {
     case cancelledPathSignedOrPosted
     case rollbackLostPreviousKey
@@ -693,4 +741,5 @@ enum TestFailure: Error {
     case mailboxAcceptanceEnrolled
     case holderVerificationDidNotEnroll
     case injectedCommitFailureDidNotStop
+    case exactRunNotCleared
 }
