@@ -7,9 +7,7 @@ Short operator path for shipping the macOS companion. Detail:
 **Invariants:** no telemetry; Approve never auto-types `APPROVE`; receipts ≠
 digital signatures; payload is **not** OS-sandboxed by the UI sandbox alone.
 
-**Engine:** this branch is unpublished **`0.2.0rc15`**. The submitted **0.1.4 (9)** froze published **`0.2.0rc14`** without evidence expansion. Do not upload Mac **0.1.5** while **0.1.4 (9)** is the submission on file. The local successor label on this branch is **0.1.5 (13)** (see [asc-kit/STATUS.md](asc-kit/STATUS.md)). It is not an upload.
-
-**Do not** upload or Submit another Mac App Store build while **0.1.4 (9)** is the recorded submission.
+**Engine:** a future MAS freeze must match `src/runspecimen/__version__` (**`0.2.0rc15`**). Build **9** shipped with engine **`0.2.0rc14`** and is now **Removed from App Store** (EU trader status missing).
 
 ## Yahor-only prerequisites
 
@@ -65,20 +63,56 @@ test -f build/RunSpecimen.app/Contents/Resources/AppIcon.icns
 
 ## C. Archive + upload to App Store Connect
 
-1. Freeze + structural Archive (ad-hoc OK without certs):
-   ```bash
-   ./Scripts/archive_mas.sh
-   # → apps/macos/build/RunSpecimen.xcarchive
-   ```
-2. For ASC upload, open project and set Team:
-   ```bash
-   ./Scripts/open_xcode.sh
-   # Signing & Capabilities: Team + Apple Distribution + MAS entitlements
-   # Product → Archive → Distribute App → App Store Connect → Upload
-   ```
-   Or `RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh` (local Store pkg;
-   UUID + installer cert; no upload). Default destination still `upload`.
-3. ASC: **0.1.4 (9)** is `READY_FOR_SALE`. Do not upload another build or Submit again from this checklist. This branch's local label is **0.1.5 (13)** / engine **0.2.0rc15** and is not an upload. Earlier local labels **0.1.5 (10)**, **(11)**, and **(12)** are not this candidate.
+### 1. Freeze the helper
+
+Use a Homebrew python3.12 venv with pyinstaller>=6:
+
+```bash
+# One-time venv setup (if not already created)
+/opt/homebrew/opt/python@3.12/bin/python3.12 -m venv ~/.venvs/freeze312
+~/.venvs/freeze312/bin/pip install 'pyinstaller>=6'
+
+# Freeze the helper
+cd apps/macos
+RS_FREEZE_PYTHON=~/.venvs/freeze312/bin/python ./Scripts/freeze_helper.sh --enable --require --verify
+```
+
+### 2. Archive with xcodebuild
+
+```bash
+xcodebuild -project RunSpecimen.xcodeproj \
+  -scheme RunSpecimen \
+  -configuration Release \
+  -archivePath build/RunSpecimen.xcarchive \
+  archive
+```
+
+### 3. Export with manual signing (destination upload)
+
+Export uses **Apple Distribution** certificate, **3rd Party Mac Developer Installer**
+certificate, and the existing **RunSpecimen MAS** provisioning profile:
+
+```bash
+xcodebuild -exportArchive \
+  -archivePath build/RunSpecimen.xcarchive \
+  -exportOptionsPlist Config/ExportOptions.mas.plist \
+  -exportPath build/export
+```
+
+The `ExportOptions.mas.plist` must specify:
+- `method`: app-store
+- `signingStyle`: manual
+- `teamID`: UN6KF8636A
+- `provisioningProfiles`: UUID of the RunSpecimen MAS profile
+- `installerSigningCertificate`: 3rd Party Mac Developer Installer
+- `destination`: upload
+
+**Never use `-allowProvisioningUpdates`.** Manual signing only.
+
+### 4. Current status
+
+ASC: version `0.1.4` / build **9** is **Removed from App Store** (EU trader status missing). Build **14** (0.1.5)
+was uploaded; next upload is build **15**.
 
 Optional: `brew install xcodegen` then `./Scripts/generate_xcodeproj.sh` if
 `project.yml` changed (committed `RunSpecimen.xcodeproj` is the default Archive input).

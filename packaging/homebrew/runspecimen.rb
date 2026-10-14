@@ -1,6 +1,5 @@
-# Installs v0.2.0-rc.15. Opt-in isolation, policy, retain, and evidence-
-# expansion commands are in that sdist. Default backend none does not
-# confine the process.
+# Installs v0.2.0-rc.15. Opt-in isolation, policy, and retain are in that
+# sdist. Default backend none does not confine the process.
 class Runspecimen < Formula
   include Language::Python::Virtualenv
 

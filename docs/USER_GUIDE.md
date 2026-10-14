@@ -1,12 +1,10 @@
 # RunSpecimen user guide
 
-Practical how-to for the local CLI.
-
-**Current version:** `0.2.0rc15` (GitHub and PyPI)
-
-This release includes all evidence-expansion commands (requirements, evidence, freshness, scenes) that were not in rc14. The Mac App Store app **0.1.4 (9)** freezes engine rc14.
-
-For a short product overview see [ABOUT.md](ABOUT.md); for product intent see [PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
+Practical how-to for the local CLI. This guide matches the installed
+`runspecimen` commands and current release-candidate limits
+(`0.2.0rc15`, published on GitHub and PyPI). For a short product overview see
+[ABOUT.md](ABOUT.md); for product intent see
+[PRODUCT_PLAN.md](PRODUCT_PLAN.md); for short Q&A see [FAQ.md](FAQ.md).
 
 ## What it is / what it is not
 
@@ -82,8 +80,8 @@ Requirements: Python 3.9+, POSIX (`fcntl` leases), stdlib only.
 ### From PyPI
 
 ```bash
-pip install runspecimen==0.2.0rc15
-runspecimen --version   # should show 0.2.0rc15
+python3 -m pip install runspecimen==0.2.0rc15
+runspecimen --version
 ```
 
 Pin the version. pip will not select an RC without `==0.2.0rc15`.
@@ -100,7 +98,7 @@ runspecimen --version
 
 Or: `brew install darashkevich/runspecimen/runspecimen`.
 
-Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen). Installs the published `v0.2.0-rc.14` sdist (same bytes as PyPI / GitHub Release). Default backend `none` does not confine the process.
+Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen). Installs the published `v0.2.0-rc.15` sdist (same bytes as PyPI / GitHub Release). Default backend `none` does not confine the process.
 
 **PATH shadowing:** if `~/.local/bin/runspecimen` (old pip / `bootstrap_dev`
 shim) sits ahead of Homebrew on `PATH`, you will keep seeing an older version.
@@ -111,12 +109,12 @@ Confirm with `which -a runspecimen`, then rename the obsolete shim
 ### From GitHub release
 
 ```bash
-pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-0.2.0rc15-py3-none-any.whl
+python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-0.2.0rc15-py3-none-any.whl
 
 runspecimen --version
 ```
 
-Checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/SHA256SUMS)
+Checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/SHA256SUMS)
 
 ### From source clone
 
@@ -246,7 +244,9 @@ inputs (`--contract` for HMAC; `--public-key` or `--key-id` for Ed25519).
 `digest --live` only compares output file bytes to `output_digests`. A diff
 that finds differences still exits 0.
 
-These commands and fields ship in `0.2.0rc15` (also in rc14). Earlier rc12 rejects `isolation` and `policy` as unknown and does not provide `digest`, `diff`, or `retain`.
+These commands and fields ship in `0.2.0rc15`. Published `0.2.0rc12`
+rejects `isolation` and `policy` as unknown and does not provide `digest`,
+`diff`, or `retain`.
 
 Hard tool maxima (refuse out-of-range contracts):
 
@@ -460,7 +460,7 @@ Guarantee (2) is a separate Developer ID holder. It is not in the Store app, it 
 | Predecessor refused | Prior run not postflighted, failed/timed out, or receipt invalid. Fix predecessor first. |
 | Second `run` refused | Expected: a run ID cannot be reused after execution starts. New contract + new `run_id`. |
 | Outputs already exist at preflight | Delete or move asserted output paths before launch (they must start absent). |
-| Untrusted payload | Default backend `none` does not confine the process. Opt-in `sandbox-exec` or `bwrap` only when declared and installed; read `isolation.residual`. They are not an OS sandbox. |
+| Untrusted payload | Default backend `none` does not confine the process. Opt-in `sandbox-exec` or `bwrap` only when declared and installed; read `isolation.residual`. They are not an OS sandbox. Published `0.2.0rc12` has neither field; `0.2.0rc15` does. |
 
 ## Related docs
 

@@ -19,11 +19,11 @@ settings:
   base:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     SWIFT_VERSION: "5.9"
-    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_STYLE: Automatic
     CODE_SIGN_IDENTITY: "-"
     CODE_SIGNING_ALLOWED: "YES"
     AD_HOC_CODE_SIGNING_ALLOWED: "YES"
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: UN6KF8636A
     ENABLE_HARDENED_RUNTIME: YES
     ONLY_ACTIVE_ARCH: "NO"
 targets:
@@ -70,7 +70,7 @@ targets:
         CFBundleName: RunSpecimen
         CFBundlePackageType: APPL
         CFBundleShortVersionString: "0.1.5"
-        CFBundleVersion: "13"
+        CFBundleVersion: "15"
         ITSAppUsesNonExemptEncryption: false
         RSDistributionChannel: mas
         LSApplicationCategoryType: public.app-category.developer-tools
@@ -95,13 +95,22 @@ targets:
         # whose engine cannot launch. A universal runtime needs its own QA.
         ARCHS: arm64
         MARKETING_VERSION: "0.1.5"
-        CURRENT_PROJECT_VERSION: "13"
+        CURRENT_PROJECT_VERSION: "15"
         INFOPLIST_FILE: Config/Info-mas.plist
         PRODUCT_NAME: RunSpecimen
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Entitlements/RunSpecimen.mas.entitlements
         COMBINE_HIDPI_IMAGES: YES
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: NO
+      configs:
+        Debug:
+          # Ad-hoc signing for CI (no certificates available)
+          CODE_SIGN_IDENTITY: "-"
+          AD_HOC_CODE_SIGNING_ALLOWED: "YES"
+        Release:
+          # Real signing for App Store archives
+          CODE_SIGN_IDENTITY: Apple Development
+          AD_HOC_CODE_SIGNING_ALLOWED: "NO"
     scheme:
       testTargets: []
       archive:

@@ -71,7 +71,7 @@ No unreleased changes.
 
 
 - `approve` refuses a protected `execution_approval` policy immediately after `load_contract`, before the interactive TTY check, so a piped N10 still prints `execution policy local has no typed-phrase fallback`.
-- Installed Secure Enclave admission is fail-closed, not undecided. The Store note in `docs/SUBMISSION.md` follows the 2026-09-28 Connect record (`READY_FOR_SALE` for **0.1.4 (9)**) and was not re-queried on 2026-10-06. `run_integration_complete` and `e2_closed` stay false.
+- Installed Secure Enclave admission is fail-closed, not undecided. The Store note in `docs/SUBMISSION.md` follows the 2026-09-28 Connect record (`Removed from App Store` (EU trader status missing) for **0.1.4 (9)**) and was not re-queried on 2026-10-06. `run_integration_complete` and `e2_closed` stay false.
 - Exact-run approval checks expiry and the pinned holder id before signing, and an authorize that loses its request keeps the uncertain lease. A holder execute that fails before any child exists keeps that uncertain lease. Root-daemon Secure Enclave creation is unsupported on current Apple guidance. Installed admission stays closed. `run_integration_complete` and `e2_closed` stay false.
 - `requirements_check` refuses a digest-valid passed report unless authenticity is receipt-bound and the final state is certifiable. Evidence pointers accept only a basename under `evidence_captures`. Postflight omits an attestation whose digest is not the current capture. The CLI does not claim a hardware human when it cannot collect a device signature. MCP `freshness_check` evaluates without writing `freshness_report.json`.
 - Developer ID packaging accepts bundle id `com.darashkevich.runspecimen.holder` and pins that designated requirement when a Developer ID identity is supplied. Ad-hoc `codesign --sign -` is local stage smoke, not the product signature. That bundle id is not `production_verifier_pin()`.
@@ -158,7 +158,7 @@ Published on GitHub as `v0.2.0-rc.12` and on PyPI as `0.2.0rc12` (identical byte
 - Fix `AppIcon.appiconset`: catalog filenames are real `icon_*@2x.png` files
   with matching pixel sizes (128@2x is 256px). `verify_app_icon.sh` checks
   Contents.json and a warning-free `actool` compile.
-- Mac App Store **0.1.3 (8)** was submitted 2026-09-21 and later rejected. The package recorded as waiting after that rejection is **0.1.4 (9)** (see `apps/macos/asc-kit/STATUS.md`). Do not upload a replacement from this changelog.
+- Mac App Store **0.1.4 (9)** is **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded.
 
 ### Packaging
 

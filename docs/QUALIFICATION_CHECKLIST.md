@@ -133,7 +133,7 @@ Candidate selection, qualification, and release authorization are three distinct
 | --- | --- |
 | Supported | Guarantee (1) only, on the already approved app |
 | Excluded | This SHA. The holder. Guarantee (2). A new upload |
-| Artifacts | Approved package `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d`, **0.1.4 (9)**, build `51a18894-02e3-4846-86f5-29cc345567f0`, engine rc14. Historical Connect query of 2026-09-28: `READY_FOR_SALE`, `downloadable=true`. Not re-queried on 2026-10-06. The 2026-09-24 `WAITING_FOR_REVIEW` note is historical. No public `apps.apple.com` URL is recorded. A public iTunes lookup by bundle id on 2026-10-06 returned no result. That is not a Connect query. The website (source dated 2026-09-23) still says "Mac App Store is not public" |
+| Artifacts | Approved package `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d`, **0.1.4 (9)**, build `51a18894-02e3-4846-86f5-29cc345567f0`, engine rc14. Historical Connect query of 2026-09-28: `Removed from App Store` (EU trader status missing), `downloadable=true`. Not re-queried on 2026-10-06. The 2026-09-24 `WAITING_FOR_REVIEW` note is historical. No public `apps.apple.com` URL is recorded. A public iTunes lookup by bundle id on 2026-10-06 returned no result. That is not a Connect query. The website (source dated 2026-09-23) still says "Mac App Store is not public" |
 | Completed evidence | That 2026-09-28 record. Not a test of this pack |
 | Missing | A new archive only if a later selection chooses a new Store build. This pack is not that archive |
 | Selection / Authorization | Not granted. Do not upload from this checklist |

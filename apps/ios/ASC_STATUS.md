@@ -21,7 +21,7 @@ Queried **2026-09-22** via App Store Connect API (local AuthKey; no secrets in t
 
 ## Leave alone
 
-- Mac App Store `com.darashkevich.runspecimen` **0.1.4 (9)** is the package recorded as `WAITING_FOR_REVIEW` (submission `f0bb3ab1-c283-4463-8c27-e5702a35ac6a`). **0.1.3 (8)** was rejected. Do not cancel or resubmit from this note.
+- Mac App Store `com.darashkevich.runspecimen` **0.1.4 (9)** is **Removed from App Store** (EU trader status missing).
 
 ## Safety
 

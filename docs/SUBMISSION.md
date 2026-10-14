@@ -6,19 +6,19 @@ by a human with appropriate credentials.
 
 ## Published release
 
-Package / plugin identity: **`0.2.0rc14`** / **`0.2.0-rc.14`**.
+Package / plugin identity: **`0.2.0rc15`** / **`0.2.0-rc.15`**.
 
-**Published:** [v0.2.0-rc.14](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.14) / PyPI `runspecimen==0.2.0rc14`. GitHub Release assets and PyPI are the same bytes (checksum-only; not SLSA-attested).
+**Published:** [v0.2.0-rc.15](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15) / PyPI `runspecimen==0.2.0rc15`. GitHub Release assets and PyPI are the same bytes (checksum-only; not SLSA-attested).
 
 **Do not publish** the existing draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) (annotated tag peels to `ecc1709`). Do not move that tag. Do not move `v0.2.0-rc.12`. See [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md).
 
 Published URLs:
 
-- Release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.14
-- Wheel: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/runspecimen-0.2.0rc14-py3-none-any.whl
-- Source: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/runspecimen-0.2.0rc14.tar.gz
-- Plugin archive: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/runspecimen-plugin-0.2.0-rc.14.zip
-- Checksums: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.14/SHA256SUMS
+- Release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15
+- Wheel: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-0.2.0rc15-py3-none-any.whl
+- Source: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-0.2.0rc15.tar.gz
+- Plugin archive: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-plugin-0.2.0-rc.15.zip
+- Checksums: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/SHA256SUMS
 
 ## 1. Cursor Marketplace
 
@@ -321,14 +321,14 @@ listing later; filesystem skills/rules are the supported path today.
 
 ## 3. PyPI (Python Package Index)
 
-**Status:** **`0.2.0rc14` is the published package** (identical bytes to the GitHub Release). **`0.2.0rc12` stays as the previous release.** **`0.2.0rc11` draft must stay unpublished.**
+**Status:** **`0.2.0rc15` is the published package** (identical bytes to the GitHub Release). **`0.2.0rc14` stays as the previous release.** **`0.2.0rc11` draft must stay unpublished.**
 
-**Registry URL:** https://pypi.org/project/runspecimen/0.2.0rc14/
+**Registry URL:** https://pypi.org/project/runspecimen/0.2.0rc15/
 
 ### Published package
 
-- **Version:** `0.2.0rc14`
-- **Install:** `python3 -m pip install runspecimen==0.2.0rc14`
+- **Version:** `0.2.0rc15`
+- **Install:** `python3 -m pip install runspecimen==0.2.0rc15`
 - **Publishing:** GitHub Actions trusted publishing with OIDC; no PyPI API
   token is stored in GitHub.
 
@@ -365,18 +365,38 @@ from a draft. Do not publish the rc11 draft.
 
 ## 3b. Mac App Store (`com.darashkevich.runspecimen`)
 
-**Status (Connect query recorded 2026-09-28; not re-queried on 2026-10-06):** macOS **0.1.4 (9)** was `READY_FOR_SALE` and `downloadable=true` on that query (build `51a18894-02e3-4846-86f5-29cc345567f0`). The 2026-09-24 `WAITING_FOR_REVIEW` note (submission `f0bb3ab1-c283-4463-8c27-e5702a35ac6a`) is historical. Package SHA-256 `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d`. It excludes evidence expansion and is guarantee (1). **0.1.3 (8)** was rejected on 2026-09-23. No public `apps.apple.com` URL is recorded in this file. This candidate was not submitted. Do not upload another build from this document.
+**Status (App Store Connect):** macOS version **0.1.4 (9)** is **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded. Removed from the Mac App Store (EU trader status missing). Build **14** (0.1.5) was uploaded; next upload is build **15**.
 
-Do **not** add a MAS link to the marketing site until Apple provides a live
-`apps.apple.com` URL. Developer ID notarization is not a Store submission.
+The Mac App Store listing is now live with a public `apps.apple.com` URL.
 
-Details: `apps/macos/asc-kit/STATUS.md`.
+### Working MAS build path (Yahor's Mac)
+
+1. **Freeze the helper** with a Homebrew python3.12 venv that has pyinstaller>=6:
+   ```bash
+   RS_FREEZE_PYTHON=~/.venvs/freeze312/bin/python ./Scripts/freeze_helper.sh --enable --require --verify
+   ```
+
+2. **Archive with xcodebuild:**
+   ```bash
+   xcodebuild -project RunSpecimen.xcodeproj -scheme RunSpecimen -configuration Release \
+     -archivePath build/RunSpecimen.xcarchive archive
+   ```
+
+3. **Export with manual signing** (Apple Distribution + 3rd Party Mac Developer Installer + RunSpecimen MAS profile, destination upload):
+   ```bash
+   xcodebuild -exportArchive -archivePath build/RunSpecimen.xcarchive \
+     -exportOptionsPlist Config/ExportOptions.mas.plist -exportPath build/export
+   ```
+
+**Never use `-allowProvisioningUpdates`.** Manual signing only.
+
+Details: `apps/macos/asc-kit/STATUS.md`, `apps/macos/RELEASE_CHECKLIST.md`.
 
 ---
 
 ## 4. Website (runspecimen.darashkevich.com)
 
-**Status (in-repo note, not re-checked on 2026-10-06):** Live (hexaflake mark + `runspecimen==0.2.0rc14`). Marketplace links stay pending until listings are accepted. Website source is `sites/runspecimen/` in the `darashkevich.com` repo, which is not this repository.
+**Status:** Live (hexaflake mark + `runspecimen==0.2.0rc15`). Marketplace links stay pending until listings are accepted.
 
 **Earlier content check, not repeated on 2026-10-06:** Site mentions "Public marketplace availability is not yet confirmed."
 
@@ -396,7 +416,7 @@ listings are confirmed live (not pending review).
 
 | Channel | Submitted | Pending | Live | URL |
 | --- | --- | --- | --- | --- |
-| GitHub Release | ✅ published prerelease | — | [v0.2.0-rc.14](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.14) | keep draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) unpublished; do not move `v0.2.0-rc.12` |
+| GitHub Release | ✅ published prerelease | — | [v0.2.0-rc.15](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15) | keep draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) unpublished; do not move `v0.2.0-rc.12` |
 | Cursor Marketplace | form submitted 2026-09-21 | Anysphere review | no public listing yet | https://cursor.com/marketplace/publish |
 | Codex Directory | ❌ | not submitted (Persona identity still required) | no public listing | https://chatgpt.com/apps |
 | Claude Code community | submitted 2026-09-21 | Anthropic review | not listed yet | https://platform.claude.com/plugins/submit |
@@ -406,9 +426,9 @@ listings are confirmed live (not pending review).
 | Meta Muse Code | ❌ | skill + MCP + beta hooks | not submitted | local skill/MCP install |
 | JetBrains Junie / Marketplace | PR open | JetBrains review | not merged | https://github.com/JetBrains/junie-extensions/pull/16 |
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
-| PyPI | ✅ | — | `0.2.0rc14` (same bytes as GitHub) | [runspecimen 0.2.0rc14](https://pypi.org/project/runspecimen/0.2.0rc14/) |
-| Homebrew tap | ✅ | — | `0.2.0rc14` sdist from GitHub Release | [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen) |
-| Mac App Store | ✅ submitted 2026-09-24 | — | **0.1.4 (9)** `READY_FOR_SALE` on the 2026-09-28 Connect query (package `584f6868…`); not re-queried on 2026-10-06. The 2026-09-24 `WAITING_FOR_REVIEW` state is historical. **0.1.3 (8)** was rejected | no `apps.apple.com` URL recorded — see `apps/macos/asc-kit/STATUS.md` |
+| PyPI | ✅ | — | `0.2.0rc15` (same bytes as GitHub) | [runspecimen 0.2.0rc15](https://pypi.org/project/runspecimen/0.2.0rc15/) |
+| Homebrew tap | ✅ | — | `0.2.0rc15` sdist from GitHub Release | [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen) |
+| Mac App Store | ✅ READY_FOR_SALE | — | macOS **0.1.4 (9)** public | `apps.apple.com URL no longer live — see `apps/macos/asc-kit/STATUS.md` |
 
 **Important:** Do not claim a listing is "public" or "available" until:
 1. Submission is accepted (not just submitted)
@@ -430,6 +450,6 @@ After each channel goes live, verify:
 7. **Muse Code:** `muse skills list` shows runspecimen; MCP optional; hooks beta
 8. **Junie:** `/extensions` shows `runspecimen` after marketplace add
 9. **Windsurf:** `@runspecimen` skill resolves; rule appears under Customizations
-10. **PyPI:** `pip install runspecimen==0.2.0rc14` works and `runspecimen --version` shows `0.2.0rc14`
-11. **Homebrew:** `brew install darashkevich/runspecimen/runspecimen` installs `0.2.0rc14` from the published sdist
+10. **PyPI:** `pip install runspecimen==0.2.0rc15` works and `runspecimen --version` shows `0.2.0rc15`
+11. **Homebrew:** `brew install darashkevich/runspecimen/runspecimen` installs `0.2.0rc15` from the published sdist
 12. **Website:** Update with verified live links only
