@@ -248,6 +248,11 @@ public enum CompanionSecureEnclaveEnrollment {
                 throw CompanionHardwareRefusal.malformed("enrollment")
             }
 
+            if let existingNew = try? load(keyID: newKeyID, directory: directory),
+               existingNew.state == revoked {
+                throw CompanionHardwareRefusal.keyIDRevoked
+            }
+
             var state = RotationState(
                 oldKeyID: oldKeyID,
                 newKeyID: newKeyID,
@@ -353,7 +358,7 @@ public enum CompanionSecureEnclaveEnrollment {
 
     public static func carriedPairing(keyID: String, directory: URL) throws -> Data {
         try validateKeyID(keyID)
-        return try json(load(keyID: keyID, directory: directory))
+        return try carriedJson(load(keyID: keyID, directory: directory))
     }
 
     public static func inspect(keyID: String, directory: URL) throws -> CompanionPairingRecord {
@@ -398,6 +403,7 @@ public enum CompanionSecureEnclaveEnrollment {
         }
         var revokedRecord = record
         revokedRecord.state = revoked
+        revokedRecord.generation = record.generation + 1
         revokedRecord.macUpdatePending = true
         try save(revokedRecord, directory: directory)
         do {
@@ -417,6 +423,7 @@ public enum CompanionSecureEnclaveEnrollment {
         }
         var revokedRecord = record
         revokedRecord.state = revoked
+        revokedRecord.generation = record.generation + 1
         revokedRecord.macUpdatePending = true
         try save(revokedRecord, directory: directory)
         return revokedRecord
@@ -737,6 +744,19 @@ public enum CompanionSecureEnclaveEnrollment {
         if record.macUpdatePending {
             object["mac_update_pending"] = true
         }
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    private static func carriedJson(_ record: CompanionPairingRecord) throws -> Data {
+        let object: [String: String] = [
+            "backend": record.backend,
+            "generation": String(record.generation),
+            "key_id": record.keyID,
+            "provenance": record.provenance,
+            "public_key_x963_b64": record.publicKey.base64EncodedString(),
+            "role": record.role,
+            "state": record.state,
+        ]
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 

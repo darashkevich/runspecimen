@@ -92,9 +92,9 @@ final class ObserveSchemaTests: XCTestCase {
         }
         let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
         XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.revoked)
-        XCTAssertEqual(stored.generation, 1, "Revoked record keeps its original generation")
+        XCTAssertEqual(stored.generation, 2, "Revoked record has generation incremented for Mac import compatibility")
         let retried = try CompanionSecureEnclaveEnrollment.persistRevocation(stored, directory: directory) { _ in }
-        XCTAssertEqual(retried.generation, 1, "Re-revoke does not change generation")
+        XCTAssertEqual(retried.generation, 2, "Re-revoke of already revoked does not change generation")
         XCTAssertEqual(retried.state, CompanionSecureEnclaveEnrollment.revoked)
     }
 
@@ -146,7 +146,7 @@ final class ObserveSchemaTests: XCTestCase {
         }
     }
 
-    func testRevocationUnderTheEnrollmentLockKeepsGeneration() throws {
+    func testConcurrentRevocationsIncrementGenerationOnce() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-race-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let record = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
@@ -169,7 +169,7 @@ final class ObserveSchemaTests: XCTestCase {
             try? CompanionSecureEnclaveEnrollment.withLock(directory) {
                 let live = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
                 XCTAssertEqual(live.state, CompanionSecureEnclaveEnrollment.revoked)
-                XCTAssertEqual(live.generation, 1, "Revoked record keeps original generation")
+                XCTAssertEqual(live.generation, 2, "Revoked record has incremented generation")
                 _ = try CompanionSecureEnclaveEnrollment.persistRevocation(live, directory: directory) { _ in }
             }
             second.fulfill()
@@ -179,7 +179,7 @@ final class ObserveSchemaTests: XCTestCase {
         wait(for: [first, second], timeout: 3)
         let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
         XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.revoked)
-        XCTAssertEqual(stored.generation, 1, "Generation unchanged after concurrent revocations")
+        XCTAssertEqual(stored.generation, 2, "Generation incremented once by first revocation, unchanged by re-revoke")
     }
 
     func testEnrollmentOnEmptyDirectoryReachesCreateKeyWithoutMalformed() throws {
@@ -324,7 +324,7 @@ final class ObserveSchemaTests: XCTestCase {
         }
         let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
         XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.revoked)
-        XCTAssertEqual(stored.generation, 1, "Revoked record keeps original generation")
+        XCTAssertEqual(stored.generation, 2, "Revoked record has incremented generation")
     }
 
     func testPublicRevokeAfterFinalizeSeesTheRecordTheDecisionAlreadyAccepted() throws {
@@ -379,7 +379,7 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertNil(decisionError)
         let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
         XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.revoked)
-        XCTAssertEqual(stored.generation, 1, "Revoked record keeps original generation")
+        XCTAssertEqual(stored.generation, 2, "Revoked record has incremented generation")
     }
 
     func testFinalizeAfterPublicRevokeDiscardsTheSignature() async throws {
@@ -485,7 +485,7 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(newKey.generation, 2, "New key inherits old generation + 1")
         XCTAssertEqual(revokedKey.keyID, "phone-vector")
         XCTAssertEqual(revokedKey.state, CompanionSecureEnclaveEnrollment.revoked)
-        XCTAssertEqual(revokedKey.generation, 1, "Revoked key keeps original generation")
+        XCTAssertEqual(revokedKey.generation, 2, "Revoked key has incremented generation for Mac compatibility")
     }
 
     func testRotationFailsIfAuthenticationFails() async throws {
@@ -620,14 +620,14 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertTrue(newKey.macUpdatePending, "New key has Mac update pending")
 
         XCTAssertEqual(revokedKey.keyID, "test-old")
-        XCTAssertEqual(revokedKey.generation, 5, "Revoked key keeps its original generation")
+        XCTAssertEqual(revokedKey.generation, 6, "Revoked key gets old generation + 1 for Mac compatibility")
         XCTAssertEqual(revokedKey.state, CompanionSecureEnclaveEnrollment.revoked)
         XCTAssertTrue(revokedKey.macUpdatePending, "Revoked key has Mac update pending")
 
         let storedNew = try CompanionSecureEnclaveEnrollment.inspect(keyID: "test-new", directory: directory)
         XCTAssertEqual(storedNew.generation, 6)
         let storedRevoked = try CompanionSecureEnclaveEnrollment.inspect(keyID: "test-old", directory: directory)
-        XCTAssertEqual(storedRevoked.generation, 5)
+        XCTAssertEqual(storedRevoked.generation, 6)
     }
 
     func testEnrollOnRevokedKeyIDReturnsSpecificError() throws {
@@ -660,6 +660,56 @@ final class ObserveSchemaTests: XCTestCase {
         let error = CompanionHardwareRefusal.keyIDRevoked
         XCTAssertTrue(error.userMessage.contains("revoked"), "Error message mentions revoked")
         XCTAssertTrue(error.userMessage.contains("different key ID"), "Error message suggests using different key ID")
+    }
+
+    func testCarriedExportUsesAllStringsAndExcludesMacUpdatePending() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-carried-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+        let record = try CompanionSecureEnclaveEnrollment.enroll(keyID: "cross-platform-test", directory: directory)
+        XCTAssertTrue(record.macUpdatePending, "New enrollment has Mac update pending")
+
+        let carriedData = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: "cross-platform-test", directory: directory)
+        guard let object = try JSONSerialization.jsonObject(with: carriedData) as? [String: String] else {
+            XCTFail("Carried export must be [String: String] for Mac compatibility")
+            return
+        }
+
+        XCTAssertNotNil(object["generation"], "Carried export includes generation")
+        XCTAssertEqual(object["generation"], "1", "Generation is exported as string")
+        XCTAssertNil(object["mac_update_pending"], "Carried export excludes mac_update_pending")
+        XCTAssertEqual(object["state"], "active")
+        XCTAssertEqual(object["key_id"], "cross-platform-test")
+        XCTAssertEqual(object["role"], EnrollmentIdentity.roleCompanion)
+    }
+
+    func testRotateToRevokedDestinationIsRefused() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-revoked-dest-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+        CompanionSecureEnclaveEnrollment.testKeyDeleter = { _ in }
+
+        let activeKey = try CompanionSecureEnclaveEnrollment.enroll(keyID: "active-key", directory: directory)
+        XCTAssertEqual(activeKey.state, CompanionSecureEnclaveEnrollment.active)
+
+        let destinationKey = try CompanionSecureEnclaveEnrollment.enroll(keyID: "destination-key", directory: directory)
+        XCTAssertEqual(destinationKey.state, CompanionSecureEnclaveEnrollment.active)
+
+        _ = try await CompanionSecureEnclaveEnrollment.revoke(keyID: "destination-key", directory: directory)
+        let revokedDest = try CompanionSecureEnclaveEnrollment.inspect(keyID: "destination-key", directory: directory)
+        XCTAssertEqual(revokedDest.state, CompanionSecureEnclaveEnrollment.revoked)
+
+        do {
+            _ = try await CompanionSecureEnclaveEnrollment.rotate(from: "active-key", to: "destination-key", directory: directory)
+            XCTFail("Expected keyIDRevoked error when rotating to revoked destination")
+        } catch {
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .keyIDRevoked, "Rotating to revoked destination key returns keyIDRevoked error")
+        }
+
+        let activeStillActive = try CompanionSecureEnclaveEnrollment.inspect(keyID: "active-key", directory: directory)
+        XCTAssertEqual(activeStillActive.state, CompanionSecureEnclaveEnrollment.active, "Source key remains active after refused rotation")
     }
 
     func testListKeysReturnsAllEnrolledKeys() throws {
@@ -898,6 +948,72 @@ final class ObserveSchemaTests: XCTestCase {
             XCTAssertEqual(selected.keyID, "test-2")
             XCTAssertEqual(selected.state, CompanionSecureEnclaveEnrollment.active)
         }
+    }
+
+    func testGoldenFixturesMatchCrossplatformSchema() throws {
+        let fixturesPath = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("shared/TestFixtures/companion-pairing-golden.json")
+
+        let data = try Data(contentsOf: fixturesPath)
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let fixtures = root["fixtures"] as? [String: Any] else {
+            XCTFail("Could not parse golden fixtures")
+            return
+        }
+
+        for (name, fixture) in fixtures {
+            guard let fixtureDict = fixture as? [String: Any],
+                  let record = fixtureDict["record"] as? [String: String] else {
+                XCTFail("Fixture \(name) is not valid [String: String]")
+                continue
+            }
+
+            XCTAssertNotNil(record["backend"], "\(name): missing backend")
+            XCTAssertNotNil(record["generation"], "\(name): missing generation")
+            XCTAssertNotNil(record["key_id"], "\(name): missing key_id")
+            XCTAssertNotNil(record["provenance"], "\(name): missing provenance")
+            XCTAssertNotNil(record["public_key_x963_b64"], "\(name): missing public_key_x963_b64")
+            XCTAssertNotNil(record["role"], "\(name): missing role")
+            XCTAssertNotNil(record["state"], "\(name): missing state")
+
+            XCTAssertNil(record["mac_update_pending"], "\(name): mac_update_pending should not be in carried export schema")
+
+            if let genStr = record["generation"], let gen = Int(genStr) {
+                XCTAssertTrue(gen > 0, "\(name): generation must be positive")
+            } else {
+                XCTFail("\(name): generation is not a valid integer string")
+            }
+
+            let state = record["state"]
+            XCTAssertTrue(state == "active" || state == "revoked", "\(name): state must be active or revoked")
+        }
+
+        guard let activeFixture = fixtures["active"] as? [String: Any],
+              let activeRecord = activeFixture["record"] as? [String: String],
+              let revokedFixture = fixtures["revoked"] as? [String: Any],
+              let revokedRecord = revokedFixture["record"] as? [String: String] else {
+            XCTFail("Missing active or revoked fixture")
+            return
+        }
+
+        XCTAssertEqual(activeRecord["generation"], "1", "Active key starts at generation 1")
+        XCTAssertEqual(revokedRecord["generation"], "2", "Revoked key has generation incremented (1 + 1 = 2)")
+
+        guard let rotatedNewFixture = fixtures["rotated_new"] as? [String: Any],
+              let rotatedNewRecord = rotatedNewFixture["record"] as? [String: String],
+              let rotatedOldFixture = fixtures["rotated_old"] as? [String: Any],
+              let rotatedOldRecord = rotatedOldFixture["record"] as? [String: String] else {
+            XCTFail("Missing rotated fixtures")
+            return
+        }
+
+        XCTAssertEqual(rotatedNewRecord["state"], "active", "New key after rotation is active")
+        XCTAssertEqual(rotatedOldRecord["state"], "revoked", "Old key after rotation is revoked")
+        XCTAssertEqual(rotatedNewRecord["generation"], rotatedOldRecord["generation"], "Both rotated keys have same generation (old + 1)")
     }
 
     private func package() throws -> [String: String] {

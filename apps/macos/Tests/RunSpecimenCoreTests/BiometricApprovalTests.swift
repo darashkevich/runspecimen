@@ -700,6 +700,87 @@ final class BiometricApprovalTests: XCTestCase {
         )
     }
 
+    func testGoldenFixturesMatchCrossplatformSchemaAndCanBePinned() throws {
+        let fixturesPath = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("shared/TestFixtures/companion-pairing-golden.json")
+
+        let data = try Data(contentsOf: fixturesPath)
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let fixtures = root["fixtures"] as? [String: Any] else {
+            XCTFail("Could not parse golden fixtures")
+            return
+        }
+
+        for (name, fixture) in fixtures {
+            guard let fixtureDict = fixture as? [String: Any],
+                  let record = fixtureDict["record"] as? [String: String] else {
+                XCTFail("Fixture \(name) must be [String: String] for Mac compatibility")
+                continue
+            }
+
+            XCTAssertNil(record["mac_update_pending"], "\(name): mac_update_pending must not be in carried export")
+
+            if let genStr = record["generation"], Int(genStr) != nil {
+            } else {
+                XCTFail("\(name): generation must be a valid integer string")
+            }
+        }
+
+        guard let activeFixture = fixtures["active"] as? [String: Any],
+              let activeRecord = activeFixture["record"] as? [String: String] else {
+            XCTFail("Missing active fixture")
+            return
+        }
+
+        let activeData = try JSONSerialization.data(withJSONObject: activeRecord)
+        let pinned = try BiometricEnrollmentDirectory.pinCarriedCompanion(activeData, directory: directory)
+        XCTAssertEqual(pinned.state, BiometricEnrollmentRecord.active)
+        XCTAssertEqual(pinned.generation, 1)
+        XCTAssertEqual(pinned.backend, EnrollmentIdentity.backendUnverified)
+        XCTAssertEqual(pinned.provenance, EnrollmentIdentity.provenanceCarriedPin)
+    }
+
+    func testGoldenRevokedFixtureUpdatesExistingRecordToRevoked() throws {
+        let fixturesPath = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("shared/TestFixtures/companion-pairing-golden.json")
+
+        let data = try Data(contentsOf: fixturesPath)
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let fixtures = root["fixtures"] as? [String: Any],
+              let activeFixture = fixtures["active"] as? [String: Any],
+              var activeRecord = activeFixture["record"] as? [String: String],
+              let revokedFixture = fixtures["revoked"] as? [String: Any],
+              var revokedRecord = revokedFixture["record"] as? [String: String] else {
+            XCTFail("Could not parse golden fixtures")
+            return
+        }
+
+        activeRecord["key_id"] = "revoke-test-key"
+        let activeData = try JSONSerialization.data(withJSONObject: activeRecord)
+        let pinned = try BiometricEnrollmentDirectory.pinCarriedCompanion(activeData, directory: directory)
+        XCTAssertEqual(pinned.state, BiometricEnrollmentRecord.active)
+        XCTAssertEqual(pinned.generation, 1)
+
+        revokedRecord["key_id"] = "revoke-test-key"
+        revokedRecord["public_key_x963_b64"] = activeRecord["public_key_x963_b64"]
+        let revokedData = try JSONSerialization.data(withJSONObject: revokedRecord)
+        let updated = try BiometricEnrollmentDirectory.pinCarriedCompanion(revokedData, directory: directory)
+        XCTAssertEqual(updated.state, BiometricEnrollmentRecord.revoked)
+        XCTAssertEqual(updated.generation, 2, "Revoked record has generation > active as required by Mac import")
+
+        let reloaded = try BiometricEnrollmentDirectory.load(keyID: "revoke-test-key", directory: directory)
+        XCTAssertEqual(reloaded.state, BiometricEnrollmentRecord.revoked)
+        XCTAssertEqual(reloaded.generation, 2)
+    }
+
     func testInterruptedOrPartialWritesLeaveNoFile() throws {
         // Isolation refuses a missing intermediate. Create the root here so this
         // test does not depend on testTouchIDDiagnostic / testSymlink running first.
