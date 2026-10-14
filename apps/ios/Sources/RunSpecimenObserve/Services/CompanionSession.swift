@@ -500,7 +500,7 @@ final class CompanionSession: ObservableObject {
     func approveReviewedExactRun(
         signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
         peer: (any ExactRunPhoneSigningTransport)? = nil,
-        now: @MainActor () -> Int = { Int(Date().timeIntervalSince1970) },
+        now: @MainActor @escaping () -> Int = { Int(Date().timeIntervalSince1970) },
         beforeSign: (@MainActor () async -> Void)? = nil,
         beforeSubmit: (@MainActor () async -> Void)? = nil
     ) async {
@@ -519,7 +519,7 @@ final class CompanionSession: ObservableObject {
     private func approveReviewedExactRunImpl(
         signer: PhoneChallengeSigning,
         peer: (any ExactRunPhoneSigningTransport)?,
-        now: @MainActor () -> Int,
+        now: @MainActor @escaping () -> Int,
         beforeSign: (@MainActor () async -> Void)?,
         beforeSubmit: (@MainActor () async -> Void)?
     ) async {
