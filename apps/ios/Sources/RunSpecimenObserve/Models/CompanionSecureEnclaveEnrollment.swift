@@ -1,7 +1,10 @@
 import CryptoKit
 import Foundation
 import LocalAuthentication
+import os
 import Security
+
+private let enrollmentLogger = Logger(subsystem: "com.darashkevich.runspecimen.observe", category: "enrollment")
 
 public enum CompanionHardwareRefusal: Error, Equatable {
     /// Automation called the refusal entry. This is not evidence of a person.
@@ -10,6 +13,23 @@ public enum CompanionHardwareRefusal: Error, Equatable {
     case malformed(String)
     case staleRequest
     case alreadyEnrolled
+}
+
+public extension CompanionHardwareRefusal {
+    var userMessage: String {
+        switch self {
+        case .automationRefused:
+            return "Cancelled by user or system."
+        case .missing:
+            return "No enrollment found for this key."
+        case .malformed(let detail):
+            return "Invalid state: \(detail)."
+        case .staleRequest:
+            return "The request has changed since it was displayed."
+        case .alreadyEnrolled:
+            return "A key with this ID is already enrolled."
+        }
+    }
 }
 
 /// Public pairing material for one iPhone Secure Enclave key.
@@ -386,8 +406,10 @@ public enum CompanionSecureEnclaveEnrollment {
         semaphore.wait()
         if let authError {
             if let laError = authError as? LAError, laError.code == .userCancel || laError.code == .appCancel || laError.code == .systemCancel {
+                enrollmentLogger.info("Face ID cancelled by user")
                 throw CompanionHardwareRefusal.automationRefused
             }
+            enrollmentLogger.error("Face ID authentication failed: \(authError.localizedDescription, privacy: .public)")
             throw CompanionHardwareRefusal.malformed("biometric")
         }
     }
@@ -395,10 +417,16 @@ public enum CompanionSecureEnclaveEnrollment {
     private static func createEnclaveKey(keyID: String) throws -> Data {
         let context = LAContext()
         context.localizedFallbackTitle = ""
-        let key = try SecureEnclave.P256.Signing.PrivateKey(
-            accessControl: try accessControl(),
-            authenticationContext: context
-        )
+        let key: SecureEnclave.P256.Signing.PrivateKey
+        do {
+            key = try SecureEnclave.P256.Signing.PrivateKey(
+                accessControl: try accessControl(),
+                authenticationContext: context
+            )
+        } catch {
+            enrollmentLogger.error("Secure Enclave key creation failed: \(error.localizedDescription, privacy: .public)")
+            throw CompanionHardwareRefusal.malformed("secure-enclave")
+        }
         try saveBlob(key.dataRepresentation, keyID: keyID)
         return key.publicKey.x963Representation
     }
@@ -445,16 +473,18 @@ public enum CompanionSecureEnclaveEnrollment {
     private static func load(keyID: String, directory: URL) throws -> CompanionPairingRecord {
         try validateKeyID(keyID)
         let url = fileURL(keyID: keyID, directory: directory)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw CompanionHardwareRefusal.missing
+        }
         let data: Data
         do {
             data = try Data(contentsOf: url)
-        } catch let error as NSError {
-            if error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
-                throw CompanionHardwareRefusal.missing
-            }
+        } catch {
+            enrollmentLogger.error("Failed to read enrollment file: \(error.localizedDescription, privacy: .public)")
             throw CompanionHardwareRefusal.malformed("enrollment")
         }
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            enrollmentLogger.error("Enrollment file is not valid JSON")
             throw CompanionHardwareRefusal.malformed("enrollment")
         }
         guard object["key_id"] == keyID,
@@ -469,9 +499,11 @@ public enum CompanionSecureEnclaveEnrollment {
               generation > 0,
               String(generation) == generationText,
               state == active || state == revoked else {
+            enrollmentLogger.error("Enrollment file has invalid structure for keyID: \(keyID, privacy: .public)")
             throw CompanionHardwareRefusal.malformed("enrollment")
         }
         guard EnrollmentIdentity.isRecognized(role: role, backend: backend, provenance: provenance) else {
+            enrollmentLogger.error("Enrollment identity not recognized for keyID: \(keyID, privacy: .public)")
             throw CompanionHardwareRefusal.malformed("enrollment")
         }
         return CompanionPairingRecord(
@@ -521,6 +553,7 @@ public enum CompanionSecureEnclaveEnrollment {
         ]
         let status = SecItemAdd(query as CFDictionary, nil)
         guard status == errSecSuccess else {
+            enrollmentLogger.error("Keychain save failed for keyID \(keyID, privacy: .public): OSStatus \(status)")
             throw CompanionHardwareRefusal.malformed("keychain")
         }
     }
@@ -536,6 +569,7 @@ public enum CompanionSecureEnclaveEnrollment {
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data else {
+            enrollmentLogger.error("Keychain load failed for keyID \(keyID, privacy: .public): OSStatus \(status)")
             throw CompanionHardwareRefusal.malformed("keychain")
         }
         return data
@@ -549,6 +583,7 @@ public enum CompanionSecureEnclaveEnrollment {
         ]
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
+            enrollmentLogger.error("Keychain delete failed for keyID \(keyID, privacy: .public): OSStatus \(status)")
             throw CompanionHardwareRefusal.malformed("keychain")
         }
     }

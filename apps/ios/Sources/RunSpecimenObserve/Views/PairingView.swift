@@ -1,8 +1,18 @@
 import SwiftUI
+import UIKit
+
+enum PairingOutcome: Equatable {
+    case none
+    case inProgress
+    case success
+    case failure
+}
 
 struct PairingView: View {
     @EnvironmentObject private var session: CompanionSession
     @State private var busy = false
+    @State private var pairingOutcome: PairingOutcome = .none
+    private let feedbackGenerator = UINotificationFeedbackGenerator()
 
     var body: some View {
         ScrollView {
@@ -89,10 +99,19 @@ struct PairingView: View {
                 }
 
                 Button {
+                    feedbackGenerator.prepare()
                     busy = true
+                    pairingOutcome = .inProgress
                     Task {
                         await session.saveAndPair()
                         busy = false
+                        if session.lastError == nil {
+                            feedbackGenerator.notificationOccurred(.success)
+                            pairingOutcome = .success
+                        } else {
+                            feedbackGenerator.notificationOccurred(.error)
+                            pairingOutcome = .failure
+                        }
                     }
                 } label: {
                     HStack {
@@ -108,10 +127,37 @@ struct PairingView: View {
                 .foregroundStyle(RSTheme.bg)
                 .disabled(busy)
 
+                if pairingOutcome == .success && session.lastError == nil {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(RSTheme.signal)
+                        Text("Paired successfully")
+                            .font(.subheadline)
+                            .foregroundStyle(RSTheme.ink)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RSTheme.signal.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+
                 if let error = session.lastError {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(RSTheme.danger)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(RSTheme.danger)
+                            Text("Pairing failed")
+                                .font(.subheadline)
+                                .foregroundStyle(RSTheme.ink)
+                        }
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(RSTheme.muted)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RSTheme.danger.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -135,15 +181,43 @@ struct PairingView: View {
                     .background(RSTheme.elevated)
                 }
 
-                NavigationLink("Review a carried approval") {
+                NavigationLink {
                     CompanionApprovalPreviewView()
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .foregroundStyle(RSTheme.cyan)
+                        Text("Review a carried approval")
+                            .foregroundStyle(RSTheme.ink)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(RSTheme.muted)
+                    }
+                    .padding(14)
+                    .background(RSTheme.panel)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .accessibilityHint("Shows a package a person carried. Does not call Face ID.")
 
-                NavigationLink("Sign on this iPhone") {
+                NavigationLink {
                     CompanionHardwareApprovalView()
+                } label: {
+                    HStack {
+                        Image(systemName: "key.fill")
+                            .foregroundStyle(RSTheme.cyan)
+                        Text("Manage this iPhone's key")
+                            .foregroundStyle(RSTheme.ink)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(RSTheme.muted)
+                    }
+                    .padding(14)
+                    .background(RSTheme.panel)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
-                .accessibilityHint("Opens Face ID enrollment. Nothing runs until a button on that screen is tapped.")
+                .accessibilityHint("Enroll, revoke, rotate, or sign with the Secure Enclave key.")
 
                 #if RS_OBSERVE_DEV_SIGNER
                 NavigationLink("Development software signature") {

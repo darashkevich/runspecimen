@@ -168,6 +168,25 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(stored.generation, 2)
     }
 
+    func testEnrollmentOnEmptyDirectoryReachesCreateKeyWithoutMalformed() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-empty-enroll-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+        var createKeyCalled = false
+        let record = try CompanionSecureEnclaveEnrollment.enrollReplacingMissingFile(
+            keyID: "test-empty-dir",
+            directory: directory,
+            createKey: {
+                createKeyCalled = true
+                return Data(repeating: 4, count: 65)
+            },
+            cleanup: {}
+        )
+        XCTAssertTrue(createKeyCalled, "createKey should be called when enrolling on an empty directory")
+        XCTAssertEqual(record.generation, 1)
+        XCTAssertEqual(record.state, CompanionSecureEnclaveEnrollment.active)
+    }
+
     func testEnrollCreatesAKeyOnlyWhenThePairingFileIsMissing() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-enroll-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
