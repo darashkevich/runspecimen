@@ -442,7 +442,7 @@ func testExactRunSignatureUsesTheFetchedNonce() async throws {
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     if session.reviewedExactRunLines.contains("policy companion") == false
         || session.reviewedExactRunLines.contains("holder holder-a") == false
-        || session.reviewedExactRunLines.contains("argv /usr/bin/true script") == false {
+        || session.reviewedExactRunArgv != ["/usr/bin/true", "script"] {
         throw TestFailure.holderVerificationDidNotEnroll
     }
     await session.approveReviewedExactRun(signer: signer, peer: peer)

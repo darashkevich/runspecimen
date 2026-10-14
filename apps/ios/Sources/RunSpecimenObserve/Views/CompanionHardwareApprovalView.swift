@@ -674,7 +674,7 @@ struct CompanionHardwareApprovalView: View {
 
         Task {
             do {
-                let revokedRecord = try CompanionSecureEnclaveEnrollment.revoke(keyID: keyID, directory: directory)
+                let revokedRecord = try await CompanionSecureEnclaveEnrollment.revoke(keyID: keyID, directory: directory)
                 let carried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: keyID, directory: directory)
                 await MainActor.run {
                     revokedPairingText = String(decoding: carried, as: UTF8.self)
@@ -702,7 +702,7 @@ struct CompanionHardwareApprovalView: View {
 
         Task {
             do {
-                let (newRecord, revokedRecord) = try CompanionSecureEnclaveEnrollment.rotate(
+                let (newRecord, revokedRecord) = try await CompanionSecureEnclaveEnrollment.rotate(
                     from: keyID,
                     to: replacementKeyID,
                     directory: directory

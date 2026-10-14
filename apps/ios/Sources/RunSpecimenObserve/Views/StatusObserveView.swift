@@ -8,6 +8,10 @@ struct StatusObserveView: View {
     @State private var showDisconnectConfirmation = false
     @State private var confirmOutcome: ActionResultState = .idle
     @State private var refuseOutcome: ActionResultState = .idle
+    @State private var phonePeerRevokeOutcome: ActionResultState = .idle
+    @State private var phonePeerRotateOutcome: ActionResultState = .idle
+    @State private var showPhonePeerRevokeConfirmation = false
+    @State private var showPhonePeerRotateConfirmation = false
     private let feedbackGenerator = UINotificationFeedbackGenerator()
 
     enum ActionResultState: Equatable {
@@ -159,6 +163,9 @@ struct StatusObserveView: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(RSTheme.muted)
                 .tracking(0.6)
+
+            phonePeerKeyStatus
+
             Text(session.phonePeerNote)
                 .font(.footnote)
                 .foregroundStyle(RSTheme.muted)
@@ -171,11 +178,141 @@ struct StatusObserveView: View {
             actionButton("Enroll phone key after verification", tint: RSTheme.ink.opacity(0.85)) {
                 await session.commitPhoneKeyAfterHolderVerification()
             }
+
+            if session.phonePeerKeyState.isEnrolled {
+                Divider().background(RSTheme.muted.opacity(0.3))
+
+                Text("KEY MANAGEMENT")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(RSTheme.muted)
+                    .tracking(0.6)
+
+                Button {
+                    showPhonePeerRevokeConfirmation = true
+                } label: {
+                    HStack {
+                        if case .inProgress = phonePeerRevokeOutcome {
+                            ProgressView().tint(RSTheme.bg)
+                        } else {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        Text("Revoke phone-peer key")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(RSTheme.danger)
+                .disabled(phonePeerRevokeOutcome == .inProgress || phonePeerRotateOutcome == .inProgress)
+
+                outcomeView(phonePeerRevokeOutcome)
+
+                Button {
+                    showPhonePeerRotateConfirmation = true
+                } label: {
+                    HStack {
+                        if case .inProgress = phonePeerRotateOutcome {
+                            ProgressView().tint(RSTheme.bg)
+                        } else {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                        }
+                        Text("Rotate phone-peer key")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(RSTheme.amber)
+                .disabled(phonePeerRevokeOutcome == .inProgress || phonePeerRotateOutcome == .inProgress)
+
+                outcomeView(phonePeerRotateOutcome)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RSTheme.panel)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .confirmationDialog(
+            "Revoke phone-peer key?",
+            isPresented: $showPhonePeerRevokeConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Revoke", role: .destructive) { revokePhonePeerKey() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This permanently revokes your phone-peer key. You will need to re-enroll by signing a new challenge.")
+        }
+        .confirmationDialog(
+            "Rotate phone-peer key?",
+            isPresented: $showPhonePeerRotateConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Rotate", role: .destructive) { rotatePhonePeerKey() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This creates a new phone-peer key and revokes the old one. The Mac must accept the new key.")
+        }
+    }
+
+    @ViewBuilder
+    private var phonePeerKeyStatus: some View {
+        switch session.phonePeerKeyState {
+        case .unknown:
+            HStack(spacing: 6) {
+                Image(systemName: "questionmark.circle")
+                    .foregroundStyle(RSTheme.muted)
+                Text("Checking key state…")
+                    .font(.caption)
+                    .foregroundStyle(RSTheme.muted)
+            }
+        case .noKey:
+            HStack(spacing: 6) {
+                Image(systemName: "key.slash")
+                    .foregroundStyle(RSTheme.muted)
+                Text("No phone-peer key enrolled")
+                    .font(.caption)
+                    .foregroundStyle(RSTheme.muted)
+            }
+        case .enrolled(let generation):
+            HStack(spacing: 6) {
+                Image(systemName: "key.fill")
+                    .foregroundStyle(RSTheme.signal)
+                Text("Enrolled (generation \(generation))")
+                    .font(.caption)
+                    .foregroundStyle(RSTheme.ink)
+            }
+        case .error(let message):
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(RSTheme.danger)
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(RSTheme.danger)
+            }
+        }
+    }
+
+    private func revokePhonePeerKey() {
+        feedbackGenerator.prepare()
+        phonePeerRevokeOutcome = .inProgress
+        session.revokePhonePeerKey()
+        feedbackGenerator.notificationOccurred(.success)
+        phonePeerRevokeOutcome = .success("Phone-peer key revoked")
+    }
+
+    private func rotatePhonePeerKey() {
+        feedbackGenerator.prepare()
+        phonePeerRotateOutcome = .inProgress
+        do {
+            try session.rotatePhonePeerKey()
+            feedbackGenerator.notificationOccurred(.success)
+            phonePeerRotateOutcome = .success("Phone-peer key rotated")
+        } catch {
+            feedbackGenerator.notificationOccurred(.error)
+            phonePeerRotateOutcome = .failure(error.localizedDescription)
+        }
     }
 
     private var exactRunCard: some View {
@@ -189,9 +326,13 @@ struct StatusObserveView: View {
                 .foregroundStyle(RSTheme.muted)
             if !session.reviewedExactRunLines.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(session.reviewedExactRunLines.enumerated()), id: \.offset) { index, line in
-                        formattedLine(line, index: index)
+                    ForEach(session.reviewedExactRunLines, id: \.self) { line in
+                        Text(line)
+                            .font(.system(.footnote, design: .monospaced))
+                            .foregroundStyle(RSTheme.ink)
+                            .textSelection(.enabled)
                     }
+                    argvView
                 }
                 .padding(10)
                 .background(RSTheme.elevated)
@@ -214,39 +355,29 @@ struct StatusObserveView: View {
     }
 
     @ViewBuilder
-    private func formattedLine(_ line: String, index: Int) -> some View {
-        if line.hasPrefix("argv ") {
+    private var argvView: some View {
+        if !session.reviewedExactRunArgv.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
                 Text("argv")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(RSTheme.muted)
-                let args = String(line.dropFirst(5))
-                ForEach(Array(parseArgv(args).enumerated()), id: \.offset) { argIndex, arg in
+                ForEach(Array(session.reviewedExactRunArgv.enumerated()), id: \.offset) { index, arg in
                     HStack(alignment: .top, spacing: 4) {
-                        Text("[\(argIndex)]")
+                        Text("[\(index)]")
                             .font(.system(.caption2, design: .monospaced))
                             .foregroundStyle(RSTheme.muted)
                             .frame(width: 30, alignment: .trailing)
-                        Text(escapeForDisplay(arg))
+                        Text(Self.escapeForDisplay(arg))
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(RSTheme.ink)
                             .textSelection(.enabled)
                     }
                 }
             }
-        } else {
-            Text(line)
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(RSTheme.ink)
-                .textSelection(.enabled)
         }
     }
 
-    private func parseArgv(_ joined: String) -> [String] {
-        joined.components(separatedBy: " ")
-    }
-
-    private func escapeForDisplay(_ arg: String) -> String {
+    static func escapeForDisplay(_ arg: String) -> String {
         var result = ""
         for char in arg {
             switch char {

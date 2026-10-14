@@ -17,9 +17,16 @@ struct PairingView: View {
 
     private var urlIsValid: Bool {
         let trimmed = session.baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmed) else { return false }
+        guard !trimmed.isEmpty, let url = URL(string: trimmed) else { return false }
         let scheme = (url.scheme ?? "").lowercased()
         return scheme == "http" || scheme == "https"
+    }
+
+    private var isLoopback: Bool {
+        let trimmed = session.baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed) else { return false }
+        let host = (url.host ?? "").lowercased()
+        return host == "localhost" || host == "127.0.0.1" || host == "::1"
     }
 
     private var tokenIsValid: Bool {
@@ -37,7 +44,7 @@ struct PairingView: View {
     }
 
     private var canPair: Bool {
-        urlIsValid && tokenIsValid && tlsIsValid && !busy
+        urlIsValid && !isLoopback && tokenIsValid && tlsIsValid && !busy
     }
 
     var body: some View {
@@ -76,11 +83,17 @@ struct PairingView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .stroke(urlIsValid || session.baseURLString.isEmpty ? Color.clear : RSTheme.danger.opacity(0.5), lineWidth: 1)
+                                .stroke((urlIsValid && !isLoopback) || session.baseURLString.isEmpty ? Color.clear : RSTheme.danger.opacity(0.5), lineWidth: 1)
                         )
-                    Text("The URL shown by the Mac companion. Use your Mac's local IP or Tailscale address, not 127.0.0.1.")
-                        .font(.caption2)
-                        .foregroundStyle(RSTheme.muted)
+                    if isLoopback {
+                        Text("127.0.0.1 and localhost cannot be used from this phone. Enter your Mac's local IP or Tailscale address.")
+                            .font(.caption2)
+                            .foregroundStyle(RSTheme.danger)
+                    } else {
+                        Text("The URL shown by the Mac companion. Use your Mac's local IP or Tailscale address.")
+                            .font(.caption2)
+                            .foregroundStyle(RSTheme.muted)
+                    }
 
                     fieldLabel("Pairing token")
                     SecureField("Paste from Mac terminal", text: $session.pairingToken)

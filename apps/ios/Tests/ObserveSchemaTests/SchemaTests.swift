@@ -364,9 +364,9 @@ final class ObserveSchemaTests: XCTestCase {
         let revokeStarted = DispatchSemaphore(value: 0)
         let revokeReturned = DispatchSemaphore(value: 0)
         let finishedRevoke = expectation(description: "revoke")
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task {
             revokeStarted.signal()
-            _ = try? CompanionSecureEnclaveEnrollment.revoke(keyID: record.keyID, directory: directory)
+            _ = try? await CompanionSecureEnclaveEnrollment.revoke(keyID: record.keyID, directory: directory)
             revokeReturned.signal()
             finishedRevoke.fulfill()
         }
@@ -383,12 +383,12 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(stored.generation, 2)
     }
 
-    func testFinalizeAfterPublicRevokeDiscardsTheSignature() throws {
+    func testFinalizeAfterPublicRevokeDiscardsTheSignature() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-after-revoke-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let record = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
         try CompanionSecureEnclaveEnrollment.storeEnrollment(record, directory: directory) {}
-        _ = try CompanionSecureEnclaveEnrollment.revoke(keyID: record.keyID, directory: directory)
+        _ = try await CompanionSecureEnclaveEnrollment.revoke(keyID: record.keyID, directory: directory)
         CompanionSecureEnclaveEnrollment.clock = { 1_600_000_000 }
         XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.finalizeSignature(
             produced: Data(repeating: 9, count: 64),
@@ -453,7 +453,7 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: oldKeyURL), originalOldData)
     }
 
-    func testRotationWithTestSeamsSucceeds() throws {
+    func testRotationWithTestSeamsSucceeds() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-seams-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let oldKey = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
@@ -472,7 +472,7 @@ final class ObserveSchemaTests: XCTestCase {
             deleteCalls.append(keyID)
         }
 
-        let (newKey, revokedKey) = try CompanionSecureEnclaveEnrollment.rotate(
+        let (newKey, revokedKey) = try await CompanionSecureEnclaveEnrollment.rotate(
             from: "phone-vector",
             to: "phone-new",
             directory: directory
@@ -489,7 +489,7 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(revokedKey.generation, 2)
     }
 
-    func testRotationFailsIfAuthenticationFails() throws {
+    func testRotationFailsIfAuthenticationFails() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-auth-fail-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let oldKey = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
@@ -499,11 +499,14 @@ final class ObserveSchemaTests: XCTestCase {
             throw CompanionHardwareRefusal.automationRefused
         }
 
-        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.rotate(
-            from: "phone-vector",
-            to: "phone-new",
-            directory: directory
-        )) { error in
+        do {
+            _ = try await CompanionSecureEnclaveEnrollment.rotate(
+                from: "phone-vector",
+                to: "phone-new",
+                directory: directory
+            )
+            XCTFail("Expected error to be thrown")
+        } catch {
             XCTAssertEqual(error as? CompanionHardwareRefusal, .automationRefused)
         }
 
@@ -512,7 +515,7 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(stored.generation, 1)
     }
 
-    func testRotationFailsIfNewKeyCreationFails() throws {
+    func testRotationFailsIfNewKeyCreationFails() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-create-fail-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let oldKey = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
@@ -522,11 +525,14 @@ final class ObserveSchemaTests: XCTestCase {
             throw CompanionHardwareRefusal.malformed("secure-enclave")
         }
 
-        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.rotate(
-            from: "phone-vector",
-            to: "phone-new",
-            directory: directory
-        )) { error in
+        do {
+            _ = try await CompanionSecureEnclaveEnrollment.rotate(
+                from: "phone-vector",
+                to: "phone-new",
+                directory: directory
+            )
+            XCTFail("Expected error to be thrown")
+        } catch {
             XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("secure-enclave"))
         }
 
@@ -536,7 +542,7 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("phone-new.pairing.json").path))
     }
 
-    func testRotationReturnsIncompleteIfOldKeyRevocationFails() throws {
+    func testRotationReturnsIncompleteIfOldKeyRevocationFails() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-revoke-fail-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let oldKey = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
@@ -552,11 +558,14 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(chmod(oldKeyURL.path, 0o444), 0)
         defer { _ = chmod(oldKeyURL.path, 0o644) }
 
-        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.rotate(
-            from: "phone-vector",
-            to: "phone-new",
-            directory: directory
-        )) { error in
+        do {
+            _ = try await CompanionSecureEnclaveEnrollment.rotate(
+                from: "phone-vector",
+                to: "phone-new",
+                directory: directory
+            )
+            XCTFail("Expected error to be thrown")
+        } catch {
             if case .rotationIncomplete(let oldRevoked, let newCreated) = error as? CompanionHardwareRefusal {
                 XCTAssertFalse(oldRevoked)
                 XCTAssertTrue(newCreated)
@@ -699,6 +708,24 @@ final class ObserveSchemaTests: XCTestCase {
 
         let ambiguous3 = RemoteConfirmResult(ok: true, settled: true, refused: true)
         XCTAssertTrue(ambiguous3.isAmbiguous)
+    }
+
+    func testArgvRenderingPreservesBoundaries() {
+        let argvWithSpace = ["/bin/echo", "a b"]
+        let argvSeparate = ["/bin/echo", "a", "b"]
+
+        let renderedWithSpace = argvWithSpace.enumerated().map { (index, arg) in
+            "[\(index)] \(StatusObserveView.escapeForDisplay(arg))"
+        }.joined(separator: "\n")
+
+        let renderedSeparate = argvSeparate.enumerated().map { (index, arg) in
+            "[\(index)] \(StatusObserveView.escapeForDisplay(arg))"
+        }.joined(separator: "\n")
+
+        XCTAssertNotEqual(renderedWithSpace, renderedSeparate, "Argv with embedded space should render differently from separate args")
+        XCTAssertTrue(renderedWithSpace.contains("a␣b"), "Embedded space should be rendered as ␣")
+        XCTAssertEqual(argvWithSpace.count, 2, "First array has 2 elements")
+        XCTAssertEqual(argvSeparate.count, 3, "Second array has 3 elements")
     }
 
     func testPhoneKeyStageValidatesStagedParts() throws {

@@ -214,9 +214,9 @@ public enum CompanionSecureEnclaveEnrollment {
         return try sign(fields: fresh, displayedCanonical: bytes, directory: directory)
     }
 
-    public static func revoke(keyID: String, directory: URL) throws -> CompanionPairingRecord {
+    public static func revoke(keyID: String, directory: URL) async throws -> CompanionPairingRecord {
         try validateKeyID(keyID)
-        try authenticateWithBiometrics(reason: "Authenticate to revoke this iPhone key")
+        try await authenticateWithBiometrics(reason: "Authenticate to revoke this iPhone key")
         return try withLock(directory) {
             let record = try load(keyID: keyID, directory: directory)
             return try persistRevocation(record, directory: directory) { _ in
@@ -225,14 +225,14 @@ public enum CompanionSecureEnclaveEnrollment {
         }
     }
 
-    public static func rotate(from oldKeyID: String, to newKeyID: String, directory: URL) throws -> (newKey: CompanionPairingRecord, revokedKey: CompanionPairingRecord) {
+    public static func rotate(from oldKeyID: String, to newKeyID: String, directory: URL) async throws -> (newKey: CompanionPairingRecord, revokedKey: CompanionPairingRecord) {
         try validateKeyID(oldKeyID)
         try validateKeyID(newKeyID)
         guard oldKeyID != newKeyID else {
             throw CompanionHardwareRefusal.malformed("same-key-id")
         }
 
-        try authenticateWithBiometrics(reason: "Authenticate to rotate this iPhone key")
+        try await authenticateWithBiometrics(reason: "Authenticate to rotate this iPhone key")
 
         return try withLock(directory) {
             try recoverIncompleteRotation(directory: directory)
@@ -599,44 +599,6 @@ public enum CompanionSecureEnclaveEnrollment {
                     continuation.resume(throwing: CompanionHardwareRefusal.malformed("biometric"))
                 }
             }
-        }
-    }
-
-    private static func authenticateWithBiometrics(reason: String) throws {
-        #if RUNSPECIMEN_TEST_HOOKS
-        if let testAuth = testAuthenticator {
-            try testAuth(reason)
-            return
-        }
-        #endif
-
-        let context = LAContext()
-        context.localizedFallbackTitle = ""
-        var authError: Error?
-        let semaphore = DispatchSemaphore(value: 0)
-        context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, error in
-            if !success {
-                authError = error
-            }
-            semaphore.signal()
-        }
-        semaphore.wait()
-        if let authError {
-            if let laError = authError as? LAError {
-                enrollmentLogger.info("Face ID result: code=\(laError.code.rawValue, privacy: .public)")
-                switch laError.code {
-                case .userCancel, .appCancel, .systemCancel:
-                    throw CompanionHardwareRefusal.automationRefused
-                case .biometryLockout:
-                    throw CompanionHardwareRefusal.biometryLockout
-                case .biometryNotEnrolled, .biometryNotAvailable:
-                    throw CompanionHardwareRefusal.biometryUnavailable
-                default:
-                    throw CompanionHardwareRefusal.malformed("biometric-\(laError.code.rawValue)")
-                }
-            }
-            enrollmentLogger.error("Face ID authentication failed: \(authError.localizedDescription, privacy: .public)")
-            throw CompanionHardwareRefusal.malformed("biometric")
         }
     }
 

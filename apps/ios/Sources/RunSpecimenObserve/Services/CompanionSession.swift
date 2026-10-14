@@ -6,7 +6,7 @@ import SwiftUI
 
 @MainActor
 final class CompanionSession: ObservableObject {
-    @Published var baseURLString: String = "http://127.0.0.1:8787/"
+    @Published var baseURLString: String = ""
     @Published var pairingToken: String = ""
     @Published var tlsFingerprint: String = ""
     @Published var isPaired: Bool = false
@@ -21,6 +21,7 @@ final class CompanionSession: ObservableObject {
     @Published var phonePeerNote: String = "No phone-peer signature has been returned. Signing uses the published challenge. It does not approve a run."
     @Published var exactRunNote: String = "No exact run is waiting for review. Phone approval is not physical presence at the Mac."
     @Published var reviewedExactRunLines: [String] = []
+    @Published var reviewedExactRunArgv: [String] = []
     @Published var macSessionPublicKey: String = ""
     /// Entered by the person from the Mac. A holder id inside a mailbox request is not this pin.
     @Published var pinnedHolderId: String = ""
@@ -319,6 +320,7 @@ final class CompanionSession: ObservableObject {
         let generation = exactRunGeneration
         reviewedExactRun = nil
         reviewedExactRunLines = []
+        reviewedExactRunArgv = []
         let transport: any ExactRunPhoneSigningTransport
         if let peer {
             transport = peer
@@ -347,11 +349,13 @@ final class CompanionSession: ObservableObject {
             }
             reviewedExactRun = parsed
             reviewedExactRunLines = parsed.lines
+            reviewedExactRunArgv = parsed.launchArgv
             exactRunNote = "Review these bytes before signing. Signing uses the enrolled phone key and does not create one."
         } catch {
             if generation == exactRunGeneration {
                 reviewedExactRun = nil
                 reviewedExactRunLines = []
+                reviewedExactRunArgv = []
                 exactRunNote = "Exact run was not shown."
                 lastError = error.localizedDescription
             }
@@ -394,6 +398,7 @@ final class CompanionSession: ObservableObject {
             guard now() < reviewed.expiry else {
                 reviewedExactRun = nil
                 reviewedExactRunLines = []
+                reviewedExactRunArgv = []
                 exactRunNote = "Exact run expired before signing. The signature was not returned."
                 return
             }
@@ -412,6 +417,7 @@ final class CompanionSession: ObservableObject {
             guard generation == exactRunGeneration, again.challengeId == reviewed.nonce, again.bound == reviewed.bound else {
                 reviewedExactRun = nil
                 reviewedExactRunLines = []
+                reviewedExactRunArgv = []
                 exactRunNote = "The Mac replaced the exact run. The signature was not returned."
                 return
             }
@@ -444,6 +450,7 @@ final class CompanionSession: ObservableObject {
         exactRunGeneration += 1
         reviewedExactRun = nil
         reviewedExactRunLines = []
+        reviewedExactRunArgv = []
         exactRunNote = "Exact run review was cancelled before a signature was returned."
         lastError = nil
     }
@@ -583,6 +590,7 @@ final class CompanionSession: ObservableObject {
         signedPhonePublicKey = nil
         reviewedExactRun = nil
         reviewedExactRunLines = []
+        reviewedExactRunArgv = []
         lastError = nil
         lastAttentionNote = nil
         lastRemoteConfirmNote = nil
@@ -862,7 +870,6 @@ func parseExactRun(fetched: FetchedExactRun, now: Int, pinnedHolderId: String) t
         "nonce \(nonce)",
         "holder \(holderId)",
         "payload \(digest)",
-        "argv \(launchArgv.joined(separator: " "))",
         "generation \(generation)",
         "key generation \(keyGeneration)",
         "expiry \(expiry)",
