@@ -598,6 +598,92 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path))
     }
 
+    func testRotationRecoveryAtStartedPhase() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-started-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let state = RotationState(
+            oldKeyID: "old-key",
+            newKeyID: "new-key",
+            phase: .started,
+            oldKeyRevoked: false,
+            newKeyCreated: false
+        )
+        try JSONEncoder().encode(state).write(to: directory.appendingPathComponent(".rotation-state.json"))
+
+        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path), "Started phase should clear rotation state")
+    }
+
+    func testRotationRecoveryAtNewKeyCommittedPhase() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-committed-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let state = RotationState(
+            oldKeyID: "old-key",
+            newKeyID: "new-key",
+            phase: .newKeyCommitted,
+            oldKeyRevoked: false,
+            newKeyCreated: true
+        )
+        try JSONEncoder().encode(state).write(to: directory.appendingPathComponent(".rotation-state.json"))
+
+        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path), "newKeyCommitted phase should clear rotation state")
+    }
+
+    func testRotationRecoveryAtOldKeyRevokedPhase() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-revoked-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let state = RotationState(
+            oldKeyID: "old-key",
+            newKeyID: "new-key",
+            phase: .oldKeyRevoked,
+            oldKeyRevoked: true,
+            newKeyCreated: true
+        )
+        try JSONEncoder().encode(state).write(to: directory.appendingPathComponent(".rotation-state.json"))
+
+        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path), "oldKeyRevoked phase should clear rotation state")
+    }
+
+    func testRotationRecoveryAtCompletedPhase() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-completed-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let state = RotationState(
+            oldKeyID: "old-key",
+            newKeyID: "new-key",
+            phase: .completed,
+            oldKeyRevoked: true,
+            newKeyCreated: true
+        )
+        try JSONEncoder().encode(state).write(to: directory.appendingPathComponent(".rotation-state.json"))
+
+        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path), "completed phase should clear rotation state")
+    }
+
+    func testRecoveryWithNoRotationState() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-no-state-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path))
+
+        XCTAssertNoThrow(try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory), "Recovery should succeed when no rotation state exists")
+    }
+
     func testRotationGenerationNumbering() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-gen-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
