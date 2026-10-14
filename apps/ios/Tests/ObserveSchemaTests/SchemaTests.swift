@@ -3,6 +3,21 @@ import XCTest
 @testable import RunSpecimenObserve
 
 final class ObserveSchemaTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in }
+        CompanionSecureEnclaveEnrollment.testKeyCreator = nil
+        CompanionSecureEnclaveEnrollment.testKeyDeleter = nil
+    }
+
+    override func tearDown() {
+        CompanionSecureEnclaveEnrollment.testAuthenticator = nil
+        CompanionSecureEnclaveEnrollment.testKeyCreator = nil
+        CompanionSecureEnclaveEnrollment.testKeyDeleter = nil
+        CompanionSecureEnclaveEnrollment.beforeFinalSignatureDecision = nil
+        CompanionSecureEnclaveEnrollment.clock = { Int(Date().timeIntervalSince1970) }
+        super.tearDown()
+    }
     func testSharedParserRejectsIncompletePackages() throws {
         let original = try package()
         func expect(_ mutate: (inout [String: String]) -> Void, _ field: String) throws {
@@ -351,7 +366,7 @@ final class ObserveSchemaTests: XCTestCase {
         let finishedRevoke = expectation(description: "revoke")
         DispatchQueue.global(qos: .userInitiated).async {
             revokeStarted.signal()
-            try? CompanionSecureEnclaveEnrollment.revoke(keyID: record.keyID, directory: directory)
+            _ = try? CompanionSecureEnclaveEnrollment.revoke(keyID: record.keyID, directory: directory)
             revokeReturned.signal()
             finishedRevoke.fulfill()
         }
@@ -373,9 +388,8 @@ final class ObserveSchemaTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let record = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
         try CompanionSecureEnclaveEnrollment.storeEnrollment(record, directory: directory) {}
-        try CompanionSecureEnclaveEnrollment.revoke(keyID: record.keyID, directory: directory)
+        _ = try CompanionSecureEnclaveEnrollment.revoke(keyID: record.keyID, directory: directory)
         CompanionSecureEnclaveEnrollment.clock = { 1_600_000_000 }
-        defer { CompanionSecureEnclaveEnrollment.clock = { Int(Date().timeIntervalSince1970) } }
         XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.finalizeSignature(
             produced: Data(repeating: 9, count: 64),
             before: record.snapshot,
@@ -439,15 +453,184 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: oldKeyURL), originalOldData)
     }
 
-    private func sampleRecord(state: String, generation: Int) -> CompanionPairingRecord {
+    func testRotationWithTestSeamsSucceeds() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-seams-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let oldKey = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(oldKey, directory: directory) {}
+
+        var authCalls = 0
+        var createCalls = 0
+        var deleteCalls: [String] = []
+
+        CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in authCalls += 1 }
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { keyID in
+            createCalls += 1
+            return Data(repeating: 5, count: 65)
+        }
+        CompanionSecureEnclaveEnrollment.testKeyDeleter = { keyID in
+            deleteCalls.append(keyID)
+        }
+
+        let (newKey, revokedKey) = try CompanionSecureEnclaveEnrollment.rotate(
+            from: "phone-vector",
+            to: "phone-new",
+            directory: directory
+        )
+
+        XCTAssertEqual(authCalls, 1, "Should authenticate exactly once")
+        XCTAssertEqual(createCalls, 1, "Should create one new key")
+        XCTAssertEqual(deleteCalls, ["phone-vector"], "Should delete old key blob")
+        XCTAssertEqual(newKey.keyID, "phone-new")
+        XCTAssertEqual(newKey.state, CompanionSecureEnclaveEnrollment.active)
+        XCTAssertEqual(newKey.generation, 1)
+        XCTAssertEqual(revokedKey.keyID, "phone-vector")
+        XCTAssertEqual(revokedKey.state, CompanionSecureEnclaveEnrollment.revoked)
+        XCTAssertEqual(revokedKey.generation, 2)
+    }
+
+    func testRotationFailsIfAuthenticationFails() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-auth-fail-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let oldKey = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(oldKey, directory: directory) {}
+
+        CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in
+            throw CompanionHardwareRefusal.automationRefused
+        }
+
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.rotate(
+            from: "phone-vector",
+            to: "phone-new",
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .automationRefused)
+        }
+
+        let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: "phone-vector", directory: directory)
+        XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.active)
+        XCTAssertEqual(stored.generation, 1)
+    }
+
+    func testRotationFailsIfNewKeyCreationFails() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-create-fail-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let oldKey = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(oldKey, directory: directory) {}
+
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in
+            throw CompanionHardwareRefusal.malformed("secure-enclave")
+        }
+
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.rotate(
+            from: "phone-vector",
+            to: "phone-new",
+            directory: directory
+        )) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("secure-enclave"))
+        }
+
+        let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: "phone-vector", directory: directory)
+        XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.active)
+        XCTAssertEqual(stored.generation, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("phone-new.pairing.json").path))
+    }
+
+    func testRotationReturnsIncompleteIfOldKeyRevocationFails() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-revoke-fail-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let oldKey = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(oldKey, directory: directory) {}
+
+        var createCount = 0
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { keyID in
+            createCount += 1
+            return Data(repeating: 5, count: 65)
+        }
+
+        let oldKeyURL = directory.appendingPathComponent("phone-vector.pairing.json")
+        XCTAssertEqual(chmod(oldKeyURL.path, 0o444), 0)
+        defer { _ = chmod(oldKeyURL.path, 0o644) }
+
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.rotate(
+            from: "phone-vector",
+            to: "phone-new",
+            directory: directory
+        )) { error in
+            if case .rotationIncomplete(let oldRevoked, let newCreated) = error as? CompanionHardwareRefusal {
+                XCTAssertFalse(oldRevoked)
+                XCTAssertTrue(newCreated)
+            } else {
+                XCTFail("Expected rotationIncomplete error")
+            }
+        }
+        _ = chmod(oldKeyURL.path, 0o644)
+
+        XCTAssertEqual(createCount, 1, "New key should have been created")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("phone-new.pairing.json").path))
+    }
+
+    func testRotationRecoveryAfterIncompleteNewKeyStage() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-recover-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let state = RotationState(
+            oldKeyID: "old-key",
+            newKeyID: "new-key",
+            phase: .newKeyStaged,
+            oldKeyRevoked: false,
+            newKeyCreated: true
+        )
+        let stateData = try JSONEncoder().encode(state)
+        try stateData.write(to: directory.appendingPathComponent(".rotation-state.json"))
+
+        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path))
+    }
+
+    func testListKeysReturnsAllEnrolledKeys() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-list-keys-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let key1 = sampleRecord(keyID: "key-one", state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        let key2 = sampleRecord(keyID: "key-two", state: CompanionSecureEnclaveEnrollment.revoked, generation: 3)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(key1, directory: directory) {}
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(key2, directory: directory) {}
+
+        let keys = try CompanionSecureEnclaveEnrollment.listKeys(directory: directory)
+        XCTAssertEqual(keys.count, 2)
+        XCTAssertTrue(keys.contains(where: { $0.keyID == "key-one" && $0.state == CompanionSecureEnclaveEnrollment.active }))
+        XCTAssertTrue(keys.contains(where: { $0.keyID == "key-two" && $0.state == CompanionSecureEnclaveEnrollment.revoked }))
+    }
+
+    func testMacUpdatePendingFlagIsPersisted() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-mac-pending-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+        let record = try CompanionSecureEnclaveEnrollment.enroll(keyID: "test-key", directory: directory)
+        XCTAssertTrue(record.macUpdatePending)
+
+        let loaded = try CompanionSecureEnclaveEnrollment.inspect(keyID: "test-key", directory: directory)
+        XCTAssertTrue(loaded.macUpdatePending)
+
+        try CompanionSecureEnclaveEnrollment.markMacUpdated(keyID: "test-key", directory: directory)
+        let updated = try CompanionSecureEnclaveEnrollment.inspect(keyID: "test-key", directory: directory)
+        XCTAssertFalse(updated.macUpdatePending)
+    }
+
+    private func sampleRecord(keyID: String = "phone-vector", state: String, generation: Int) -> CompanionPairingRecord {
         CompanionPairingRecord(
-            keyID: "phone-vector",
+            keyID: keyID,
             publicKey: Data(repeating: 4, count: 65),
             role: EnrollmentIdentity.roleCompanion,
             backend: EnrollmentIdentity.backendSecureEnclave,
             provenance: EnrollmentIdentity.provenanceProduction,
             state: state,
-            generation: generation
+            generation: generation,
+            macUpdatePending: false
         )
     }
 

@@ -268,7 +268,11 @@ final class CompanionTLSPinningDelegate: NSObject, URLSessionDelegate {
 
         let cert: SecCertificate?
         if #available(iOS 15.0, *) {
-            cert = SecTrustGetCertificateAtIndex(trust, 0)
+            if let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate], !chain.isEmpty {
+                cert = chain[0]
+            } else {
+                cert = nil
+            }
         } else {
             cert = SecTrustGetCertificateAtIndex(trust, 0)
         }

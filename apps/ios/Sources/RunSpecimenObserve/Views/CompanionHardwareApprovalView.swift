@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 enum CompanionHardwareHints {
     static let revoke = "Asks for Face ID and revokes this iPhone key. If Face ID is cancelled, nothing changes. Does not approve a Mac run."
@@ -9,15 +10,17 @@ enum CompanionHardwareHints {
 enum KeyState: Equatable {
     case unknown
     case noKey
-    case active(generation: Int)
-    case revoked(generation: Int)
+    case active(generation: Int, macUpdatePending: Bool)
+    case revoked(generation: Int, macUpdatePending: Bool)
 
     var statusLabel: String {
         switch self {
         case .unknown: return "Checking…"
-        case .noKey: return "No key"
-        case .active(let gen): return "Active (generation \(gen))"
-        case .revoked(let gen): return "Revoked (generation \(gen))"
+        case .noKey: return "No key enrolled"
+        case .active(let gen, let pending):
+            return pending ? "Active (gen \(gen)) · Mac update needed" : "Active (generation \(gen))"
+        case .revoked(let gen, let pending):
+            return pending ? "Revoked (gen \(gen)) · Mac update needed" : "Revoked (generation \(gen))"
         }
     }
 
@@ -25,7 +28,7 @@ enum KeyState: Equatable {
         switch self {
         case .unknown: return RSTheme.muted
         case .noKey: return RSTheme.muted
-        case .active: return RSTheme.signal
+        case .active(_, let pending): return pending ? RSTheme.amber : RSTheme.signal
         case .revoked: return RSTheme.danger
         }
     }
@@ -34,9 +37,19 @@ enum KeyState: Equatable {
         switch self {
         case .unknown: return "questionmark.circle"
         case .noKey: return "key.slash"
-        case .active: return "checkmark.shield.fill"
+        case .active(_, let pending): return pending ? "exclamationmark.shield" : "checkmark.shield.fill"
         case .revoked: return "xmark.shield.fill"
         }
+    }
+
+    var isActive: Bool {
+        if case .active = self { return true }
+        return false
+    }
+
+    var isRevoked: Bool {
+        if case .revoked = self { return true }
+        return false
     }
 }
 
@@ -48,14 +61,16 @@ enum ActionOutcome: Equatable {
 }
 
 struct CompanionHardwareApprovalView: View {
-    @State private var keyID = "iphone-companion"
+    @AppStorage("rs.observe.selectedKeyID") private var keyID = "iphone-companion"
     @State private var replacementKeyID = "iphone-companion-2"
     @State private var packageText = ""
     @State private var lines: [String] = []
     @State private var fields: RSBA2Package.Fields?
     @State private var pairingText = ""
+    @State private var revokedPairingText = ""
     @State private var signatureText = ""
     @State private var keyState: KeyState = .unknown
+    @State private var allKeys: [CompanionPairingRecord] = []
 
     @State private var enrollOutcome: ActionOutcome = .none
     @State private var revokeOutcome: ActionOutcome = .none
@@ -65,7 +80,7 @@ struct CompanionHardwareApprovalView: View {
 
     @State private var showRevokeConfirmation = false
     @State private var showRotateConfirmation = false
-    @State private var showDetailsExpanded = false
+    @State private var showImportPicker = false
 
     private let feedbackGenerator = UINotificationFeedbackGenerator()
 
@@ -84,11 +99,14 @@ struct CompanionHardwareApprovalView: View {
         .background(RSTheme.bg)
         .navigationTitle("This iPhone")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { refreshKeyState() }
-        .onChange(of: keyID) { _, _ in
-            pairingText = ""
-            signatureText = ""
+        .onAppear {
             refreshKeyState()
+            loadAllKeys()
+        }
+        .onChange(of: keyID) { oldValue, newValue in
+            if oldValue != newValue {
+                refreshKeyState()
+            }
         }
         .onChange(of: packageText) { _, _ in
             lines = []
@@ -98,24 +116,31 @@ struct CompanionHardwareApprovalView: View {
             signOutcome = .none
         }
         .confirmationDialog(
-            "Revoke this key?",
+            "Revoke key '\(keyID)'?",
             isPresented: $showRevokeConfirmation,
             titleVisibility: .visible
         ) {
             Button("Revoke Key", role: .destructive) { revokeKey() }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This will permanently revoke the key '\(keyID)'. Any signed requests using this key will no longer verify. This cannot be undone.")
+            Text("This permanently revokes the key. On the Mac, re-import the revoked pairing file to sync the state. Signatures already issued remain valid until their expiry.")
         }
         .confirmationDialog(
-            "Rotate to a new key?",
+            "Rotate to '\(replacementKeyID)'?",
             isPresented: $showRotateConfirmation,
             titleVisibility: .visible
         ) {
             Button("Rotate Key", role: .destructive) { rotateKey() }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This will create a new key '\(replacementKeyID)' and revoke the current key '\(keyID)'. The old key will no longer work. Face ID is required once.")
+            Text("Creates a new key '\(replacementKeyID)' and revokes '\(keyID)'. On the Mac, import both the new pairing file and the revoked pairing file. Face ID is required once.")
+        }
+        .fileImporter(
+            isPresented: $showImportPicker,
+            allowedContentTypes: [.json, .plainText],
+            allowsMultipleSelection: false
+        ) { result in
+            handleImportedFile(result)
         }
     }
 
@@ -151,6 +176,23 @@ struct CompanionHardwareApprovalView: View {
             .background(RSTheme.panel)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
+            if !allKeys.isEmpty {
+                Picker("Select key", selection: $keyID) {
+                    ForEach(allKeys, id: \.keyID) { record in
+                        HStack {
+                            Text(record.keyID)
+                            if record.state == CompanionSecureEnclaveEnrollment.revoked {
+                                Text("(revoked)")
+                                    .foregroundStyle(RSTheme.danger)
+                            }
+                        }
+                        .tag(record.keyID)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(RSTheme.cyan)
+            }
+
             TextField("Key ID", text: $keyID)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -184,53 +226,10 @@ struct CompanionHardwareApprovalView: View {
             outcomeView(outcome: enrollOutcome)
 
             if !pairingText.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Pairing record ready")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(RSTheme.signal)
-
-                    HStack(spacing: 12) {
-                        Button {
-                            UIPasteboard.general.string = pairingText
-                            let generator = UINotificationFeedbackGenerator()
-                            generator.notificationOccurred(.success)
-                        } label: {
-                            Label("Copy", systemImage: "doc.on.doc")
-                                .font(.subheadline.weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(RSTheme.cyan)
-
-                        ShareLink(item: pairingText) {
-                            Label("Share", systemImage: "square.and.arrow.up")
-                                .font(.subheadline.weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(RSTheme.cyan)
-                    }
-
-                    DisclosureGroup("Show pairing record") {
-                        Text(pairingText)
-                            .font(.system(.caption2, design: .monospaced))
-                            .foregroundStyle(RSTheme.ink)
-                            .textSelection(.enabled)
-                            .padding(8)
-                            .background(RSTheme.elevated)
-                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                    }
-                    .font(.caption)
-                    .foregroundStyle(RSTheme.muted)
-                }
-                .padding(12)
-                .background(RSTheme.panel)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                exportCard(title: "Active key", json: pairingText, isRevoked: false)
             }
 
-            Text("Creates a Secure Enclave key. The key is protected by Face ID when used for signing, not during enrollment.")
+            Text("Creates a Secure Enclave key. Face ID protects signing, not enrollment.")
                 .font(.caption)
                 .foregroundStyle(RSTheme.muted)
         }
@@ -243,6 +242,10 @@ struct CompanionHardwareApprovalView: View {
                 .foregroundStyle(RSTheme.muted)
                 .tracking(0.6)
 
+            if keyState.isRevoked {
+                exportButton(title: "Export revoked record for Mac", isRevoked: true)
+            }
+
             actionButton(
                 title: "Revoke this key",
                 icon: "xmark.circle.fill",
@@ -254,6 +257,10 @@ struct CompanionHardwareApprovalView: View {
             }
 
             outcomeView(outcome: revokeOutcome)
+
+            if !revokedPairingText.isEmpty {
+                exportCard(title: "Revoked key (share with Mac)", json: revokedPairingText, isRevoked: true)
+            }
 
             TextField("Replacement key ID", text: $replacementKeyID)
                 .textInputAutocapitalization(.never)
@@ -274,7 +281,7 @@ struct CompanionHardwareApprovalView: View {
 
             outcomeView(outcome: rotateOutcome)
 
-            Text("Revoke permanently disables the key. Rotate creates a replacement and revokes the old key in one step. Both require Face ID.")
+            Text("Revoke permanently disables the key. Rotate creates a replacement and revokes the old key. Both require Face ID and produce a revocation record to share with the Mac.")
                 .font(.caption)
                 .foregroundStyle(RSTheme.muted)
         }
@@ -287,9 +294,33 @@ struct CompanionHardwareApprovalView: View {
                 .foregroundStyle(RSTheme.muted)
                 .tracking(0.6)
 
-            Text("Paste a carried approval package from the Mac, then review and sign it.")
+            Text("Paste or import a carried approval package from the Mac, then review and sign it.")
                 .font(.caption)
                 .foregroundStyle(RSTheme.muted)
+
+            HStack(spacing: 8) {
+                Button {
+                    showImportPicker = true
+                } label: {
+                    Label("Import", systemImage: "doc.badge.plus")
+                        .font(.subheadline.weight(.medium))
+                }
+                .buttonStyle(.bordered)
+                .tint(RSTheme.cyan)
+
+                Button {
+                    if let clipboard = UIPasteboard.general.string {
+                        packageText = clipboard
+                    }
+                } label: {
+                    Label("Paste", systemImage: "doc.on.clipboard")
+                        .font(.subheadline.weight(.medium))
+                }
+                .buttonStyle(.bordered)
+                .tint(RSTheme.cyan)
+
+                Spacer()
+            }
 
             TextEditor(text: $packageText)
                 .font(.system(.caption, design: .monospaced))
@@ -313,7 +344,7 @@ struct CompanionHardwareApprovalView: View {
 
             if !lines.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(lines, id: \.self) { line in
+                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                         Text(line)
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(RSTheme.ink)
@@ -350,8 +381,7 @@ struct CompanionHardwareApprovalView: View {
 
                     Button {
                         UIPasteboard.general.string = signatureText
-                        let generator = UINotificationFeedbackGenerator()
-                        generator.notificationOccurred(.success)
+                        feedbackGenerator.notificationOccurred(.success)
                     } label: {
                         Label("Copy signature", systemImage: "doc.on.doc")
                             .font(.subheadline.weight(.semibold))
@@ -382,6 +412,74 @@ struct CompanionHardwareApprovalView: View {
                 .font(.caption)
                 .foregroundStyle(RSTheme.muted)
         }
+    }
+
+    @ViewBuilder
+    private func exportCard(title: String, json: String, isRevoked: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: isRevoked ? "xmark.shield" : "checkmark.shield")
+                    .foregroundStyle(isRevoked ? RSTheme.danger : RSTheme.signal)
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(isRevoked ? RSTheme.danger : RSTheme.signal)
+            }
+
+            HStack(spacing: 12) {
+                Button {
+                    UIPasteboard.general.string = json
+                    feedbackGenerator.notificationOccurred(.success)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.bordered)
+                .tint(isRevoked ? RSTheme.danger : RSTheme.cyan)
+
+                ShareLink(item: json) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.bordered)
+                .tint(isRevoked ? RSTheme.danger : RSTheme.cyan)
+            }
+
+            DisclosureGroup("Show record") {
+                Text(json)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(RSTheme.ink)
+                    .textSelection(.enabled)
+                    .padding(8)
+                    .background(RSTheme.elevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            }
+            .font(.caption)
+            .foregroundStyle(RSTheme.muted)
+        }
+        .padding(12)
+        .background(RSTheme.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func exportButton(title: String, isRevoked: Bool) -> some View {
+        Button {
+            exportCurrentKey()
+        } label: {
+            HStack {
+                Image(systemName: "square.and.arrow.up")
+                Text(title)
+            }
+            .font(.subheadline.weight(.medium))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+        }
+        .buttonStyle(.bordered)
+        .tint(isRevoked ? RSTheme.danger : RSTheme.cyan)
     }
 
     private var canEnroll: Bool {
@@ -463,8 +561,9 @@ struct CompanionHardwareApprovalView: View {
                 if let detail {
                     DisclosureGroup("Details") {
                         Text(detail)
-                            .font(.caption)
+                            .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(RSTheme.muted)
+                            .textSelection(.enabled)
                     }
                     .font(.caption)
                     .foregroundStyle(RSTheme.muted)
@@ -477,19 +576,63 @@ struct CompanionHardwareApprovalView: View {
         }
     }
 
+    private func loadAllKeys() {
+        do {
+            allKeys = try CompanionSecureEnclaveEnrollment.listKeys(directory: directory)
+        } catch {
+            allKeys = []
+        }
+    }
+
     private func refreshKeyState() {
         keyState = .unknown
+        pairingText = ""
+        revokedPairingText = ""
         do {
             let record = try CompanionSecureEnclaveEnrollment.inspect(keyID: keyID, directory: directory)
             if record.state == CompanionSecureEnclaveEnrollment.active {
-                keyState = .active(generation: record.generation)
+                keyState = .active(generation: record.generation, macUpdatePending: record.macUpdatePending)
+                let carried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: keyID, directory: directory)
+                pairingText = String(decoding: carried, as: UTF8.self)
             } else {
-                keyState = .revoked(generation: record.generation)
+                keyState = .revoked(generation: record.generation, macUpdatePending: record.macUpdatePending)
+                let carried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: keyID, directory: directory)
+                revokedPairingText = String(decoding: carried, as: UTF8.self)
             }
         } catch CompanionHardwareRefusal.missing {
             keyState = .noKey
         } catch {
             keyState = .noKey
+        }
+        loadAllKeys()
+    }
+
+    private func exportCurrentKey() {
+        do {
+            let carried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: keyID, directory: directory)
+            revokedPairingText = String(decoding: carried, as: UTF8.self)
+        } catch {
+            revokeOutcome = .failure(message: "Could not export key.", detail: error.localizedDescription)
+        }
+    }
+
+    private func handleImportedFile(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            guard url.startAccessingSecurityScopedResource() else {
+                showOutcome = .failure(message: "Could not access file.", detail: nil)
+                return
+            }
+            defer { url.stopAccessingSecurityScopedResource() }
+            do {
+                let data = try Data(contentsOf: url)
+                packageText = String(decoding: data, as: UTF8.self)
+            } catch {
+                showOutcome = .failure(message: "Could not read file.", detail: error.localizedDescription)
+            }
+        case .failure(let error):
+            showOutcome = .failure(message: "Import failed.", detail: error.localizedDescription)
         }
     }
 
@@ -498,27 +641,21 @@ struct CompanionHardwareApprovalView: View {
         enrollOutcome = .inProgress
         signatureText = ""
         pairingText = ""
+        revokedPairingText = ""
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result: Result<CompanionPairingRecord, Error>
+        Task {
             do {
                 let record = try CompanionSecureEnclaveEnrollment.enroll(keyID: keyID, directory: directory)
                 let carried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: record.keyID, directory: directory)
-                result = .success(record)
-                DispatchQueue.main.async {
+                await MainActor.run {
                     pairingText = String(decoding: carried, as: UTF8.self)
-                }
-            } catch {
-                result = .failure(error)
-            }
-
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let record):
                     feedbackGenerator.notificationOccurred(.success)
                     enrollOutcome = .success("Key enrolled (generation \(record.generation)). Share the pairing record with the Mac.")
-                    keyState = .active(generation: record.generation)
-                case .failure(let error):
+                    keyState = .active(generation: record.generation, macUpdatePending: record.macUpdatePending)
+                    loadAllKeys()
+                }
+            } catch {
+                await MainActor.run {
                     feedbackGenerator.notificationOccurred(.error)
                     let (message, detail) = describeError(error, action: "enroll")
                     enrollOutcome = .failure(message: message, detail: detail)
@@ -533,26 +670,24 @@ struct CompanionHardwareApprovalView: View {
         revokeOutcome = .inProgress
         signatureText = ""
         pairingText = ""
+        revokedPairingText = ""
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result: Result<Void, Error>
+        Task {
             do {
-                try CompanionSecureEnclaveEnrollment.revoke(keyID: keyID, directory: directory)
-                result = .success(())
-            } catch {
-                result = .failure(error)
-            }
-
-            DispatchQueue.main.async {
-                switch result {
-                case .success:
+                let revokedRecord = try CompanionSecureEnclaveEnrollment.revoke(keyID: keyID, directory: directory)
+                let carried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: keyID, directory: directory)
+                await MainActor.run {
+                    revokedPairingText = String(decoding: carried, as: UTF8.self)
                     feedbackGenerator.notificationOccurred(.success)
-                    revokeOutcome = .success("Key revoked. It can no longer sign requests.")
+                    revokeOutcome = .success("Key revoked (generation \(revokedRecord.generation)). Share the revoked record with the Mac.")
                     refreshKeyState()
-                case .failure(let error):
+                }
+            } catch {
+                await MainActor.run {
                     feedbackGenerator.notificationOccurred(.error)
                     let (message, detail) = describeError(error, action: "revoke")
                     revokeOutcome = .failure(message: message, detail: detail)
+                    refreshKeyState()
                 }
             }
         }
@@ -563,32 +698,28 @@ struct CompanionHardwareApprovalView: View {
         rotateOutcome = .inProgress
         signatureText = ""
         pairingText = ""
+        revokedPairingText = ""
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result: Result<CompanionPairingRecord, Error>
+        Task {
             do {
-                let record = try CompanionSecureEnclaveEnrollment.rotate(
+                let (newRecord, revokedRecord) = try CompanionSecureEnclaveEnrollment.rotate(
                     from: keyID,
                     to: replacementKeyID,
                     directory: directory
                 )
-                let carried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: record.keyID, directory: directory)
-                result = .success(record)
-                DispatchQueue.main.async {
-                    self.keyID = record.keyID
-                    pairingText = String(decoding: carried, as: UTF8.self)
+                let newCarried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: newRecord.keyID, directory: directory)
+                let revokedCarried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: revokedRecord.keyID, directory: directory)
+                await MainActor.run {
+                    keyID = newRecord.keyID
+                    pairingText = String(decoding: newCarried, as: UTF8.self)
+                    revokedPairingText = String(decoding: revokedCarried, as: UTF8.self)
+                    feedbackGenerator.notificationOccurred(.success)
+                    rotateOutcome = .success("New key active (generation \(newRecord.generation)). Share both records with the Mac.")
+                    keyState = .active(generation: newRecord.generation, macUpdatePending: newRecord.macUpdatePending)
+                    loadAllKeys()
                 }
             } catch {
-                result = .failure(error)
-            }
-
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let record):
-                    feedbackGenerator.notificationOccurred(.success)
-                    rotateOutcome = .success("New key active (generation \(record.generation)). Old key revoked.")
-                    keyState = .active(generation: record.generation)
-                case .failure(let error):
+                await MainActor.run {
                     feedbackGenerator.notificationOccurred(.error)
                     let (message, detail) = describeError(error, action: "rotate")
                     rotateOutcome = .failure(message: message, detail: detail)
@@ -632,26 +763,20 @@ struct CompanionHardwareApprovalView: View {
         signOutcome = .inProgress
         signatureText = ""
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result: Result<Data, Error>
+        Task {
             do {
                 let signature = try CompanionSecureEnclaveEnrollment.signDisplayed(
                     packageText: packageText,
                     displayed: fields,
                     directory: directory
                 )
-                result = .success(signature)
-            } catch {
-                result = .failure(error)
-            }
-
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let signature):
+                await MainActor.run {
                     feedbackGenerator.notificationOccurred(.success)
                     signatureText = signature.base64EncodedString()
                     signOutcome = .success("Signed. Copy the signature and carry it back to the Mac.")
-                case .failure(let error):
+                }
+            } catch {
+                await MainActor.run {
                     feedbackGenerator.notificationOccurred(.error)
                     let (message, detail) = describeError(error, action: "sign")
                     signOutcome = .failure(message: message, detail: detail)
@@ -662,18 +787,7 @@ struct CompanionHardwareApprovalView: View {
 
     private func describeError(_ error: Error, action: String) -> (message: String, detail: String?) {
         if let refusal = error as? CompanionHardwareRefusal {
-            switch refusal {
-            case .automationRefused:
-                return ("Cancelled.", "You cancelled Face ID or it was interrupted by the system.")
-            case .missing:
-                return ("No key found.", "Enroll a key with this ID first.")
-            case .malformed(let detail):
-                return ("Something went wrong.", "Internal error: \(detail)")
-            case .staleRequest:
-                return ("The request changed.", "Use 'Show request' again with the current package.")
-            case .alreadyEnrolled:
-                return ("A key with this ID already exists.", "Revoke the existing key first, or use a different ID.")
-            }
+            return (refusal.userMessage, refusal.technicalDetail)
         }
         return ("Unexpected error.", error.localizedDescription)
     }
