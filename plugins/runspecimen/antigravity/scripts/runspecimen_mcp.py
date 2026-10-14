@@ -14,6 +14,16 @@ from pathlib import Path
 _CANONICAL = Path(__file__).resolve().parents[2] / "scripts" / "runspecimen_mcp.py"
 
 
+def _load():
+    spec = importlib.util.spec_from_file_location("runspecimen_mcp_canonical", _CANONICAL)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"canonical MCP server missing: {_CANONICAL}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "runspecimen"
 SERVER_VERSION = "0.2.0-rc.15"
