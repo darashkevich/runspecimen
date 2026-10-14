@@ -68,6 +68,7 @@ struct CompanionHardwareApprovalView: View {
     @State private var fields: RSBA2Package.Fields?
     @State private var pairingText = ""
     @State private var revokedPairingText = ""
+    @State private var rotatedFromKeyID: String? = nil
     @State private var signatureText = ""
     @State private var keyState: KeyState = .unknown
     @State private var allKeys: [CompanionPairingRecord] = []
@@ -225,7 +226,7 @@ struct CompanionHardwareApprovalView: View {
 
             outcomeView(outcome: enrollOutcome)
 
-            if !pairingText.isEmpty {
+            if !pairingText.isEmpty && rotatedFromKeyID == nil {
                 exportCard(title: "Active key", json: pairingText, isRevoked: false)
             }
 
@@ -258,7 +259,7 @@ struct CompanionHardwareApprovalView: View {
 
             outcomeView(outcome: revokeOutcome)
 
-            if !revokedPairingText.isEmpty {
+            if !revokedPairingText.isEmpty && rotatedFromKeyID == nil {
                 exportCard(title: "Revoked key (share with Mac)", json: revokedPairingText, isRevoked: true)
             }
 
@@ -280,6 +281,15 @@ struct CompanionHardwareApprovalView: View {
             }
 
             outcomeView(outcome: rotateOutcome)
+
+            if rotatedFromKeyID != nil {
+                if !pairingText.isEmpty {
+                    exportCard(title: "New active key (share with Mac)", json: pairingText, isRevoked: false)
+                }
+                if !revokedPairingText.isEmpty {
+                    exportCard(title: "Revoked key '\(rotatedFromKeyID!)' (share with Mac)", json: revokedPairingText, isRevoked: true)
+                }
+            }
 
             Text("Revoke permanently disables the key. Rotate creates a replacement and revokes the old key. Both require Face ID and produce a revocation record to share with the Mac.")
                 .font(.caption)
@@ -588,6 +598,7 @@ struct CompanionHardwareApprovalView: View {
         keyState = .unknown
         pairingText = ""
         revokedPairingText = ""
+        rotatedFromKeyID = nil
         do {
             let record = try CompanionSecureEnclaveEnrollment.inspect(keyID: keyID, directory: directory)
             if record.state == CompanionSecureEnclaveEnrollment.active {
@@ -642,6 +653,7 @@ struct CompanionHardwareApprovalView: View {
         signatureText = ""
         pairingText = ""
         revokedPairingText = ""
+        rotatedFromKeyID = nil
 
         Task {
             do {
@@ -671,6 +683,7 @@ struct CompanionHardwareApprovalView: View {
         signatureText = ""
         pairingText = ""
         revokedPairingText = ""
+        rotatedFromKeyID = nil
 
         Task {
             do {
@@ -699,11 +712,12 @@ struct CompanionHardwareApprovalView: View {
         signatureText = ""
         pairingText = ""
         revokedPairingText = ""
+        let oldKeyID = keyID
 
         Task {
             do {
                 let (newRecord, revokedRecord) = try await CompanionSecureEnclaveEnrollment.rotate(
-                    from: keyID,
+                    from: oldKeyID,
                     to: replacementKeyID,
                     directory: directory
                 )
@@ -713,8 +727,9 @@ struct CompanionHardwareApprovalView: View {
                     keyID = newRecord.keyID
                     pairingText = String(decoding: newCarried, as: UTF8.self)
                     revokedPairingText = String(decoding: revokedCarried, as: UTF8.self)
+                    rotatedFromKeyID = oldKeyID
                     feedbackGenerator.notificationOccurred(.success)
-                    rotateOutcome = .success("New key active (generation \(newRecord.generation)). Share both records with the Mac.")
+                    rotateOutcome = .success("New key '\(newRecord.keyID)' active (generation \(newRecord.generation)). Replaces '\(oldKeyID)'. Share both records with the Mac.")
                     keyState = .active(generation: newRecord.generation, macUpdatePending: newRecord.macUpdatePending)
                     loadAllKeys()
                 }

@@ -92,9 +92,9 @@ final class ObserveSchemaTests: XCTestCase {
         }
         let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
         XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.revoked)
-        XCTAssertEqual(stored.generation, 2)
+        XCTAssertEqual(stored.generation, 1, "Revoked record keeps its original generation")
         let retried = try CompanionSecureEnclaveEnrollment.persistRevocation(stored, directory: directory) { _ in }
-        XCTAssertEqual(retried.generation, 2)
+        XCTAssertEqual(retried.generation, 1, "Re-revoke does not change generation")
         XCTAssertEqual(retried.state, CompanionSecureEnclaveEnrollment.revoked)
     }
 
@@ -102,7 +102,6 @@ final class ObserveSchemaTests: XCTestCase {
         let before = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1).snapshot
         var revoked = before
         revoked.state = CompanionSecureEnclaveEnrollment.revoked
-        revoked.generation = 2
         let signature = Data(repeating: 9, count: 64)
         XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.signatureIfStillValid(
             produced: signature,
@@ -147,7 +146,7 @@ final class ObserveSchemaTests: XCTestCase {
         }
     }
 
-    func testRevocationUnderTheEnrollmentLockBumpsOnce() throws {
+    func testRevocationUnderTheEnrollmentLockKeepsGeneration() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-race-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let record = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
@@ -170,7 +169,7 @@ final class ObserveSchemaTests: XCTestCase {
             try? CompanionSecureEnclaveEnrollment.withLock(directory) {
                 let live = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
                 XCTAssertEqual(live.state, CompanionSecureEnclaveEnrollment.revoked)
-                XCTAssertEqual(live.generation, 2)
+                XCTAssertEqual(live.generation, 1, "Revoked record keeps original generation")
                 _ = try CompanionSecureEnclaveEnrollment.persistRevocation(live, directory: directory) { _ in }
             }
             second.fulfill()
@@ -180,7 +179,7 @@ final class ObserveSchemaTests: XCTestCase {
         wait(for: [first, second], timeout: 3)
         let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
         XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.revoked)
-        XCTAssertEqual(stored.generation, 2)
+        XCTAssertEqual(stored.generation, 1, "Generation unchanged after concurrent revocations")
     }
 
     func testEnrollmentOnEmptyDirectoryReachesCreateKeyWithoutMalformed() throws {
@@ -284,7 +283,7 @@ final class ObserveSchemaTests: XCTestCase {
             },
             cleanup: {}
         )) { error in
-            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("enrollment"))
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .keyIDRevoked)
         }
         XCTAssertEqual(created, 0)
         XCTAssertEqual(try Data(contentsOf: url), revokedBytes)
@@ -325,7 +324,7 @@ final class ObserveSchemaTests: XCTestCase {
         }
         let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
         XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.revoked)
-        XCTAssertEqual(stored.generation, 2)
+        XCTAssertEqual(stored.generation, 1, "Revoked record keeps original generation")
     }
 
     func testPublicRevokeAfterFinalizeSeesTheRecordTheDecisionAlreadyAccepted() throws {
@@ -380,7 +379,7 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertNil(decisionError)
         let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
         XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.revoked)
-        XCTAssertEqual(stored.generation, 2)
+        XCTAssertEqual(stored.generation, 1, "Revoked record keeps original generation")
     }
 
     func testFinalizeAfterPublicRevokeDiscardsTheSignature() async throws {
@@ -483,10 +482,10 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(deleteCalls, ["phone-vector"], "Should delete old key blob")
         XCTAssertEqual(newKey.keyID, "phone-new")
         XCTAssertEqual(newKey.state, CompanionSecureEnclaveEnrollment.active)
-        XCTAssertEqual(newKey.generation, 1)
+        XCTAssertEqual(newKey.generation, 2, "New key inherits old generation + 1")
         XCTAssertEqual(revokedKey.keyID, "phone-vector")
         XCTAssertEqual(revokedKey.state, CompanionSecureEnclaveEnrollment.revoked)
-        XCTAssertEqual(revokedKey.generation, 2)
+        XCTAssertEqual(revokedKey.generation, 1, "Revoked key keeps original generation")
     }
 
     func testRotationFailsIfAuthenticationFails() async throws {
@@ -597,6 +596,70 @@ final class ObserveSchemaTests: XCTestCase {
         try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path))
+    }
+
+    func testRotationGenerationNumbering() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-gen-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let oldKey = sampleRecord(keyID: "test-old", state: CompanionSecureEnclaveEnrollment.active, generation: 5)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(oldKey, directory: directory) {}
+
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 5, count: 65) }
+        CompanionSecureEnclaveEnrollment.testKeyDeleter = { _ in }
+
+        let (newKey, revokedKey) = try await CompanionSecureEnclaveEnrollment.rotate(
+            from: "test-old",
+            to: "test-new",
+            directory: directory
+        )
+
+        XCTAssertEqual(newKey.keyID, "test-new")
+        XCTAssertEqual(newKey.generation, 6, "New key gets old generation + 1")
+        XCTAssertEqual(newKey.state, CompanionSecureEnclaveEnrollment.active)
+        XCTAssertTrue(newKey.macUpdatePending, "New key has Mac update pending")
+
+        XCTAssertEqual(revokedKey.keyID, "test-old")
+        XCTAssertEqual(revokedKey.generation, 5, "Revoked key keeps its original generation")
+        XCTAssertEqual(revokedKey.state, CompanionSecureEnclaveEnrollment.revoked)
+        XCTAssertTrue(revokedKey.macUpdatePending, "Revoked key has Mac update pending")
+
+        let storedNew = try CompanionSecureEnclaveEnrollment.inspect(keyID: "test-new", directory: directory)
+        XCTAssertEqual(storedNew.generation, 6)
+        let storedRevoked = try CompanionSecureEnclaveEnrollment.inspect(keyID: "test-old", directory: directory)
+        XCTAssertEqual(storedRevoked.generation, 5)
+    }
+
+    func testEnrollOnRevokedKeyIDReturnsSpecificError() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-enroll-revoked-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let revokedKey = sampleRecord(keyID: "old-key", state: CompanionSecureEnclaveEnrollment.revoked, generation: 3)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(revokedKey, directory: directory) {}
+
+        var createKeyCalled = false
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.enrollReplacingMissingFile(
+            keyID: "old-key",
+            directory: directory,
+            createKey: {
+                createKeyCalled = true
+                return Data(repeating: 4, count: 65)
+            },
+            cleanup: {}
+        )) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .keyIDRevoked, "Enrolling on revoked key ID returns keyIDRevoked error")
+        }
+        XCTAssertFalse(createKeyCalled, "Key creation should not be attempted for revoked key ID")
+
+        let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: "old-key", directory: directory)
+        XCTAssertEqual(stored.state, CompanionSecureEnclaveEnrollment.revoked, "Original revoked record unchanged")
+        XCTAssertEqual(stored.generation, 3, "Original generation unchanged")
+    }
+
+    func testKeyIDRevokedErrorMessage() {
+        let error = CompanionHardwareRefusal.keyIDRevoked
+        XCTAssertTrue(error.userMessage.contains("revoked"), "Error message mentions revoked")
+        XCTAssertTrue(error.userMessage.contains("different key ID"), "Error message suggests using different key ID")
     }
 
     func testListKeysReturnsAllEnrolledKeys() throws {

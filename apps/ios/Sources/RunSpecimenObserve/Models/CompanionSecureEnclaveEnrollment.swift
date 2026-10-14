@@ -12,6 +12,7 @@ public enum CompanionHardwareRefusal: Error, Equatable {
     case malformed(String)
     case staleRequest
     case alreadyEnrolled
+    case keyIDRevoked
     case duplicateKeychainItem(OSStatus)
     case keychainError(OSStatus)
     case biometryUnavailable
@@ -36,6 +37,8 @@ public extension CompanionHardwareRefusal {
             return "The request has changed since it was displayed."
         case .alreadyEnrolled:
             return "A key with this ID already exists."
+        case .keyIDRevoked:
+            return "This key ID was revoked. Use a different key ID to enroll a new key."
         case .duplicateKeychainItem:
             return "A keychain item already exists. Delete it manually or use a different key ID."
         case .keychainError(let status):
@@ -174,6 +177,9 @@ public enum CompanionSecureEnclaveEnrollment {
                 if existing.state == active {
                     throw CompanionHardwareRefusal.alreadyEnrolled
                 }
+                if existing.state == revoked {
+                    throw CompanionHardwareRefusal.keyIDRevoked
+                }
                 throw CompanionHardwareRefusal.malformed("enrollment")
             } catch CompanionHardwareRefusal.missing {
                 let publicKey = try createKey()
@@ -237,6 +243,11 @@ public enum CompanionSecureEnclaveEnrollment {
         return try withLock(directory) {
             try recoverIncompleteRotation(directory: directory)
 
+            let oldRecord = try load(keyID: oldKeyID, directory: directory)
+            guard oldRecord.state == active else {
+                throw CompanionHardwareRefusal.malformed("enrollment")
+            }
+
             var state = RotationState(
                 oldKeyID: oldKeyID,
                 newKeyID: newKeyID,
@@ -265,7 +276,7 @@ public enum CompanionSecureEnclaveEnrollment {
                 backend: EnrollmentIdentity.backendSecureEnclave,
                 provenance: EnrollmentIdentity.provenanceProduction,
                 state: active,
-                generation: 1,
+                generation: oldRecord.generation + 1,
                 macUpdatePending: true
             )
 
@@ -279,8 +290,6 @@ public enum CompanionSecureEnclaveEnrollment {
                 try? clearRotationState(directory: directory)
                 throw CompanionHardwareRefusal.fileWriteError(newKeyID)
             }
-
-            let oldRecord = try load(keyID: oldKeyID, directory: directory)
             let revokedRecord: CompanionPairingRecord
             do {
                 revokedRecord = try persistRevocationWithoutCleanup(oldRecord, directory: directory)
@@ -389,7 +398,6 @@ public enum CompanionSecureEnclaveEnrollment {
         }
         var revokedRecord = record
         revokedRecord.state = revoked
-        revokedRecord.generation += 1
         revokedRecord.macUpdatePending = true
         try save(revokedRecord, directory: directory)
         do {
@@ -409,7 +417,6 @@ public enum CompanionSecureEnclaveEnrollment {
         }
         var revokedRecord = record
         revokedRecord.state = revoked
-        revokedRecord.generation += 1
         revokedRecord.macUpdatePending = true
         try save(revokedRecord, directory: directory)
         return revokedRecord
