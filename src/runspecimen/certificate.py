@@ -14,6 +14,7 @@ from runspecimen.paths import CERTIFICATE_FILENAME, STATE_FILENAME, ensure_withi
 from runspecimen.runtime import runtime_provenance
 from runspecimen.schema import (
     CURRENT_RECEIPT_SCHEMA_VERSION,
+    assert_certificate_known_keys,
     assert_supported_receipt_schema,
     certificate_id_material,
 )
@@ -44,6 +45,7 @@ def build_certificate(
     event_head: str,
     approval: dict[str, Any] | None,
     runtime: dict[str, Any],
+    evidence_attestation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     body = {
         "approval_expires_at_unix": (approval or {}).get("expires_at_unix"),
@@ -72,6 +74,16 @@ def build_certificate(
     approver = (approval or {}).get("approver")
     if approver is not None:
         body["approver"] = approver
+    if evidence_attestation is not None:
+        body["evidence_attestation"] = {
+            "evidence_report_digest": evidence_attestation.get("evidence_report_digest"),
+            "attestation_digest": evidence_attestation.get("artifact_digest"),
+            "aggregate_outcome": evidence_attestation.get("aggregate_outcome"),
+            "manifest_hash": evidence_attestation.get("manifest_hash"),
+        }
+    confirm_channel = (approval or {}).get("confirm_channel")
+    if confirm_channel is not None:
+        body["confirm_channel"] = confirm_channel
     certificate_id = sha256_bytes(canonical_json_bytes(certificate_id_material(body)))
     return {"certificate_id": certificate_id, **body}
 
@@ -140,6 +152,73 @@ def _verify_live_outputs(workspace: Path, cert: dict[str, Any]) -> None:
             )
 
 
+MISSING_BOUND_APPROVAL = (
+    "This receipt has no bound approval event matching approval.json. "
+    "Inconsistent edits to local records can be detected, but a program that can rewrite those files can fabricate consistent evidence. "
+    "A bound approval event is a recorded local step, not cryptographic proof of a human."
+)
+HOLDER_RECEIPT_INCONSISTENT = (
+    "This receipt's holder record is not consistent with the certificate."
+)
+
+
+def _require_bound_approval_or_holder(
+    *,
+    state_dir: Path,
+    cert: dict[str, Any],
+    state: dict[str, Any],
+    log: EventLog,
+) -> str | None:
+    """ok:true only with a chained approval event or a consistent holder receipt.
+
+    confirm_channel is taken from the certificate (bound into certificate_id)
+    and cross-checked against the latest approval event. It is never displayed
+    from an unbound approval.json side file.
+    """
+    from runspecimen.approve import (
+        ALLOWED_CONFIRM_CHANNELS,
+        UNKNOWN_CONFIRM_CHANNEL,
+        approval_matches_latest_event,
+        latest_approval_event,
+        load_approval,
+    )
+
+    approval = load_approval(state_dir)
+    holder = state.get("execution_holder")
+    rec = latest_approval_event(state_dir)
+
+    if rec is not None:
+        if not isinstance(approval, dict):
+            raise CertificateError(MISSING_BOUND_APPROVAL)
+        bound_ok, bound_reason = approval_matches_latest_event(approval, state_dir)
+        if not bound_ok:
+            raise CertificateError(bound_reason)
+        event_channel = rec.body.get("confirm_channel")
+        if event_channel not in ALLOWED_CONFIRM_CHANNELS:
+            raise CertificateError(UNKNOWN_CONFIRM_CHANNEL)
+        cert_channel = cert.get("confirm_channel")
+        if cert_channel != event_channel:
+            raise CertificateError(
+                "certificate confirm_channel does not match the chained approval event"
+            )
+        if cert.get("approval_expires_at_unix") != rec.body.get("expires_at_unix"):
+            raise CertificateError(
+                "certificate approval expiry does not match the chained approval event"
+            )
+        return str(event_channel)
+
+    if isinstance(holder, dict) and holder.get("holder_id"):
+        if isinstance(approval, dict):
+            raise CertificateError(
+                "a workspace approval cannot replace the execution holder"
+            )
+        if cert.get("confirm_channel") not in (None,):
+            raise CertificateError(HOLDER_RECEIPT_INCONSISTENT)
+        return None
+
+    raise CertificateError(MISSING_BOUND_APPROVAL)
+
+
 def verify_run_receipt(
     *,
     workspace: Path,
@@ -166,6 +245,7 @@ def verify_run_receipt(
     if cert is None:
         raise CertificateError("certificate not found")
 
+    assert_certificate_known_keys(cert)
     assert_supported_receipt_schema(cert)
 
     required = [
@@ -208,17 +288,42 @@ def verify_run_receipt(
     _verify_issuance_ordering(log, cert)
     _verify_live_outputs(workspace, cert)
 
-    confirm_channel = None
-    from runspecimen.approve import load_approval
+    confirm_channel = _require_bound_approval_or_holder(
+        state_dir=state_dir,
+        cert=cert,
+        state=state,
+        log=log,
+    )
 
-    approval = load_approval(state_dir)
-    if isinstance(approval, dict) and approval.get("confirm_channel"):
-        confirm_channel = str(approval["confirm_channel"])
-    else:
-        for rec in reversed(log.read_all()):
-            if rec.type == "approval" and rec.body.get("confirm_channel"):
-                confirm_channel = str(rec.body["confirm_channel"])
-                break
+    # When a receipt binds evidence_attestation, verify the associated report digest.
+    evidence_binding = None
+    ea = cert.get("evidence_attestation")
+    if isinstance(ea, dict) and ea.get("evidence_report_digest"):
+        from runspecimen.requirements import (
+            annotate_evidence_authenticity,
+            load_evidence_report,
+        )
+
+        try:
+            report = load_evidence_report(workspace, campaign_id, run_id)
+        except Exception as exc:  # noqa: BLE001
+            raise CertificateError(
+                f"certificate binds evidence_attestation but evidence report missing/invalid: {exc}"
+            ) from exc
+        if report.get("artifact_digest") != ea.get("evidence_report_digest"):
+            raise CertificateError(
+                "evidence report digest does not match certificate evidence_attestation"
+            )
+        report = annotate_evidence_authenticity(workspace, campaign_id, run_id, report)
+        if report.get("authenticity") != "receipt_bound":
+            raise CertificateError(
+                "evidence report is not receipt-bound despite certificate attestation field"
+            )
+        evidence_binding = {
+            "evidence_report_digest": report.get("artifact_digest"),
+            "authenticity": report.get("authenticity"),
+            "aggregate_outcome": report.get("aggregate_outcome"),
+        }
 
     if require_live_provenance:
         if contract is None:
@@ -247,6 +352,12 @@ def verify_run_receipt(
         if state.get("runtime", {}).get("runtime_id") != live_runtime.get("runtime_id"):
             raise CertificateError("state runtime provenance does not match live runtime")
 
+    # Ordinary lifecycle gate: policy.required_verification must hold at verify.
+    if contract is not None:
+        from runspecimen.policy import enforce_required_verification
+
+        enforce_required_verification(workspace=workspace, contract=contract)
+
     return {
         "ok": True,
         "certificate_id": cert["certificate_id"],
@@ -260,6 +371,7 @@ def verify_run_receipt(
             if confirm_channel == "remote_human_confirm"
             else None
         ),
+        "evidence_binding": evidence_binding,
     }
 
 

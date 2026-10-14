@@ -122,6 +122,91 @@ struct CompanionClient {
         return try JSONDecoder().decode(RemoteConfirmResult.self, from: data)
     }
 
+    /// Read the holder phone-peer challenge. Does not sign and does not enroll.
+    func fetchPhonePeerChallenge() async throws -> PhonePeerChallengeMessage {
+        let data = try await request(path: "/v1/phone-peer-challenge")
+        return try JSONDecoder().decode(PhonePeerChallengeMessage.self, from: data)
+    }
+
+    /// Return a signature the phone already produced. The Mac holder verifies it.
+    func submitPhonePeerSignature(
+        challengeId: String,
+        challenge: String,
+        publicKey: String,
+        signature: String
+    ) async throws {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "challenge_id": challengeId,
+            "challenge": challenge,
+            "public_key": publicKey,
+            "signature": signature,
+        ])
+        _ = try await request(path: "/v1/phone-peer-signature", method: "POST", body: payload)
+    }
+
+    func willSubmitPhonePeerSignature() async throws {}
+
+    func invalidatePhonePeerChallenge(challengeId: String) async throws {
+        let payload = try JSONSerialization.data(withJSONObject: ["challenge_id": challengeId])
+        _ = try await request(path: "/v1/phone-peer-invalidate", method: "POST", body: payload)
+    }
+
+    func fetchHolderVerification(challengeId: String) async throws -> PhoneHolderVerification {
+        let data = try await request(path: "/v1/phone-peer-verification")
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let invalidated = object?["invalidated"] as? Bool == true
+        let returnedChallenge = object?["challenge_id"] as? String
+        let same = returnedChallenge == nil || returnedChallenge == challengeId
+        guard same else {
+            return PhoneHolderVerification(verified: false, consumed: false, invalidated: true)
+        }
+        return PhoneHolderVerification(
+            verified: false,
+            consumed: false,
+            invalidated: invalidated,
+            challengeId: returnedChallenge,
+            receipt: object?["receipt"] as? String,
+            signature: object?["signature"] as? String,
+            macPublicKey: object?["mac_public_key"] as? String,
+            phoneFingerprint: object?["phone_fingerprint"] as? String,
+            holderId: object?["holder_id"] as? String,
+            generation: object?["generation"] as? Int,
+            outcome: object?["outcome"] as? String
+        )
+    }
+
+    func fetchRetainedExactRun() async throws -> FetchedExactRun {
+        let data = try await request(path: "/v1/exact-peer-challenge")
+        guard
+            let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let challengeId = object["challenge_id"] as? String,
+            let boundText = object["bound"] as? String,
+            let bound = Data(base64Encoded: boundText),
+            let policy = object["policy"] as? String,
+            let generation = jsonInt(object["generation"]),
+            let keyGeneration = jsonInt(object["key_generation"]),
+            let expiry = jsonInt(object["expiry"])
+        else {
+            throw CompanionClientError.decoding
+        }
+        return FetchedExactRun(
+            challengeId: challengeId,
+            bound: bound,
+            policy: policy,
+            generation: generation,
+            keyGeneration: keyGeneration,
+            expiry: expiry
+        )
+    }
+
+    func submitRetainedExactRunSignature(challengeId: String, signature: String) async throws {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "challenge_id": challengeId,
+            "signature": signature,
+        ])
+        _ = try await request(path: "/v1/exact-peer-signature", method: "POST", body: payload)
+    }
+
     /// Consume a Mac-armed pending without writing approval. Requires typed challenge + reason.
     func submitRemoteRefuse(challenge: String, reason: String) async throws -> RemoteConfirmResult {
         let payload = try JSONSerialization.data(withJSONObject: [
@@ -132,6 +217,8 @@ struct CompanionClient {
         return try JSONDecoder().decode(RemoteConfirmResult.self, from: data)
     }
 }
+
+extension CompanionClient: ExactRunPhoneSigningTransport {}
 
 final class CompanionTLSPinningDelegate: NSObject, URLSessionDelegate {
     let expectedFingerprint: String

@@ -1,13 +1,13 @@
 # Release checklist (Yahor) — MAS first
 
 Short operator path for shipping the macOS companion. Detail:
-[APP_STORE.md](APP_STORE.md), [docs/SECURITY_BOUNDARY.md](docs/SECURITY_BOUNDARY.md),
+[APP_STORE.md](APP_STORE.md), [apps/macos/docs/SECURITY_BOUNDARY.md](docs/SECURITY_BOUNDARY.md),
 [Helpers/README.md](Helpers/README.md), [NOTARIZATION.md](NOTARIZATION.md).
 
 **Invariants:** no telemetry; Approve never auto-types `APPROVE`; receipts ≠
 digital signatures; payload is **not** OS-sandboxed by the UI sandbox alone.
 
-**Engine:** a future MAS freeze must match `src/runspecimen/__version__` (**`0.2.0rc15`**). Build **9** shipped with engine **`0.2.0rc14`** and is now **READY_FOR_SALE**.
+**Engine:** a future MAS freeze must match `src/runspecimen/__version__` (**`0.2.0rc15`**). Build **9** shipped with engine **`0.2.0rc14`** and is now **Removed from App Store** (EU trader status missing).
 
 ## Yahor-only prerequisites
 
@@ -50,7 +50,7 @@ python3 -m pip install --user 'pyinstaller>=6'
 ./Scripts/test_security_boundary.sh
 ./Scripts/build_app.sh --mas
 # Expect:
-build/RunSpecimen.app/Contents/Helpers/runspecimen --version   # → 0.2.0rc14 on a new freeze; build 8 is 0.2.0rc12
+build/RunSpecimen.app/Contents/Helpers/runspecimen --version   # → 0.2.0rc15 on a freeze of this branch; Store 0.1.4 (9) is published rc14
 test ! -d build/RunSpecimen.app/Contents/Helpers/lib
 /usr/libexec/PlistBuddy -c 'Print :RSDistributionChannel' \
   build/RunSpecimen.app/Contents/Info.plist   # → mas
@@ -111,7 +111,7 @@ The `ExportOptions.mas.plist` must specify:
 
 ### 4. Current status
 
-ASC: version `0.1.4` / build **9** is **READY_FOR_SALE**. Build **14** (0.1.5)
+ASC: version `0.1.4` / build **9** is **Removed from App Store** (EU trader status missing). Build **14** (0.1.5)
 was uploaded; next upload is build **15**.
 
 Optional: `brew install xcodegen` then `./Scripts/generate_xcodeproj.sh` if

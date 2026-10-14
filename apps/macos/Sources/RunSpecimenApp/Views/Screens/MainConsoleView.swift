@@ -10,7 +10,7 @@ struct MainConsoleView: View {
         VStack(spacing: 0) {
             TopBar()
             Divider().overlay(RSTheme.line)
-            if let issue = model.cliSetupIssue {
+            if let issue = model.cliSetupIssue ?? model.sessionNote {
                 Text(issue)
                     .font(.system(size: 12))
                     .foregroundStyle(RSTheme.danger)

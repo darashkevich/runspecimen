@@ -1,22 +1,25 @@
 # RunSpecimen
 
-RunSpecimen is a local safety and evidence layer for consequential agent-driven
-research and engineering commands.
+RunSpecimen is a local safety and evidence layer for AI-driven research and engineering commands.
 
 **Current package version (this branch):** `0.2.0rc15`  
 **Release:** [v0.2.0-rc.15](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15) / PyPI `runspecimen==0.2.0rc15` (identical bytes; checksum-only, not SLSA-attested).  
 Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `v0.2.0-rc.12`. See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
 
-## Core promise
+**Current version:** `0.2.0rc15`  
+**GitHub release:** [v0.2.0-rc.15](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15)  
+**PyPI:** `runspecimen==0.2.0rc15`  
+**Homebrew:** `brew install darashkevich/runspecimen/runspecimen`
 
-Exactly **one** approved, bounded run at a time, with:
+<details>
+<summary>Release identity details</summary>
 
-1. **Approved provenance** — interactive TTY approval binds contract, source, and resolved executable hashes with expiry
-2. **Crash-safe state** — atomic JSON state writes
-3. **Mandatory postflight** — successor runs refuse an unpostflighted / failed predecessor
-4. **Tamper-evident receipts** — append-only SHA-256 hash-chained event log + verifiable certificate
+- **Previous release:** [v0.2.0-rc.14](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.14) / PyPI `runspecimen==0.2.0rc14` (identical bytes; checksum-only, not SLSA-attested).
+- **Mac App Store:** version **0.1.4 (9)** with engine `0.2.0rc14` was removed from App Store (EU trader status missing in App Store Connect). The local label on this branch is **0.1.5 (15)** and is not an upload.
+- Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `v0.2.0-rc.12`. See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
+</details>
 
-No watchers, no recurring scheduler, no parallel workers.
+## What it does
 
 `0.2.0rc15` includes opt-in `isolation` (`none` by default), a workspace `policy` file, `retain`, `digest`, and `diff`. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md). `none` does not confine the process. `sandbox-exec` and `bwrap` are not an OS sandbox. Published `0.2.0rc12` rejects `isolation` and `policy`.
 
@@ -30,12 +33,12 @@ No watchers, no recurring scheduler, no parallel workers.
 
 - [About](docs/ABOUT.md) — what RunSpecimen does, lifecycle, safety model, dashboard role
 - [User guide](docs/USER_GUIDE.md) — install, lifecycle, contracts, dashboard, plugins, troubleshooting
+- [CLI and macOS UX review](docs/ux/CLI_AND_MACOS_REVIEW.md) — presentation findings; `--pretty` is opt-in JSON stays default
 - [FAQ](docs/FAQ.md) — vs CI/sandbox/agents, TTY approval, verify-after-clone, parallelism, receipts
 - [Product plan](docs/PRODUCT_PLAN.md) — invariants and roadmap
 - [Market and distribution](docs/MARKET_AND_DISTRIBUTION.md) — wedge, channels, commercial sequence
 - [Integrations](docs/INTEGRATIONS.md) — adapter status ledger + frontier-lab research
 - [Marketing pitches](docs/MARKETING_PITCHES.md) — honest one-liners, elevators, CTAs
-- [Grok tandem](docs/GROK_TANDEM.md) — external xAI Grok review log (Composio `GROK_*`)
 - [Submission](docs/SUBMISSION.md) — marketplace submission checklist (Cursor/Codex/Claude/Grok)
 - [Release identity](docs/RELEASE_IDENTITY.md) — live vs draft vs next tag; checksum-only vs attested
 - [Threat model](docs/THREAT_MODEL.md) — trusted boundary and residual risks
@@ -43,7 +46,7 @@ No watchers, no recurring scheduler, no parallel workers.
 - [Ed25519 receipts (optional)](docs/ED25519_RECEIPTS.md) — offline public-key verify
 - [Phased roadmap](docs/ROADMAP_PHASED.md) — feature and UX pipeline
 - [ADR-003 iOS companion observation](docs/ADR-003-ios-companion-observation.md) — remote observe / attention (Accepted defaults: loopback HTTP OK; LAN TLS + Tailscale preferred)
-- [ADR-004 remote human confirm](docs/ADR-004-remote-human-confirm.md) — Mac-armed challenge + phone `APPROVE` (not TTY-equivalent; plugins cannot approve)
+- [ADR-004 remote human confirm](docs/ADR-004-remote-human-confirm.md) — Mac-armed challenge + phone `APPROVE` (not TTY-equivalent; plugins cannot approve through the app)
 - [Incident bundle](docs/SPEC_INCIDENT_BUNDLE.md) — local Community evidence pack (`runspecimen bundle`); not a Veto vault
 - [Remote confirm card](docs/SPEC_REMOTE_CONFIRM_CARD.md) — one-card iOS UX, refuse+reason, `confirm_channel` on verify
 - [iOS Observe app](apps/ios/README.md) — `com.darashkevich.runspecimen.observe` (TestFlight/later)
@@ -68,16 +71,40 @@ PyPI project: [runspecimen 0.2.0rc15](https://pypi.org/project/runspecimen/0.2.0
 ```bash
 brew tap darashkevich/runspecimen
 brew install runspecimen
+runspecimen --version   # should show 0.2.0rc15
+```
+
+Or as a one-liner: `brew install darashkevich/runspecimen/runspecimen`.
+
+Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen).
+
+<details>
+<summary>Homebrew version troubleshooting</summary>
+
+If `runspecimen --version` shows an older version than expected, check `which -a runspecimen`. An old pip install at `~/.local/bin/runspecimen` often shadows `/opt/homebrew/bin/runspecimen`. Rename the old shim and rehash:
+
+```bash
+mv ~/.local/bin/runspecimen ~/.local/bin/runspecimen.bak-shadow
+hash -r
 runspecimen --version
 ```
 
-Or: `brew install darashkevich/runspecimen/runspecimen`.
+Details in [docs/FAQ.md](docs/FAQ.md#why-does-runspecimen---version-show-an-older-build-than-homebrew).
+</details>
 
 Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen). Pins the same `v0.2.0-rc.15` sdist as the GitHub Release (not `main`).
 
-If `runspecimen --version` lags brew, check `which -a runspecimen` — an old
-`~/.local/bin/runspecimen` often shadows `/opt/homebrew/bin/runspecimen`. Rename
-the shim and rehash; details in [docs/FAQ.md](docs/FAQ.md#why-does-runspecimen---version-show-an-older-build-than-homebrew).
+```bash
+pip install runspecimen==0.2.0rc15
+# or with pipx for isolated installs:
+pipx install runspecimen==0.2.0rc15
+
+runspecimen --version   # should show 0.2.0rc15
+```
+
+Pin the version explicitly. pip will not select an RC without `==0.2.0rc15`.
+
+PyPI project: [runspecimen 0.2.0rc15](https://pypi.org/project/runspecimen/0.2.0rc15/)
 
 ### From GitHub release
 
@@ -134,9 +161,7 @@ runspecimen validate --workspace . --contract examples/demo_contract.json
 
 ## Typical sequence
 
-Prefer `init-demo` after a pip/Homebrew install. The block below uses the
-in-tree example path (git clone) or substitute `contract.json` inside an
-`init-demo` workspace:
+Prefer `init-demo` after a pip or Homebrew install. `examples/showcase/` exists in a git checkout only; create a workspace with `init-demo` before running commands that name those files. The block below uses the in-tree example path (git clone) or substitute `contract.json` inside an `init-demo` workspace:
 
 ```bash
 # 1) Bind approval on a real TTY (refuses pipes/CI without a TTY)
@@ -161,6 +186,10 @@ runspecimen bundle --workspace . --campaign-id demo-campaign --run-id run-001 \
   --out /tmp/rs-incident --contract examples/demo_contract.json
 ```
 
+JSON is the default output. For a copy-paste first run, `runspecimen quickstart`.
+For a human table of the same result, pass `--pretty` (exit codes and JSON
+defaults stay unchanged): `runspecimen --pretty status --workspace . --campaign-id demo-campaign --run-id run-001`.
+
 ## Local dashboard for agent-host users
 
 Open a contract-scoped dashboard from a terminal, or ask the installed
@@ -177,25 +206,35 @@ runspecimen dashboard --workspace . --contract examples/demo_contract.json --ope
 
 It binds only to `127.0.0.1`, has no remote service or telemetry, and is
 read-only: it shows an About overview, the current phase, approval/lease/receipt
-evidence, and the exact lifecycle commands. It cannot approve or execute a run.
+evidence, and the exact lifecycle commands. It cannot approve or execute a run
+through the app.
 This keeps the real-TTY approval gate and the CLI enforcement boundary intact
 while making the workflow visible in the browser. Docs links open the published
 About, User guide, and FAQ on GitHub. CLI shortcut: `runspecimen about`.
 
+RunSpecimen stops agents from approving through the app. Inconsistent edits to
+local records can be detected, but a program that can rewrite those files can
+fabricate consistent evidence. A program running as you that can edit
+RunSpecimen's files can still add a fake approval to the record. Signing
+with a key the agent can't access lets you check afterwards that a receipt is
+authentic, when a signature is required and checked; it does not stop a
+program running as you from adding a fake approval or running the job.
+
 ### Showcase receipt
 
 `examples/showcase/` holds a regeneratable postflight receipt with
-`outputs/result.json`. Verify it with:
+`outputs/result.json`. Live `verify` binds this machine's interpreter hash, so
+lead with a refresh (or treat the committed receipt as host-specific):
 
 ```bash
+python3 scripts/refresh_showcase.py
 runspecimen verify --workspace examples/showcase \
   --contract examples/showcase/contract.json \
   --campaign-id showcase-campaign --run-id run-001
 ```
 
-Refresh without a TTY (uses the library test hook `skip_tty_check`; not for
-production approvals): `python3 scripts/refresh_showcase.py`. Interactive TTY
-path: `scripts/demo_rc.sh`.
+`refresh_showcase.py` uses the library test hook `skip_tty_check`; that is not
+a production approval. Interactive TTY path: `scripts/demo_rc.sh`.
 
 Any local `/.runspecimen/runs/demo-campaign/run-001` left from earlier RCs is
 **historical / pre-`runtime` certificate** and is **not** verifiable on rc2.
@@ -221,7 +260,7 @@ absent before launch and is hashed into the receipt after it passes.
 
 Per run under `{workspace}/.runspecimen/runs/{campaign_id}/{run_id}/`:
 
-- `approval.json` — bound hashes + expiry
+- `approval.json` — bound hashes + expiry (must match the latest chained `approval` event; the file alone is not a token)
 - `state.json` — atomic phase document
 - `events.jsonl` — hash-chained append-only log (`events.append.lock` serializes appends)
 - `stdout.capture` / `stderr.capture` — bounded captures
@@ -256,10 +295,10 @@ runspecimen keygen --workspace .
 runspecimen list-keys --workspace .
 
 # Authenticate a certificate (creates .signed.json with MAC)
-runspecimen sign --workspace . --key-id <key-id> --certificate path/to/certificate.json
+runspecimen sign --workspace . --key-id <key-id> --certificate path/to/certificate.json --contract path/to/contract.json
 
 # Verify an authenticated certificate
-runspecimen verify-signature --workspace . --key-id <key-id> --signed path/to/certificate.signed.json
+runspecimen verify-signature --workspace . --key-id <key-id> --signed path/to/certificate.signed.json --contract path/to/contract.json
 ```
 
 **Shared-secret limitation**: HMAC-SHA256 uses the same key for authentication
@@ -283,6 +322,25 @@ Contracts now support a `runtime` field for enhanced provenance binding:
 This binds environment variables, interpreter, and optionally linked libraries
 into the certificate's `runtime_id`.
 
+## What approval means
+
+When you type `APPROVE`, you're confirming:
+- You've reviewed the command, arguments, and working directory
+- You accept the source code that will run
+- You understand the expiry time (the approval is temporary)
+
+The AI agent can draft contracts and run lifecycle commands, but **only a human can approve**. Plugins for Cursor, Codex, Claude Code, and others deliberately exclude the approve command.
+
+<details>
+<summary>Security considerations</summary>
+
+RunSpecimen stops agents from approving through the app. However:
+
+- A program running as you that can edit RunSpecimen's files can still add a fake approval to the record
+- Signing with a key the agent can't access lets you check afterwards that a receipt is authentic
+- Default receipts use HMAC-SHA256 (shared-secret). Optional Ed25519 (`pip install 'runspecimen[ed25519]'`) enables offline public-key verification. See [docs/ED25519_RECEIPTS.md](docs/ED25519_RECEIPTS.md).
+</details>
+
 ## Release-candidate limitations
 
 - Default authenticated receipts use HMAC-SHA256 shared-secret MACs. Anyone with
@@ -302,14 +360,19 @@ into the certificate's `runtime_id`.
   rejects the `isolation` field. Optional Ed25519 is not an OS sandbox. A
   companion app’s UI sandbox (if any) does not imply payload confinement.
 
-- RunSpecimen does not schedule work and does not prove scientific claims.
-- The resolved executable or interpreter is automatically hashed. Native
-  libraries, environment variables, and input datasets still need to be placed
-  in `source.roots` or otherwise asserted by the workload.
-- This release is licensed under Apache-2.0. The CLI remains the enforcement
-  boundary; Codex, Cursor, Claude Code, Grok Build, Gemini CLI, Junie, and
-  Windsurf integrations are
-  constrained adapters to it (no auto-approve).
+**Work in progress.** The following features are under development and not complete in this release:
+- Secure Enclave integration for hardware-backed signing
+- Phone pairing for remote confirmation
+- Exact-run integration (the `run_integration_complete` flag is false)
+
+<details>
+<summary>Other limitations</summary>
+
+- RunSpecimen does not schedule work and does not prove scientific claims
+- The resolved executable or interpreter is automatically hashed; native libraries, environment variables, and input datasets still need to be placed in `source.roots` or otherwise asserted by the workload
+- This release is licensed under Apache-2.0
+- The CLI remains the enforcement boundary; marketplace integrations are constrained adapters to it (no auto-approve)
+</details>
 
 ## Non-goals
 

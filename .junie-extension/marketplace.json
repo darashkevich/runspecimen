@@ -1,7 +1,7 @@
 {
   "name": "runspecimen",
   "owner": {
-    "name": "RunSpecimen Contributors",
+    "name": "Yahor Darashkevich",
     "url": "https://github.com/darashkevich/runspecimen"
   },
   "metadata": {
@@ -16,7 +16,7 @@
       "description": "Guard serious local agent runs with approval, bounds, provenance, and receipts. Human TTY approve only — no in-IDE approve.",
       "version": "0.2.0-rc.15",
       "author": {
-        "name": "RunSpecimen Contributors"
+        "name": "Yahor Darashkevich"
       },
       "category": "productivity",
       "homepage": "https://github.com/darashkevich/runspecimen/tree/main/plugins/runspecimen",

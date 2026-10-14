@@ -1,25 +1,34 @@
 {
-  "approval_expires_at_unix": 1788516721.388525,
+  "approval_expires_at_unix": 1791483412.540776,
   "campaign_id": "showcase-campaign",
-  "certificate_id": "38e7eb2d33398510ae7930cd695187d7a4a975ca37fba8de4681c1019e51c4af",
+  "certificate_id": "cdb049f1f6b03d67572a784d1c8f680e98c104eb4b883277d09404494bb804ba",
   "contract_hash": "b3ab510287d2465d80f7dca19c5d1f66c4fa5a1f24308ecddab75b6b28afef8e",
   "exit_code": 0,
+  "isolation": {
+    "backend": "none",
+    "claim": "No isolation backend. The workload is not confined by RunSpecimen.",
+    "enforced": false,
+    "network": "not-enforced",
+    "residual": "Orchestration limits only: one workspace lease, wall clock, capture bounds, and process-group stop. Writes and network are not confined.",
+    "tool": null,
+    "tool_sha256": null
+  },
   "output_digests": {
     "outputs/result.json": "b33ef5ab4505924dc71d8f0731ab2be80a0c9fae72591f89bdb1fb73ea9ada33"
   },
   "phase": "postflighted",
   "postflight_ok": true,
-  "preflight_at_unix": 1788513121.390056,
-  "run_finished_at": "2026-09-04T09:12:01Z",
+  "preflight_at_unix": 1791479812.5655458,
+  "run_finished_at": "2026-10-08T17:16:52Z",
   "run_id": "run-001",
   "run_result": "completed",
-  "run_started_at": "2026-09-04T09:12:01Z",
-  "run_started_at_unix": 1788513121.3917792,
+  "run_started_at": "2026-10-08T17:16:52Z",
+  "run_started_at_unix": 1791479812.5863817,
   "runtime": {
     "argv0": "python3",
-    "executable_sha256": "b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9",
-    "resolved_executable": "/usr/bin/python3",
-    "runtime_id": "25dd47daa79ae2e09683c3ccf63d2452fae5ae3dda5aa19856b396f1cacf7cee"
+    "executable_sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f",
+    "resolved_executable": "/usr/bin/python3.12",
+    "runtime_id": "08a33ede0fae43ec27ffd61c576289d539bec13285b2c76ded202a25ae603db6"
   },
   "source_hash": "98eeee7ab1a88a631c6f928815e9c02c9dfe409461cbe867f47eaa7230881d93",
   "stderr_truncated": false,

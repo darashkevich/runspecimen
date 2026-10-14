@@ -11,7 +11,7 @@ Operators want phone-side awareness of RunSpecimen lifecycle state while away fr
 
 - Local-only CLI enforcement; no product telemetry / phone-home by default
 - Human approval is real-TTY `APPROVE` on the Mac; **agents/plugins must never approve**
-- Loopback dashboard is read-only and cannot approve/execute
+- Loopback dashboard is read-only and cannot approve/execute through the app
 - Remote control must **not** be misrepresented as OS sandboxing
 - HMAC / Ed25519 claims stay honest (shared-secret ≠ non-repudiation; signatures ≠ scientific truth)
 
@@ -66,6 +66,8 @@ Allowed (read / non-mutating):
 - `GET /v1/status` — status snapshot (same family as CLI `status` / dashboard JSON)
 - `POST /v1/attention` — request Mac-side human attention (no lifecycle change)
 - `POST /v1/open-dashboard` — optional; only triggers local dashboard open on Mac
+- `POST /v1/phone-peer-challenge` and `GET /v1/phone-peer-challenge` — holder publishes a phone-peer challenge; Observe reads it. `can_approve` stays false. This does not enroll.
+- `POST /v1/phone-peer-signature` and `GET /v1/phone-peer-signature` — Observe returns a signature for the current challenge bytes. A mismatched or replaced challenge is stale. The holder accepts it only after `verify_native_p256`. The companion sets `verified` and `enrolled` false.
 
 Explicitly rejected without ADR-004 settle semantics (405 / 403):
 

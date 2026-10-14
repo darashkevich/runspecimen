@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Stdio MCP adapter for RunSpecimen — no approve / settle tools.
+"""Thin re-export of the canonical RunSpecimen MCP server.
 
-Exposes only the same narrow lifecycle surface as ``runspecimen_adapter.py``.
-Requires ``runspecimen`` on PATH. Local-only; no network phone-home.
+Behavior matches ``plugins/runspecimen/scripts/runspecimen_mcp.py``.
+This entry point adds no tools. Approve and settle stay excluded.
 """
 
 from __future__ import annotations
 
-import json
-import shutil
-import subprocess
+import importlib.util
 import sys
-from typing import Any
+from pathlib import Path
+
+_CANONICAL = Path(__file__).resolve().parents[2] / "scripts" / "runspecimen_mcp.py"
 
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -149,124 +149,14 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 
-def _message(msg_id: Any, result: Any) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+_impl = _load()
 
-
-def _error(msg_id: Any, code: int, message: str) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
-
-
-def _run_cli(action: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    if action not in ALLOWED:
-        return {
-            "isError": True,
-            "content": [{"type": "text", "text": f"Action '{action}' is not allowed via MCP"}],
-        }
-    executable = shutil.which("runspecimen")
-    if executable is None:
-        return {
-            "isError": True,
-            "content": [{
-                "type": "text",
-                "text": "runspecimen is not installed on PATH. Install the CLI first.",
-            }],
-        }
-    if action == "about":
-        completed = subprocess.run(
-            [executable, "about"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    else:
-        workspace = arguments.get("workspace")
-        if not workspace:
-            return {
-                "isError": True,
-                "content": [{"type": "text", "text": "--workspace is required"}],
-            }
-        command = [executable, action, "--workspace", str(workspace)]
-        contract = arguments.get("contract")
-        if contract is not None:
-            command.extend(["--contract", str(contract)])
-        campaign_id = arguments.get("campaign_id")
-        if campaign_id is not None:
-            command.extend(["--campaign-id", str(campaign_id)])
-        run_id = arguments.get("run_id")
-        if run_id is not None:
-            command.extend(["--run-id", str(run_id)])
-        if arguments.get("open") and action == "dashboard":
-            command.append("--open")
-        completed = subprocess.run(command, check=False, capture_output=True, text=True)
-    text = (completed.stdout or "") + (completed.stderr or "")
-    if not text.strip():
-        text = f"exit_code={completed.returncode}"
-    return {
-        "isError": completed.returncode != 0,
-        "content": [{"type": "text", "text": text}],
-    }
-
-
-def _handle(request: dict[str, Any]) -> dict[str, Any] | None:
-    method = request.get("method")
-    msg_id = request.get("id")
-    params = request.get("params") or {}
-
-    if method == "initialize":
-        return _message(msg_id, {
-            "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {"tools": {}},
-            "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-            "instructions": (
-                "RunSpecimen MCP never approves. A human must run "
-                "`runspecimen approve` on a real TTY before preflight/run."
-            ),
-        })
-    if method == "notifications/initialized":
-        return None
-    if method == "ping":
-        return _message(msg_id, {})
-    if method == "tools/list":
-        return _message(msg_id, {"tools": TOOLS})
-    if method == "tools/call":
-        name = str(params.get("name") or "")
-        if name not in ALLOWED:
-            return _message(msg_id, {
-                "isError": True,
-                "content": [{
-                    "type": "text",
-                    "text": (
-                        f"Tool '{name}' is not available. Approve and remote-confirm "
-                        "settle are intentionally excluded from this MCP adapter."
-                    ),
-                }],
-            })
-        arguments = params.get("arguments") or {}
-        if not isinstance(arguments, dict):
-            arguments = {}
-        return _message(msg_id, _run_cli(name, arguments))
-    if msg_id is None:
-        return None
-    return _error(msg_id, -32601, f"Method not found: {method}")
-
-
-def main() -> int:
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            request = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(request, dict):
-            continue
-        response = _handle(request)
-        if response is not None:
-            sys.stdout.write(json.dumps(response, separators=(",", ":")) + "\n")
-            sys.stdout.flush()
-    return 0
+PROTOCOL_VERSION = _impl.PROTOCOL_VERSION
+SERVER_NAME = _impl.SERVER_NAME
+SERVER_VERSION = _impl.SERVER_VERSION
+ALLOWED = _impl.ALLOWED
+TOOLS = _impl.TOOLS
+main = _impl.main
 
 
 if __name__ == "__main__":

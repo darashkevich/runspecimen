@@ -33,3 +33,13 @@ This supersedes inferred causes and the stale waiting-for-review status in STATU
 - Repeat signing, sandbox, self-contained launch, icon, and human-PTY checks.
 - Update reviewer notes, screenshots, and metadata to describe the actual candidate.
 - No new upload/submission has been performed as part of this review.
+
+## How later binaries address each item
+
+| Rejection | 0.1.4 (9), the package on file | 0.1.5 (11), this candidate, not uploaded |
+| --- | --- | --- |
+| 2.5.1 private `TrustEvaluationAgent` and lzma **symbols** (`lzma_code`, `lzma_end`, stream, properties, raw, decoder, encoder) plus any `liblzma` or private-framework load command | Frozen with python.org CPython 3.12. `verify_mas_runtime.py` checks dependencies and defined and undefined symbols. The module-table name `_lzma` remains, including in this approved binary. That name is not the rejected symbol. | Same scanner. A string search that only finds `_lzma` between `_lsprof` and `_markupbase` is not a violation. |
+| 4 Design, no way back to the main window | File → Show Main Window and Command-0. | The process stays running after the last window closes, and quit/relaunch restores a contract that is still inside the workspace. |
+| 2.4.5(i) unused `network.server` | Entitlement removed. Store UI has no browser dashboard. | Same. `runspecimen dashboard` remains on the standalone CLI. |
+
+Apple has not been asked to review 0.1.5 (11). 0.1.4 (9) is a different binary.

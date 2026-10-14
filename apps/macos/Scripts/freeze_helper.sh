@@ -212,7 +212,9 @@ if [[ ! -d "$ONEDIR_INTERNAL" ]]; then
 fi
 
 if [[ "$REQUIRE" == "1" ]]; then
-  "$RS_FREEZE_PYTHON" "$ROOT/Scripts/verify_mas_runtime.py" "$DIST/runspecimen"
+  # Symbol scan only. Signing the app changes these bytes, so this pre-sign
+  # tree is not the identity export_mas.sh verifies.
+  "$RS_FREEZE_PYTHON" "$ROOT/Scripts/verify_mas_runtime.py" scan "$DIST/runspecimen"
 fi
 
 # Drop any previous package-tree / onefile payload so build_app does not mix modes.

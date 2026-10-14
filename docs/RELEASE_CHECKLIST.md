@@ -1,5 +1,7 @@
 # Release candidate checklist
 
+Published engine bytes stay **`0.2.0rc14`**. This tree's engine is unpublished **`0.2.0rc15`**. Approved Mac App Store **0.1.4 (9)** is `Removed from App Store` (EU trader status missing) and freezes rc14. The local successor label here is **0.1.5 (13)** and is not an upload. Earlier local labels **0.1.5 (10)**, **(11)**, and **(12)** are not this candidate. Mac app sandbox versus payload: [apps/macos/docs/SECURITY_BOUNDARY.md](../apps/macos/docs/SECURITY_BOUNDARY.md). There is no `docs/SECURITY_BOUNDARY.md` at the repository root.
+
 - [x] One non-blocking workspace lease covers each lifecycle mutation.
 - [x] Approval requires a real stdin and stdout TTY.
 - [x] Contract, source, executable, identity, and expiry are rechecked at launch.
@@ -31,6 +33,8 @@
   Publishing the GitHub Release also uploads `0.2.0rc15` to PyPI via OIDC
   (identical bytes; checksum-only, not attested).
   - Prospective release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15
+
+For unpublished `0.2.0rc15`, three decisions stay separate and none is made by this checklist: (1) candidate selection (published rc14, the `b3367eb` sdist, or the `fb05284` qualification sdist), (2) qualification (the human guarantee (1) session on those exact bytes, then a post-upload byte compare), and (3) release authorization by Yahor. A green suite or CI run is evidence for (2) only.
 
 Run `python3 scripts/release_check.py` before tagging. A release candidate is not
 a stable release and does not change the explicit limitations in the threat model.

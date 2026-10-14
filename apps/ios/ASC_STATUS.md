@@ -21,7 +21,7 @@ Queried **2026-09-22** via App Store Connect API (local AuthKey; no secrets in t
 
 ## Leave alone
 
-- Mac App Store `com.darashkevich.runspecimen` **0.1.4 (9)** is **READY_FOR_SALE**.
+- Mac App Store `com.darashkevich.runspecimen` **0.1.4 (9)** is **Removed from App Store** (EU trader status missing).
 
 ## Safety
 

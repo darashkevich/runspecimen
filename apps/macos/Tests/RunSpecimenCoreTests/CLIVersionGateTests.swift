@@ -74,6 +74,36 @@ final class CLIVersionGateTests: XCTestCase {
         XCTAssertTrue(DistributionChannel.local.allowsPATHProbe)
     }
 
+    func testVersionProbeRejectsACaptureFailureThatPrintedAVersion() throws {
+        let clean = BoundedProcessCapture.Output(
+            exitCode: 0,
+            stdout: Data("runspecimen 0.2.0rc14\n".utf8),
+            stderr: Data(),
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            timedOut: false,
+            cancelled: false
+        )
+        XCTAssertEqual(try CLIVersionGate.acceptedVersion(from: clean), "runspecimen 0.2.0rc14")
+
+        let failed = BoundedProcessCapture.Output(
+            exitCode: 0,
+            stdout: Data("runspecimen 0.2.0rc14\n".utf8),
+            stderr: Data("child said hi".utf8),
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            timedOut: false,
+            cancelled: false,
+            streamReadError: EIO
+        )
+        XCTAssertThrowsError(try CLIVersionGate.acceptedVersion(from: failed)) { error in
+            let message = (error as? EngineReportError)?.message ?? ""
+            XCTAssertTrue(message.contains("could not be read"))
+            XCTAssertTrue(message.contains("child said hi"))
+            XCTAssertFalse(message == "runspecimen 0.2.0rc14")
+        }
+    }
+
     func testSecurityBoundaryInvariants() {
         XCTAssertTrue(SecurityBoundary.assertsInvariants())
         XCTAssertTrue(SecurityBoundary.neverAutoApprove)

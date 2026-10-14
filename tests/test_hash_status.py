@@ -116,6 +116,12 @@ class TestStatusCli(RunSpecimenTestCase):
         self.assertEqual(about["product"], "RunSpecimen")
         self.assertIn("approve", about["lifecycle"])
         self.assertIn("bounded local run", about["summary"])
+        self.assertIn("Plugins/agents cannot approve through the app.", about["summary"])
+        self.assertIn(
+            "A program running as you that can edit RunSpecimen's files can still add a fake approval to the record.",
+            about["summary"],
+        )
+        self.assertNotIn("Plugins/agents cannot approve.", about["summary"])
         self.assertIn("ABOUT.md", about["docs"]["about"])
 
         out = StringIO()

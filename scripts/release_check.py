@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import importlib.util
 import hashlib
 import io
 import json
@@ -34,6 +35,8 @@ EXPECTED_PLUGIN_VERSION = "0.2.0-rc.15"
 # matches the plugin zip and is representable in zip (dates before 1980 are not).
 ARCHIVE_MTIME = 1577836800
 ARCHIVE_ZIP_DATE = (2020, 1, 1, 0, 0, 0)
+# Reproducible-builds gzip convention: header mtime 0, no original filename.
+GZIP_MTIME = 0
 SOURCE_COMPONENTS = (
     "pyproject.toml", "MANIFEST.in", "README.md", "LICENSE", "CHANGELOG.md",
     "SECURITY.md", "src", "scripts", "tests", "docs", "examples", "work",
@@ -44,7 +47,6 @@ PLUGIN_COMPONENTS = (
     ".codex-plugin/plugin.json", ".cursor-plugin/plugin.json",
     ".claude-plugin/plugin.json", "gemini-extension.json", "extension.json",
     ".mcp.json", "mcp/.mcp.json", "GEMINI.md", "README.md",
-    "assets/logo.png",
     "assets/logo.png",
     "assets/composer-icon.png",
     "assets/logo.svg",
@@ -73,12 +75,21 @@ FORBIDDEN_PARTS = frozenset({".git", ".runspecimen", ".tools", "__pycache__"})
 
 
 def run(*args: str, cwd: Path = ROOT, env: dict[str, str] | None = None,
-        capture: bool = False) -> subprocess.CompletedProcess[str]:
+        capture: bool = False, timeout: int = 300) -> subprocess.CompletedProcess[str]:
     print("+", " ".join(args), flush=True)
     return subprocess.run(
         args, cwd=cwd, env=env, check=True, text=True,
-        stdin=subprocess.DEVNULL, capture_output=capture, timeout=300,
+        stdin=subprocess.DEVNULL, capture_output=capture, timeout=timeout,
     )
+
+
+def _load_script_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def check_versions() -> None:
@@ -175,13 +186,26 @@ def check_versions() -> None:
     )
     if "runspecimen" not in (muse_mcp.get("mcp_servers") or {}):
         raise SystemExit("muse MCP fragment must declare runspecimen under mcp_servers")
-    for shared_name in ("block_approve_gate.py", "runspecimen_mcp.py"):
-        shared = (plugin_root / "scripts" / shared_name).read_bytes()
-        staged = (plugin_root / "antigravity" / "scripts" / shared_name).read_bytes()
-        if shared != staged:
-            raise SystemExit(
-                f"antigravity/scripts/{shared_name} must match plugins/runspecimen/scripts/{shared_name}"
-            )
+    gate_name = "block_approve_gate.py"
+    shared_gate = (plugin_root / "scripts" / gate_name).read_bytes()
+    staged_gate = (plugin_root / "antigravity" / "scripts" / gate_name).read_bytes()
+    if shared_gate != staged_gate:
+        raise SystemExit(
+            f"antigravity/scripts/{gate_name} must match plugins/runspecimen/scripts/{gate_name}"
+        )
+    canonical_mcp = _load_script_module(
+        plugin_root / "scripts" / "runspecimen_mcp.py", "rs_mcp_canonical_check"
+    )
+    staged_mcp = _load_script_module(
+        plugin_root / "antigravity" / "scripts" / "runspecimen_mcp.py",
+        "rs_mcp_antigravity_check",
+    )
+    if "approve" in canonical_mcp.ALLOWED or canonical_mcp.ALLOWED != staged_mcp.ALLOWED:
+        raise SystemExit("antigravity MCP must re-export the canonical allow-list and omit approve")
+    canonical_tools = [tool["name"] for tool in canonical_mcp.TOOLS]
+    staged_tools = [tool["name"] for tool in staged_mcp.TOOLS]
+    if canonical_tools != staged_tools or "approve" in canonical_tools:
+        raise SystemExit("antigravity MCP tools diverged from the canonical server")
     plugin_xml = (
         plugin_root / "jetbrains/intellij-plugin/src/main/resources/META-INF/plugin.xml"
     ).read_text(encoding="utf-8")
@@ -243,10 +267,17 @@ def offline_env() -> dict[str, str]:
 
 
 def release_build_env(env: dict[str, str]) -> dict[str, str]:
-    """Pin ``SOURCE_DATE_EPOCH`` so wheel zip timestamps ignore the clock."""
+    """Pin ``SOURCE_DATE_EPOCH`` so setuptools archive timestamps ignore the clock."""
     build_env = dict(env)
     build_env["SOURCE_DATE_EPOCH"] = str(ARCHIVE_MTIME)
     return build_env
+
+
+def normalized_sdist_mode(member: tarfile.TarInfo) -> int:
+    """Map builder umask bits onto a two-mode reproducible set."""
+    if member.isdir() or member.mode & 0o111:
+        return 0o755
+    return 0o644
 
 
 def stage_source(destination: Path) -> None:
@@ -296,6 +327,11 @@ def inspect_sdist(path: Path, destination: Path) -> Path:
         )}
         if not required.issubset(names):
             raise SystemExit(f"source archive is missing required files: {sorted(required - names)}")
+        carried = [name for name in names if _is_platform_verifier_member(name)]
+        if carried:
+            raise SystemExit(
+                "source archive must not carry the darwin arm64 verifier: " + ", ".join(carried)
+            )
         for member in members:
             if PurePosixPath(member.name).parts[0] != top or not (member.isfile() or member.isdir()):
                 raise SystemExit(f"unsupported source archive member: {member.name}")
@@ -360,6 +396,12 @@ def validate_requires_dist_metadata(metadata: str) -> None:
             )
 
 
+def _is_platform_verifier_member(name: str) -> bool:
+    return name.endswith("runspecimen/platform/darwin_arm64/native_p256_verify") or (
+        name.rsplit("/", 1)[-1] == "native_p256_verify"
+    )
+
+
 def inspect_wheel(path: Path) -> None:
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
@@ -373,6 +415,13 @@ def inspect_wheel(path: Path) -> None:
         }
         if not required.issubset(names):
             raise SystemExit(f"wheel is missing required files: {sorted(required - set(names))}")
+        if path.name.endswith("py3-none-any.whl"):
+            carried = [name for name in names if _is_platform_verifier_member(name)]
+            if carried:
+                raise SystemExit(
+                    "py3-none-any wheel must not carry the darwin arm64 verifier: "
+                    + ", ".join(carried)
+                )
         metadata = archive.read(f"{dist_info}/METADATA").decode("utf-8")
         if f"\nVersion: {EXPECTED_PYTHON_VERSION}\n" not in metadata:
             raise SystemExit("wheel metadata has the wrong version")
@@ -560,13 +609,150 @@ def smoke_signing(cli: Path, python: Path, workspace: Path, contract: Path, env:
         raise SystemExit(f"verify-signature with missing key did not report error: stdout={result.stdout}, stderr={result.stderr}")
 
 
+def assert_installed_wheel_identity(
+    python: Path, wheel: Path, env: dict[str, str]
+) -> None:
+    """Require the installed package to come from the wheel, not an in-tree src/.
+
+    ``tests/helpers.py`` prepends the repository ``src`` directory to
+    ``sys.path``. This check uses a clean interpreter with empty
+    ``PYTHONPATH`` and compares installed files to the wheel RECORD.
+    """
+    if env.get("PYTHONPATH"):
+        raise SystemExit(
+            "installed-wheel identity check requires an empty PYTHONPATH, "
+            f"got {env.get('PYTHONPATH')!r}"
+        )
+    probe = r"""
+import base64
+import hashlib
+import os
+import pathlib
+import sys
+import zipfile
+
+wheel = pathlib.Path(sys.argv[1])
+if os.environ.get("PYTHONPATH"):
+    raise SystemExit(f"PYTHONPATH is set: {os.environ.get('PYTHONPATH')!r}")
+import runspecimen
+
+package_file = pathlib.Path(runspecimen.__file__).resolve()
+parts = set(package_file.parts)
+if "site-packages" not in parts and "dist-packages" not in parts:
+    raise SystemExit(
+        "runspecimen.__file__ is not under site-packages: " + str(package_file)
+    )
+site_root = package_file.parent.parent
+with zipfile.ZipFile(wheel) as archive:
+    record_names = [name for name in archive.namelist() if name.endswith(".dist-info/RECORD")]
+    if len(record_names) != 1:
+        raise SystemExit(f"expected one RECORD member, got {record_names}")
+    rows = []
+    for line in archive.read(record_names[0]).decode("utf-8").splitlines():
+        if not line:
+            continue
+        name, sep, rest = line.partition(",")
+        if not sep:
+            raise SystemExit(f"malformed RECORD line: {line!r}")
+        digest, size_sep, size = rest.partition(",")
+        if not size_sep:
+            raise SystemExit(f"malformed RECORD line: {line!r}")
+        rows.append((name, digest, size))
+missing = []
+mismatched = []
+for name, digest, size in rows:
+    if name.endswith("/"):
+        continue
+    installed = site_root / name
+    if name.endswith(".dist-info/RECORD"):
+        if digest != "":
+            raise SystemExit(f"RECORD hashed itself: {digest}")
+        if not installed.is_file():
+            missing.append(name)
+        continue
+    if not installed.is_file():
+        missing.append(name)
+        continue
+    data = installed.read_bytes()
+    if size and size != str(len(data)):
+        mismatched.append(f"{name} size {len(data)} != {size}")
+        continue
+    if digest:
+        encoded = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode("ascii").rstrip("=")
+        expected = f"sha256={encoded}"
+        if digest != expected:
+            mismatched.append(f"{name} hash {digest} != {expected}")
+if missing or mismatched:
+    raise SystemExit(
+        "installed files do not match the wheel RECORD: "
+        + "; ".join(missing + mismatched)
+    )
+print(str(package_file))
+"""
+    result = run(
+        str(python),
+        "-c",
+        probe,
+        str(wheel),
+        env=env,
+        capture=True,
+    )
+    installed = result.stdout.strip()
+    if "site-packages" not in installed and "dist-packages" not in installed:
+        raise SystemExit(f"installed identity probe did not report site-packages: {installed}")
+
+
+def trusted_base_executable() -> str:
+    """Base interpreter for venv creation, install, and the static check.
+
+    The process that built the archives may be a tools virtual environment.
+    That environment is not the interpreter the check accepts.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "verify_installed_wheel_base",
+        ROOT / "scripts" / "verify_installed_wheel.py",
+    )
+    if spec is None or spec.loader is None:
+        raise SystemExit("cannot load verify_installed_wheel.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    found = module.base_interpreter()
+    if found is None:
+        raise SystemExit(
+            "release smoke must start the wheel check with the base interpreter; "
+            f"{sys.executable} is a virtual environment and its base was not found"
+        )
+    return str(found)
+
+
 def smoke_install(wheel: Path, source: Path, temp: Path, env: dict[str, str]) -> None:
+    base = trusted_base_executable()
     venv = temp / "venv"
-    run(sys.executable, "-m", "venv", str(venv), cwd=temp, env=env)
+    run(base, "-I", "-S", "-m", "venv", "--without-pip", str(venv), cwd=temp, env=env)
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    installer = ROOT / "scripts" / "install_pinned_wheel.py"
+    verifier = ROOT / "scripts" / "verify_installed_wheel.py"
+    run(
+        base, "-I", "-S", str(installer),
+        "--wheel", str(wheel),
+        "--venv", str(venv),
+        "--expected-sha256", digest,
+        cwd=temp,
+        env=env,
+    )
     python = venv / "bin/python"
     cli = venv / "bin/runspecimen"
-    run(str(python), "-m", "pip", "install", "--no-index", "--no-deps", str(wheel), cwd=temp, env=env)
+    run(
+        base, "-I", "-S", str(verifier),
+        "--wheel", str(wheel),
+        "--launcher", str(cli),
+        cwd=temp,
+        env=env,
+    )
     smoke_env = dict(env, PATH=str(venv / "bin") + os.pathsep + env.get("PATH", ""))
+    if smoke_env.get("PYTHONPATH"):
+        raise SystemExit("release smoke must run with an empty PYTHONPATH")
+    assert_installed_wheel_identity(python, wheel, smoke_env)
     version = run(str(cli), "--version", cwd=temp, env=smoke_env, capture=True).stdout.strip()
     if version != f"runspecimen {EXPECTED_PYTHON_VERSION}":
         raise SystemExit(f"installed console script has an unexpected version: {version}")
@@ -597,40 +783,50 @@ def smoke_install(wheel: Path, source: Path, temp: Path, env: dict[str, str]) ->
 
 
 def normalize_sdist_timestamps(path: Path, mtime: int = ARCHIVE_MTIME) -> None:
-    """Rewrite gzip and tar timestamps without changing archived file bytes.
+    """Rewrite the sdist so archive metadata does not depend on the builder.
 
-    setuptools stores the current time in the gzip header and in tar member
-    mtimes (including pax extended headers for fractional seconds). Those
-    fields are archive metadata: names, modes, owners, and file contents stay
-    as the builder wrote them.
+    setuptools honors ``SOURCE_DATE_EPOCH`` for some timestamps but still
+    records the builder uid/gid/uname and the local walk order. Those fields
+    change the archive bytes across hosts even when file contents match
+    (OPEN-SDIST: committed ``b2db7b78…`` vs a non-ubuntu rebuild ``6979460d…``).
+    This rewrite keeps names and file bytes, then pins:
+
+    * tar member mtime to ``SOURCE_DATE_EPOCH`` / ``ARCHIVE_MTIME``
+    * uid/gid 0 and empty uname/gname (numeric-owner zero record)
+    * modes 0755 for directories and executables, 0644 otherwise
+    * members sorted by name
+    * gzip header mtime 0 and no original filename
+    * USTAR (not PAX) so Python versions do not emit extra pax headers
     """
     with tarfile.open(path, "r:gz") as inbound:
-        members = inbound.getmembers()
-        payloads: list[bytes | None] = []
-        for member in members:
+        records: list[tuple[tarfile.TarInfo, bytes | None]] = []
+        for member in inbound.getmembers():
             if member.isdir():
-                payloads.append(None)
+                records.append((member, None))
             elif member.isfile():
                 extracted = inbound.extractfile(member)
                 if extracted is None:
                     raise SystemExit(f"unreadable source archive member: {member.name}")
-                payloads.append(extracted.read())
+                records.append((member, extracted.read()))
             else:
                 raise SystemExit(f"unsupported source archive member: {member.name}")
 
+    records.sort(key=lambda item: item[0].name)
+    expected_names = [member.name for member, _payload in records]
+
     buffer = io.BytesIO()
     with gzip.GzipFile(
-        filename=path.name, mode="wb", fileobj=buffer, mtime=mtime, compresslevel=9,
+        filename="", mode="wb", fileobj=buffer, mtime=GZIP_MTIME, compresslevel=9,
     ) as compressed:
-        with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as outbound:
-            for member, payload in zip(members, payloads):
+        with tarfile.open(fileobj=compressed, mode="w", format=tarfile.USTAR_FORMAT) as outbound:
+            for member, payload in records:
                 info = tarfile.TarInfo(member.name)
                 info.mtime = mtime
-                info.mode = member.mode
-                info.uid = member.uid
-                info.gid = member.gid
-                info.uname = member.uname or ""
-                info.gname = member.gname or ""
+                info.mode = normalized_sdist_mode(member)
+                info.uid = 0
+                info.gid = 0
+                info.uname = ""
+                info.gname = ""
                 if payload is None:
                     info.type = tarfile.DIRTYPE
                     outbound.addfile(info)
@@ -641,11 +837,13 @@ def normalize_sdist_timestamps(path: Path, mtime: int = ARCHIVE_MTIME) -> None:
     rewritten = buffer.getvalue()
     with tarfile.open(fileobj=io.BytesIO(rewritten), mode="r:gz") as check:
         checked = check.getmembers()
-        if [member.name for member in checked] != [member.name for member in members]:
+        if [member.name for member in checked] != expected_names:
             raise SystemExit("rewritten source archive changed member names")
-        for current, payload in zip(checked, payloads):
+        for current, (_member, payload) in zip(checked, records):
             if current.mtime != mtime:
                 raise SystemExit(f"source archive member kept a moving timestamp: {current.name}")
+            if current.uid != 0 or current.gid != 0 or current.uname or current.gname:
+                raise SystemExit(f"source archive member kept builder identity: {current.name}")
             if payload is None:
                 if not current.isdir():
                     raise SystemExit(f"rewritten source archive changed a directory: {current.name}")
@@ -710,7 +908,14 @@ def main(argv: list[str] | None = None) -> int:
     check_versions()
     ensure_build_backend()
     env = offline_env()
-    run(sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v", env=env)
+    # Darwin 3.11 with the holder-stage test can pass 600s while still copying
+    # files. Push run 38279619647 timed out there; pull request run 38279624560
+    # finished. 900s is the cap for that progress, not a claim that both runs
+    # were green.
+    run(
+        sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v",
+        env=env, timeout=900,
+    )
     with tempfile.TemporaryDirectory(prefix="runspecimen-release-") as directory:
         temp = Path(directory)
         sdist, wheel, extracted = build_release_archives(temp, env)
@@ -731,7 +936,9 @@ def main(argv: list[str] | None = None) -> int:
             "python": sys.version.split()[0], "platform": sys.platform,
             "checks": ["unit-tests", "source-compile", "source-archive-contents",
                        "sdist-distribution-artifact-tests", "wheel-from-source-archive",
-                       "wheel-contents", "fresh-install-console-script", "installed-cli-doctor-validate-status",
+                       "wheel-contents", "fresh-install-console-script",
+                       "installed-wheel-site-packages-record",
+                       "installed-cli-doctor-validate-status",
                        "installed-plugin-adapter", "installed-dashboard-http", "dashboard-write-refusal",
                        "installed-keygen-listkeys", "installed-sign-verify-error-handling"],
             "artifacts": {path.name: hashlib.sha256(path.read_bytes()).hexdigest()

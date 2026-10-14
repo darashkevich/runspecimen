@@ -351,21 +351,21 @@ Release assets** (wheel, sdist, plugin zip, SHA256SUMS), verifies SHA-256
 digests and filenames, and uploads **those same wheel/sdist bytes** to PyPI.
 It does **not** rebuild distributions at publish time.
 
-**rc12 provenance:** checksum-only. `SHA256SUMS` is the integrity contract.
+**rc14 provenance (same as rc12 and rc13):** checksum-only. `SHA256SUMS` is the integrity contract.
 `gh attestation verify` is expected to 404 until a future CI-built release
 attaches SLSA / GitHub Artifact Attestation provenance. Do not describe this
 candidate as attested.
 
 The GitHub `pypi` environment is restricted to `v*` tags.
 
-Public product/support/privacy/terms pages pin **rc12**. Do not retarget download links
+Public product and support pages pin **rc14** (website source last read 2026-10-06; see section 4). Do not retarget download links
 from a draft. Do not publish the rc11 draft.
 
 ---
 
 ## 3b. Mac App Store (`com.darashkevich.runspecimen`)
 
-**Status (App Store Connect):** macOS version **0.1.4 (9)** is **READY_FOR_SALE**. Builds 5–8 were rejected or superseded. Publicly available on the Mac App Store. Build **14** (0.1.5) was uploaded; next upload is build **15**.
+**Status (App Store Connect):** macOS version **0.1.4 (9)** is **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded. Removed from the Mac App Store (EU trader status missing). Build **14** (0.1.5) was uploaded; next upload is build **15**.
 
 The Mac App Store listing is now live with a public `apps.apple.com` URL.
 
@@ -398,7 +398,7 @@ Details: `apps/macos/asc-kit/STATUS.md`, `apps/macos/RELEASE_CHECKLIST.md`.
 
 **Status:** Live (hexaflake mark + `runspecimen==0.2.0rc15`). Marketplace links stay pending until listings are accepted.
 
-**Current content check:** Site mentions "Public marketplace availability is not yet confirmed."
+**Earlier content check, not repeated on 2026-10-06:** Site mentions "Public marketplace availability is not yet confirmed."
 
 ### Update required
 
@@ -428,7 +428,7 @@ listings are confirmed live (not pending review).
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
 | PyPI | ✅ | — | `0.2.0rc15` (same bytes as GitHub) | [runspecimen 0.2.0rc15](https://pypi.org/project/runspecimen/0.2.0rc15/) |
 | Homebrew tap | ✅ | — | `0.2.0rc15` sdist from GitHub Release | [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen) |
-| Mac App Store | ✅ READY_FOR_SALE | — | macOS **0.1.4 (9)** public | `apps.apple.com` URL now live — see `apps/macos/asc-kit/STATUS.md` |
+| Mac App Store | ✅ READY_FOR_SALE | — | macOS **0.1.4 (9)** public | `apps.apple.com URL no longer live — see `apps/macos/asc-kit/STATUS.md` |
 
 **Important:** Do not claim a listing is "public" or "available" until:
 1. Submission is accepted (not just submitted)

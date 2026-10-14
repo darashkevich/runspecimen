@@ -3,6 +3,19 @@
 # Without Apple Distribution identities, archives with ad-hoc signing (-) to prove
 # the project is structurally archivable — clearly labeled, with helper sandbox+inherit.
 # Does not upload or Submit for Review.
+#
+# Release qualification sets RS_RELEASE_GATE=1 and RS_EXPECTED_GIT_COMMIT to the
+# reviewed 40-character SHA. release_source_prelude.sh checks that checkout
+# before helper freeze or project generation, then continues in a detached
+# worktree of that commit. A dirty tree, a different commit, or a source
+# change during freeze or generation fails. The runtime-identity.json file is
+# an integrity record of the signed bytes plus caller-supplied git metadata.
+# It is not an independent cryptographic source attestation. A development
+# archive may be dirty. Export rejects it.
+#
+# The exported Store package is not a local launch build. taskgated rejects its
+# Mac App Store profile outside App Store installation. Launch QA uses
+# ./Scripts/build_local_qa.sh (Apple Development signing, separate output path).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$ROOT/../.." && pwd)"
@@ -32,8 +45,14 @@ echo "==> Xcode"
 xcodebuild -version
 xcode-select -p
 
-echo "==> Ensure frozen Mach-O helper (rc engine from this tree)"
-RS_FREEZE_HELPER=1 RS_MAS_BUILD=1 ./Scripts/freeze_helper.sh --enable --require --verify
+# Release builds re-exec this script inside the isolated candidate and stop
+# the caller. Development builds freeze and generate in place.
+if [[ "${RS_RELEASE_GATE:-}" == "1" && "${RS_RELEASE_ISOLATED:-}" != "1" ]]; then
+  ./Scripts/release_source_prelude.sh
+  exit $?
+fi
+./Scripts/release_source_prelude.sh
+
 HELPER_VER="$(Helpers/payload/runspecimen --version 2>&1)" || {
   echo "ERROR: Helpers/payload/runspecimen --version failed" >&2
   exit 1
@@ -50,8 +69,6 @@ echo "$HELPER_VER" | grep -F "$REPO_VER" >/dev/null || {
   exit 1
 }
 
-echo "==> Ensure Xcode project"
-./Scripts/generate_xcodeproj.sh
 test -d "$ROOT/RunSpecimen.xcodeproj"
 chmod +x "$ROOT/Scripts/"*.sh
 
@@ -122,6 +139,20 @@ elif echo "$IDENTITIES" | grep -Eq 'Apple Development'; then
   SIGNING_MODE="$MODE"
 fi
 
+SOURCE_BEFORE="$(dirname "$ARCHIVE_PATH")/source-before.json"
+SOURCE_AFTER="$(dirname "$ARCHIVE_PATH")/source-after.json"
+mkdir -p "$(dirname "$ARCHIVE_PATH")"
+SNAP_ARGS=(snapshot-source --repo "$REPO" --out "$SOURCE_BEFORE")
+if [[ "${RS_RELEASE_GATE:-}" == "1" ]]; then
+  if [[ ! "${RS_EXPECTED_GIT_COMMIT:-}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "ERROR: RS_RELEASE_GATE requires RS_EXPECTED_GIT_COMMIT to be the reviewed 40-character SHA" >&2
+    exit 1
+  fi
+  SNAP_ARGS+=(--release-gate --expected-commit "$RS_EXPECTED_GIT_COMMIT")
+fi
+echo "==> source snapshot before archive (integrity record, not a source attestation)"
+python3 "$ROOT/Scripts/verify_mas_runtime.py" "${SNAP_ARGS[@]}"
+
 echo "==> xcodebuild archive ($SIGNING_MODE)"
 set +e
 xcodebuild \
@@ -166,7 +197,28 @@ test -f "$APP_IN_ARCHIVE/Contents/Resources/Assets.car" || {
 }
 
 echo "==> fail-closed archive signing / entitlement / sandbox assertions"
-python3 "$ROOT/Scripts/verify_mas_runtime.py" "$APP_IN_ARCHIVE"
+python3 "$ROOT/Scripts/verify_mas_runtime.py" scan "$APP_IN_ARCHIVE"
+python3 "$ROOT/Scripts/verify_mas_runtime.py" snapshot-source \
+  --repo "$REPO" \
+  --out "$SOURCE_AFTER"
+python3 "$ROOT/Scripts/verify_mas_runtime.py" check-source-stable \
+  --before "$SOURCE_BEFORE" \
+  --after "$SOURCE_AFTER"
+COMMIT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["git_commit"])' "$SOURCE_AFTER")"
+DIRTY="$(python3 -c 'import json,sys; print("true" if json.load(open(sys.argv[1]))["git_dirty"] else "false")' "$SOURCE_AFTER")"
+RECORD_ARGS=(
+  record-identity
+  --stage signed-archive
+  --git-commit "$COMMIT"
+  --git-dirty "$DIRTY"
+  --fail-if-exists
+)
+if [[ "${RS_RELEASE_GATE:-}" == "1" ]]; then
+  RECORD_ARGS+=(--release-gate --expected-commit "$RS_EXPECTED_GIT_COMMIT")
+fi
+python3 "$ROOT/Scripts/verify_mas_runtime.py" "${RECORD_ARGS[@]}" \
+  "$APP_IN_ARCHIVE" \
+  "$ARCHIVE_PATH/runtime-identity.json"
 ./Scripts/assert_archive_signing.sh "$APP_IN_ARCHIVE" "${ASSERT_ARGS[@]}"
 if codesign -d --entitlements - "$APP_IN_ARCHIVE" 2>/dev/null | grep -q 'com.apple.security.network.server'; then
   echo "ERROR: rejected network.server entitlement remains in signed Store app" >&2

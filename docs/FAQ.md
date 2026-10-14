@@ -1,7 +1,6 @@
 # RunSpecimen FAQ
 
-Short answers grounded in the current CLI and product constraints. Product
-overview: [ABOUT.md](ABOUT.md). Deeper how-to: [USER_GUIDE.md](USER_GUIDE.md).
+Quick answers to common questions about RunSpecimen. For a full overview, see [ABOUT.md](ABOUT.md). For detailed instructions, see [USER_GUIDE.md](USER_GUIDE.md).
 
 ## How is this different from ChatGPT / an agent chat?
 
@@ -21,37 +20,99 @@ interactive approval expiry and predecessor gating before the next campaign
 step. It does not replace CI; you can still verify receipts in CI if you ship
 the workspace evidence with matching host runtime expectations.
 
+## Which build is current?
+
+**Current release:** CLI and plugin version **0.2.0rc15**. This release includes evidence-expansion commands (ADR-005) that were not in rc14.
+
+**Previous release:** **0.2.0rc14** remains available but does not include the evidence-expansion features.
+
+<details>
+<summary>Mac App Store details</summary>
+
+The Mac App Store package recorded in Connect on 2026-09-28 as **0.1.4 (9)** `Removed from App Store` (EU trader status missing) freezes engine **0.2.0rc14**. The Store app is guarantee (1) only and does not include the Developer ID holder. This branch's local label is **0.1.5 (13)** and is not an upload.
+</details>
+
+## Does the Mac App Store app include the protected holder?
+
+No. The Store app and the Developer ID holder are different products with different guarantees.
+
+**Store app (guarantee 1):** You type `APPROVE` in a terminal for an ordinary contract. The approved **0.1.4 (9)** is this app. It does not ship the Developer ID holder.
+
+**Developer ID holder (guarantee 2):** A separate component for enrollment, policy, and leases. It is not installed and not notarized in this release.
+
+<details>
+<summary>Technical details about Secure Enclave and phone pairing</summary>
+
+The Secure Enclave integration and phone pairing features are under development:
+
+- Installed Secure Enclave admission stays fail-closed (D1, 2026-10-05)
+- The `run_integration_complete` flag is false
+- HMAC, software Ed25519 signatures, and CryptoKit P-256 checks are not hardware verifiers (not Touch ID or Face ID)
+- The pure wheel does not contain the Darwin verifier
+- Phone pairing via RunSpecimenObserve is implemented but not production-ready
+
+See [SECURE_ENCLAVE_ADMISSION.md](SECURE_ENCLAVE_ADMISSION.md) for the complete technical status.
+</details>
+
 ## How is this different from a sandbox?
 
-A sandbox limits what a process can reach. RunSpecimen records whether an
-approved, exclusive, bounded step happened and whether declared outcomes
-passed. It is **not** an OS sandbox.
+A sandbox limits what a process can reach. RunSpecimen records whether an approved, exclusive step happened and whether declared outcomes passed. **RunSpecimen is not an OS sandbox** — use a container when you need real process isolation.
 
-The default `isolation.backend` is `none`: wall clock, capture size,
-path-inside-workspace checks, and process-group kill. No filesystem or network
-confinement.
+The default isolation backend is `none`: it enforces timeouts, capture limits, and path checks, but does not confine filesystem or network access.
 
-Opt-in `sandbox-exec` (macOS, if `sandbox-exec` is on PATH) and `bwrap` (Linux,
-if `bwrap` is on PATH) confine writes to the workspace and deny network unless
-the contract sets `isolation.network` to true. A declared backend that is not
-installed fails closed. The receipt field `isolation.residual` states what
-that profile still allows, including host reads. CPU and memory limits are
-not part of either backend.
+<details>
+<summary>Opt-in isolation backends</summary>
 
-## Why does approval require a TTY?
+RunSpecimen supports opt-in isolation on macOS (`sandbox-exec`) and Linux (`bwrap`):
 
-Unattended or piped approval would let an agent or script bind a consequential
-command without a human at the keyboard. `approve` requires interactive stdin
-**and** stdout TTYs and the exact phrase `APPROVE`. Test-only hooks
-(`skip_tty_check`) exist for regenerating demos; they are not the production
-path.
+- **sandbox-exec** (macOS): Confines writes to the workspace and denies network unless the contract sets `isolation.network` to true
+- **bwrap** (Linux): Same workspace and network restrictions using bubblewrap
+
+If you declare an isolation backend that isn't installed, the run fails closed. The receipt field `isolation.residual` describes what the profile still allows. CPU and memory limits are not part of either backend.
+</details>
+
+## Why does approval require a terminal?
+
+Approval must happen in a real terminal where a human types `APPROVE`. This prevents scripts or AI agents from automatically approving commands without human oversight.
+
+The `approve` command requires both interactive stdin and stdout (a real TTY) and the exact phrase `APPROVE`. Piping or automating approval is intentionally blocked.
+
+## How do I get human-readable CLI output?
+
+JSON is the default for every command (agents, tests, and scripts depend on it).
+Pass `--pretty` for a table-style view of the same result:
+
+```bash
+runspecimen --pretty doctor --workspace .
+runspecimen status --pretty --workspace . --campaign-id demo-campaign --run-id run-001
+```
+
+`--pretty` does not change exit codes, hashes, or the approval gate. Color is
+`--color auto|always|never` (`NO_COLOR` disables auto). For a copy-paste first
+run: `runspecimen quickstart`.
+
+## What is the eval fast path?
+
+An opt-in exact-match step on `runspecimen eval` that can finish a configured
+phrase (`thank you`, `ok`, …) for an explicit `text_completion` task without
+calling that task's provider. It does not pass requirement checks, approve a
+run, or count a model call unless the skipped task was a model judgment. See
+[FASTPATH.md](FASTPATH.md). Disabled unless you add a `fastpath` block or
+`fastpath_config`.
 
 ## Can agents approve runs?
 
-**No.** Codex/Cursor plugins and the narrow adapter
+**Not through the app.** Codex/Cursor plugins and the narrow adapter
 (`about`, `dashboard`, `doctor`, `validate`, `status`, `preflight`, `run`, `postflight`,
 `verify`) deliberately exclude `approve`. A human must run
 `runspecimen approve --workspace … --contract …` in a real terminal.
+
+RunSpecimen stops agents from approving through the app. Inconsistent edits to
+local records can be detected, but a program that can rewrite those files can
+fabricate consistent evidence. Signing with a key the agent can't access lets
+you check afterwards that a receipt is authentic, when a signature is required
+and checked; it does not stop a program running as you from adding a fake
+approval or running the job.
 
 ## Why does verify fail after I clone the repo?
 
@@ -72,9 +133,15 @@ you need concurrency. There is no built-in worker pool or scheduler.
 ## Is the hash chain a signature?
 
 **No.** Events and certificates are SHA-256 hash-chained and locally
-recomputable. They detect casual tampering of the evidence set, but a
-privileged attacker who can rewrite the whole workspace can fabricate a new
-history.
+recomputable. Inconsistent edits to local records can be detected. A writer
+who controls the evidence can fabricate a consistent record. The chain is
+unkeyed: a program running as you
+that can edit RunSpecimen's files can still add a fake approval to the record.
+Signing with a key the agent can't access lets you check afterwards that a
+receipt is authentic, when a signature is required and checked
+(`verify-signature` with an out-of-reach key, or an installed holder —
+fail-closed under D1/D2); it does not stop a program running as you from
+adding a fake approval or running the job.
 
 The default `sign` command provides HMAC-SHA256 authentication (a shared-secret
 Message Authentication Code), not digital signatures. Anyone with the key
