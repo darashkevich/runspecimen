@@ -842,6 +842,64 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertNoThrow(try stage.validateStagedParts())
     }
 
+    func testEnrolledKeyPersistsAcrossRelaunch() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-relaunch-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+
+        let record = try CompanionSecureEnclaveEnrollment.enroll(keyID: "test-relaunch", directory: directory)
+        XCTAssertEqual(record.keyID, "test-relaunch")
+        XCTAssertEqual(record.state, CompanionSecureEnclaveEnrollment.active)
+        XCTAssertEqual(record.generation, 1)
+
+        let keys = try CompanionSecureEnclaveEnrollment.listKeys(directory: directory)
+        XCTAssertEqual(keys.count, 1, "Should have exactly one key after enrollment")
+        XCTAssertEqual(keys.first?.keyID, "test-relaunch")
+        XCTAssertEqual(keys.first?.state, CompanionSecureEnclaveEnrollment.active)
+
+        let reloaded = try CompanionSecureEnclaveEnrollment.inspect(keyID: "test-relaunch", directory: directory)
+        XCTAssertEqual(reloaded.keyID, "test-relaunch", "Key ID should match after simulated relaunch")
+        XCTAssertEqual(reloaded.state, CompanionSecureEnclaveEnrollment.active, "Key should still be active after simulated relaunch")
+        XCTAssertEqual(reloaded.generation, 1, "Generation should persist")
+        XCTAssertTrue(reloaded.macUpdatePending, "Mac update pending should persist")
+
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.inspect(keyID: "nonexistent-key", directory: directory)) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .missing, "Inspecting non-existent key returns missing")
+        }
+    }
+
+    func testListKeysReturnsCorrectKeyForSelection() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-selection-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+
+        let key1 = try CompanionSecureEnclaveEnrollment.enroll(keyID: "test-1", directory: directory)
+        XCTAssertEqual(key1.state, CompanionSecureEnclaveEnrollment.active)
+
+        let key2 = try CompanionSecureEnclaveEnrollment.enroll(keyID: "test-2", directory: directory)
+        XCTAssertEqual(key2.state, CompanionSecureEnclaveEnrollment.active)
+
+        let keys = try CompanionSecureEnclaveEnrollment.listKeys(directory: directory)
+        XCTAssertEqual(keys.count, 2, "Should have two keys")
+
+        let hasTest1 = keys.contains { $0.keyID == "test-1" }
+        let hasTest2 = keys.contains { $0.keyID == "test-2" }
+        XCTAssertTrue(hasTest1, "Should find test-1 in list")
+        XCTAssertTrue(hasTest2, "Should find test-2 in list")
+
+        let selectedKeyID = "test-2"
+        let keyExists = keys.contains { $0.keyID == selectedKeyID }
+        XCTAssertTrue(keyExists, "Selected key should exist in list")
+
+        if keyExists {
+            let selected = try CompanionSecureEnclaveEnrollment.inspect(keyID: selectedKeyID, directory: directory)
+            XCTAssertEqual(selected.keyID, "test-2")
+            XCTAssertEqual(selected.state, CompanionSecureEnclaveEnrollment.active)
+        }
+    }
+
     private func package() throws -> [String: String] {
         [
             "version": "RSBA2",

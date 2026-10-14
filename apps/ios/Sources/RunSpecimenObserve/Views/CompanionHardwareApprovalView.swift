@@ -61,7 +61,9 @@ enum ActionOutcome: Equatable {
 }
 
 struct CompanionHardwareApprovalView: View {
-    @AppStorage("rs.observe.selectedKeyID") private var keyID = "iphone-companion"
+    @AppStorage("rs.observe.selectedKeyID") private var persistedKeyID = "iphone-companion"
+    @State private var keyID = ""
+    @State private var hasInitialized = false
     @State private var replacementKeyID = "iphone-companion-2"
     @State private var packageText = ""
     @State private var lines: [String] = []
@@ -101,11 +103,11 @@ struct CompanionHardwareApprovalView: View {
         .navigationTitle("This iPhone")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            refreshKeyState()
-            loadAllKeys()
+            initializeKeySelection()
         }
         .onChange(of: keyID) { oldValue, newValue in
-            if oldValue != newValue {
+            if hasInitialized && oldValue != newValue {
+                persistedKeyID = newValue
                 refreshKeyState()
             }
         }
@@ -586,6 +588,28 @@ struct CompanionHardwareApprovalView: View {
         }
     }
 
+    private func initializeKeySelection() {
+        loadAllKeys()
+
+        let storedKeyID = persistedKeyID
+        let keyExists = allKeys.contains { $0.keyID == storedKeyID }
+
+        if keyExists {
+            keyID = storedKeyID
+        } else if let firstActive = allKeys.first(where: { $0.state == CompanionSecureEnclaveEnrollment.active }) {
+            keyID = firstActive.keyID
+            persistedKeyID = firstActive.keyID
+        } else if let firstKey = allKeys.first {
+            keyID = firstKey.keyID
+            persistedKeyID = firstKey.keyID
+        } else {
+            keyID = storedKeyID
+        }
+
+        hasInitialized = true
+        refreshKeyState()
+    }
+
     private func loadAllKeys() {
         do {
             allKeys = try CompanionSecureEnclaveEnrollment.listKeys(directory: directory)
@@ -664,6 +688,7 @@ struct CompanionHardwareApprovalView: View {
                     feedbackGenerator.notificationOccurred(.success)
                     enrollOutcome = .success("Key enrolled (generation \(record.generation)). Share the pairing record with the Mac.")
                     keyState = .active(generation: record.generation, macUpdatePending: record.macUpdatePending)
+                    persistedKeyID = keyID
                     loadAllKeys()
                 }
             } catch {
@@ -725,6 +750,7 @@ struct CompanionHardwareApprovalView: View {
                 let revokedCarried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: revokedRecord.keyID, directory: directory)
                 await MainActor.run {
                     keyID = newRecord.keyID
+                    persistedKeyID = newRecord.keyID
                     pairingText = String(decoding: newCarried, as: UTF8.self)
                     revokedPairingText = String(decoding: revokedCarried, as: UTF8.self)
                     rotatedFromKeyID = oldKeyID
