@@ -1247,6 +1247,39 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertFalse(client1 === client3, "After invalidation, a new instance should be returned")
     }
 
+    func testFailedRefreshShowsStaleWithoutAdvancingTimestamp() async throws {
+        let session = await CompanionSession()
+        await MainActor.run {
+            session.baseURLString = "http://localhost:9999"
+            session.pairingToken = "test-token"
+            session.tlsFingerprint = ""
+            session.isPaired = true
+        }
+
+        await MainActor.run {
+            XCTAssertNil(session.status, "Status should be nil before refresh")
+        }
+
+        await session.refresh()
+
+        await MainActor.run {
+            XCTAssertNotNil(session.lastError, "Failed refresh should set lastError")
+        }
+    }
+
+    func testPhonePeerKeyStateRefreshesAfterHolderVerifiedCommit() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-commit-refresh-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let stage = PhoneKeyStage(directory: directory)
+        try stage.stage(handle: Data("handle".utf8), publicKey: Data(repeating: 4, count: 65), challengeId: "test-challenge")
+        try stage.commit(ownedBy: "test-challenge", publicKey: Data(repeating: 4, count: 65))
+
+        let generation = try stage.committedGeneration()
+        XCTAssertEqual(generation, 1, "After commit, generation should be 1")
+    }
+
     private func package() throws -> [String: String] {
         [
             "version": "RSBA2",

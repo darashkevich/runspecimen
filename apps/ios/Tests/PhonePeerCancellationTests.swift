@@ -190,6 +190,8 @@ struct PhonePeerCancellationTests {
             try testPhoneKeyCommitFailureKeepsThePreviousGeneration()
             try await testRevokePhonePeerKeyClearsExactRunState()
             try await testRotatePhonePeerKeyClearsExactRunState()
+            try await testCancelAllTasksCancelsInFlightPhonePeerOperation()
+            try await testDisconnectCancelsInFlightPhonePeerOperation()
             print("PhonePeerCancellationTests passed")
         } catch {
             fputs("PhonePeerCancellationTests failed: \(error)\n", stderr)
@@ -730,6 +732,56 @@ func testRotatePhonePeerKeyClearsExactRunState() async throws {
     }
 }
 
+@MainActor
+func testCancelAllTasksCancelsInFlightPhonePeerOperation() async throws {
+    let hold = FetchHold()
+    let peer = HoldingPeer(hold: hold)
+    let signer = CountingSigner()
+    let session = CompanionSession()
+    session.isPaired = true
+    
+    let task = Task {
+        await session.signPhonePeerChallenge(signer: signer, peer: peer)
+    }
+    
+    while await hold.entered == false {
+        await Task.yield()
+    }
+    
+    session.cancelAllTasks()
+    await hold.release()
+    await task.value
+    
+    if signer.signs != 0 || peer.posts != 0 {
+        throw TestFailure.cancelAllTasksDidNotCancelOperation
+    }
+}
+
+@MainActor
+func testDisconnectCancelsInFlightPhonePeerOperation() async throws {
+    let hold = FetchHold()
+    let peer = HoldingPeer(hold: hold)
+    let signer = CountingSigner()
+    let session = CompanionSession()
+    session.isPaired = true
+    
+    let task = Task {
+        await session.signPhonePeerChallenge(signer: signer, peer: peer)
+    }
+    
+    while await hold.entered == false {
+        await Task.yield()
+    }
+    
+    session.disconnect()
+    await hold.release()
+    await task.value
+    
+    if signer.signs != 0 || peer.posts != 0 {
+        throw TestFailure.disconnectDidNotCancelOperation
+    }
+}
+
 enum TestFailure: Error {
     case cancelledPathSignedOrPosted
     case rollbackLostPreviousKey
@@ -742,4 +794,6 @@ enum TestFailure: Error {
     case holderVerificationDidNotEnroll
     case injectedCommitFailureDidNotStop
     case exactRunNotCleared
+    case cancelAllTasksDidNotCancelOperation
+    case disconnectDidNotCancelOperation
 }

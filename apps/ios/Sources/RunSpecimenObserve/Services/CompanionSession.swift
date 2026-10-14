@@ -183,19 +183,52 @@ final class CompanionSession: ObservableObject {
     }
 
     func refresh() async {
-        lastError = nil
-        do {
-            try await refreshStatus()
-        } catch {
-            lastError = error.localizedDescription
+        activeRefreshTask?.cancel()
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.lastError = nil
+            do {
+                guard !Task.isCancelled else { return }
+                try await self.refreshStatus()
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.lastError = error.localizedDescription
+            }
+            if self.activeRefreshTask?.isCancelled == false {
+                self.activeRefreshTask = nil
+            }
         }
+        activeRefreshTask = task
+        await task.value
     }
 
     func signPhonePeerChallenge(
         signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
         peer: (any PhonePeerTransport)? = nil
     ) async {
+        activePhonePeerTask?.cancel()
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.signPhonePeerChallengeImpl(signer: signer, peer: peer)
+            if self.activePhonePeerTask?.isCancelled == false {
+                self.activePhonePeerTask = nil
+            }
+        }
+        activePhonePeerTask = task
+        await task.value
+    }
+
+    private func signPhonePeerChallengeImpl(
+        signer: PhoneChallengeSigning,
+        peer: (any PhonePeerTransport)?
+    ) async {
         lastError = nil
+        guard !Task.isCancelled else {
+            phonePeerNote = "Phone peer challenge cancelled before a signature was returned."
+            return
+        }
         switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
         case .valid:
             break
@@ -215,23 +248,34 @@ final class CompanionSession: ObservableObject {
         phoneSignGeneration += 1
         let generation = phoneSignGeneration
         do {
+            guard !Task.isCancelled else { throw PhonePeerSignError.cancelled }
             let message = try await transport.fetchPhonePeerChallenge()
             try Task.checkCancellation()
             guard generation == phoneSignGeneration else { throw PhonePeerSignError.cancelled }
+            guard !Task.isCancelled else { throw PhonePeerSignError.cancelled }
             phoneChallenge = message
             guard generation == phoneSignGeneration else { throw PhonePeerSignError.cancelled }
             let bytes = try boundPhoneChallengeBytes(message)
             try Task.checkCancellation()
             guard generation == phoneSignGeneration else { throw PhonePeerSignError.cancelled }
+            guard !Task.isCancelled else { throw PhonePeerSignError.cancelled }
             let signed = try signer.sign(message: bytes)
             try Task.checkCancellation()
             guard generation == phoneSignGeneration else {
                 signer.discardStagedEnrollment()
                 throw PhonePeerSignError.cancelled
             }
+            guard !Task.isCancelled else {
+                signer.discardStagedEnrollment()
+                throw PhonePeerSignError.cancelled
+            }
             try await transport.willSubmitPhonePeerSignature()
             try Task.checkCancellation()
             guard generation == phoneSignGeneration else {
+                signer.discardStagedEnrollment()
+                throw PhonePeerSignError.cancelled
+            }
+            guard !Task.isCancelled else {
                 signer.discardStagedEnrollment()
                 throw PhonePeerSignError.cancelled
             }
@@ -242,6 +286,11 @@ final class CompanionSession: ObservableObject {
                 signature: signed.signature
             )
             guard generation == phoneSignGeneration else {
+                signer.discardStagedEnrollment()
+                try? await transport.invalidatePhonePeerChallenge(challengeId: message.challengeId)
+                throw PhonePeerSignError.cancellationTooLate
+            }
+            guard !Task.isCancelled else {
                 signer.discardStagedEnrollment()
                 try? await transport.invalidatePhonePeerChallenge(challengeId: message.challengeId)
                 throw PhonePeerSignError.cancellationTooLate
@@ -276,6 +325,26 @@ final class CompanionSession: ObservableObject {
         signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
         peer: (any PhonePeerTransport)? = nil
     ) async {
+        activePhonePeerTask?.cancel()
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.commitPhoneKeyAfterHolderVerificationImpl(signer: signer, peer: peer)
+            if self.activePhonePeerTask?.isCancelled == false {
+                self.activePhonePeerTask = nil
+            }
+        }
+        activePhonePeerTask = task
+        await task.value
+    }
+
+    private func commitPhoneKeyAfterHolderVerificationImpl(
+        signer: PhoneChallengeSigning,
+        peer: (any PhonePeerTransport)?
+    ) async {
+        guard !Task.isCancelled else {
+            phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
+            return
+        }
         switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
         case .valid:
             break
@@ -299,12 +368,14 @@ final class CompanionSession: ObservableObject {
         let generation = phoneSignGeneration
         let challengeId = message.challengeId
         do {
+            guard !Task.isCancelled else { throw CancellationError() }
             let record = try await transport.fetchHolderVerification(challengeId: challengeId)
             try Task.checkCancellation()
             guard generation == phoneSignGeneration, phoneChallenge?.challengeId == challengeId, signedPhonePublicKey == phonePublicKey else {
                 phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
                 return
             }
+            guard !Task.isCancelled else { throw CancellationError() }
             let decision = phoneReceiptAuthentic(
                 record: record,
                 challenge: message,
@@ -320,7 +391,9 @@ final class CompanionSession: ObservableObject {
                 phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
                 return
             }
+            guard !Task.isCancelled else { throw CancellationError() }
             try signer.commitEnrollment(ownedBy: challengeId, publicKey: phonePublicKey)
+            guard !Task.isCancelled else { throw CancellationError() }
             acceptedReceiptSignatures.insert(signature)
             phoneChallenge = nil
             refreshPhonePeerKeyState()
@@ -341,7 +414,27 @@ final class CompanionSession: ObservableObject {
         now: Int = Int(Date().timeIntervalSince1970),
         peer: (any ExactRunPhoneSigningTransport)? = nil
     ) async {
+        activeExactRunTask?.cancel()
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.reviewRetainedExactRunImpl(now: now, peer: peer)
+            if self.activeExactRunTask?.isCancelled == false {
+                self.activeExactRunTask = nil
+            }
+        }
+        activeExactRunTask = task
+        await task.value
+    }
+
+    private func reviewRetainedExactRunImpl(
+        now: Int,
+        peer: (any ExactRunPhoneSigningTransport)?
+    ) async {
         lastError = nil
+        guard !Task.isCancelled else {
+            exactRunNote = "Exact run review was cancelled before a signature was returned."
+            return
+        }
         switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
         case .valid:
             break
@@ -364,12 +457,14 @@ final class CompanionSession: ObservableObject {
             return
         }
         do {
+            guard !Task.isCancelled else { throw CancellationError() }
             let fetched = try await transport.fetchRetainedExactRun()
             try Task.checkCancellation()
             guard generation == exactRunGeneration else {
                 exactRunNote = "Exact run review was cancelled before a signature was returned."
                 return
             }
+            guard !Task.isCancelled else { throw CancellationError() }
             let pin = pinnedHolderId.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !pin.isEmpty else {
                 exactRunNote = "Holder identity is not pinned. The mailbox holder id was not trusted."
@@ -380,10 +475,16 @@ final class CompanionSession: ObservableObject {
                 exactRunNote = "Exact run review was replaced before it could be shown."
                 return
             }
+            guard !Task.isCancelled else { throw CancellationError() }
             reviewedExactRun = parsed
             reviewedExactRunLines = parsed.lines
             reviewedExactRunArgv = parsed.launchArgv
             exactRunNote = "Review these bytes before signing. Signing uses the enrolled phone key and does not create one."
+        } catch is CancellationError {
+            reviewedExactRun = nil
+            reviewedExactRunLines = []
+            reviewedExactRunArgv = []
+            exactRunNote = "Exact run review was cancelled before a signature was returned."
         } catch {
             if generation == exactRunGeneration {
                 reviewedExactRun = nil
@@ -403,7 +504,30 @@ final class CompanionSession: ObservableObject {
         beforeSign: (@MainActor () async -> Void)? = nil,
         beforeSubmit: (@MainActor () async -> Void)? = nil
     ) async {
+        activeExactRunTask?.cancel()
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.approveReviewedExactRunImpl(signer: signer, peer: peer, now: now, beforeSign: beforeSign, beforeSubmit: beforeSubmit)
+            if self.activeExactRunTask?.isCancelled == false {
+                self.activeExactRunTask = nil
+            }
+        }
+        activeExactRunTask = task
+        await task.value
+    }
+
+    private func approveReviewedExactRunImpl(
+        signer: PhoneChallengeSigning,
+        peer: (any ExactRunPhoneSigningTransport)?,
+        now: @MainActor () -> Int,
+        beforeSign: (@MainActor () async -> Void)?,
+        beforeSubmit: (@MainActor () async -> Void)?
+    ) async {
         lastError = nil
+        guard !Task.isCancelled else {
+            exactRunNote = "Exact run was cancelled before a signature was returned."
+            return
+        }
         switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
         case .valid:
             break
@@ -430,6 +554,7 @@ final class CompanionSession: ObservableObject {
                 await beforeSign()
             }
             try Task.checkCancellation()
+            guard !Task.isCancelled else { throw CancellationError() }
             let pin = pinnedHolderId.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !pin.isEmpty, reviewed.holderId == pin else {
                 exactRunNote = "Holder identity is not the pinned holder. The signature was not returned."
@@ -446,10 +571,13 @@ final class CompanionSession: ObservableObject {
                 exactRunNote = "Exact run changed after review. The signature was not returned."
                 return
             }
+            guard !Task.isCancelled else { throw CancellationError() }
             let signed = try signer.signCommitted(message: reviewed.bound)
             try Task.checkCancellation()
+            guard !Task.isCancelled else { throw CancellationError() }
             let again = try await transport.fetchRetainedExactRun()
             try Task.checkCancellation()
+            guard !Task.isCancelled else { throw CancellationError() }
             guard now() < reviewed.expiry else {
                 exactRunNote = "Exact run expired before the signature was returned."
                 return
@@ -465,10 +593,12 @@ final class CompanionSession: ObservableObject {
                 await beforeSubmit()
             }
             try Task.checkCancellation()
+            guard !Task.isCancelled else { throw CancellationError() }
             guard generation == exactRunGeneration, reviewedExactRun?.bound == reviewed.bound, reviewedExactRun?.nonce == reviewed.nonce else {
                 exactRunNote = "Exact run was cancelled before the signature was returned."
                 return
             }
+            guard !Task.isCancelled else { throw CancellationError() }
             try await transport.submitRetainedExactRunSignature(challengeId: reviewed.nonce, signature: signed.signature)
             guard generation == exactRunGeneration else {
                 exactRunNote = "Exact run was cancelled after the signature left the phone."
@@ -487,6 +617,8 @@ final class CompanionSession: ObservableObject {
     }
 
     func cancelExactRunReview() {
+        activeExactRunTask?.cancel()
+        activeExactRunTask = nil
         exactRunGeneration += 1
         reviewedExactRun = nil
         reviewedExactRunLines = []
@@ -496,6 +628,8 @@ final class CompanionSession: ObservableObject {
     }
 
     func cancelPhonePeerChallenge() async {
+        activePhonePeerTask?.cancel()
+        activePhonePeerTask = nil
         phoneSignGeneration += 1
         phoneChallenge = nil
         phonePeerNote = "Phone peer challenge cancelled before a signature was returned."
@@ -534,8 +668,22 @@ final class CompanionSession: ObservableObject {
     }
 
     func submitRemoteConfirm() async {
+        activeRemoteConfirmTask?.cancel()
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.submitRemoteConfirmImpl()
+            if self.activeRemoteConfirmTask?.isCancelled == false {
+                self.activeRemoteConfirmTask = nil
+            }
+        }
+        activeRemoteConfirmTask = task
+        await task.value
+    }
+
+    private func submitRemoteConfirmImpl() async {
         lastError = nil
         lastRemoteConfirmNote = nil
+        guard !Task.isCancelled else { return }
         switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
         case .valid:
             break
@@ -562,7 +710,9 @@ final class CompanionSession: ObservableObject {
             return
         }
         do {
+            guard !Task.isCancelled else { return }
             let result = try await client.submitRemoteConfirm(challenge: challenge, phrase: phrase)
+            guard !Task.isCancelled else { return }
             if result.isAmbiguous {
                 lastError = "Server returned ambiguous confirm response. Refresh status to check state."
                 return
@@ -571,19 +721,36 @@ final class CompanionSession: ObservableObject {
                 lastError = result.note ?? "Confirm was not accepted by the server."
                 return
             }
+            guard !Task.isCancelled else { return }
             lastRemoteConfirmNote = result.note
                 ?? "Remote human confirm settled. This is not equivalent to local TTY APPROVE."
             challengeInput = ""
             approvePhraseInput = ""
             try await refreshStatus()
+        } catch is CancellationError {
+            return
         } catch {
             lastError = error.localizedDescription
         }
     }
 
     func submitRemoteRefuse() async {
+        activeRemoteConfirmTask?.cancel()
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.submitRemoteRefuseImpl()
+            if self.activeRemoteConfirmTask?.isCancelled == false {
+                self.activeRemoteConfirmTask = nil
+            }
+        }
+        activeRemoteConfirmTask = task
+        await task.value
+    }
+
+    private func submitRemoteRefuseImpl() async {
         lastError = nil
         lastRemoteConfirmNote = nil
+        guard !Task.isCancelled else { return }
         switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
         case .valid:
             break
@@ -610,7 +777,9 @@ final class CompanionSession: ObservableObject {
             return
         }
         do {
+            guard !Task.isCancelled else { return }
             let result = try await client.submitRemoteRefuse(challenge: challenge, reason: reason)
+            guard !Task.isCancelled else { return }
             if result.isAmbiguous {
                 lastError = "Server returned ambiguous refuse response. Refresh status to check state."
                 return
@@ -619,12 +788,15 @@ final class CompanionSession: ObservableObject {
                 lastError = result.note ?? "Refuse was not accepted by the server."
                 return
             }
+            guard !Task.isCancelled else { return }
             lastRemoteConfirmNote = result.note
                 ?? "Pending refused. Re-arm or use local TTY APPROVE. Not an approval."
             challengeInput = ""
             approvePhraseInput = ""
             refuseReasonInput = ""
             try await refreshStatus()
+        } catch is CancellationError {
+            return
         } catch {
             lastError = error.localizedDescription
         }
