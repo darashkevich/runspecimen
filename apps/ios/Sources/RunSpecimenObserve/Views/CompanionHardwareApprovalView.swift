@@ -532,7 +532,7 @@ struct CompanionHardwareApprovalView: View {
                 if let key = dismissKey {
                     Button {
                         withAnimation {
-                            dismissedExports.insert(key)
+                            _ = dismissedExports.insert(key)
                         }
                     } label: {
                         Image(systemName: "xmark.circle.fill")
