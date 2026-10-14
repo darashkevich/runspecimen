@@ -1016,6 +1016,67 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(rotatedNewRecord["generation"], rotatedOldRecord["generation"], "Both rotated keys have same generation (old + 1)")
     }
 
+    func testListKeysWithCorruptIdentifiesCorruptRecords() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-corrupt-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+        let validRecord = try CompanionSecureEnclaveEnrollment.enroll(keyID: "valid-key", directory: directory)
+        XCTAssertEqual(validRecord.state, CompanionSecureEnclaveEnrollment.active)
+
+        try Data("not-json".utf8).write(to: directory.appendingPathComponent("corrupt-key.pairing.json"))
+        try Data("{\"invalid\": true}".utf8).write(to: directory.appendingPathComponent("malformed-key.pairing.json"))
+
+        let listing = try CompanionSecureEnclaveEnrollment.listKeysWithCorrupt(directory: directory)
+
+        XCTAssertEqual(listing.validRecords.count, 1, "Should have one valid record")
+        XCTAssertEqual(listing.validRecords.first?.keyID, "valid-key")
+        XCTAssertEqual(listing.corruptKeyIDs.count, 2, "Should identify two corrupt records")
+        XCTAssertTrue(listing.corruptKeyIDs.contains { $0.keyID == "corrupt-key" }, "Should identify corrupt-key as corrupt")
+        XCTAssertTrue(listing.corruptKeyIDs.contains { $0.keyID == "malformed-key" }, "Should identify malformed-key as corrupt")
+    }
+
+    func testRecoveryAtLaunchCleansUpIncompleteRotation() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-launch-recovery-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let state = RotationState(
+            oldKeyID: "old-key",
+            newKeyID: "new-key",
+            phase: .newKeyStaged,
+            oldKeyRevoked: false,
+            newKeyCreated: true
+        )
+        let stateData = try JSONEncoder().encode(state)
+        let stateURL = directory.appendingPathComponent(".rotation-state.json")
+        try stateData.write(to: stateURL)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stateURL.path), "Rotation state should exist before recovery")
+
+        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stateURL.path), "Rotation state should be cleaned up after recovery")
+    }
+
+    func testMarkMacUpdatedClearsPendingFlag() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-mark-updated-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+        let record = try CompanionSecureEnclaveEnrollment.enroll(keyID: "test-mark", directory: directory)
+        XCTAssertTrue(record.macUpdatePending, "New enrollment should have Mac update pending")
+
+        let before = try CompanionSecureEnclaveEnrollment.inspect(keyID: "test-mark", directory: directory)
+        XCTAssertTrue(before.macUpdatePending, "Should still be pending before mark")
+
+        try CompanionSecureEnclaveEnrollment.markMacUpdated(keyID: "test-mark", directory: directory)
+
+        let after = try CompanionSecureEnclaveEnrollment.inspect(keyID: "test-mark", directory: directory)
+        XCTAssertFalse(after.macUpdatePending, "Should not be pending after mark")
+    }
+
     private func package() throws -> [String: String] {
         [
             "version": "RSBA2",

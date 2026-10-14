@@ -376,6 +376,35 @@ public enum CompanionSecureEnclaveEnrollment {
         }
     }
 
+    public struct KeyListingResult {
+        public var validRecords: [CompanionPairingRecord]
+        public var corruptKeyIDs: [(keyID: String, error: String)]
+    }
+
+    public static func listKeysWithCorrupt(directory: URL) throws -> KeyListingResult {
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            return KeyListingResult(validRecords: [], corruptKeyIDs: [])
+        }
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        var validRecords: [CompanionPairingRecord] = []
+        var corruptKeyIDs: [(keyID: String, error: String)] = []
+
+        for url in files {
+            guard url.pathExtension == "json", url.lastPathComponent.hasSuffix(".pairing.json") else { continue }
+            let keyID = String(url.lastPathComponent.dropLast(".pairing.json".count))
+            do {
+                let record = try load(keyID: keyID, directory: directory)
+                validRecords.append(record)
+            } catch let error as CompanionHardwareRefusal {
+                corruptKeyIDs.append((keyID: keyID, error: error.userMessage))
+            } catch {
+                corruptKeyIDs.append((keyID: keyID, error: error.localizedDescription))
+            }
+        }
+
+        return KeyListingResult(validRecords: validRecords, corruptKeyIDs: corruptKeyIDs)
+    }
+
     public static func markMacUpdated(keyID: String, directory: URL) throws {
         try validateKeyID(keyID)
         try withLock(directory) {
