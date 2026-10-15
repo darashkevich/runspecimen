@@ -73,26 +73,26 @@ final class CompanionSession: ObservableObject {
     }
 
     func revokePhonePeerKey() throws {
+        exactRunGeneration += 1
+        reviewedExactRun = nil
+        reviewedExactRunLines = []
+        reviewedExactRunArgv = []
         let signer = LivePhoneSecureEnclaveSigner()
         try signer.revokeEnrollment()
         phonePeerKeyState = .noKey
         phoneChallenge = nil
         signedPhonePublicKey = nil
-        exactRunGeneration += 1
-        reviewedExactRun = nil
-        reviewedExactRunLines = []
-        reviewedExactRunArgv = []
         phonePeerNote = "Phone-peer key revoked. Re-enroll by signing a new challenge."
     }
 
     func rotatePhonePeerKey() throws {
-        let signer = LivePhoneSecureEnclaveSigner()
-        try signer.rotateEnrollment()
-        try signer.stage.commit()
         exactRunGeneration += 1
         reviewedExactRun = nil
         reviewedExactRunLines = []
         reviewedExactRunArgv = []
+        let signer = LivePhoneSecureEnclaveSigner()
+        try signer.rotateEnrollment()
+        try signer.stage.commit()
         refreshPhonePeerKeyState()
         phonePeerNote = "Phone-peer key rotated. The Mac must accept the new key."
     }

@@ -2,6 +2,15 @@ import CryptoKit
 import Foundation
 @testable import RunSpecimenObserve
 
+func testPublicKey(_ suffix: String) -> Data {
+    var data = Data(repeating: 0x04, count: 65)
+    let suffixBytes = Array(suffix.utf8)
+    for (i, byte) in suffixBytes.prefix(32).enumerated() {
+        data[1 + i] = byte
+    }
+    return data
+}
+
 @MainActor
 final class HoldingPeer: PhonePeerTransport {
     let hold: FetchHold
@@ -20,7 +29,7 @@ final class HoldingPeer: PhonePeerTransport {
 
     func fetchPhonePeerChallenge() async throws -> PhonePeerChallengeMessage {
         if holdFetch {
-            await hold.enter()
+            try await hold.enter()
         }
         return PhonePeerChallengeMessage(
             challengeId: "nonce-1",
@@ -34,7 +43,7 @@ final class HoldingPeer: PhonePeerTransport {
 
     func willSubmitPhonePeerSignature() async throws {
         if holdBeforePost {
-            await hold.enter()
+            try await hold.enter()
         }
     }
 
@@ -47,7 +56,7 @@ final class HoldingPeer: PhonePeerTransport {
         posts += 1
         published = true
         if holdDuringPost {
-            await hold.enter()
+            try await hold.enter()
         }
     }
 
@@ -58,7 +67,7 @@ final class HoldingPeer: PhonePeerTransport {
 
     func fetchHolderVerification(challengeId: String) async throws -> PhoneHolderVerification {
         if holdVerification {
-            await hold.enter()
+            try await hold.enter()
         }
         return verification ?? PhoneHolderVerification(verified: false, consumed: false, invalidated: false)
     }
@@ -108,7 +117,7 @@ final class RecordingExactPeer: ExactRunPhoneSigningTransport {
     func fetchRetainedExactRun() async throws -> FetchedExactRun {
         fetches += 1
         if let hold, fetches == 1 {
-            await hold.enter()
+            try await hold.enter()
         }
         if fetches > 1, let replacement {
             return replacement
@@ -145,13 +154,25 @@ func sampleFetchedExactRun(policy: String = "companion", nonce: String = "nonce-
 }
 
 actor FetchHold {
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [CheckedContinuation<Void, any Error>] = []
     private(set) var entered = false
 
-    func enter() async {
+    func enter() async throws {
         entered = true
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                waiters.append(continuation)
+            }
+        } onCancel: {
+            Task { await self.cancelAllWaiters() }
+        }
+    }
+
+    func cancelAllWaiters() {
+        let pending = waiters
+        waiters = []
+        for continuation in pending {
+            continuation.resume(throwing: CancellationError())
         }
     }
 
@@ -159,7 +180,7 @@ actor FetchHold {
         let pending = waiters
         waiters = []
         for continuation in pending {
-            continuation.resume()
+            continuation.resume(returning: ())
         }
     }
 }
@@ -530,7 +551,7 @@ func testExactRunCancellationBeforeSignDoesNotSign() async throws {
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     let task = Task {
         await session.approveReviewedExactRun(signer: signer, peer: peer, now: { 1_700_000_000 }, beforeSign: {
-            await hold.enter()
+            try? await hold.enter()
         })
     }
     while await hold.entered == false {
@@ -586,8 +607,9 @@ func testExactRunSubstitutedHolderDoesNotSign() async throws {
 
 func testPhoneKeyOwnershipRejectsADifferentChallenge() throws {
     let directory = URL(fileURLWithPath: "/private/tmp/rs-qa-own-phone-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
     let stage = PhoneKeyStage(directory: directory)
-    let publicKey = Data("public-a".utf8)
+    let publicKey = testPublicKey("public-a")
     try stage.stage(handle: Data("handle-a".utf8), publicKey: publicKey, challengeId: "nonce-a")
     do {
         try stage.commit(ownedBy: "nonce-b", publicKey: publicKey)
@@ -607,15 +629,18 @@ func testPhoneKeyOwnershipRejectsADifferentChallenge() throws {
 
 func testPhoneKeyCommitFailureKeepsThePreviousGeneration() throws {
     let directory = URL(fileURLWithPath: "/private/tmp/rs-qa-bind-phone-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
     let stage = PhoneKeyStage(directory: directory)
-    try stage.stage(handle: Data("previous".utf8), publicKey: Data("public-a".utf8))
+    let pubKeyA = testPublicKey("public-a")
+    let pubKeyB = testPublicKey("public-b")
+    try stage.stage(handle: Data("previous".utf8), publicKey: pubKeyA)
     try stage.commit()
     let generation = try stage.committedGeneration()
     let publicKey = try stage.committedPublicKey()
-    if generation != 1 || publicKey != Data("public-a".utf8) {
+    if generation != 1 || publicKey != pubKeyA {
         throw TestFailure.rollbackLostPreviousKey
     }
-    try stage.rotate(handle: Data("next".utf8), publicKey: Data("public-b".utf8))
+    try stage.rotate(handle: Data("next".utf8), publicKey: pubKeyB)
     do {
         try stage.commit(failAfterFirstWrite: true)
         throw TestFailure.injectedCommitFailureDidNotStop
@@ -626,17 +651,20 @@ func testPhoneKeyCommitFailureKeepsThePreviousGeneration() throws {
     }
     let handle = try stage.committedHandle()
     let keptPublic = try stage.committedPublicKey()
-    if handle != Data("previous".utf8) || keptPublic != Data("public-a".utf8) {
+    if handle != Data("previous".utf8) || keptPublic != pubKeyA {
         throw TestFailure.rollbackLostPreviousKey
     }
 }
 
 func testPhoneKeyStageRollsBackAndRevokes() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
     let stage = PhoneKeyStage(directory: directory)
-    try stage.stage(handle: Data("previous".utf8), publicKey: Data("public-a".utf8))
+    let pubKeyA = testPublicKey("public-a")
+    let pubKeyB = testPublicKey("public-b")
+    try stage.stage(handle: Data("previous".utf8), publicKey: pubKeyA)
     try stage.commit()
-    try stage.rotate(handle: Data("next".utf8), publicKey: Data("public-b".utf8))
+    try stage.rotate(handle: Data("next".utf8), publicKey: pubKeyB)
     stage.discard()
     let reloaded = try stage.committedHandle()
     if reloaded != Data("previous".utf8) {

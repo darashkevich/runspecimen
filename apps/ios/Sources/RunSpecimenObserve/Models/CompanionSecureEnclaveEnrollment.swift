@@ -150,6 +150,7 @@ public enum CompanionSecureEnclaveEnrollment {
     static var testAuthenticator: ((String) throws -> Void)?
     static var testKeyCreator: ((String) throws -> Data)?
     static var testKeyDeleter: ((String) throws -> Void)?
+    static var testInMemoryKeychain: [String: Data]?
     #endif
 
     public static func automationRefused() throws -> Never {
@@ -805,6 +806,10 @@ public enum CompanionSecureEnclaveEnrollment {
     private static func saveBlob(_ data: Data, keyID: String) throws {
         #if RUNSPECIMEN_TEST_HOOKS
         if testKeyCreator != nil { return }
+        if testInMemoryKeychain != nil {
+            testInMemoryKeychain?[keyID] = data
+            return
+        }
         #endif
 
         let query: [String: Any] = [
@@ -826,6 +831,15 @@ public enum CompanionSecureEnclaveEnrollment {
     }
 
     private static func loadBlob(keyID: String) throws -> Data {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let inMemory = testInMemoryKeychain {
+            guard let data = inMemory[keyID] else {
+                throw CompanionHardwareRefusal.keychainError(errSecItemNotFound)
+            }
+            return data
+        }
+        #endif
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -846,6 +860,10 @@ public enum CompanionSecureEnclaveEnrollment {
         #if RUNSPECIMEN_TEST_HOOKS
         if let testDeleter = testKeyDeleter {
             try testDeleter(keyID)
+            return
+        }
+        if testInMemoryKeychain != nil {
+            testInMemoryKeychain?.removeValue(forKey: keyID)
             return
         }
         #endif

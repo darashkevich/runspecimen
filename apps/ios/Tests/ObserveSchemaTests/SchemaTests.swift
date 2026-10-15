@@ -8,12 +8,14 @@ final class ObserveSchemaTests: XCTestCase {
         CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in }
         CompanionSecureEnclaveEnrollment.testKeyCreator = nil
         CompanionSecureEnclaveEnrollment.testKeyDeleter = nil
+        CompanionSecureEnclaveEnrollment.testInMemoryKeychain = [:]
     }
 
     override func tearDown() {
         CompanionSecureEnclaveEnrollment.testAuthenticator = nil
         CompanionSecureEnclaveEnrollment.testKeyCreator = nil
         CompanionSecureEnclaveEnrollment.testKeyDeleter = nil
+        CompanionSecureEnclaveEnrollment.testInMemoryKeychain = nil
         CompanionSecureEnclaveEnrollment.beforeFinalSignatureDecision = nil
         CompanionSecureEnclaveEnrollment.clock = { Int(Date().timeIntervalSince1970) }
         super.tearDown()
@@ -74,7 +76,7 @@ final class ObserveSchemaTests: XCTestCase {
         }
         try Data("not-json".utf8).write(to: directory.appendingPathComponent("phone-vector.pairing.json"))
         XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.inspect(keyID: "phone-vector", directory: directory)) { error in
-            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("enrollment"))
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("json"), "Invalid JSON should return malformed(json), not malformed(enrollment)")
         }
         let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
         XCTAssertEqual(names, ["phone-vector.pairing.json"])
@@ -236,7 +238,7 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url), original)
 
         try Data("not-json".utf8).write(to: url)
-        let malformed = try Data(contentsOf: url)
+        let malformedData = try Data(contentsOf: url)
         created = 0
         XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.enrollReplacingMissingFile(
             keyID: "phone-vector",
@@ -247,10 +249,10 @@ final class ObserveSchemaTests: XCTestCase {
             },
             cleanup: {}
         )) { error in
-            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("enrollment"))
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("json"), "Invalid JSON should return malformed(json)")
         }
         XCTAssertEqual(created, 0)
-        XCTAssertEqual(try Data(contentsOf: url), malformed)
+        XCTAssertEqual(try Data(contentsOf: url), malformedData)
 
         XCTAssertEqual(chmod(url.path, 0), 0)
         defer { _ = chmod(url.path, 0o644) }
@@ -264,11 +266,14 @@ final class ObserveSchemaTests: XCTestCase {
             },
             cleanup: {}
         )) { error in
-            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("enrollment"))
+            guard case .fileReadError = error as? CompanionHardwareRefusal else {
+                XCTFail("Expected fileReadError for unreadable file, got \(error)")
+                return
+            }
         }
         XCTAssertEqual(created, 0)
         _ = chmod(url.path, 0o644)
-        XCTAssertEqual(try Data(contentsOf: url), malformed)
+        XCTAssertEqual(try Data(contentsOf: url), malformedData)
 
         let revoked = sampleRecord(state: CompanionSecureEnclaveEnrollment.revoked, generation: 4)
         try CompanionSecureEnclaveEnrollment.storeEnrollment(revoked, directory: directory) {}
