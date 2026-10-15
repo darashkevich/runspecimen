@@ -1265,7 +1265,8 @@ final class ObserveSchemaTests: XCTestCase {
         let maxSuffix = "test-\(Int.max)"
         let result = CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: maxSuffix, existingKeyIDs: [])
         XCTAssertNotEqual(result, "", "IOSQA6-15: Should not crash with Int.max suffix")
-        XCTAssertFalse(result.contains("-\(Int.max + 1)"), "IOSQA6-15: Should not overflow to Int.min")
+        let overflowed = Int.max &+ 1
+        XCTAssertFalse(result.contains("-\(overflowed)"), "IOSQA6-15: Should not overflow to Int.min")
         XCTAssertEqual(result, "test-\(Int.max)-2", "Should fall back to appending -2 when overflow would occur")
     }
 
