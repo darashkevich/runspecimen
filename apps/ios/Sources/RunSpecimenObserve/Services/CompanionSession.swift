@@ -18,6 +18,16 @@ final class CompanionSession: ObservableObject {
     @Published var capabilities: CompanionCapabilities?
     @Published var status: CompanionStatus?
     @Published var lastError: String?
+    @Published var lastSuccessfulRefresh: Date?
+    @Published var refreshOutcome: RefreshOutcome = .notAttempted
+    
+    enum RefreshOutcome: Equatable {
+        case notAttempted
+        case inProgress
+        case success(Date)
+        case failure(String)
+        case cancelled
+    }
     @Published var lastAttentionNote: String?
     @Published var challengeInput: String = ""
     @Published var approvePhraseInput: String = ""
@@ -37,12 +47,17 @@ final class CompanionSession: ObservableObject {
     private var phonePeerKeyStateRevision = 0
     private var exactRunGeneration = 0
     private var reviewedExactRun: ParsedExactRun?
+    private var reviewedExactRunKeyGeneration: Int?
     private var acceptedReceiptSignatures: Set<String> = []
 
     private var activeRefreshTask: Task<Void, Never>?
     private var activePhonePeerTask: Task<Void, Never>?
     private var activeExactRunTask: Task<Void, Never>?
     private var activeRemoteConfirmTask: Task<Void, Never>?
+    private var refreshTaskGeneration = 0
+    private var phonePeerTaskGeneration = 0
+    private var exactRunTaskGeneration = 0
+    private var remoteConfirmTaskGeneration = 0
 
     private var cachedClient: CompanionClient?
     private var cachedClientConfig: PairingConfig?
@@ -56,10 +71,20 @@ final class CompanionSession: ObservableObject {
         case unknown
         case noKey
         case enrolled(generation: Int)
+        case rotating(oldGeneration: Int, newPublicKey: String)
         case error(String)
 
         var isEnrolled: Bool {
-            if case .enrolled = self { return true }
+            switch self {
+            case .enrolled, .rotating:
+                return true
+            default:
+                return false
+            }
+        }
+        
+        var isRotating: Bool {
+            if case .rotating = self { return true }
             return false
         }
     }
@@ -93,9 +118,17 @@ final class CompanionSession: ObservableObject {
         let signer = LivePhoneSecureEnclaveSigner()
         do {
             let generation = try signer.stage.committedGeneration()
-            phonePeerKeyState = .enrolled(generation: generation)
+            if signer.stage.hasStagedKey(), let staged = try? signer.stage.stagedPublicKey() {
+                phonePeerKeyState = .rotating(oldGeneration: generation, newPublicKey: staged.base64EncodedString())
+            } else {
+                phonePeerKeyState = .enrolled(generation: generation)
+            }
         } catch {
-            phonePeerKeyState = .noKey
+            if signer.stage.hasStagedKey(), let staged = try? signer.stage.stagedPublicKey() {
+                phonePeerKeyState = .rotating(oldGeneration: 0, newPublicKey: staged.base64EncodedString())
+            } else {
+                phonePeerKeyState = .noKey
+            }
         }
 
         #if DEBUG
@@ -143,6 +176,7 @@ final class CompanionSession: ObservableObject {
         reviewedExactRun = nil
         reviewedExactRunLines = []
         reviewedExactRunArgv = []
+        reviewedExactRunKeyGeneration = nil
         let signer = LivePhoneSecureEnclaveSigner()
         try signer.revokeEnrollment()
         phonePeerKeyState = .noKey
@@ -156,11 +190,28 @@ final class CompanionSession: ObservableObject {
         reviewedExactRun = nil
         reviewedExactRunLines = []
         reviewedExactRunArgv = []
+        reviewedExactRunKeyGeneration = nil
         let signer = LivePhoneSecureEnclaveSigner()
         try signer.rotateEnrollment()
+        refreshPhonePeerKeyState()
+        phonePeerNote = "Phone-peer key rotation started. Export the new key to the Mac, then complete the rotation."
+    }
+    
+    func completePhonePeerKeyRotation() throws {
+        let signer = LivePhoneSecureEnclaveSigner()
+        guard signer.stage.hasStagedKey() else {
+            throw CompanionClientError.transport("No rotation in progress")
+        }
         try signer.stage.commit()
         refreshPhonePeerKeyState()
-        phonePeerNote = "Phone-peer key rotated. The Mac must accept the new key."
+        phonePeerNote = "Phone-peer key rotation completed. The old key was revoked."
+    }
+    
+    func cancelPhonePeerKeyRotation() {
+        let signer = LivePhoneSecureEnclaveSigner()
+        signer.stage.discard()
+        refreshPhonePeerKeyState()
+        phonePeerNote = "Phone-peer key rotation cancelled. The old key is still active."
     }
 
     func cancelAllTasks() {
@@ -251,19 +302,37 @@ final class CompanionSession: ObservableObject {
 
     func refresh() async {
         activeRefreshTask?.cancel()
+        refreshTaskGeneration += 1
+        let myGeneration = refreshTaskGeneration
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             self.lastError = nil
+            self.refreshOutcome = .inProgress
             do {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    self.refreshOutcome = .cancelled
+                    return
+                }
                 try await self.refreshStatus()
+                guard !Task.isCancelled else {
+                    self.refreshOutcome = .cancelled
+                    return
+                }
+                let now = Date()
+                self.lastSuccessfulRefresh = now
+                self.refreshOutcome = .success(now)
             } catch is CancellationError {
+                self.refreshOutcome = .cancelled
                 return
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    self.refreshOutcome = .cancelled
+                    return
+                }
                 self.lastError = error.localizedDescription
+                self.refreshOutcome = .failure(error.localizedDescription)
             }
-            if self.activeRefreshTask?.isCancelled == false {
+            if self.refreshTaskGeneration == myGeneration {
                 self.activeRefreshTask = nil
             }
         }
@@ -280,10 +349,12 @@ final class CompanionSession: ObservableObject {
         peer: (any PhonePeerTransport)? = nil
     ) async {
         activePhonePeerTask?.cancel()
+        phonePeerTaskGeneration += 1
+        let myGeneration = phonePeerTaskGeneration
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.signPhonePeerChallengeImpl(signer: signer, peer: peer)
-            if self.activePhonePeerTask?.isCancelled == false {
+            if self.phonePeerTaskGeneration == myGeneration {
                 self.activePhonePeerTask = nil
             }
         }
@@ -401,10 +472,12 @@ final class CompanionSession: ObservableObject {
         peer: (any PhonePeerTransport)? = nil
     ) async {
         activePhonePeerTask?.cancel()
+        phonePeerTaskGeneration += 1
+        let myGeneration = phonePeerTaskGeneration
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.commitPhoneKeyAfterHolderVerificationImpl(signer: signer, peer: peer)
-            if self.activePhonePeerTask?.isCancelled == false {
+            if self.phonePeerTaskGeneration == myGeneration {
                 self.activePhonePeerTask = nil
             }
         }
@@ -494,10 +567,12 @@ final class CompanionSession: ObservableObject {
         peer: (any ExactRunPhoneSigningTransport)? = nil
     ) async {
         activeExactRunTask?.cancel()
+        exactRunTaskGeneration += 1
+        let myGeneration = exactRunTaskGeneration
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.reviewRetainedExactRunImpl(now: now, peer: peer)
-            if self.activeExactRunTask?.isCancelled == false {
+            if self.exactRunTaskGeneration == myGeneration {
                 self.activeExactRunTask = nil
             }
         }
@@ -530,6 +605,7 @@ final class CompanionSession: ObservableObject {
         reviewedExactRun = nil
         reviewedExactRunLines = []
         reviewedExactRunArgv = []
+        reviewedExactRunKeyGeneration = nil
         let transport: any ExactRunPhoneSigningTransport
         if let peer {
             transport = peer
@@ -559,20 +635,29 @@ final class CompanionSession: ObservableObject {
                 return
             }
             guard !Task.isCancelled else { throw CancellationError() }
+            let capturedKeyGen: Int?
+            if case .enrolled(let gen) = phonePeerKeyState {
+                capturedKeyGen = gen
+            } else {
+                capturedKeyGen = nil
+            }
             reviewedExactRun = parsed
             reviewedExactRunLines = parsed.lines
             reviewedExactRunArgv = parsed.launchArgv
+            reviewedExactRunKeyGeneration = capturedKeyGen
             exactRunNote = "Review these bytes before signing. Signing uses the enrolled phone key and does not create one."
         } catch is CancellationError {
             reviewedExactRun = nil
             reviewedExactRunLines = []
             reviewedExactRunArgv = []
+            reviewedExactRunKeyGeneration = nil
             exactRunNote = "Exact run review was cancelled before a signature was returned."
         } catch {
             if generation == exactRunGeneration {
                 reviewedExactRun = nil
                 reviewedExactRunLines = []
                 reviewedExactRunArgv = []
+                reviewedExactRunKeyGeneration = nil
                 exactRunNote = "Exact run was not shown."
                 lastError = error.localizedDescription
             }
@@ -589,10 +674,12 @@ final class CompanionSession: ObservableObject {
         beforeSubmit: (@MainActor () async -> Void)? = nil
     ) async {
         activeExactRunTask?.cancel()
+        exactRunTaskGeneration += 1
+        let myGeneration = exactRunTaskGeneration
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.approveReviewedExactRunImpl(signer: signer, peer: peer, now: now, beforeSign: beforeSign, beforeSubmit: beforeSubmit)
-            if self.activeExactRunTask?.isCancelled == false {
+            if self.exactRunTaskGeneration == myGeneration {
                 self.activeExactRunTask = nil
             }
         }
@@ -610,10 +697,12 @@ final class CompanionSession: ObservableObject {
         now: @MainActor @escaping () -> Int = { Int(Date().timeIntervalSince1970) }
     ) async {
         activeExactRunTask?.cancel()
+        exactRunTaskGeneration += 1
+        let myGeneration = exactRunTaskGeneration
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.approveReviewedExactRunImpl(signer: signer, peer: peer, now: now, beforeSign: nil, beforeSubmit: nil)
-            if self.activeExactRunTask?.isCancelled == false {
+            if self.exactRunTaskGeneration == myGeneration {
                 self.activeExactRunTask = nil
             }
         }
@@ -681,6 +770,20 @@ final class CompanionSession: ObservableObject {
                 exactRunNote = "Exact run changed after review. The signature was not returned."
                 return
             }
+            let currentKeyGen: Int?
+            if case .enrolled(let gen) = phonePeerKeyState {
+                currentKeyGen = gen
+            } else {
+                currentKeyGen = nil
+            }
+            guard currentKeyGen == reviewedExactRunKeyGeneration else {
+                reviewedExactRun = nil
+                reviewedExactRunLines = []
+                reviewedExactRunArgv = []
+                reviewedExactRunKeyGeneration = nil
+                exactRunNote = "Phone-peer key changed after review. The signature was not returned."
+                return
+            }
             guard !Task.isCancelled else { throw CancellationError() }
             let signed = try signer.signCommitted(message: reviewed.bound)
             try Task.checkCancellation()
@@ -733,6 +836,7 @@ final class CompanionSession: ObservableObject {
         reviewedExactRun = nil
         reviewedExactRunLines = []
         reviewedExactRunArgv = []
+        reviewedExactRunKeyGeneration = nil
         exactRunNote = "Exact run review was cancelled before a signature was returned."
         lastError = nil
     }
@@ -749,6 +853,13 @@ final class CompanionSession: ObservableObject {
     func requestAttention() async {
         lastError = nil
         lastAttentionNote = nil
+        switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
+        case .valid:
+            break
+        case .invalid(let reason):
+            lastError = "Action refused: \(reason)"
+            return
+        }
         guard let client = makeClient() else {
             lastError = CompanionClientError.notPaired.localizedDescription
             return
@@ -765,6 +876,13 @@ final class CompanionSession: ObservableObject {
 
     func openDashboardOnMac() async {
         lastError = nil
+        switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
+        case .valid:
+            break
+        case .invalid(let reason):
+            lastError = "Action refused: \(reason)"
+            return
+        }
         guard let client = makeClient() else {
             lastError = CompanionClientError.notPaired.localizedDescription
             return
@@ -779,10 +897,12 @@ final class CompanionSession: ObservableObject {
 
     func submitRemoteConfirm() async {
         activeRemoteConfirmTask?.cancel()
+        remoteConfirmTaskGeneration += 1
+        let myGeneration = remoteConfirmTaskGeneration
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.submitRemoteConfirmImpl()
-            if self.activeRemoteConfirmTask?.isCancelled == false {
+            if self.remoteConfirmTaskGeneration == myGeneration {
                 self.activeRemoteConfirmTask = nil
             }
         }
@@ -850,10 +970,12 @@ final class CompanionSession: ObservableObject {
 
     func submitRemoteRefuse() async {
         activeRemoteConfirmTask?.cancel()
+        remoteConfirmTaskGeneration += 1
+        let myGeneration = remoteConfirmTaskGeneration
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.submitRemoteRefuseImpl()
-            if self.activeRemoteConfirmTask?.isCancelled == false {
+            if self.remoteConfirmTaskGeneration == myGeneration {
                 self.activeRemoteConfirmTask = nil
             }
         }
@@ -1488,6 +1610,18 @@ struct PhoneKeyStage {
         }
     }
 
+    func hasStagedKey() -> Bool {
+        FileManager.default.fileExists(atPath: pendingHandle.path) &&
+        FileManager.default.fileExists(atPath: pendingPublic.path)
+    }
+    
+    func stagedPublicKey() throws -> Data {
+        guard hasStagedKey() else {
+            throw CompanionClientError.transport("no staged key")
+        }
+        return try Data(contentsOf: pendingPublic)
+    }
+
     private var pendingHandle: URL { directory.appendingPathComponent("phone-session-handle.pending") }
     private var pendingPublic: URL { directory.appendingPathComponent("phone-session-public.pending") }
     private var pendingOwner: URL { directory.appendingPathComponent("phone-session-owner.pending") }
@@ -1507,6 +1641,14 @@ struct PhoneKeyStage {
             throw CompanionClientError.transport("phone session key is not enrolled")
         }
         return data
+    }
+}
+
+actor CryptoWorker {
+    static let shared = CryptoWorker()
+    
+    func perform<T>(_ operation: @Sendable () throws -> T) throws -> T {
+        try operation()
     }
 }
 
@@ -1556,6 +1698,12 @@ struct LivePhoneSecureEnclaveSigner: PhoneChallengeSigning {
             signature.base64EncodedString()
         )
     }
+    
+    func signAsync(message: Data) async throws -> (publicKey: String, signature: String) {
+        try await CryptoWorker.shared.perform { [self] in
+            try sign(message: message)
+        }
+    }
 
     func bindStagedOwnership(challengeId: String, publicKey: String) throws {
         guard let key = Data(base64Encoded: publicKey) else {
@@ -1590,6 +1738,12 @@ struct LivePhoneSecureEnclaveSigner: PhoneChallengeSigning {
             authenticationContext: LAContext()
         )
         try stage.rotate(handle: key.dataRepresentation, publicKey: key.publicKey.x963Representation)
+    }
+    
+    func rotateEnrollmentAsync() async throws {
+        try await CryptoWorker.shared.perform { [self] in
+            try rotateEnrollment()
+        }
     }
 
     func revokeEnrollment() throws {

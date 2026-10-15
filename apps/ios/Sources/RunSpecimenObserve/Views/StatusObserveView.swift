@@ -296,6 +296,24 @@ struct StatusObserveView: View {
                     .font(.caption)
                     .foregroundStyle(RSTheme.ink)
             }
+        case .rotating(let oldGeneration, _):
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(RSTheme.warn)
+                    Text("Rotation in progress (old: \(oldGeneration))")
+                        .font(.caption)
+                        .foregroundStyle(RSTheme.ink)
+                }
+                HStack(spacing: 8) {
+                    Button("Complete") { completePhonePeerKeyRotation() }
+                        .font(.caption.bold())
+                        .foregroundStyle(RSTheme.signal)
+                    Button("Cancel") { cancelPhonePeerKeyRotation() }
+                        .font(.caption)
+                        .foregroundStyle(RSTheme.muted)
+                }
+            }
         case .error(let message):
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -326,11 +344,31 @@ struct StatusObserveView: View {
         do {
             try session.rotatePhonePeerKey()
             feedbackGenerator.notificationOccurred(.success)
-            phonePeerRotateOutcome = .success("Phone-peer key rotated")
+            phonePeerRotateOutcome = .success("Phone-peer key rotation started")
         } catch {
             feedbackGenerator.notificationOccurred(.error)
             phonePeerRotateOutcome = .failure(error.localizedDescription)
         }
+    }
+    
+    private func completePhonePeerKeyRotation() {
+        feedbackGenerator.prepare()
+        phonePeerRotateOutcome = .inProgress
+        do {
+            try session.completePhonePeerKeyRotation()
+            feedbackGenerator.notificationOccurred(.success)
+            phonePeerRotateOutcome = .success("Phone-peer key rotation completed")
+        } catch {
+            feedbackGenerator.notificationOccurred(.error)
+            phonePeerRotateOutcome = .failure(error.localizedDescription)
+        }
+    }
+    
+    private func cancelPhonePeerKeyRotation() {
+        feedbackGenerator.prepare()
+        session.cancelPhonePeerKeyRotation()
+        feedbackGenerator.notificationOccurred(.warning)
+        phonePeerRotateOutcome = nil
     }
 
     private var exactRunCard: some View {

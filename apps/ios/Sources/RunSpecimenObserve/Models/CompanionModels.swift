@@ -150,10 +150,11 @@ enum CapabilityValidationResult: Equatable {
 
 enum CapabilityValidator {
     static func validate(capabilities: CompanionCapabilities?, status: CompanionStatus?) -> CapabilityValidationResult {
-        if let caps = capabilities {
-            if caps.canApprove || caps.canExecute || caps.canMutateLifecycle {
-                return .invalid(reason: "Companion advertised plugin-style approve/execute (violates ADR-004).")
-            }
+        guard let caps = capabilities else {
+            return .invalid(reason: "Capabilities not verified.")
+        }
+        if caps.canApprove || caps.canExecute || caps.canMutateLifecycle {
+            return .invalid(reason: "Companion advertised plugin-style approve/execute (violates ADR-004).")
         }
         if let companion = status?.companion {
             if companion.canApprove == true || companion.canExecute == true {
