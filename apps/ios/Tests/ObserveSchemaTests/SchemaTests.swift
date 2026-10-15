@@ -872,6 +872,33 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(activeStillActive.state, CompanionSecureEnclaveEnrollment.active, "Source key remains active after refused rotation")
     }
 
+    func testRotateToActiveDestinationIsRefused() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-active-dest-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+        CompanionSecureEnclaveEnrollment.testKeyDeleter = { _ in }
+
+        let sourceKey = try CompanionSecureEnclaveEnrollment.enroll(keyID: "source-key", directory: directory)
+        XCTAssertEqual(sourceKey.state, CompanionSecureEnclaveEnrollment.active)
+
+        let destKey = try CompanionSecureEnclaveEnrollment.enroll(keyID: "dest-key", directory: directory)
+        XCTAssertEqual(destKey.state, CompanionSecureEnclaveEnrollment.active)
+
+        do {
+            _ = try await CompanionSecureEnclaveEnrollment.rotate(from: "source-key", to: "dest-key", directory: directory)
+            XCTFail("IOSQA6-14: Expected alreadyEnrolled error when rotating to active destination")
+        } catch {
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .alreadyEnrolled, "IOSQA6-14: Rotating to active destination returns alreadyEnrolled error")
+        }
+
+        let sourceStillActive = try CompanionSecureEnclaveEnrollment.inspect(keyID: "source-key", directory: directory)
+        XCTAssertEqual(sourceStillActive.state, CompanionSecureEnclaveEnrollment.active, "Source key remains active after refused rotation")
+
+        let destStillActive = try CompanionSecureEnclaveEnrollment.inspect(keyID: "dest-key", directory: directory)
+        XCTAssertEqual(destStillActive.state, CompanionSecureEnclaveEnrollment.active, "Destination key remains unchanged")
+    }
+
     func testListKeysReturnsAllEnrolledKeys() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-list-keys-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -1213,6 +1240,21 @@ final class ObserveSchemaTests: XCTestCase {
             "iphone-companion-3",
             "Empty base skips collision with iphone-companion-2"
         )
+    }
+
+    func testDeriveReplacementKeyIDHandlesIntMaxWithoutOverflow() {
+        let maxSuffix = "test-\(Int.max)"
+        let result = CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: maxSuffix, existingKeyIDs: [])
+        XCTAssertNotEqual(result, "", "IOSQA6-15: Should not crash with Int.max suffix")
+        XCTAssertFalse(result.contains("-\(Int.max + 1)"), "IOSQA6-15: Should not overflow to Int.min")
+        XCTAssertEqual(result, "test-\(Int.max)-2", "Should fall back to appending -2 when overflow would occur")
+    }
+
+    func testDeriveReplacementKeyIDHandlesVeryLargeSuffix() {
+        let hugeSuffix = "test-" + String(repeating: "9", count: 20)
+        let result = CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: hugeSuffix, existingKeyIDs: [])
+        XCTAssertNotEqual(result, "", "IOSQA6-15: Should not crash with very large suffix")
+        XCTAssertTrue(result.hasPrefix("test-"), "Should have correct prefix")
     }
 
     func testManageActionsUseSelectedKeyIDAfterRelaunch() throws {

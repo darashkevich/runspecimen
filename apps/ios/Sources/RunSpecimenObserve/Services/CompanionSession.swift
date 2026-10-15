@@ -221,11 +221,12 @@ final class CompanionSession: ObservableObject {
 
     func refreshStatus() async throws {
         guard let client = makeClient() else { throw CompanionClientError.notPaired }
-        status = try await client.fetchStatus()
+        let fetchedStatus = try await client.fetchStatus()
+        status = fetchedStatus
         if let caps = try? await client.fetchCapabilities() {
             capabilities = caps
         }
-        switch CapabilityValidator.validateForRefresh(status: status!) {
+        switch CapabilityValidator.validateForRefresh(status: fetchedStatus) {
         case .valid:
             break
         case .invalid(let reason):

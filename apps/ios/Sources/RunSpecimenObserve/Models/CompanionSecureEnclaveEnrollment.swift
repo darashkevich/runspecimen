@@ -249,9 +249,12 @@ public enum CompanionSecureEnclaveEnrollment {
                 throw CompanionHardwareRefusal.malformed("enrollment")
             }
 
-            if let existingNew = try? load(keyID: newKeyID, directory: directory),
-               existingNew.state == revoked {
-                throw CompanionHardwareRefusal.keyIDRevoked
+            if let existingNew = try? load(keyID: newKeyID, directory: directory) {
+                if existingNew.state == revoked {
+                    throw CompanionHardwareRefusal.keyIDRevoked
+                } else {
+                    throw CompanionHardwareRefusal.alreadyEnrolled
+                }
             }
 
             var state = RotationState(
@@ -919,8 +922,14 @@ public enum CompanionSecureEnclaveEnrollment {
             return findAvailableID(prefix: "iphone-companion", startN: 2, existingKeyIDs: existingKeyIDs)
         }
 
-        if let match = baseKeyID.range(of: #"-(\d+)$"#, options: .regularExpression),
-           let n = Int(baseKeyID[match].dropFirst()) {
+        if let match = baseKeyID.range(of: #"-(\d+)$"#, options: .regularExpression) {
+            let suffixStr = String(baseKeyID[match].dropFirst())
+            guard suffixStr.count <= 18 else {
+                return findAvailableID(prefix: baseKeyID, startN: 2, existingKeyIDs: existingKeyIDs)
+            }
+            guard let n = Int(suffixStr), n < Int.max - 1 else {
+                return findAvailableID(prefix: baseKeyID, startN: 2, existingKeyIDs: existingKeyIDs)
+            }
             let prefix = String(baseKeyID[..<match.lowerBound])
             return findAvailableID(prefix: prefix, startN: n + 1, existingKeyIDs: existingKeyIDs)
         } else {
