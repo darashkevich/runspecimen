@@ -752,9 +752,10 @@ struct CompanionHardwareApprovalView: View {
         loadAllKeys()
 
         let storedKeyID = persistedKeyID
-        let keyExists = allKeys.contains { $0.keyID == storedKeyID }
+        let keyExistsValid = allKeys.contains { $0.keyID == storedKeyID }
+        let keyExistsCorrupt = corruptKeys.contains { $0.keyID == storedKeyID }
 
-        if keyExists {
+        if keyExistsValid || keyExistsCorrupt {
             keyID = storedKeyID
         } else if let firstActive = allKeys.first(where: { $0.state == CompanionSecureEnclaveEnrollment.active }) {
             keyID = firstActive.keyID

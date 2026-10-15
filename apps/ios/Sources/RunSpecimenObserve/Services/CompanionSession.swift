@@ -34,6 +34,7 @@ final class CompanionSession: ObservableObject {
     var phoneChallenge: PhonePeerChallengeMessage?
     var signedPhonePublicKey: String?
     private var phoneSignGeneration = 0
+    private var phonePeerKeyStateRevision = 0
     private var exactRunGeneration = 0
     private var reviewedExactRun: ParsedExactRun?
     private var acceptedReceiptSignatures: Set<String> = []
@@ -86,6 +87,7 @@ final class CompanionSession: ObservableObject {
         launchLogger.info("refreshPhonePeerKeyState() START (sync)")
         #endif
 
+        phonePeerKeyStateRevision += 1
         let signer = LivePhoneSecureEnclaveSigner()
         do {
             let generation = try signer.stage.committedGeneration()
@@ -106,6 +108,9 @@ final class CompanionSession: ObservableObject {
         launchLogger.info("refreshPhonePeerKeyStateAsync() START")
         #endif
 
+        phonePeerKeyStateRevision += 1
+        let capturedRevision = phonePeerKeyStateRevision
+
         let result: PhonePeerKeyState = await Task.detached(priority: .userInitiated) {
             let signer = LivePhoneSecureEnclaveSigner()
             do {
@@ -115,6 +120,13 @@ final class CompanionSession: ObservableObject {
                 return .noKey
             }
         }.value
+
+        guard capturedRevision == phonePeerKeyStateRevision else {
+            #if DEBUG
+            launchLogger.info("refreshPhonePeerKeyStateAsync() STALE - discarding result")
+            #endif
+            return
+        }
 
         phonePeerKeyState = result
 
@@ -1336,7 +1348,9 @@ struct PhoneKeyStage {
     private func commitInternal(failAfterFirstWrite: Bool) throws {
         guard FileManager.default.fileExists(atPath: pendingHandle.path),
               FileManager.default.fileExists(atPath: pendingPublic.path)
-        else { return }
+        else {
+            throw CompanionClientError.transport("phone key not staged (incomplete-stage)")
+        }
         try validateStagedParts()
         let handle = try Data(contentsOf: pendingHandle)
         let publicKey = try Data(contentsOf: pendingPublic)
