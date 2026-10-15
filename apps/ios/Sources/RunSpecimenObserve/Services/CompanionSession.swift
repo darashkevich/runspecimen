@@ -201,7 +201,11 @@ final class CompanionSession: ObservableObject {
             }
         }
         activeRefreshTask = task
-        await task.value
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     func signPhonePeerChallenge(
@@ -217,7 +221,11 @@ final class CompanionSession: ObservableObject {
             }
         }
         activePhonePeerTask = task
-        await task.value
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     private func signPhonePeerChallengeImpl(
@@ -334,7 +342,11 @@ final class CompanionSession: ObservableObject {
             }
         }
         activePhonePeerTask = task
-        await task.value
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     private func commitPhoneKeyAfterHolderVerificationImpl(
@@ -423,7 +435,11 @@ final class CompanionSession: ObservableObject {
             }
         }
         activeExactRunTask = task
-        await task.value
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     private func reviewRetainedExactRunImpl(
@@ -513,7 +529,11 @@ final class CompanionSession: ObservableObject {
             }
         }
         activeExactRunTask = task
-        await task.value
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     private func approveReviewedExactRunImpl(
@@ -677,7 +697,11 @@ final class CompanionSession: ObservableObject {
             }
         }
         activeRemoteConfirmTask = task
-        await task.value
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     private func submitRemoteConfirmImpl() async {
@@ -744,7 +768,11 @@ final class CompanionSession: ObservableObject {
             }
         }
         activeRemoteConfirmTask = task
-        await task.value
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     private func submitRemoteRefuseImpl() async {
