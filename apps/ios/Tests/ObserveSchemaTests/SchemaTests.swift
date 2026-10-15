@@ -1956,13 +1956,13 @@ extension ObserveSchemaTests {
         }
         
         let peer = MockExactRunTransport()
-        peer.exactRun = ParsedExactRun(
-            holderId: "holder",
-            expiry: Int(Date().timeIntervalSince1970) + 3600,
-            bound: "test-bound",
-            nonce: "test-nonce",
-            lines: ["test"],
-            launchArgv: ["/bin/test"]
+        peer.fetchedRun = FetchedExactRun(
+            challengeId: "test-challenge",
+            bound: Data("test-bound".utf8),
+            policy: "test-policy",
+            generation: 1,
+            keyGeneration: 5,
+            expiry: Int(Date().timeIntervalSince1970) + 3600
         )
         
         await MainActor.run {
@@ -2070,10 +2070,10 @@ extension ObserveSchemaTests {
 }
 
 final class MockExactRunTransport: ExactRunPhoneSigningTransport {
-    var exactRun: ParsedExactRun?
+    var fetchedRun: FetchedExactRun?
     
-    func fetchRetainedExactRun() async throws -> ParsedExactRun {
-        guard let run = exactRun else {
+    func fetchRetainedExactRun() async throws -> FetchedExactRun {
+        guard let run = fetchedRun else {
             throw CompanionClientError.transport("No exact run")
         }
         return run
