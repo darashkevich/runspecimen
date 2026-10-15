@@ -641,6 +641,75 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path), "newKeyCommitted phase should clear rotation state")
     }
 
+    func testRotationRecoveryAtNewKeyCommittedRemovesNewRecordAndBlob() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-committed-record-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let oldKey = sampleRecord(keyID: "old-key", state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(oldKey, directory: directory) {}
+
+        let newKey = sampleRecord(keyID: "new-key", state: CompanionSecureEnclaveEnrollment.active, generation: 2)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(newKey, directory: directory) {}
+
+        CompanionSecureEnclaveEnrollment.testInMemoryKeychain = ["new-key": Data(repeating: 5, count: 65)]
+
+        let state = RotationState(
+            oldKeyID: "old-key",
+            newKeyID: "new-key",
+            phase: .newKeyCommitted,
+            oldKeyRevoked: false,
+            newKeyCreated: true
+        )
+        try JSONEncoder().encode(state).write(to: directory.appendingPathComponent(".rotation-state.json"))
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("new-key.pairing.json").path), "New key record should exist before recovery")
+        XCTAssertNotNil(CompanionSecureEnclaveEnrollment.testInMemoryKeychain?["new-key"], "New key blob should exist before recovery")
+
+        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("new-key.pairing.json").path), "IOSQA6-01: Recovery at newKeyCommitted must remove new record")
+        XCTAssertNil(CompanionSecureEnclaveEnrollment.testInMemoryKeychain?["new-key"], "IOSQA6-01: Recovery at newKeyCommitted must remove new blob")
+
+        let oldKeyRecord = try CompanionSecureEnclaveEnrollment.inspect(keyID: "old-key", directory: directory)
+        XCTAssertEqual(oldKeyRecord.state, CompanionSecureEnclaveEnrollment.active, "Old key should still be active after rollback")
+    }
+
+    func testRotationRecoveryAtOldKeyRevokedKeepsRecords() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-revoked-records-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let oldKey = sampleRecord(keyID: "old-key", state: CompanionSecureEnclaveEnrollment.revoked, generation: 2)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(oldKey, directory: directory) {}
+
+        let newKey = sampleRecord(keyID: "new-key", state: CompanionSecureEnclaveEnrollment.active, generation: 2)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(newKey, directory: directory) {}
+
+        CompanionSecureEnclaveEnrollment.testInMemoryKeychain = ["old-key": Data(repeating: 4, count: 65)]
+
+        let state = RotationState(
+            oldKeyID: "old-key",
+            newKeyID: "new-key",
+            phase: .oldKeyRevoked,
+            oldKeyRevoked: true,
+            newKeyCreated: true
+        )
+        try JSONEncoder().encode(state).write(to: directory.appendingPathComponent(".rotation-state.json"))
+
+        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path))
+        XCTAssertNil(CompanionSecureEnclaveEnrollment.testInMemoryKeychain?["old-key"], "IOSQA6-01: Recovery at oldKeyRevoked must clean up old blob")
+
+        let newKeyRecord = try CompanionSecureEnclaveEnrollment.inspect(keyID: "new-key", directory: directory)
+        XCTAssertEqual(newKeyRecord.state, CompanionSecureEnclaveEnrollment.active, "IOSQA6-01: New key record must remain after recovery")
+
+        let oldKeyRecord = try CompanionSecureEnclaveEnrollment.inspect(keyID: "old-key", directory: directory)
+        XCTAssertEqual(oldKeyRecord.state, CompanionSecureEnclaveEnrollment.revoked, "IOSQA6-01: Old key revocation record must remain")
+    }
+
     func testRotationRecoveryAtOldKeyRevokedPhase() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-revoked-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }

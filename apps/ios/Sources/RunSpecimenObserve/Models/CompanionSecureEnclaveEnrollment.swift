@@ -242,7 +242,7 @@ public enum CompanionSecureEnclaveEnrollment {
         try await authenticateWithBiometrics(reason: "Authenticate to rotate this iPhone key")
 
         return try withLock(directory) {
-            try recoverIncompleteRotation(directory: directory)
+            try recoverIncompleteRotationUnlocked(directory: directory)
 
             let oldRecord = try load(keyID: oldKeyID, directory: directory)
             guard oldRecord.state == active else {
@@ -321,20 +321,49 @@ public enum CompanionSecureEnclaveEnrollment {
     }
 
     public static func recoverIncompleteRotation(directory: URL) throws {
+        try withLock(directory) {
+            try recoverIncompleteRotationUnlocked(directory: directory)
+        }
+    }
+
+    private static func recoverIncompleteRotationUnlocked(directory: URL) throws {
         guard let state = try loadRotationState(directory: directory) else { return }
 
-        enrollmentLogger.info("Recovering incomplete rotation: \(state.phase.rawValue, privacy: .public)")
+        enrollmentLogger.info("Recovering incomplete rotation: phase=\(state.phase.rawValue, privacy: .public), oldKeyID=\(state.oldKeyID, privacy: .public), newKeyID=\(state.newKeyID, privacy: .public)")
+
+        let oldRecordExists = (try? load(keyID: state.oldKeyID, directory: directory)) != nil
+        let newRecordExists = (try? load(keyID: state.newKeyID, directory: directory)) != nil
 
         switch state.phase {
         case .started:
+            try? deleteBlob(keyID: state.newKeyID)
             try? clearRotationState(directory: directory)
+
         case .newKeyStaged:
             try? deleteBlob(keyID: state.newKeyID)
             try? clearRotationState(directory: directory)
-        case .newKeyCommitted, .oldKeyRevoked:
-            try? deleteBlob(keyID: state.oldKeyID)
+
+        case .newKeyCommitted:
+            if newRecordExists {
+                let newRecordURL = fileURL(keyID: state.newKeyID, directory: directory)
+                try? FileManager.default.removeItem(at: newRecordURL)
+                try? deleteBlob(keyID: state.newKeyID)
+                enrollmentLogger.info("Rolled back newKeyCommitted: removed new record and blob")
+            } else {
+                try? deleteBlob(keyID: state.newKeyID)
+            }
             try? clearRotationState(directory: directory)
+
+        case .oldKeyRevoked:
+            try? deleteBlob(keyID: state.oldKeyID)
+            if !newRecordExists {
+                try? deleteBlob(keyID: state.newKeyID)
+                enrollmentLogger.warning("oldKeyRevoked phase but new record missing - cleaning up blobs")
+            }
+            try? clearRotationState(directory: directory)
+
         case .completed:
+            try? deleteBlob(keyID: state.oldKeyID)
             try? clearRotationState(directory: directory)
         }
     }
