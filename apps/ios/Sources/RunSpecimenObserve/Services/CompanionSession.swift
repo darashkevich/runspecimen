@@ -566,6 +566,7 @@ final class CompanionSession: ObservableObject {
     }
 
     /// Sign the reviewed bytes with the committed phone key and return that signature for the same nonce.
+    #if RUNSPECIMEN_TEST_HOOKS
     func approveReviewedExactRun(
         signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
         peer: (any ExactRunPhoneSigningTransport)? = nil,
@@ -588,6 +589,28 @@ final class CompanionSession: ObservableObject {
             task.cancel()
         }
     }
+    #else
+    func approveReviewedExactRun(
+        signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
+        peer: (any ExactRunPhoneSigningTransport)? = nil,
+        now: @MainActor @escaping () -> Int = { Int(Date().timeIntervalSince1970) }
+    ) async {
+        activeExactRunTask?.cancel()
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.approveReviewedExactRunImpl(signer: signer, peer: peer, now: now, beforeSign: nil, beforeSubmit: nil)
+            if self.activeExactRunTask?.isCancelled == false {
+                self.activeExactRunTask = nil
+            }
+        }
+        activeExactRunTask = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+    #endif
 
     private func approveReviewedExactRunImpl(
         signer: PhoneChallengeSigning,
@@ -1270,7 +1293,27 @@ struct PhoneKeyStage {
         }
     }
 
+    #if RUNSPECIMEN_TEST_HOOKS
     func commit(ownedBy challengeId: String, publicKey: Data, failAfterFirstWrite: Bool = false) throws {
+        try validateOwnership(challengeId: challengeId, publicKey: publicKey)
+        try commitInternal(failAfterFirstWrite: failAfterFirstWrite)
+    }
+
+    func commit(failAfterFirstWrite: Bool = false) throws {
+        try commitInternal(failAfterFirstWrite: failAfterFirstWrite)
+    }
+    #else
+    func commit(ownedBy challengeId: String, publicKey: Data) throws {
+        try validateOwnership(challengeId: challengeId, publicKey: publicKey)
+        try commitInternal(failAfterFirstWrite: false)
+    }
+
+    func commit() throws {
+        try commitInternal(failAfterFirstWrite: false)
+    }
+    #endif
+
+    private func validateOwnership(challengeId: String, publicKey: Data) throws {
         try validateStagedParts()
         guard FileManager.default.fileExists(atPath: pendingOwner.path) else {
             throw CompanionClientError.transport("staged phone key belongs to another challenge")
@@ -1287,11 +1330,10 @@ struct PhoneKeyStage {
         guard staged == publicKey else {
             throw CompanionClientError.transport("staged phone key belongs to another challenge")
         }
-        try commit(failAfterFirstWrite: failAfterFirstWrite)
     }
 
     /// One record. A failure after the next-file write leaves the previous generation.
-    func commit(failAfterFirstWrite: Bool = false) throws {
+    private func commitInternal(failAfterFirstWrite: Bool) throws {
         guard FileManager.default.fileExists(atPath: pendingHandle.path),
               FileManager.default.fileExists(atPath: pendingPublic.path)
         else { return }

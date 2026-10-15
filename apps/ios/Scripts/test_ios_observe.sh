@@ -55,11 +55,15 @@ if [[ "$TEST_RC" -ne 0 ]]; then
   exit 1
 fi
 
-if ! grep -q "Test Suite.*passed" "$SCRATCH_DIR/test.log" && ! grep -q "Executed.*test.*with.*0 failures" "$SCRATCH_DIR/test.log"; then
-  if grep -q "Executed 0 tests" "$SCRATCH_DIR/test.log"; then
-    echo "iOS tests FAILED: zero tests executed"
-    exit 1
-  fi
+EXECUTED_COUNT=$(grep -oE 'Executed [0-9]+ test' "$SCRATCH_DIR/test.log" | grep -oE '[0-9]+' | tail -1 || echo "0")
+if [[ -z "$EXECUTED_COUNT" ]] || [[ "$EXECUTED_COUNT" -eq 0 ]]; then
+  echo "iOS tests FAILED: zero tests executed (guard requires positive count)"
+  exit 1
 fi
 
-echo "iOS Observe tests PASSED"
+if ! grep -q "Test Suite.*passed" "$SCRATCH_DIR/test.log" && ! grep -qE "Executed [0-9]+ tests?, with 0 failures" "$SCRATCH_DIR/test.log"; then
+  echo "iOS tests FAILED: no passing test suite found"
+  exit 1
+fi
+
+echo "iOS Observe tests PASSED ($EXECUTED_COUNT tests executed)"
