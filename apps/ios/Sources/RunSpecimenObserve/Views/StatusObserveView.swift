@@ -397,18 +397,21 @@ struct StatusObserveView: View {
 
     static func escapeForDisplay(_ arg: String) -> String {
         var result = ""
-        for char in arg {
-            switch char {
+        for scalar in arg.unicodeScalars {
+            switch scalar {
+            case "\\": result += "\\\\"
             case "\n": result += "\\n"
             case "\r": result += "\\r"
             case "\t": result += "\\t"
             case "\0": result += "\\0"
             case " ": result += "␣"
+            case "\u{20}"..."\u{7E}" where scalar != "\\":
+                result.append(Character(scalar))
             default:
-                if char.asciiValue ?? 0 < 32 {
-                    result += String(format: "\\x%02X", char.asciiValue ?? 0)
+                if scalar.value < 0x10000 {
+                    result += String(format: "\\u%04X", scalar.value)
                 } else {
-                    result.append(char)
+                    result += String(format: "\\U%08X", scalar.value)
                 }
             }
         }
