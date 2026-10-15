@@ -97,6 +97,7 @@ struct CompanionHardwareApprovalView: View {
     @State private var showRotateConfirmation = false
     @State private var showImportPicker = false
     @State private var dismissedExports: Set<String> = []
+    @State private var skipNextKeyChangeRefresh = false
 
     private let feedbackGenerator = UINotificationFeedbackGenerator()
 
@@ -122,7 +123,11 @@ struct CompanionHardwareApprovalView: View {
             if hasInitialized && oldValue != newValue {
                 persistedKeyID = newValue
                 clearKeyActionOutcomes()
-                refreshKeyState()
+                if skipNextKeyChangeRefresh {
+                    skipNextKeyChangeRefresh = false
+                } else {
+                    refreshKeyState()
+                }
             }
             updateReplacementKeyID()
         }
@@ -350,7 +355,11 @@ struct CompanionHardwareApprovalView: View {
             }
 
             if keyState.isRevoked {
-                exportButton(title: "Export revoked record for Mac", isRevoked: true)
+                if !revokedPairingText.isEmpty && !dismissedExports.contains("revoked-\(keyID)") {
+                    exportCard(title: "Revoked key (share with Mac)", json: revokedPairingText, isRevoked: true, dismissKey: "revoked-\(keyID)")
+                } else {
+                    exportButton(title: "Export revoked record for Mac", isRevoked: true)
+                }
 
                 HStack(spacing: 8) {
                     Image(systemName: "info.circle.fill")
@@ -416,6 +425,12 @@ struct CompanionHardwareApprovalView: View {
                 Text("Revoke permanently disables the key. Rotate creates a replacement and revokes the old key. Both require Face ID and produce a revocation record to share with the Mac.")
                     .font(.caption)
                     .foregroundStyle(RSTheme.muted)
+            }
+
+            if let oldKeyID = rotatedFromKeyID, !keyState.isActive {
+                if !revokedPairingText.isEmpty && !dismissedExports.contains("rotated-old-\(oldKeyID)") {
+                    exportCard(title: "Revoked key '\(oldKeyID)' (share with Mac)", json: revokedPairingText, isRevoked: true, dismissKey: "rotated-old-\(oldKeyID)")
+                }
             }
         }
     }
@@ -779,11 +794,13 @@ struct CompanionHardwareApprovalView: View {
         }
     }
 
-    private func refreshKeyState() {
+    private func refreshKeyState(preserveRotationContext: Bool = false) {
         keyState = .unknown
         pairingText = ""
-        revokedPairingText = ""
-        rotatedFromKeyID = nil
+        if !preserveRotationContext {
+            revokedPairingText = ""
+            rotatedFromKeyID = nil
+        }
         markUpdatedOutcome = .none
         do {
             let record = try CompanionSecureEnclaveEnrollment.inspect(keyID: keyID, directory: directory)
@@ -794,7 +811,9 @@ struct CompanionHardwareApprovalView: View {
             } else {
                 keyState = .revoked(generation: record.generation, macUpdatePending: record.macUpdatePending)
                 let carried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: keyID, directory: directory)
-                revokedPairingText = String(decoding: carried, as: UTF8.self)
+                if revokedPairingText.isEmpty || !preserveRotationContext {
+                    revokedPairingText = String(decoding: carried, as: UTF8.self)
+                }
             }
         } catch CompanionHardwareRefusal.missing {
             keyState = .noKey
@@ -942,6 +961,7 @@ struct CompanionHardwareApprovalView: View {
                 let newCarried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: newRecord.keyID, directory: directory)
                 let revokedCarried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: revokedRecord.keyID, directory: directory)
                 await MainActor.run {
+                    skipNextKeyChangeRefresh = true
                     keyID = newRecord.keyID
                     persistedKeyID = newRecord.keyID
                     pairingText = String(decoding: newCarried, as: UTF8.self)
