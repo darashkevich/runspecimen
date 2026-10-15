@@ -24,18 +24,23 @@ cd "$IOS_ROOT"
 echo "Regenerating Xcode project from project.yml..."
 xcodegen generate --spec project.yml
 
-SIMULATOR_NAME="iPhone 16"
-SIMULATOR_OS="18.0"
-
-echo "Building and testing ObserveSchemaTests on $SIMULATOR_NAME (iOS $SIMULATOR_OS)..."
+echo "Building and testing ObserveSchemaTests..."
 
 SCRATCH_DIR="$(mktemp -d)"
 trap 'rm -rf "$SCRATCH_DIR"' EXIT
 
+DESTINATION=$(xcrun simctl list devices available -j 2>/dev/null | \
+  python3 -c "import json,sys; d=json.load(sys.stdin); \
+  devs=[(r,n) for r,ds in d.get('devices',{}).items() for n in ds if 'iPhone' in n.get('name','') and n.get('isAvailable',False)]; \
+  print(f\"platform=iOS Simulator,id={devs[0][1]['udid']}\") if devs else print('platform=iOS Simulator,name=Any iOS Simulator Device')" 2>/dev/null \
+  || echo "platform=iOS Simulator,name=Any iOS Simulator Device")
+
+echo "Using destination: $DESTINATION"
+
 xcodebuild test \
   -project RunSpecimenObserve.xcodeproj \
   -scheme RunSpecimenObserve \
-  -destination "platform=iOS Simulator,name=$SIMULATOR_NAME,OS=$SIMULATOR_OS" \
+  -destination "$DESTINATION" \
   -derivedDataPath "$SCRATCH_DIR/DerivedData" \
   -resultBundlePath "$SCRATCH_DIR/TestResults.xcresult" \
   CODE_SIGN_IDENTITY="" \
