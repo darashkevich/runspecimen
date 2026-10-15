@@ -932,6 +932,60 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(argvSeparate.count, 3, "Second array has 3 elements")
     }
 
+    func testEscapeForDisplayDistinguishesNewlineFromLiteralBackslashN() {
+        let realNewline = StatusObserveView.escapeForDisplay("a\nb")
+        let literalBackslashN = StatusObserveView.escapeForDisplay("a\\nb")
+
+        XCTAssertNotEqual(realNewline, literalBackslashN,
+            "Real newline and literal backslash-n must render differently. " +
+            "Got '\(realNewline)' for newline and '\(literalBackslashN)' for backslash-n")
+
+        XCTAssertEqual(realNewline, "a\\nb", "Real newline should render as a\\nb")
+        XCTAssertEqual(literalBackslashN, "a\\\\nb", "Literal backslash-n should render as a\\\\nb")
+    }
+
+    func testEscapeForDisplayRendersNonASCIIDistinctly() {
+        let eAcute = StatusObserveView.escapeForDisplay("é")
+        let chinese = StatusObserveView.escapeForDisplay("中")
+
+        XCTAssertNotEqual(eAcute, chinese,
+            "é (U+00E9) and 中 (U+4E2D) must render distinctly. " +
+            "Got '\(eAcute)' for é and '\(chinese)' for 中")
+
+        XCTAssertFalse(eAcute.contains("\\x00"),
+            "é should not render as \\x00. Got '\(eAcute)'")
+        XCTAssertFalse(chinese.contains("\\x00"),
+            "中 should not render as \\x00. Got '\(chinese)'")
+
+        XCTAssertEqual(eAcute, "\\u00E9", "é (U+00E9) should render as \\u00E9")
+        XCTAssertEqual(chinese, "\\u4E2D", "中 (U+4E2D) should render as \\u4E2D")
+    }
+
+    func testEscapeForDisplayEscapesBackslash() {
+        let backslash = StatusObserveView.escapeForDisplay("\\")
+        XCTAssertEqual(backslash, "\\\\", "Single backslash should render as \\\\")
+
+        let multipleBackslash = StatusObserveView.escapeForDisplay("\\\\\\")
+        XCTAssertEqual(multipleBackslash, "\\\\\\\\\\\\", "Three backslashes should render as six")
+
+        let backslashWithTab = StatusObserveView.escapeForDisplay("\\\t")
+        XCTAssertEqual(backslashWithTab, "\\\\\\t", "Backslash followed by tab should render as \\\\\\t")
+    }
+
+    func testEscapeForDisplayHandlesSurrogatePairs() {
+        let emoji = StatusObserveView.escapeForDisplay("😀")
+        XCTAssertFalse(emoji.contains("\\x"), "Emoji should not render with \\x escape")
+        XCTAssertTrue(emoji.contains("\\U"), "Emoji should render with \\U escape for code points above U+FFFF")
+        XCTAssertEqual(emoji, "\\U0001F600", "😀 (U+1F600) should render as \\U0001F600")
+    }
+
+    func testEscapeForDisplayPrintableASCIIPassthrough() {
+        let printable = "ABCxyz019!@#$%^&*()[]{}|;':\",./<>?"
+        let escaped = StatusObserveView.escapeForDisplay(printable)
+        let expected = "ABCxyz019!@#$%^&*()[]{}|;':\",./<>?"
+        XCTAssertEqual(escaped, expected, "Printable ASCII should pass through unchanged (except space)")
+    }
+
     func testPhoneKeyStageValidatesStagedParts() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-staged-validation-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
