@@ -48,6 +48,8 @@ final class CompanionSession: ObservableObject {
     private var cachedClientConfig: PairingConfig?
 
     private let defaultsKey = "rs.observe.pairing"
+    private let keychainService = "com.darashkevich.runspecimen.observe.pairing"
+    private let keychainAccount = "pairingToken"
     private let holderPinKey = "rs.observe.pinnedHolderId"
 
     enum PhonePeerKeyState: Equatable {
@@ -929,6 +931,7 @@ final class CompanionSession: ObservableObject {
         refuseReasonInput = ""
         phoneSignGeneration += 1
         exactRunGeneration += 1
+        phonePeerKeyStateRevision += 1
         phoneChallenge = nil
         signedPhonePublicKey = nil
         reviewedExactRun = nil
@@ -940,6 +943,7 @@ final class CompanionSession: ObservableObject {
         phonePeerNote = "No phone-peer signature has been returned. Signing uses the published challenge. It does not approve a run."
         exactRunNote = "No exact run is waiting for review. Phone approval is not physical presence at the Mac."
         UserDefaults.standard.removeObject(forKey: defaultsKey)
+        deletePairingTokenFromKeychain()
     }
 
     private func makeClient() -> CompanionClient? {
@@ -984,19 +988,83 @@ final class CompanionSession: ObservableObject {
         baseURLString = config.baseURL.absoluteString
         pairingToken = config.pairingToken
         tlsFingerprint = config.tlsFingerprint ?? ""
-        if let data = try? JSONEncoder().encode(config) {
+
+        var publicConfig = config
+        publicConfig.pairingToken = ""
+        if let data = try? JSONEncoder().encode(publicConfig) {
             UserDefaults.standard.set(data, forKey: defaultsKey)
         }
+        savePairingTokenToKeychain(config.pairingToken)
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
-              let config = try? JSONDecoder().decode(PairingConfig.self, from: data)
-        else { return }
-        baseURLString = config.baseURL.absoluteString
-        pairingToken = config.pairingToken
-        tlsFingerprint = config.tlsFingerprint ?? ""
-        isPaired = true
+        if let keychainToken = loadPairingTokenFromKeychain(), !keychainToken.isEmpty {
+            if let data = UserDefaults.standard.data(forKey: defaultsKey),
+               let config = try? JSONDecoder().decode(PairingConfig.self, from: data) {
+                baseURLString = config.baseURL.absoluteString
+                pairingToken = keychainToken
+                tlsFingerprint = config.tlsFingerprint ?? ""
+                isPaired = true
+                return
+            }
+        }
+
+        if let data = UserDefaults.standard.data(forKey: defaultsKey),
+           let config = try? JSONDecoder().decode(PairingConfig.self, from: data),
+           !config.pairingToken.isEmpty {
+            baseURLString = config.baseURL.absoluteString
+            pairingToken = config.pairingToken
+            tlsFingerprint = config.tlsFingerprint ?? ""
+            isPaired = true
+            savePairingTokenToKeychain(config.pairingToken)
+            var sanitized = config
+            sanitized.pairingToken = ""
+            if let sanitizedData = try? JSONEncoder().encode(sanitized) {
+                UserDefaults.standard.set(sanitizedData, forKey: defaultsKey)
+            }
+        }
+    }
+
+    private func savePairingTokenToKeychain(_ token: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+        ]
+        SecItemDelete(query as CFDictionary)
+
+        guard !token.isEmpty, let data = token.data(using: .utf8) else { return }
+        let addQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+        ]
+        SecItemAdd(addQuery as CFDictionary, nil)
+    }
+
+    private func loadPairingTokenFromKeychain() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func deletePairingTokenFromKeychain() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }
 
