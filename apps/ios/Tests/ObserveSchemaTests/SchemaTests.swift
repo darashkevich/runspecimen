@@ -1628,6 +1628,15 @@ final class ObserveSchemaTests: XCTestCase {
         await MainActor.run {
             session.macSessionPublicKey = mac.publicKey.x963Representation.base64EncodedString()
             session.phonePeerKeyState = .enrolled(generation: 99)
+            session.capabilities = CompanionCapabilities(
+                product: "test",
+                mode: "observe",
+                canApprove: false,
+                canExecute: false,
+                canMutateLifecycle: false,
+                canRemoteConfirm: true,
+                boundary: "test"
+            )
         }
 
         let challenge = PhonePeerChallengeMessage(
