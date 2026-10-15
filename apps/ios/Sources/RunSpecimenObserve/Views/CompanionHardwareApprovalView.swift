@@ -121,6 +121,7 @@ struct CompanionHardwareApprovalView: View {
         .onChange(of: keyID) { oldValue, newValue in
             if hasInitialized && oldValue != newValue {
                 persistedKeyID = newValue
+                clearKeyActionOutcomes()
                 refreshKeyState()
             }
             updateReplacementKeyID()
@@ -350,59 +351,72 @@ struct CompanionHardwareApprovalView: View {
 
             if keyState.isRevoked {
                 exportButton(title: "Export revoked record for Mac", isRevoked: true)
-            }
 
-            actionButton(
-                title: "Revoke '\(keyID)'",
-                icon: "xmark.circle.fill",
-                tint: RSTheme.danger,
-                outcome: revokeOutcome,
-                disabled: !canRevokeOrRotate
-            ) {
-                showRevokeConfirmation = true
-            }
-
-            outcomeView(outcome: revokeOutcome)
-
-            if !revokedPairingText.isEmpty && rotatedFromKeyID == nil && !dismissedExports.contains("revoked-\(keyID)") {
-                exportCard(title: "Revoked key (share with Mac)", json: revokedPairingText, isRevoked: true, dismissKey: "revoked-\(keyID)")
-            }
-
-            Text("Rotate to new ID:")
-                .font(.caption)
-                .foregroundStyle(RSTheme.muted)
-
-            TextField("New key ID", text: $replacementKeyID)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .padding(12)
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundStyle(RSTheme.muted)
+                    Text("This key is revoked. To create a new key, enter a new key ID above and tap Enroll.")
+                        .font(.caption)
+                        .foregroundStyle(RSTheme.muted)
+                }
+                .padding(10)
                 .background(RSTheme.elevated)
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-
-            actionButton(
-                title: "Rotate '\(keyID)' → '\(replacementKeyID)'",
-                icon: "arrow.triangle.2.circlepath",
-                tint: RSTheme.amber,
-                outcome: rotateOutcome,
-                disabled: !canRevokeOrRotate
-            ) {
-                showRotateConfirmation = true
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
 
-            outcomeView(outcome: rotateOutcome)
+            if keyState.isActive {
+                actionButton(
+                    title: "Revoke '\(keyID)'",
+                    icon: "xmark.circle.fill",
+                    tint: RSTheme.danger,
+                    outcome: revokeOutcome,
+                    disabled: !canRevokeOrRotate
+                ) {
+                    showRevokeConfirmation = true
+                }
 
-            if let oldKeyID = rotatedFromKeyID {
-                if !pairingText.isEmpty && !dismissedExports.contains("rotated-new-\(keyID)") {
-                    exportCard(title: "New active key (share with Mac)", json: pairingText, isRevoked: false, dismissKey: "rotated-new-\(keyID)")
+                outcomeView(outcome: revokeOutcome)
+
+                if !revokedPairingText.isEmpty && rotatedFromKeyID == nil && !dismissedExports.contains("revoked-\(keyID)") {
+                    exportCard(title: "Revoked key (share with Mac)", json: revokedPairingText, isRevoked: true, dismissKey: "revoked-\(keyID)")
                 }
-                if !revokedPairingText.isEmpty && !dismissedExports.contains("rotated-old-\(oldKeyID)") {
-                    exportCard(title: "Revoked key '\(oldKeyID)' (share with Mac)", json: revokedPairingText, isRevoked: true, dismissKey: "rotated-old-\(oldKeyID)")
+
+                Text("Rotate to new ID:")
+                    .font(.caption)
+                    .foregroundStyle(RSTheme.muted)
+
+                TextField("New key ID", text: $replacementKeyID)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .padding(12)
+                    .background(RSTheme.elevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+
+                actionButton(
+                    title: "Rotate '\(keyID)' → '\(replacementKeyID)'",
+                    icon: "arrow.triangle.2.circlepath",
+                    tint: RSTheme.amber,
+                    outcome: rotateOutcome,
+                    disabled: !canRevokeOrRotate
+                ) {
+                    showRotateConfirmation = true
                 }
+
+                outcomeView(outcome: rotateOutcome)
+
+                if let oldKeyID = rotatedFromKeyID {
+                    if !pairingText.isEmpty && !dismissedExports.contains("rotated-new-\(keyID)") {
+                        exportCard(title: "New active key (share with Mac)", json: pairingText, isRevoked: false, dismissKey: "rotated-new-\(keyID)")
+                    }
+                    if !revokedPairingText.isEmpty && !dismissedExports.contains("rotated-old-\(oldKeyID)") {
+                        exportCard(title: "Revoked key '\(oldKeyID)' (share with Mac)", json: revokedPairingText, isRevoked: true, dismissKey: "rotated-old-\(oldKeyID)")
+                    }
+                }
+
+                Text("Revoke permanently disables the key. Rotate creates a replacement and revokes the old key. Both require Face ID and produce a revocation record to share with the Mac.")
+                    .font(.caption)
+                    .foregroundStyle(RSTheme.muted)
             }
-
-            Text("Revoke permanently disables the key. Rotate creates a replacement and revokes the old key. Both require Face ID and produce a revocation record to share with the Mac.")
-                .font(.caption)
-                .foregroundStyle(RSTheme.muted)
         }
     }
 
@@ -742,6 +756,13 @@ struct CompanionHardwareApprovalView: View {
         refreshKeyState()
     }
 
+    private func clearKeyActionOutcomes() {
+        enrollOutcome = .none
+        revokeOutcome = .none
+        rotateOutcome = .none
+        markUpdatedOutcome = .none
+    }
+
     private func updateReplacementKeyID() {
         let existingIDs = Set(allKeys.map(\.keyID) + corruptKeys.map(\.keyID))
         replacementKeyID = CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: keyID, existingKeyIDs: existingIDs)
@@ -816,6 +837,7 @@ struct CompanionHardwareApprovalView: View {
 
     private func markMacUpdated() {
         feedbackGenerator.prepare()
+        clearKeyActionOutcomes()
         markUpdatedOutcome = .inProgress
 
         Task {
@@ -838,6 +860,7 @@ struct CompanionHardwareApprovalView: View {
 
     private func enroll() {
         feedbackGenerator.prepare()
+        clearKeyActionOutcomes()
         enrollOutcome = .inProgress
         signatureText = ""
         pairingText = ""
@@ -870,6 +893,7 @@ struct CompanionHardwareApprovalView: View {
 
     private func revokeKey() {
         feedbackGenerator.prepare()
+        clearKeyActionOutcomes()
         revokeOutcome = .inProgress
         signatureText = ""
         pairingText = ""
@@ -900,6 +924,7 @@ struct CompanionHardwareApprovalView: View {
 
     private func rotateKey() {
         feedbackGenerator.prepare()
+        clearKeyActionOutcomes()
         rotateOutcome = .inProgress
         signatureText = ""
         pairingText = ""
