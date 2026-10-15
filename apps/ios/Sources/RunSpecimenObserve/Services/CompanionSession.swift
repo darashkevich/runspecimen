@@ -1,8 +1,13 @@
 import CryptoKit
 import Foundation
 import LocalAuthentication
+import os
 import Security
 import SwiftUI
+
+#if DEBUG
+private let launchLogger = Logger(subsystem: "com.darashkevich.runspecimen.observe", category: "launch")
+#endif
 
 @MainActor
 final class CompanionSession: ObservableObject {
@@ -56,13 +61,31 @@ final class CompanionSession: ObservableObject {
         }
     }
 
-    init() {
+    init(deferPhoneKeyState: Bool = false) {
+        #if DEBUG
+        let start = CFAbsoluteTimeGetCurrent()
+        launchLogger.info("CompanionSession.init() START, deferPhoneKeyState=\(deferPhoneKeyState)")
+        #endif
+
         load()
         pinnedHolderId = UserDefaults.standard.string(forKey: holderPinKey) ?? ""
-        refreshPhonePeerKeyState()
+
+        if !deferPhoneKeyState {
+            refreshPhonePeerKeyState()
+        }
+
+        #if DEBUG
+        let end = CFAbsoluteTimeGetCurrent()
+        launchLogger.info("CompanionSession.init() END, duration: \((end - start) * 1000, format: .fixed(precision: 1))ms")
+        #endif
     }
 
     func refreshPhonePeerKeyState() {
+        #if DEBUG
+        let start = CFAbsoluteTimeGetCurrent()
+        launchLogger.info("refreshPhonePeerKeyState() START (sync)")
+        #endif
+
         let signer = LivePhoneSecureEnclaveSigner()
         do {
             let generation = try signer.stage.committedGeneration()
@@ -70,6 +93,35 @@ final class CompanionSession: ObservableObject {
         } catch {
             phonePeerKeyState = .noKey
         }
+
+        #if DEBUG
+        let end = CFAbsoluteTimeGetCurrent()
+        launchLogger.info("refreshPhonePeerKeyState() END, duration: \((end - start) * 1000, format: .fixed(precision: 1))ms, state: \(String(describing: self.phonePeerKeyState))")
+        #endif
+    }
+
+    func refreshPhonePeerKeyStateAsync() async {
+        #if DEBUG
+        let start = CFAbsoluteTimeGetCurrent()
+        launchLogger.info("refreshPhonePeerKeyStateAsync() START")
+        #endif
+
+        let result: PhonePeerKeyState = await Task.detached(priority: .userInitiated) {
+            let signer = LivePhoneSecureEnclaveSigner()
+            do {
+                let generation = try signer.stage.committedGeneration()
+                return .enrolled(generation: generation)
+            } catch {
+                return .noKey
+            }
+        }.value
+
+        phonePeerKeyState = result
+
+        #if DEBUG
+        let end = CFAbsoluteTimeGetCurrent()
+        launchLogger.info("refreshPhonePeerKeyStateAsync() END, duration: \((end - start) * 1000, format: .fixed(precision: 1))ms, state: \(String(describing: self.phonePeerKeyState))")
+        #endif
     }
 
     func revokePhonePeerKey() throws {
