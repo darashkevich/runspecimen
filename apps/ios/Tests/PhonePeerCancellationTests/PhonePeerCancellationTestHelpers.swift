@@ -163,7 +163,6 @@ actor FetchHold {
             try await withCheckedThrowingContinuation { continuation in
                 waiters.append(continuation)
             }
-            try Task.checkCancellation()
         } onCancel: {
             Task { await self.cancelAllWaiters() }
         }
@@ -559,8 +558,8 @@ func testExactRunCancellationBeforeSignDoesNotSign() async throws {
         await Task.yield()
     }
     task.cancel()
-    await Task.yield()
-    await hold.cancelAllWaiters()
+    try await Task.sleep(nanoseconds: 10_000_000)
+    await hold.release()
     await task.value
     if signer.committedSigns != 0 || signer.signs != 0 || peer.submissions != 0 {
         throw TestFailure.cancelledPathSignedOrPosted
