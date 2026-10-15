@@ -300,7 +300,7 @@ struct StatusObserveView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .foregroundStyle(RSTheme.warn)
+                        .foregroundStyle(RSTheme.amber)
                     Text("Rotation in progress (old: \(oldGeneration))")
                         .font(.caption)
                         .foregroundStyle(RSTheme.ink)
@@ -368,7 +368,7 @@ struct StatusObserveView: View {
         feedbackGenerator.prepare()
         session.cancelPhonePeerKeyRotation()
         feedbackGenerator.notificationOccurred(.warning)
-        phonePeerRotateOutcome = nil
+        phonePeerRotateOutcome = .idle
     }
 
     private var exactRunCard: some View {
