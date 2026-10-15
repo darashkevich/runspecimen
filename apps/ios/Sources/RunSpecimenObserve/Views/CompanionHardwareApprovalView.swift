@@ -74,7 +74,7 @@ struct CompanionHardwareApprovalView: View {
     @AppStorage("rs.observe.selectedKeyID") private var persistedKeyID = "iphone-companion"
     @State private var keyID = ""
     @State private var hasInitialized = false
-    @State private var replacementKeyID = "iphone-companion-2"
+    @State private var replacementKeyID = ""
     @State private var packageText = ""
     @State private var lines: [String] = []
     @State private var fields: RSBA2Package.Fields?
@@ -123,6 +123,7 @@ struct CompanionHardwareApprovalView: View {
                 persistedKeyID = newValue
                 refreshKeyState()
             }
+            updateReplacementKeyID()
         }
         .onChange(of: packageText) { _, _ in
             lines = []
@@ -338,12 +339,21 @@ struct CompanionHardwareApprovalView: View {
                 .foregroundStyle(RSTheme.muted)
                 .tracking(0.6)
 
+            HStack(spacing: 6) {
+                Text("Managing:")
+                    .font(.caption)
+                    .foregroundStyle(RSTheme.muted)
+                Text(keyID.isEmpty ? "(none selected)" : keyID)
+                    .font(.system(.caption, design: .monospaced).weight(.medium))
+                    .foregroundStyle(keyID.isEmpty ? RSTheme.muted : RSTheme.ink)
+            }
+
             if keyState.isRevoked {
                 exportButton(title: "Export revoked record for Mac", isRevoked: true)
             }
 
             actionButton(
-                title: "Revoke this key",
+                title: "Revoke '\(keyID)'",
                 icon: "xmark.circle.fill",
                 tint: RSTheme.danger,
                 outcome: revokeOutcome,
@@ -358,7 +368,11 @@ struct CompanionHardwareApprovalView: View {
                 exportCard(title: "Revoked key (share with Mac)", json: revokedPairingText, isRevoked: true, dismissKey: "revoked-\(keyID)")
             }
 
-            TextField("Replacement key ID", text: $replacementKeyID)
+            Text("Rotate to new ID:")
+                .font(.caption)
+                .foregroundStyle(RSTheme.muted)
+
+            TextField("New key ID", text: $replacementKeyID)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .padding(12)
@@ -366,7 +380,7 @@ struct CompanionHardwareApprovalView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
 
             actionButton(
-                title: "Rotate to new key",
+                title: "Rotate '\(keyID)' → '\(replacementKeyID)'",
                 icon: "arrow.triangle.2.circlepath",
                 tint: RSTheme.amber,
                 outcome: rotateOutcome,
@@ -430,6 +444,7 @@ struct CompanionHardwareApprovalView: View {
             TextEditor(text: $packageText)
                 .font(.system(.caption, design: .monospaced))
                 .frame(minHeight: 100)
+                .scrollContentBackground(.hidden)
                 .padding(8)
                 .background(RSTheme.elevated)
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
@@ -722,8 +737,15 @@ struct CompanionHardwareApprovalView: View {
             keyID = storedKeyID
         }
 
+        updateReplacementKeyID()
         hasInitialized = true
         refreshKeyState()
+    }
+
+    private func updateReplacementKeyID() {
+        let base = keyID.isEmpty ? "iphone-companion" : keyID
+        let suffix = base.last.map { $0.isNumber } ?? false ? "-rotated" : "-2"
+        replacementKeyID = base + suffix
     }
 
     private func loadAllKeys() {

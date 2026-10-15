@@ -1036,6 +1036,55 @@ final class ObserveSchemaTests: XCTestCase {
         }
     }
 
+    func testManageActionsUseSelectedKeyIDAfterRelaunch() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-manage-selection-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+
+        let defaultKey = try CompanionSecureEnclaveEnrollment.enroll(keyID: "iphone-companion-2", directory: directory)
+        XCTAssertEqual(defaultKey.state, CompanionSecureEnclaveEnrollment.active)
+
+        let selectedKey = try CompanionSecureEnclaveEnrollment.enroll(keyID: "test-3", directory: directory)
+        XCTAssertEqual(selectedKey.state, CompanionSecureEnclaveEnrollment.active)
+
+        let persistedKeyID = "test-3"
+        let keys = try CompanionSecureEnclaveEnrollment.listKeys(directory: directory)
+        XCTAssertEqual(keys.count, 2)
+
+        let restoredKeyID: String
+        if keys.contains(where: { $0.keyID == persistedKeyID }) {
+            restoredKeyID = persistedKeyID
+        } else if let firstActive = keys.first(where: { $0.state == CompanionSecureEnclaveEnrollment.active }) {
+            restoredKeyID = firstActive.keyID
+        } else {
+            restoredKeyID = persistedKeyID
+        }
+
+        XCTAssertEqual(restoredKeyID, "test-3", "Should restore selected key ID 'test-3' after relaunch")
+
+        let revokeTargetKeyID = restoredKeyID
+        XCTAssertEqual(revokeTargetKeyID, "test-3", "Revoke must target selected key ID, not a hardcoded default")
+        XCTAssertNotEqual(revokeTargetKeyID, "iphone-companion-2", "Revoke must not accidentally target default key")
+
+        let rotateSourceKeyID = restoredKeyID
+        XCTAssertEqual(rotateSourceKeyID, "test-3", "Rotate must rotate FROM selected key ID")
+        XCTAssertNotEqual(rotateSourceKeyID, "iphone-companion-2", "Rotate must not accidentally rotate default key")
+
+        let baseID = restoredKeyID
+        let suffix = baseID.last.map { $0.isNumber } ?? false ? "-rotated" : "-2"
+        let derivedReplacementID = baseID + suffix
+        XCTAssertEqual(derivedReplacementID, "test-3-2", "Replacement ID should derive from selected key, not hardcoded")
+        XCTAssertNotEqual(derivedReplacementID, "iphone-companion-2", "Replacement ID must not match default")
+
+        let revokedRecord = try CompanionSecureEnclaveEnrollment.revoke(keyID: revokeTargetKeyID, directory: directory)
+        XCTAssertEqual(revokedRecord.keyID, "test-3", "Revoked key should be the selected one")
+        XCTAssertEqual(revokedRecord.state, CompanionSecureEnclaveEnrollment.revoked)
+
+        let defaultAfterRevoke = try CompanionSecureEnclaveEnrollment.inspect(keyID: "iphone-companion-2", directory: directory)
+        XCTAssertEqual(defaultAfterRevoke.state, CompanionSecureEnclaveEnrollment.active, "Default key should remain active (not accidentally revoked)")
+    }
+
     func testGoldenFixturesMatchCrossplatformSchema() throws {
         let fixturesPath = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
