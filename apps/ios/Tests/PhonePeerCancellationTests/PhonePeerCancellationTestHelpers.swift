@@ -642,7 +642,7 @@ func testPhoneKeyStageRollsBackAndRevokes() throws {
     if reloaded != Data("previous".utf8) {
         throw TestFailure.rollbackLostPreviousKey
     }
-    stage.revoke()
+    try stage.revoke()
     do {
         _ = try stage.committedHandle()
         throw TestFailure.revokedKeyStillReloaded
