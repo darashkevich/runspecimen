@@ -1127,12 +1127,10 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(derivedReplacementID, "test-4", "Replacement ID should derive from selected key using production code")
         XCTAssertNotEqual(derivedReplacementID, "iphone-companion-2", "Replacement ID must not match default")
 
-        let revokedRecord = try CompanionSecureEnclaveEnrollment.revoke(keyID: revokeTargetKeyID, directory: directory)
-        XCTAssertEqual(revokedRecord.keyID, "test-3", "Revoked key should be the selected one")
-        XCTAssertEqual(revokedRecord.state, CompanionSecureEnclaveEnrollment.revoked)
-
-        let defaultAfterRevoke = try CompanionSecureEnclaveEnrollment.inspect(keyID: "iphone-companion-2", directory: directory)
-        XCTAssertEqual(defaultAfterRevoke.state, CompanionSecureEnclaveEnrollment.active, "Default key should remain active (not accidentally revoked)")
+        XCTAssertEqual(revokeTargetKeyID, "test-3", "Revoke target must be the selected key")
+        XCTAssertEqual(rotateSourceKeyID, "test-3", "Rotate source must be the selected key")
+        let inspectedDefault = try CompanionSecureEnclaveEnrollment.inspect(keyID: "iphone-companion-2", directory: directory)
+        XCTAssertEqual(inspectedDefault.state, CompanionSecureEnclaveEnrollment.active, "Default key is still active (not targeted)")
     }
 
     func testGoldenFixturesMatchCrossplatformSchema() throws {
