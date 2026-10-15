@@ -1986,6 +1986,15 @@ extension ObserveSchemaTests {
         
         await MainActor.run {
             session.phonePeerKeyState = .enrolled(generation: 5)
+            session.capabilities = CompanionCapabilities(
+                product: "test",
+                mode: "observe",
+                canApprove: false,
+                canExecute: false,
+                canMutateLifecycle: false,
+                canRemoteConfirm: true,
+                boundary: "test"
+            )
         }
         
         let peer = MockExactRunTransport()
