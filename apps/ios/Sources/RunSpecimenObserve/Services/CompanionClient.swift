@@ -280,7 +280,6 @@ final class CompanionTLSPinningDelegate: NSObject, URLSessionDelegate {
         value
             .uppercased()
             .filter { "0123456789ABCDEF".contains($0) }
-            .lowercased()
     }
 
     func urlSession(

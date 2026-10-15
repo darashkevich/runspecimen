@@ -442,8 +442,41 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertTrue(CompanionHardwareHints.rotate.contains("old key stays active"))
     }
 
-    func testRotationRollsBackNewKeyWhenRevocationFails() async throws {
+    func testRotationRollsBackNewKeyWhenCreationFails() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-rollback-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        
+        let oldKey = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(oldKey, directory: directory) {}
+        
+        let oldKeyURL = directory.appendingPathComponent("phone-vector.pairing.json")
+        let originalOldData = try Data(contentsOf: oldKeyURL)
+        let newKeyURL = directory.appendingPathComponent("new-key.pairing.json")
+        
+        XCTAssertFalse(FileManager.default.fileExists(atPath: newKeyURL.path), "New key should not exist before rotation")
+        
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in
+            throw CompanionHardwareRefusal.malformed("key-creation-failure")
+        }
+        
+        do {
+            _ = try await CompanionSecureEnclaveEnrollment.rotate(from: "phone-vector", to: "new-key", directory: directory)
+            XCTFail("Expected rotation to fail due to key creation error")
+        } catch {
+            XCTAssertTrue(true, "Rotation failed as expected")
+        }
+        
+        let storedOld = try CompanionSecureEnclaveEnrollment.inspect(keyID: "phone-vector", directory: directory)
+        XCTAssertEqual(storedOld.state, CompanionSecureEnclaveEnrollment.active, "IOSQA6-16: Old key must remain active after failed rotation")
+        XCTAssertEqual(storedOld.generation, 1, "IOSQA6-16: Old key generation unchanged after rollback")
+        
+        let currentOldData = try Data(contentsOf: oldKeyURL)
+        XCTAssertEqual(currentOldData, originalOldData, "IOSQA6-16: Old key file content unchanged after rollback")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: newKeyURL.path), "IOSQA6-16: New key file should not exist after failed rotation")
+    }
+    
+    func testRotationContinuesWhenKeychainCleanupFails() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-cleanup-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         
         CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
@@ -455,25 +488,15 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(oldKey.state, CompanionSecureEnclaveEnrollment.active)
         XCTAssertEqual(oldKey.generation, 1)
         
-        let oldKeyURL = directory.appendingPathComponent("phone-vector.pairing.json")
-        let originalOldData = try Data(contentsOf: oldKeyURL)
         let newKeyURL = directory.appendingPathComponent("new-key.pairing.json")
-        
         XCTAssertFalse(FileManager.default.fileExists(atPath: newKeyURL.path), "New key should not exist before rotation")
         
-        do {
-            _ = try await CompanionSecureEnclaveEnrollment.rotate(from: "phone-vector", to: "new-key", directory: directory)
-            XCTFail("Expected rotation to fail due to keychain cleanup error")
-        } catch {
-            XCTAssertTrue(true, "Rotation failed as expected")
-        }
+        let (newKey, revokedKey) = try await CompanionSecureEnclaveEnrollment.rotate(from: "phone-vector", to: "new-key", directory: directory)
         
-        let storedOld = try CompanionSecureEnclaveEnrollment.inspect(keyID: "phone-vector", directory: directory)
-        XCTAssertEqual(storedOld.state, CompanionSecureEnclaveEnrollment.active, "IOSQA6-16: Old key must remain active after failed rotation")
-        XCTAssertEqual(storedOld.generation, 1, "IOSQA6-16: Old key generation unchanged after rollback")
-        
-        let currentOldData = try Data(contentsOf: oldKeyURL)
-        XCTAssertEqual(currentOldData, originalOldData, "IOSQA6-16: Old key file content unchanged after rollback")
+        XCTAssertEqual(newKey.state, CompanionSecureEnclaveEnrollment.active, "IOSQA6-16: New key is active after rotation")
+        XCTAssertEqual(newKey.generation, 2, "IOSQA6-16: New key has incremented generation")
+        XCTAssertEqual(revokedKey.state, CompanionSecureEnclaveEnrollment.revoked, "IOSQA6-16: Old key is revoked after rotation")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: newKeyURL.path), "IOSQA6-16: New key file exists after rotation")
     }
 
     func testRotationWithTestSeamsSucceeds() async throws {
