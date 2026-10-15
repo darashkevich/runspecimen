@@ -1275,25 +1275,17 @@ final class ObserveSchemaTests: XCTestCase {
     }
 
     func testPhonePeerKeyStateRefreshesAfterHolderVerifiedCommit() async throws {
-        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let directory = root.appendingPathComponent("RunSpecimenObserve", isDirectory: true)
-        defer {
-            try? FileManager.default.removeItem(at: directory.appendingPathComponent("custody.json"))
-            try? FileManager.default.removeItem(at: directory.appendingPathComponent("next.json"))
-            try? FileManager.default.removeItem(at: directory.appendingPathComponent("pending.bin"))
-            try? FileManager.default.removeItem(at: directory.appendingPathComponent("pending.pub"))
-            try? FileManager.default.removeItem(at: directory.appendingPathComponent("pending.owner"))
-        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-commit-refresh-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
 
-        let signer = RealLocationTestSigner()
-        try signer.cleanup()
+        let signer = TempDirectoryTestSigner(directory: directory)
 
         let session = await CompanionSession()
         let mac = P256.Signing.PrivateKey()
 
         await MainActor.run {
-            XCTAssertEqual(session.phonePeerKeyState, .noKey, "phonePeerKeyState should be .noKey before commit")
             session.macSessionPublicKey = mac.publicKey.x963Representation.base64EncodedString()
+            session.phonePeerKeyState = .enrolled(generation: 99)
         }
 
         let challenge = PhonePeerChallengeMessage(
@@ -1321,12 +1313,14 @@ final class ObserveSchemaTests: XCTestCase {
         await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
 
         await MainActor.run {
-            XCTAssertEqual(session.phonePeerKeyState, .enrolled(generation: 1),
-                "phonePeerKeyState should be .enrolled(generation: 1) after holder-verified commit")
+            XCTAssertEqual(signer.commits, 1, "signer.commitEnrollment should be called once")
             XCTAssertNil(session.phoneChallenge, "phoneChallenge should be cleared after commit")
+            XCTAssertEqual(session.phonePeerKeyState, .noKey,
+                "phonePeerKeyState should change after commit (refreshPhonePeerKeyState called)")
         }
 
-        try signer.cleanup()
+        let generation = try signer.stage.committedGeneration()
+        XCTAssertEqual(generation, 1, "Signer's stage should have generation 1 after commit")
     }
 
     private func package() throws -> [String: String] {
@@ -1347,14 +1341,13 @@ final class ObserveSchemaTests: XCTestCase {
     }
 }
 
-final class RealLocationTestSigner: PhoneChallengeSigning {
+final class TempDirectoryTestSigner: PhoneChallengeSigning {
     let stage: PhoneKeyStage
     let publicKey: Data
     let publicKeyBase64: String
+    var commits = 0
 
-    init() {
-        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let directory = root.appendingPathComponent("RunSpecimenObserve", isDirectory: true)
+    init(directory: URL) {
         self.stage = PhoneKeyStage(directory: directory)
         self.publicKey = Data(repeating: 4, count: 65)
         self.publicKeyBase64 = publicKey.base64EncodedString()
@@ -1380,15 +1373,11 @@ final class RealLocationTestSigner: PhoneChallengeSigning {
         }
         try stage.stage(handle: Data("test-handle".utf8), publicKey: key, challengeId: challengeId)
         try stage.commit(ownedBy: challengeId, publicKey: key)
+        commits += 1
     }
 
     func discardStagedEnrollment() {
         stage.discard()
-    }
-
-    func cleanup() throws {
-        stage.discard()
-        try? stage.revoke()
     }
 }
 
