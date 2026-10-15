@@ -866,4 +866,32 @@ public enum CompanionSecureEnclaveEnrollment {
         try validateKeyID(keyID)
         try deleteBlob(keyID: keyID)
     }
+
+    public static func deriveReplacementKeyID(from baseKeyID: String, existingKeyIDs: Set<String>) -> String {
+        guard !baseKeyID.isEmpty else {
+            return findAvailableID(prefix: "iphone-companion", startN: 2, existingKeyIDs: existingKeyIDs)
+        }
+
+        if let match = baseKeyID.range(of: #"-(\d+)$"#, options: .regularExpression),
+           let n = Int(baseKeyID[match].dropFirst()) {
+            let prefix = String(baseKeyID[..<match.lowerBound])
+            return findAvailableID(prefix: prefix, startN: n + 1, existingKeyIDs: existingKeyIDs)
+        } else {
+            return findAvailableID(prefix: baseKeyID, startN: 2, existingKeyIDs: existingKeyIDs)
+        }
+    }
+
+    private static func findAvailableID(prefix: String, startN: Int, existingKeyIDs: Set<String>) -> String {
+        var n = startN
+        while true {
+            let candidate = "\(prefix)-\(n)"
+            if !existingKeyIDs.contains(candidate) {
+                return candidate
+            }
+            n += 1
+            if n > 9999 {
+                return "\(prefix)-\(startN)-overflow"
+            }
+        }
+    }
 }

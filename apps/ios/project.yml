@@ -80,6 +80,19 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen.observe.schema-tests
         CODE_SIGN_STYLE: Automatic
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) RUNSPECIMEN_TEST_HOOKS"
+  PhonePeerCancellationTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/PhonePeerCancellationTests
+    dependencies:
+      - target: RunSpecimenObserve
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen.observe.phonepeer-tests
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) RUNSPECIMEN_TEST_HOOKS"
 schemes:
   RunSpecimenObserve:
     build:
@@ -88,6 +101,7 @@ schemes:
     test:
       targets:
         - ObserveSchemaTests
+        - PhonePeerCancellationTests
   RunSpecimenObserveDev:
     build:
       targets:

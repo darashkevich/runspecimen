@@ -84,3 +84,13 @@ jobs:
         run: |
           unset PYTHONPATH
           python -m unittest tests.test_ed25519 -v
+
+  ios-observe-tests:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install xcodegen
+        run: brew install xcodegen
+      - name: Run iOS Observe tests
+        run: bash apps/ios/Scripts/test_ios_observe.sh

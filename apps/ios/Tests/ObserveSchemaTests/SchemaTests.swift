@@ -1036,6 +1036,57 @@ final class ObserveSchemaTests: XCTestCase {
         }
     }
 
+    func testDeriveReplacementKeyIDBasicCases() {
+        XCTAssertEqual(
+            CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: "test", existingKeyIDs: []),
+            "test-2",
+            "Key without -N suffix appends -2"
+        )
+        XCTAssertEqual(
+            CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: "test-3", existingKeyIDs: []),
+            "test-4",
+            "Key with -N suffix increments N"
+        )
+        XCTAssertEqual(
+            CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: "iphone-companion", existingKeyIDs: []),
+            "iphone-companion-2",
+            "iphone-companion appends -2"
+        )
+        XCTAssertEqual(
+            CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: "my-key-99", existingKeyIDs: []),
+            "my-key-100",
+            "Large N increments correctly"
+        )
+        XCTAssertEqual(
+            CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: "", existingKeyIDs: []),
+            "iphone-companion-2",
+            "Empty base uses iphone-companion-2"
+        )
+    }
+
+    func testDeriveReplacementKeyIDSkipsCollisions() {
+        XCTAssertEqual(
+            CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: "test-3", existingKeyIDs: ["test-4"]),
+            "test-5",
+            "Skips existing test-4, returns test-5"
+        )
+        XCTAssertEqual(
+            CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: "test-3", existingKeyIDs: ["test-4", "test-5", "test-6"]),
+            "test-7",
+            "Skips multiple collisions"
+        )
+        XCTAssertEqual(
+            CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: "key", existingKeyIDs: ["key-2"]),
+            "key-3",
+            "Skips collision when appending -N"
+        )
+        XCTAssertEqual(
+            CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: "", existingKeyIDs: ["iphone-companion-2"]),
+            "iphone-companion-3",
+            "Empty base skips collision with iphone-companion-2"
+        )
+    }
+
     func testManageActionsUseSelectedKeyIDAfterRelaunch() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-manage-selection-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -1071,10 +1122,9 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertEqual(rotateSourceKeyID, "test-3", "Rotate must rotate FROM selected key ID")
         XCTAssertNotEqual(rotateSourceKeyID, "iphone-companion-2", "Rotate must not accidentally rotate default key")
 
-        let baseID = restoredKeyID
-        let suffix = baseID.last.map { $0.isNumber } ?? false ? "-rotated" : "-2"
-        let derivedReplacementID = baseID + suffix
-        XCTAssertEqual(derivedReplacementID, "test-3-2", "Replacement ID should derive from selected key, not hardcoded")
+        let existingIDs = Set(keys.map(\.keyID))
+        let derivedReplacementID = CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: restoredKeyID, existingKeyIDs: existingIDs)
+        XCTAssertEqual(derivedReplacementID, "test-4", "Replacement ID should derive from selected key using production code")
         XCTAssertNotEqual(derivedReplacementID, "iphone-companion-2", "Replacement ID must not match default")
 
         let revokedRecord = try CompanionSecureEnclaveEnrollment.revoke(keyID: revokeTargetKeyID, directory: directory)

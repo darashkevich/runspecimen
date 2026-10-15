@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+@testable import RunSpecimenObserve
 
 @MainActor
 final class HoldingPeer: PhonePeerTransport {
@@ -163,42 +164,6 @@ actor FetchHold {
     }
 }
 
-@main
-struct PhonePeerCancellationTests {
-    static func main() async {
-        do {
-            try await testDelayedFetchThenCancelDoesNotSignOrPost()
-            try await testCancelBeforePostDoesNotPublish()
-            try await testPostThatAlreadyLeftIsCancellationTooLate()
-            try await testForgedFlagsWrongKeyChallengeReplayCancelAndStaleDoNotCommit()
-            try await testDelayedReceiptThenCancelDoesNotCommit()
-            try await testDelayedReceiptThenNewChallengeDoesNotCommit()
-            try await testFailedCommitThenRetryEnrolls()
-            try await testExactRunSignatureUsesTheFetchedNonce()
-            try await testExactRunCancelDuringReviewDoesNotSign()
-            try await testExactRunReplacementDoesNotSubmit()
-            try await testExactRunMalformedBoundDoesNotSign()
-            try await testExactRunMissingKeyDoesNotSubmit()
-            try await testExactRunExpiryBeforeApproveDoesNotSign()
-            try await testExactRunExpiryAfterWaitDoesNotSubmit()
-            try await testExactRunCancellationBeforeSignDoesNotSign()
-            try await testExactRunCancellationBeforeSubmitDoesNotSubmit()
-            try await testExactRunUnpinnedHolderDoesNotSign()
-            try await testExactRunSubstitutedHolderDoesNotSign()
-            try testPhoneKeyOwnershipRejectsADifferentChallenge()
-            try testPhoneKeyStageRollsBackAndRevokes()
-            try testPhoneKeyCommitFailureKeepsThePreviousGeneration()
-            try await testRevokePhonePeerKeyClearsExactRunState()
-            try await testRotatePhonePeerKeyClearsExactRunState()
-            try await testCancelAllTasksCancelsInFlightPhonePeerOperation()
-            try await testDisconnectCancelsInFlightPhonePeerOperation()
-            print("PhonePeerCancellationTests passed")
-        } catch {
-            fputs("PhonePeerCancellationTests failed: \(error)\n", stderr)
-            exit(1)
-        }
-    }
-}
 
 @MainActor
 func testDelayedFetchThenCancelDoesNotSignOrPost() async throws {

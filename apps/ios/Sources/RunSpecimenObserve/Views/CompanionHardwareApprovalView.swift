@@ -743,9 +743,8 @@ struct CompanionHardwareApprovalView: View {
     }
 
     private func updateReplacementKeyID() {
-        let base = keyID.isEmpty ? "iphone-companion" : keyID
-        let suffix = base.last.map { $0.isNumber } ?? false ? "-rotated" : "-2"
-        replacementKeyID = base + suffix
+        let existingIDs = Set(allKeys.map(\.keyID) + corruptKeys.map(\.keyID))
+        replacementKeyID = CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(from: keyID, existingKeyIDs: existingIDs)
     }
 
     private func loadAllKeys() {
