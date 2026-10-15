@@ -7,28 +7,27 @@ private let appLogger = Logger(subsystem: "com.darashkevich.runspecimen.observe"
 struct RunSpecimenObserveApp: App {
     @StateObject private var session = CompanionSession()
 
-    init() {
-        recoverIncompleteRotationsAtLaunch()
-    }
-
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(session)
                 .preferredColorScheme(.dark)
+                .task(priority: .background) {
+                    recoverIncompleteRotationsAfterLaunch()
+                }
         }
     }
 
-    private func recoverIncompleteRotationsAtLaunch() {
+    private func recoverIncompleteRotationsAfterLaunch() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         let directory = base.appendingPathComponent("RunSpecimenObservePairing", isDirectory: true)
 
         do {
             try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
-            appLogger.info("Rotation recovery check completed at launch")
+            appLogger.info("Rotation recovery check completed after launch")
         } catch {
-            appLogger.error("Rotation recovery failed at launch: \(error.localizedDescription, privacy: .public)")
+            appLogger.error("Rotation recovery failed after launch: \(error.localizedDescription, privacy: .public)")
         }
     }
 }

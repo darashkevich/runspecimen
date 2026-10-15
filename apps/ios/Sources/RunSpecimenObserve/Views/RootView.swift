@@ -5,14 +5,15 @@ struct RootView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                RSTheme.bg.ignoresSafeArea()
+            Group {
                 if session.isPaired {
                     StatusObserveView()
                 } else {
                     PairingView()
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(RSTheme.bg.ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 8) {
