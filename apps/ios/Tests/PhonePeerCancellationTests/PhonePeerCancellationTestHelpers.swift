@@ -156,6 +156,8 @@ func sampleFetchedExactRun(policy: String = "companion", nonce: String = "nonce-
 actor FetchHold {
     private var waiters: [CheckedContinuation<Void, any Error>] = []
     private(set) var entered = false
+    private var cancellationObserved = false
+    private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
 
     func enter() async throws {
         entered = true
@@ -164,8 +166,31 @@ actor FetchHold {
                 waiters.append(continuation)
             }
         } onCancel: {
-            Task { await self.cancelAllWaiters() }
+            Task { await self.signalCancellationObserved() }
         }
+    }
+
+    private func signalCancellationObserved() {
+        cancellationObserved = true
+        let pending = cancellationWaiters
+        cancellationWaiters = []
+        for waiter in pending {
+            waiter.resume()
+        }
+    }
+
+    func waitForCancellationObserved() async {
+        if cancellationObserved {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            cancellationWaiters.append(continuation)
+        }
+    }
+
+    func resetCancellationState() {
+        cancellationObserved = false
+        cancellationWaiters = []
     }
 
     func cancelAllWaiters() {
@@ -558,7 +583,7 @@ func testExactRunCancellationBeforeSignDoesNotSign() async throws {
         await Task.yield()
     }
     task.cancel()
-    try await Task.sleep(nanoseconds: 10_000_000)
+    await hold.waitForCancellationObserved()
     await hold.release()
     await task.value
     if signer.committedSigns != 0 || signer.signs != 0 || peer.submissions != 0 {
