@@ -1104,6 +1104,18 @@ final class CompanionSession: ObservableObject {
     var testExactRunGeneration: Int {
         exactRunGeneration
     }
+    
+    var testPhonePeerKeyStateRevision: Int {
+        phonePeerKeyStateRevision
+    }
+    
+    var testReviewedExactRunKeyGeneration: Int? {
+        reviewedExactRunKeyGeneration
+    }
+    
+    var testActiveRefreshTask: Task<Void, Never>? {
+        activeRefreshTask
+    }
     #endif
 
     private func persist(_ config: PairingConfig) {
