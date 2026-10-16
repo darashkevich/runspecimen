@@ -110,18 +110,13 @@ struct StatusObserveView: View {
     }
 
     private var connectionStatus: some View {
-        let hasError = session.lastError != nil
         let statusLabel: String
         let statusColor: Color
-        if session.status == nil {
-            statusLabel = "Offline"
-            statusColor = RSTheme.amber
-        } else if hasError {
-            statusLabel = "Stale"
-            statusColor = RSTheme.amber
-        } else {
-            statusLabel = "Connected"
-            statusColor = RSTheme.signal
+        switch session.connectionState {
+        case .offline: statusLabel = "Offline"; statusColor = RSTheme.amber
+        case .checking: statusLabel = "Checking…"; statusColor = RSTheme.amber
+        case .stale: statusLabel = "Stale"; statusColor = RSTheme.amber
+        case .connected: statusLabel = "Connected"; statusColor = RSTheme.signal
         }
         return HStack(spacing: 10) {
             Circle()
@@ -315,6 +310,15 @@ struct StatusObserveView: View {
                 }
             }
         case .error(let message):
+            VStack(alignment: .leading, spacing: 8) {
+                Button("Repair saved key counter") {
+                    Task {
+                        do { try await session.repairPhoneKeyCounter() }
+                        catch { session.phonePeerNote = error.localizedDescription }
+                    }
+                }
+                ShareLink("Export key diagnostics", item: "RunSpecimen phone key state: " + message + "\n" + session.phonePeerNote)
+            }
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(RSTheme.danger)
@@ -328,47 +332,58 @@ struct StatusObserveView: View {
     private func revokePhonePeerKey() {
         feedbackGenerator.prepare()
         phonePeerRevokeOutcome = .inProgress
-        do {
-            try session.revokePhonePeerKey()
-            feedbackGenerator.notificationOccurred(.success)
-            phonePeerRevokeOutcome = .success("Phone-peer key revoked")
-        } catch {
-            feedbackGenerator.notificationOccurred(.error)
-            phonePeerRevokeOutcome = .failure(error.localizedDescription)
+        Task {
+            do {
+                try await session.revokePhonePeerKey()
+                feedbackGenerator.notificationOccurred(.success)
+                phonePeerRevokeOutcome = .success("Phone-peer key revoked")
+            } catch {
+                feedbackGenerator.notificationOccurred(.error)
+                phonePeerRevokeOutcome = .failure(error.localizedDescription)
+            }
         }
     }
 
     private func rotatePhonePeerKey() {
         feedbackGenerator.prepare()
         phonePeerRotateOutcome = .inProgress
-        do {
-            try session.rotatePhonePeerKey()
-            feedbackGenerator.notificationOccurred(.success)
-            phonePeerRotateOutcome = .success("Phone-peer key rotation started")
-        } catch {
-            feedbackGenerator.notificationOccurred(.error)
-            phonePeerRotateOutcome = .failure(error.localizedDescription)
+        Task {
+            do {
+                try await session.rotatePhonePeerKey()
+                feedbackGenerator.notificationOccurred(.success)
+                phonePeerRotateOutcome = .success("Phone-peer key rotation started")
+            } catch {
+                feedbackGenerator.notificationOccurred(.error)
+                phonePeerRotateOutcome = .failure(error.localizedDescription)
+            }
         }
     }
     
     private func completePhonePeerKeyRotation() {
         feedbackGenerator.prepare()
         phonePeerRotateOutcome = .inProgress
-        do {
-            try session.completePhonePeerKeyRotation()
-            feedbackGenerator.notificationOccurred(.success)
-            phonePeerRotateOutcome = .success("Phone-peer key rotation completed")
-        } catch {
-            feedbackGenerator.notificationOccurred(.error)
-            phonePeerRotateOutcome = .failure(error.localizedDescription)
+        Task {
+            do {
+                try await session.completePhonePeerKeyRotation()
+                feedbackGenerator.notificationOccurred(.success)
+                phonePeerRotateOutcome = .success("Phone-peer key rotation completed")
+            } catch {
+                feedbackGenerator.notificationOccurred(.error)
+                phonePeerRotateOutcome = .failure(error.localizedDescription)
+            }
         }
     }
     
     private func cancelPhonePeerKeyRotation() {
-        feedbackGenerator.prepare()
-        session.cancelPhonePeerKeyRotation()
-        feedbackGenerator.notificationOccurred(.warning)
-        phonePeerRotateOutcome = .idle
+        Task {
+            do {
+                try await session.cancelPhonePeerKeyRotation()
+                feedbackGenerator.notificationOccurred(.warning)
+                phonePeerRotateOutcome = .idle
+            } catch {
+                phonePeerRotateOutcome = .failure(error.localizedDescription)
+            }
+        }
     }
 
     private var exactRunCard: some View {
@@ -528,13 +543,17 @@ struct StatusObserveView: View {
                 feedbackGenerator.prepare()
                 confirmOutcome = .inProgress
                 Task {
-                    await session.submitRemoteConfirm()
-                    if session.lastError == nil {
+                    switch await session.submitRemoteConfirm() {
+                    case .confirmed:
                         feedbackGenerator.notificationOccurred(.success)
                         confirmOutcome = .success("Confirmed")
-                    } else {
+                    case .cancelled:
+                        confirmOutcome = .failure("Cancelled")
+                    case .failure(let message):
                         feedbackGenerator.notificationOccurred(.error)
-                        confirmOutcome = .failure(session.lastError ?? "Failed")
+                        confirmOutcome = .failure(message)
+                    default:
+                        confirmOutcome = .failure("Unexpected settlement response")
                     }
                 }
             } label: {
@@ -576,13 +595,17 @@ struct StatusObserveView: View {
                 feedbackGenerator.prepare()
                 refuseOutcome = .inProgress
                 Task {
-                    await session.submitRemoteRefuse()
-                    if session.lastError == nil {
+                    switch await session.submitRemoteRefuse() {
+                    case .refused:
                         feedbackGenerator.notificationOccurred(.success)
                         refuseOutcome = .success("Refused")
-                    } else {
+                    case .cancelled:
+                        refuseOutcome = .failure("Cancelled")
+                    case .failure(let message):
                         feedbackGenerator.notificationOccurred(.error)
-                        refuseOutcome = .failure(session.lastError ?? "Failed")
+                        refuseOutcome = .failure(message)
+                    default:
+                        refuseOutcome = .failure("Unexpected settlement response")
                     }
                 }
             } label: {

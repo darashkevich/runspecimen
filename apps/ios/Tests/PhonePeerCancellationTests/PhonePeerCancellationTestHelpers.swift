@@ -74,6 +74,8 @@ final class HoldingPeer: PhonePeerTransport {
 }
 
 final class CountingSigner: PhoneChallengeSigning {
+    var discards = 0
+    func discardStagedEnrollment() { discards += 1 }
     var signs = 0
     var committedSigns = 0
     var commits = 0
@@ -154,6 +156,8 @@ func sampleFetchedExactRun(policy: String = "companion", nonce: String = "nonce-
 }
 
 actor FetchHold {
+    private var entryObserver: (() -> Void)?
+    func observeEntry(_ callback: @escaping () -> Void) { entryObserver = callback }
     private var waiters: [CheckedContinuation<Void, any Error>] = []
     private(set) var entered = false
     private var cancellationObserved = false
@@ -164,6 +168,7 @@ actor FetchHold {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 waiters.append(continuation)
+                entryObserver?()
             }
         } onCancel: {
             Task { await self.signalCancellationObserved() }
@@ -218,6 +223,7 @@ func testDelayedFetchThenCancelDoesNotSignOrPost() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -248,6 +254,7 @@ func testCancelBeforePostDoesNotPublish() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -281,6 +288,7 @@ func testPostThatAlreadyLeftIsCancellationTooLate() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -344,6 +352,7 @@ func testForgedFlagsWrongKeyChallengeReplayCancelAndStaleDoNotCommit() async thr
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -399,6 +408,7 @@ func testDelayedReceiptThenCancelDoesNotCommit() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -441,6 +451,7 @@ func testDelayedReceiptThenNewChallengeDoesNotCommit() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -484,6 +495,7 @@ func testFailedCommitThenRetryEnrolls() async throws {
     signer.failCommits = 1
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -523,6 +535,7 @@ func testExactRunSignatureUsesTheFetchedNonce() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -552,6 +565,7 @@ func testExactRunCancelDuringReviewDoesNotSign() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -583,6 +597,7 @@ func testExactRunReplacementDoesNotSubmit() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -614,6 +629,7 @@ func testExactRunMalformedBoundDoesNotSign() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -638,6 +654,7 @@ func testExactRunMissingKeyDoesNotSubmit() async throws {
     signer.refuseCommitted = true
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -661,6 +678,7 @@ func testExactRunExpiryBeforeApproveDoesNotSign() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -684,6 +702,7 @@ func testExactRunExpiryAfterWaitDoesNotSubmit() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -712,6 +731,7 @@ func testExactRunCancellationBeforeSignDoesNotSign() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -746,6 +766,7 @@ func testExactRunCancellationBeforeSubmitDoesNotSubmit() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -771,6 +792,7 @@ func testExactRunUnpinnedHolderDoesNotSign() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -793,6 +815,7 @@ func testExactRunSubstitutedHolderDoesNotSign() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -813,8 +836,8 @@ func testExactRunSubstitutedHolderDoesNotSign() async throws {
 func testPhoneKeyOwnershipRejectsADifferentChallenge() throws {
     let directory = URL(fileURLWithPath: "/private/tmp/rs-qa-own-phone-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }
-    let stage = PhoneKeyStage(directory: directory)
-    let publicKey = testPublicKey("public-a")
+    let stage = PhoneKeyStage.fixture(directory: directory)
+    let publicKey = try fixturePhonePublicKey(Data("handle-a".utf8))
     try stage.stage(handle: Data("handle-a".utf8), publicKey: publicKey, challengeId: "nonce-a")
     do {
         try stage.commit(ownedBy: "nonce-b", publicKey: publicKey)
@@ -835,9 +858,9 @@ func testPhoneKeyOwnershipRejectsADifferentChallenge() throws {
 func testPhoneKeyCommitFailureKeepsThePreviousGeneration() throws {
     let directory = URL(fileURLWithPath: "/private/tmp/rs-qa-bind-phone-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }
-    let stage = PhoneKeyStage(directory: directory)
-    let pubKeyA = testPublicKey("public-a")
-    let pubKeyB = testPublicKey("public-b")
+    let stage = PhoneKeyStage.fixture(directory: directory)
+    let pubKeyA = try fixturePhonePublicKey(Data("previous".utf8))
+    let pubKeyB = try fixturePhonePublicKey(Data("next".utf8))
     try stage.stage(handle: Data("previous".utf8), publicKey: pubKeyA)
     try stage.commit()
     let generation = try stage.committedGeneration()
@@ -864,9 +887,9 @@ func testPhoneKeyCommitFailureKeepsThePreviousGeneration() throws {
 func testPhoneKeyStageRollsBackAndRevokes() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
-    let stage = PhoneKeyStage(directory: directory)
-    let pubKeyA = testPublicKey("public-a")
-    let pubKeyB = testPublicKey("public-b")
+    let stage = PhoneKeyStage.fixture(directory: directory)
+    let pubKeyA = try fixturePhonePublicKey(Data("previous".utf8))
+    let pubKeyB = try fixturePhonePublicKey(Data("next".utf8))
     try stage.stage(handle: Data("previous".utf8), publicKey: pubKeyA)
     try stage.commit()
     try stage.rotate(handle: Data("next".utf8), publicKey: pubKeyB)
@@ -886,7 +909,9 @@ func testPhoneKeyStageRollsBackAndRevokes() throws {
 
 @MainActor
 func testRevokePhonePeerKeyClearsExactRunState() async throws {
-    let session = CompanionSession()
+    let isolatedDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: isolatedDirectory) }
+    let session = CompanionSession(deferPhoneKeyState: true, phoneKeyStage: .fixture(directory: isolatedDirectory))
     session.reviewedExactRunLines = ["test line"]
     session.reviewedExactRunArgv = ["/usr/bin/test"]
     
@@ -897,7 +922,7 @@ func testRevokePhonePeerKeyClearsExactRunState() async throws {
     defer { try? FileManager.default.removeItem(at: directory) }
     
     do {
-        try session.revokePhonePeerKey()
+        try await session.revokePhonePeerKey()
     } catch {
     }
     
@@ -911,14 +936,16 @@ func testRevokePhonePeerKeyClearsExactRunState() async throws {
 
 @MainActor
 func testRotatePhonePeerKeyClearsExactRunState() async throws {
-    let session = CompanionSession()
+    let isolatedDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: isolatedDirectory) }
+    let session = CompanionSession(deferPhoneKeyState: true, phoneKeyStage: .fixture(directory: isolatedDirectory))
     session.reviewedExactRunLines = ["test line"]
     session.reviewedExactRunArgv = ["/usr/bin/test"]
     
     let previousGeneration = session.testExactRunGeneration
     
     do {
-        try session.rotatePhonePeerKey()
+        try await session.rotatePhonePeerKey()
     } catch {
     }
     
@@ -937,6 +964,7 @@ func testCancelAllTasksCancelsInFlightPhonePeerOperation() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -971,6 +999,7 @@ func testDisconnectCancelsInFlightPhonePeerOperation() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.status = CompanionStatus(phase: "active")
     session.capabilities = CompanionCapabilities(
         product: "test",
         mode: "observe",
@@ -1012,4 +1041,14 @@ enum TestFailure: Error {
     case exactRunNotCleared
     case cancelAllTasksDidNotCancelOperation
     case disconnectDidNotCancelOperation
+}
+
+private func fixturePhonePublicKey(_ handle: Data) throws -> Data {
+    try P256.Signing.PrivateKey(rawRepresentation: Data(SHA256.hash(data: handle))).publicKey.x963Representation
+}
+
+private extension PhoneKeyStage {
+    static func fixture(directory: URL) -> Self {
+        Self(directory: directory, testPublicKeyForHandle: fixturePhonePublicKey)
+    }
 }

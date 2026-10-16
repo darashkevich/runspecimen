@@ -179,7 +179,8 @@ enum CapabilityValidator {
     }
 
     static func validateForAction(capabilities: CompanionCapabilities?, status: CompanionStatus?) -> CapabilityValidationResult {
-        validate(capabilities: capabilities, status: status)
+        guard status != nil else { return .invalid(reason: "Status not verified.") }
+        return validate(capabilities: capabilities, status: status)
     }
 }
 

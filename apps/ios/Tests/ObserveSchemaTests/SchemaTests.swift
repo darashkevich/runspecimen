@@ -1,5 +1,7 @@
 import CryptoKit
 import XCTest
+import Security
+import Darwin
 @testable import RunSpecimenObserve
 
 final class ObserveSchemaTests: XCTestCase {
@@ -8,6 +10,8 @@ final class ObserveSchemaTests: XCTestCase {
         executionTimeAllowance = 60
         CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in }
         CompanionSecureEnclaveEnrollment.testKeyCreator = nil
+        CompanionSecureEnclaveEnrollment.testSignatureProducer = nil
+        CryptoOperationContext.testDidInvalidate = nil
         CompanionSecureEnclaveEnrollment.testKeyDeleter = nil
         CompanionSecureEnclaveEnrollment.testInMemoryKeychain = [:]
     }
@@ -15,8 +19,13 @@ final class ObserveSchemaTests: XCTestCase {
     override func tearDown() {
         CompanionSecureEnclaveEnrollment.testAuthenticator = nil
         CompanionSecureEnclaveEnrollment.testKeyCreator = nil
+        CompanionSecureEnclaveEnrollment.testSignatureProducer = nil
+        CryptoOperationContext.testDidInvalidate = nil
         CompanionSecureEnclaveEnrollment.testKeyDeleter = nil
         CompanionSecureEnclaveEnrollment.testInMemoryKeychain = nil
+        CompanionSecureEnclaveEnrollment.testRotationWillWrite = nil
+        CompanionSecureEnclaveEnrollment.testRotationCheckpoint = nil
+        CompanionSecureEnclaveEnrollment.testRotationFileRemoval = nil
         CompanionSecureEnclaveEnrollment.beforeFinalSignatureDecision = nil
         CompanionSecureEnclaveEnrollment.clock = { Int(Date().timeIntervalSince1970) }
         super.tearDown()
@@ -143,6 +152,7 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.signDisplayed(
             packageText: editedText,
             displayed: fields,
+            selectedKeyID: fields.companionKeyID,
             directory: directory
         )) { error in
             XCTAssertEqual(error as? CompanionHardwareRefusal, .staleRequest)
@@ -177,7 +187,6 @@ final class ObserveSchemaTests: XCTestCase {
             }
             second.fulfill()
         }
-        Thread.sleep(forTimeInterval: 0.05)
         finishFirst.signal()
         wait(for: [first, second], timeout: 3)
         let stored = try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory)
@@ -464,7 +473,7 @@ final class ObserveSchemaTests: XCTestCase {
             _ = try await CompanionSecureEnclaveEnrollment.rotate(from: "phone-vector", to: "new-key", directory: directory)
             XCTFail("Expected rotation to fail due to key creation error")
         } catch {
-            XCTAssertTrue(true, "Rotation failed as expected")
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .malformed("key-creation-failure"))
         }
         
         let storedOld = try CompanionSecureEnclaveEnrollment.inspect(keyID: "phone-vector", directory: directory)
@@ -476,28 +485,24 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: newKeyURL.path), "IOSQA6-16: New key file should not exist after failed rotation")
     }
     
-    func testRotationContinuesWhenKeychainCleanupFails() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-rotate-cleanup-" + UUID().uuidString, isDirectory: true)
+    func testRotationRetainsJournalWhenKeychainCleanupFails() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        
         CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
-        CompanionSecureEnclaveEnrollment.testKeyDeleter = { _ in
-            throw CompanionHardwareRefusal.malformed("keychain-cleanup")
+        _ = try CompanionSecureEnclaveEnrollment.enroll(keyID: "old", directory: directory)
+        CompanionSecureEnclaveEnrollment.testKeyDeleter = { _ in throw CompanionHardwareRefusal.keychainError(errSecNotAvailable) }
+        do {
+            _ = try await CompanionSecureEnclaveEnrollment.rotate(from: "old", to: "new", directory: directory)
+            XCTFail("Cleanup failure must be reported")
+        } catch {
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .keychainError(errSecNotAvailable))
         }
-        
-        let oldKey = try CompanionSecureEnclaveEnrollment.enroll(keyID: "phone-vector", directory: directory)
-        XCTAssertEqual(oldKey.state, CompanionSecureEnclaveEnrollment.active)
-        XCTAssertEqual(oldKey.generation, 1)
-        
-        let newKeyURL = directory.appendingPathComponent("new-key.pairing.json")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: newKeyURL.path), "New key should not exist before rotation")
-        
-        let (newKey, revokedKey) = try await CompanionSecureEnclaveEnrollment.rotate(from: "phone-vector", to: "new-key", directory: directory)
-        
-        XCTAssertEqual(newKey.state, CompanionSecureEnclaveEnrollment.active, "IOSQA6-16: New key is active after rotation")
-        XCTAssertEqual(newKey.generation, 2, "IOSQA6-16: New key has incremented generation")
-        XCTAssertEqual(revokedKey.state, CompanionSecureEnclaveEnrollment.revoked, "IOSQA6-16: Old key is revoked after rotation")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: newKeyURL.path), "IOSQA6-16: New key file exists after rotation")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path))
+        XCTAssertEqual(try CompanionSecureEnclaveEnrollment.inspect(keyID: "old", directory: directory).state, CompanionSecureEnclaveEnrollment.revoked)
+        XCTAssertEqual(try CompanionSecureEnclaveEnrollment.inspect(keyID: "new", directory: directory).state, CompanionSecureEnclaveEnrollment.active)
+        CompanionSecureEnclaveEnrollment.testKeyDeleter = nil
+        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path))
     }
 
     func testRotationWithTestSeamsSucceeds() async throws {
@@ -767,9 +772,9 @@ final class ObserveSchemaTests: XCTestCase {
         )
         try JSONEncoder().encode(state).write(to: directory.appendingPathComponent(".rotation-state.json"))
 
-        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory))
 
-        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path), "oldKeyRevoked phase should clear rotation state")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path), "Missing replacement must retain the recovery journal")
     }
 
     func testRotationRecoveryAtCompletedPhase() throws {
@@ -786,9 +791,9 @@ final class ObserveSchemaTests: XCTestCase {
         )
         try JSONEncoder().encode(state).write(to: directory.appendingPathComponent(".rotation-state.json"))
 
-        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory))
 
-        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path), "completed phase should clear rotation state")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path), "Missing replacement must retain the recovery journal")
     }
 
     func testRecoveryWithNoRotationState() throws {
@@ -1130,7 +1135,7 @@ final class ObserveSchemaTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        let stage = PhoneKeyStage(directory: directory)
+        let stage = PhoneKeyStage.fixture(directory: directory)
         XCTAssertThrowsError(try stage.validateStagedParts()) { error in
             guard let clientError = error as? CompanionClientError,
                   case .transport(let message) = clientError else {
@@ -1172,7 +1177,7 @@ final class ObserveSchemaTests: XCTestCase {
             XCTAssertTrue(message.contains("malformed"))
         }
 
-        try Data(repeating: 4, count: 65).write(to: publicPath)
+        try fixturePhonePublicKey(Data(repeating: 1, count: 32)).write(to: publicPath)
         XCTAssertNoThrow(try stage.validateStagedParts())
     }
 
@@ -1509,8 +1514,8 @@ final class ObserveSchemaTests: XCTestCase {
         
         let differentDelegate = CompanionTLSPinningDelegate(expectedFingerprint: "AABBCC")
         XCTAssertFalse(differentDelegate.hadPinMismatch, "IOSQA6-16: Each delegate starts with no mismatch")
-        XCTAssertEqual(CompanionTLSPinningDelegate.normalize("aa:bb:cc"), "AABBCC", "IOSQA6-16: Fingerprint normalization removes colons and uppercases")
-        XCTAssertEqual(CompanionTLSPinningDelegate.normalize("AA:BB:CC"), "AABBCC", "IOSQA6-16: Normalization handles uppercase input")
+        XCTAssertEqual(CompanionTLSPinningDelegate.normalize("aa:bb:cc"), "aabbcc", "Fingerprint normalization matches the certificate digest")
+        XCTAssertEqual(CompanionTLSPinningDelegate.normalize("AA:BB:CC"), "aabbcc", "IOSQA6-16: Normalization handles uppercase input")
     }
 
     func testCapabilityValidatorValidateForAction() {
@@ -1535,7 +1540,7 @@ final class ObserveSchemaTests: XCTestCase {
             canRemoteConfirm: true,
             boundary: "test"
         )
-        let goodResult = CapabilityValidator.validateForAction(capabilities: goodCaps, status: nil)
+        let goodResult = CapabilityValidator.validateForAction(capabilities: goodCaps, status: CompanionStatus(phase: "active"))
         XCTAssertEqual(goodResult, .valid, "Should accept valid capabilities")
 
         let badStatus = CompanionStatus(phase: "active", companion: CompanionFlags(canApprove: true))
@@ -1548,7 +1553,7 @@ final class ObserveSchemaTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        let stage = PhoneKeyStage(directory: directory)
+        let stage = PhoneKeyStage.fixture(directory: directory)
         XCTAssertThrowsError(try stage.commit(ownedBy: "challenge-1", publicKey: Data(repeating: 4, count: 65))) { error in
             guard let clientError = error as? CompanionClientError,
                   case .transport(let message) = clientError else {
@@ -1563,8 +1568,8 @@ final class ObserveSchemaTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-revoke-throw-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let stage = PhoneKeyStage(directory: directory)
-        try stage.stage(handle: Data("handle".utf8), publicKey: Data(repeating: 4, count: 65))
+        let stage = PhoneKeyStage.fixture(directory: directory)
+        try stage.stage(handle: Data("handle".utf8), publicKey: fixturePhonePublicKey(Data("handle".utf8)))
         try stage.commit()
 
         XCTAssertNoThrow(try stage.revoke(), "Revoke should succeed when files exist")
@@ -1623,12 +1628,13 @@ final class ObserveSchemaTests: XCTestCase {
 
         let signer = TempDirectoryTestSigner(directory: directory)
 
-        let session = await CompanionSession()
+        let session = await CompanionSession(deferPhoneKeyState: true, phoneKeyStage: signer.stage)
         let mac = P256.Signing.PrivateKey()
 
         await MainActor.run {
             session.macSessionPublicKey = mac.publicKey.x963Representation.base64EncodedString()
             session.phonePeerKeyState = .enrolled(generation: 99)
+            session.status = CompanionStatus(phase: "active")
             session.capabilities = CompanionCapabilities(
                 product: "test",
                 mode: "observe",
@@ -1667,7 +1673,7 @@ final class ObserveSchemaTests: XCTestCase {
         await MainActor.run {
             XCTAssertEqual(signer.commits, 1, "signer.commitEnrollment should be called once")
             XCTAssertNil(session.phoneChallenge, "phoneChallenge should be cleared after commit")
-            XCTAssertEqual(session.phonePeerKeyState, .noKey,
+            XCTAssertEqual(session.phonePeerKeyState, .enrolled(generation: 1),
                 "phonePeerKeyState should change after commit (refreshPhonePeerKeyState called)")
         }
 
@@ -1700,8 +1706,8 @@ final class TempDirectoryTestSigner: PhoneChallengeSigning {
     var commits = 0
 
     init(directory: URL) {
-        self.stage = PhoneKeyStage(directory: directory)
-        self.publicKey = Data(repeating: 4, count: 65)
+        self.stage = PhoneKeyStage.fixture(directory: directory)
+        self.publicKey = try! fixturePhonePublicKey(Data("test-handle".utf8))
         self.publicKeyBase64 = publicKey.base64EncodedString()
     }
 
@@ -1857,33 +1863,7 @@ extension ObserveSchemaTests {
     }
     
     // IOSQA6-04: Test disconnect during refresh
-    func testDisconnectDuringRefreshCancelsTask() async throws {
-        let session = await CompanionSession()
-        
-        await MainActor.run {
-            session.baseURLString = "http://localhost:9999"
-            session.pairingToken = "test-token"
-            session.tlsFingerprint = ""
-            session.isPaired = true
-        }
-        
-        let refreshTask = Task {
-            await session.refresh()
-        }
-        
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        await MainActor.run {
-            session.disconnect()
-        }
-        
-        refreshTask.cancel()
-        
-        await MainActor.run {
-            XCTAssertFalse(session.isPaired, "IOSQA6-04: Disconnect should clear isPaired")
-            XCTAssertNil(session.status, "IOSQA6-04: Disconnect should clear status")
-        }
-    }
+
     
     // IOSQA6-07: Test commit on empty stage fails
     func testCommitOnEmptyStageFails() throws {
@@ -1891,7 +1871,7 @@ extension ObserveSchemaTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         
-        let stage = PhoneKeyStage(directory: directory)
+        let stage = PhoneKeyStage.fixture(directory: directory)
         XCTAssertThrowsError(try stage.commit()) { error in
             guard let clientError = error as? CompanionClientError,
                   case .transport(let message) = clientError else {
@@ -1916,16 +1896,11 @@ extension ObserveSchemaTests {
         
         let listing = try CompanionSecureEnclaveEnrollment.listKeysWithCorrupt(directory: directory)
         
-        let storedKeyID = "corrupt-key"
-        let keyExistsValid = listing.validRecords.contains { $0.keyID == storedKeyID }
-        let keyExistsCorrupt = listing.corruptKeyIDs.contains { $0.keyID == storedKeyID }
-        
-        XCTAssertFalse(keyExistsValid, "Corrupt key should not be in valid records")
-        XCTAssertTrue(keyExistsCorrupt, "IOSQA6-08: Corrupt key should be identified in corrupt list")
-        
-        if keyExistsValid || keyExistsCorrupt {
-            XCTAssertEqual(storedKeyID, "corrupt-key", "IOSQA6-08: Selected key ID should be preserved even if corrupt")
-        }
+        let selection = try HardwareKeySelection(persistedKeyID: "corrupt-key", directory: directory)
+        XCTAssertEqual(selection.keyID, "corrupt-key")
+        XCTAssertEqual(selection.corruptKeyIDs.map(\.keyID), ["corrupt-key"])
+        XCTAssertEqual(selection.records.map(\.keyID), ["valid-key"])
+
     }
     
     // IOSQA6-11: Test stale async read discarded
@@ -1948,13 +1923,7 @@ extension ObserveSchemaTests {
     }
     
     // IOSQA6-17: Test Release symbol gate
-    func testReleaseSymbolGateForTestHooks() throws {
-        #if RUNSPECIMEN_TEST_HOOKS
-        XCTAssertTrue(true, "Test hooks are enabled for testing")
-        #else
-        XCTAssertTrue(true, "IOSQA6-17: Test hooks are disabled in Release builds")
-        #endif
-    }
+
     
     // Keychain token storage test
     func testKeychainTokenStorageMigration() async throws {
@@ -1987,6 +1956,7 @@ extension ObserveSchemaTests {
         
         await MainActor.run {
             session.phonePeerKeyState = .enrolled(generation: 5)
+            session.status = CompanionStatus(phase: "active")
             session.capabilities = CompanionCapabilities(
                 product: "test",
                 mode: "observe",
@@ -2045,58 +2015,10 @@ extension ObserveSchemaTests {
     }
     
     // IOSQA6-10: Test task handle generation prevents stale cleanup
-    func testTaskHandleGenerationPreventsStaleCleanup() async throws {
-        let session = await CompanionSession()
-        
-        await MainActor.run {
-            session.baseURLString = "http://localhost:9999"
-            session.pairingToken = "test"
-            session.isPaired = true
-        }
-        
-        let task1 = Task {
-            await session.refresh()
-        }
-        
-        try await Task.sleep(nanoseconds: 5_000_000)
-        task1.cancel()
-        
-        let task2 = Task {
-            await session.refresh()
-        }
-        
-        let hasTask = await MainActor.run { session.testActiveRefreshTask != nil }
-        
-        task2.cancel()
-        
-        XCTAssertTrue(true, "IOSQA6-10: Stale task cleanup should not clear newer task's handle")
-    }
+
     
     // IOSQA6-12: Test typed refresh outcomes
-    func testTypedRefreshOutcomes() async throws {
-        let session = await CompanionSession()
-        
-        var outcome = await MainActor.run { session.refreshOutcome }
-        XCTAssertEqual(outcome, .notAttempted, "IOSQA6-12: Initial outcome should be notAttempted")
-        
-        await MainActor.run {
-            session.baseURLString = "http://localhost:9999"
-            session.pairingToken = "test"
-            session.isPaired = true
-        }
-        
-        await session.refresh()
-        
-        outcome = await MainActor.run { session.refreshOutcome }
-        switch outcome {
-        case .failure:
-            XCTAssertTrue(true, "IOSQA6-12: Failed refresh should set failure outcome")
-        case .cancelled:
-            XCTAssertTrue(true, "IOSQA6-12: Cancelled refresh should set cancelled outcome")
-        default:
-            break
-        }
-    }
+
     
     // IOSQA6-06: Test phone-peer key rotation keeps old key
     func testPhonePeerRotationKeepsOldKey() async throws {
@@ -2104,14 +2026,14 @@ extension ObserveSchemaTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         
-        let stage = PhoneKeyStage(directory: directory)
-        try stage.stage(handle: Data("old-handle".utf8), publicKey: Data(repeating: 4, count: 65))
+        let stage = PhoneKeyStage.fixture(directory: directory)
+        try stage.stage(handle: Data("old-handle".utf8), publicKey: fixturePhonePublicKey(Data("old-handle".utf8)))
         try stage.commit()
         
         let genBefore = try stage.committedGeneration()
         XCTAssertEqual(genBefore, 1)
         
-        try stage.rotate(handle: Data("new-handle".utf8), publicKey: Data(repeating: 5, count: 65))
+        try stage.rotate(handle: Data("new-handle".utf8), publicKey: fixturePhonePublicKey(Data("new-handle".utf8)))
         
         let genAfter = try stage.committedGeneration()
         XCTAssertEqual(genAfter, 1, "IOSQA6-06: Old key should still be committed during rotation")
@@ -2137,3 +2059,1072 @@ final class MockExactRunTransport: ExactRunPhoneSigningTransport {
     func submitRetainedExactRunSignature(challengeId: String, signature: String) async throws {}
 }
 
+
+private final class CertificateProtectionSpace: URLProtectionSpace {
+    let testTrust: SecTrust
+    init(trust: SecTrust) {
+        testTrust = trust
+        super.init(host: "localhost", port: 443, protocol: "https", realm: nil,
+                   authenticationMethod: NSURLAuthenticationMethodServerTrust)
+    }
+    required init?(coder: NSCoder) { fatalError("Not used by this fixture") }
+    override var serverTrust: SecTrust? { testTrust }
+}
+
+private final class PinChallengeSender: NSObject, URLAuthenticationChallengeSender {
+    func use(_ credential: URLCredential, for challenge: URLAuthenticationChallenge) {}
+    func continueWithoutCredential(for challenge: URLAuthenticationChallenge) {}
+    func cancel(_ challenge: URLAuthenticationChallenge) {}
+}
+
+extension ObserveSchemaTests {
+    func testIOSQA701AcceptsRealCertificateThroughDelegate() throws {
+        let der = try XCTUnwrap(Data(base64Encoded: "MIIDCTCCAfGgAwIBAgIUeb2wA2weOf2d7oiPQZyJl07V0XgwDQYJKoZIhvcNAQELBQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MTAxNjAxMjcwM1oXDTM2MTAxMzAxMjcwM1owFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoXltWb/A9vnRaoU0cCOKOjzbbKaa3+eKf5KVsYu9KSucpzZG5yFhlkhjBlspypW1lDHSz+8GmYpgQI3OVhaRqFEx4rgte8Q74u75g8M8Q5u81CKqjgpIi8307VxUO0EdW5qE8111Jr73fi53UX1pz0Ly+l7n71UTk4pEtulAzvQm+lIdxtn/USW8gh5P81SHroXl1CEZYKzfpoXs/KO4jmIQv6OwsBqG22kML0bK1gdL6dtU5ICmwXl5Mb1KokcxtG7rgSfYLXsu+JuhG59aw60VYoNVdfZbYVXYT/dyIE2T/XrL2t8/f9vFSjn0UFmmomnaQrFMMDHIz4DgJNT8JwIDAQABo1MwUTAdBgNVHQ4EFgQUnnJiI6lY15E0zArWf9qH6pWXy+0wHwYDVR0jBBgwFoAUnnJiI6lY15E0zArWf9qH6pWXy+0wDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAe6rUnGfvCa5u/XqIfIbq+OoNI9TrdV9TPtxgB27VklRCJHCNdysAFqiKcXK3EqP1/ageeHK/RfLWoj6N/jd7YQtRbMTGrHkTJ/rwyEKD6eeOcbNUPq6fB+mzbreobIivhKtaRhL/cfYJxpEYjsjTbbJCjr2MCVcyfaS6iPARZOR58EASBEV57apBHJ+BVild0x1G3PUVbbUuY6CkpyBSiPq1XxPan7XKcs66AIwwNPuFPMehE0VpqaS0K/fg/FLCRmXgqgPTe0EsJ9jobb49c7kAA/HHbrwZUBmWypngcTUWnUpJHC3ldsq32WYSZFgoGNJ+yYmQ4TdCuRKiv7FEWw=="))
+        let certificate = try XCTUnwrap(SecCertificateCreateWithData(nil, der as CFData))
+        var trust: SecTrust?
+        XCTAssertEqual(SecTrustCreateWithCertificates(certificate, SecPolicyCreateSSL(true, "localhost" as CFString), &trust), errSecSuccess)
+        let challenge = URLAuthenticationChallenge(protectionSpace: CertificateProtectionSpace(trust: try XCTUnwrap(trust)),
+            proposedCredential: nil, previousFailureCount: 0, failureResponse: nil, error: nil, sender: PinChallengeSender())
+        let digest = SHA256.hash(data: der).map { String(format: "%02x", $0) }.joined()
+        for pin in [digest, digest.uppercased(), digest.map(String.init).joined(separator: ":")] {
+            let delegate = CompanionTLSPinningDelegate(expectedFingerprint: pin)
+            var disposition: URLSession.AuthChallengeDisposition?
+            delegate.urlSession(.shared, didReceive: challenge) { result, credential in
+                disposition = result
+                XCTAssertNotNil(credential)
+            }
+            XCTAssertEqual(disposition, .useCredential)
+            XCTAssertFalse(delegate.hadPinMismatch)
+        }
+        let wrong = CompanionTLSPinningDelegate(expectedFingerprint: String(repeating: "0", count: 64))
+        wrong.urlSession(.shared, didReceive: challenge) { result, credential in
+            XCTAssertEqual(result, .cancelAuthenticationChallenge)
+            XCTAssertNil(credential)
+        }
+        XCTAssertTrue(wrong.hadPinMismatch)
+    }
+
+    @MainActor
+    func testIOSQA702MigrationRetainsTokenUntilKeychainWriteSucceeds() throws {
+        let defaults = UserDefaults.standard
+        let key = "rs.observe.pairing"
+        let previous = defaults.object(forKey: key)
+        defer {
+            defaults.set(previous, forKey: key)
+            CompanionSession.testTokenRead = nil
+            CompanionSession.testTokenWrite = nil
+        }
+        let config = PairingConfig(baseURL: URL(string: "https://localhost")!, pairingToken: "legacy-secret", tlsFingerprint: "abc")
+        let legacy = try JSONEncoder().encode(config)
+        defaults.set(legacy, forKey: key)
+        CompanionSession.testTokenRead = { nil }
+        var attempts = 0
+        CompanionSession.testTokenWrite = { token in
+            attempts += 1
+            XCTAssertEqual(token, "legacy-secret")
+            return errSecInteractionNotAllowed
+        }
+        let first = CompanionSession(deferPhoneKeyState: true)
+        XCTAssertEqual(first.pairingToken, "legacy-secret")
+        XCTAssertTrue(first.lastError?.contains(String(errSecInteractionNotAllowed)) == true)
+        XCTAssertEqual(defaults.data(forKey: key), legacy)
+        let second = CompanionSession(deferPhoneKeyState: true)
+        XCTAssertEqual(second.pairingToken, "legacy-secret")
+        XCTAssertEqual(attempts, 2)
+        CompanionSession.testTokenWrite = { _ in errSecSuccess }
+        _ = CompanionSession(deferPhoneKeyState: true)
+        let sanitized = try JSONDecoder().decode(PairingConfig.self, from: XCTUnwrap(defaults.data(forKey: key)))
+        XCTAssertEqual(sanitized.pairingToken, "")
+    }
+}
+
+extension ObserveSchemaTests {
+    func testIOSQA601EveryJournalPhaseRetainsFailedDeletionAndRetries() throws {
+        for phase in [RotationState.RotationPhase.started, .newKeyStaged, .newKeyCommitted, .oldKeyRevoked, .completed] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            try CompanionSecureEnclaveEnrollment.storeEnrollment(sampleRecord(keyID: "old", state:
+                phase == .oldKeyRevoked || phase == .completed ? CompanionSecureEnclaveEnrollment.revoked : CompanionSecureEnclaveEnrollment.active,
+                generation: 1), directory: directory) {}
+            try CompanionSecureEnclaveEnrollment.storeEnrollment(sampleRecord(keyID: "new", state: CompanionSecureEnclaveEnrollment.active,
+                generation: 2), directory: directory) {}
+            let journal = directory.appendingPathComponent(".rotation-state.json")
+            let state = RotationState(oldKeyID: "old", newKeyID: "new", phase: phase,
+                                      oldKeyRevoked: phase == .oldKeyRevoked || phase == .completed, newKeyCreated: true)
+            let bytes = try JSONEncoder().encode(state)
+            try bytes.write(to: journal)
+            CompanionSecureEnclaveEnrollment.testKeyDeleter = { _ in throw CompanionHardwareRefusal.keychainError(errSecNotAvailable) }
+            XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory))
+            XCTAssertEqual(try Data(contentsOf: journal), bytes)
+            CompanionSecureEnclaveEnrollment.testKeyDeleter = nil
+            CompanionSecureEnclaveEnrollment.testRotationFileRemoval = { url in
+                if url == journal { throw CocoaError(.fileWriteNoPermission) }
+            }
+            XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory))
+            XCTAssertEqual(try Data(contentsOf: journal), bytes)
+            CompanionSecureEnclaveEnrollment.testRotationFileRemoval = nil
+            try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+            try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+        }
+    }
+
+    func testIOSQA601DiskRevocationAheadOfJournalKeepsReplacement() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+        let old = try CompanionSecureEnclaveEnrollment.enroll(keyID: "old", directory: directory)
+        _ = try CompanionSecureEnclaveEnrollment.enroll(keyID: "new", directory: directory)
+        _ = try CompanionSecureEnclaveEnrollment.persistRevocation(old, directory: directory) { _ in }
+        let journal = directory.appendingPathComponent(".rotation-state.json")
+        try JSONEncoder().encode(RotationState(oldKeyID: "old", newKeyID: "new", phase: .newKeyCommitted,
+            oldKeyRevoked: false, newKeyCreated: true)).write(to: journal)
+        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+        XCTAssertEqual(try CompanionSecureEnclaveEnrollment.inspect(keyID: "new", directory: directory).state, CompanionSecureEnclaveEnrollment.active)
+        XCTAssertEqual(try CompanionSecureEnclaveEnrollment.inspect(keyID: "old", directory: directory).state, CompanionSecureEnclaveEnrollment.revoked)
+    }
+
+    func testIOSQA601StagedJournalRemovesRecordWrittenBeforeCheckpoint() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+        _ = try CompanionSecureEnclaveEnrollment.enroll(keyID: "old", directory: directory)
+        _ = try CompanionSecureEnclaveEnrollment.enroll(keyID: "new", directory: directory)
+        let journal = directory.appendingPathComponent(".rotation-state.json")
+        try JSONEncoder().encode(RotationState(oldKeyID: "old", newKeyID: "new", phase: .newKeyStaged,
+            oldKeyRevoked: false, newKeyCreated: true)).write(to: journal)
+        CompanionSecureEnclaveEnrollment.testRotationFileRemoval = { url in
+            if url.lastPathComponent == "new.pairing.json" { throw CocoaError(.fileWriteNoPermission) }
+        }
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: journal.path))
+        CompanionSecureEnclaveEnrollment.testRotationFileRemoval = nil
+        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.inspect(keyID: "new", directory: directory))
+        XCTAssertEqual(try CompanionSecureEnclaveEnrollment.inspect(keyID: "old", directory: directory).state, CompanionSecureEnclaveEnrollment.active)
+    }
+
+    @MainActor
+    func testIOSQA612CancelledCallReturnsCancellationForBothActions() async {
+        let session = CompanionSession(deferPhoneKeyState: true)
+        let confirm = Task { @MainActor in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await session.submitRemoteConfirm()
+        }
+        let confirmOutcome = await confirm.value
+        XCTAssertEqual(confirmOutcome, .cancelled)
+        let refuse = Task { @MainActor in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await session.submitRemoteRefuse()
+        }
+        let refuseOutcome = await refuse.value
+        XCTAssertEqual(refuseOutcome, .cancelled)
+    }
+}
+
+extension ObserveSchemaTests {
+    func testIOSQA601RotationCheckpointFailuresRecoverUnderLock() async throws {
+        for phase in [RotationState.RotationPhase.started, .newKeyStaged, .newKeyCommitted, .oldKeyRevoked, .completed] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+            _ = try CompanionSecureEnclaveEnrollment.enroll(keyID: "old", directory: directory)
+            var reached = false
+            CompanionSecureEnclaveEnrollment.testRotationCheckpoint = { state in
+                let fd = open(directory.appendingPathComponent("enrollment.lock").path, O_RDWR)
+                XCTAssertGreaterThanOrEqual(fd, 0)
+                if fd >= 0 {
+                    defer { close(fd) }
+                    XCTAssertEqual(flock(fd, LOCK_EX | LOCK_NB), -1, "Journal checkpoints must hold the enrollment lock")
+                }
+                if state.phase == phase {
+                    reached = true
+                    throw CocoaError(.fileWriteUnknown)
+                }
+            }
+            do {
+                _ = try await CompanionSecureEnclaveEnrollment.rotate(from: "old", to: "new", directory: directory)
+                XCTFail("Injected checkpoint failure must propagate")
+            } catch { XCTAssertTrue(reached) }
+            XCTAssertTrue(reached)
+            CompanionSecureEnclaveEnrollment.testRotationCheckpoint = nil
+            CompanionSecureEnclaveEnrollment.testKeyDeleter = { _ in
+                let fd = open(directory.appendingPathComponent("enrollment.lock").path, O_RDWR)
+                XCTAssertGreaterThanOrEqual(fd, 0)
+                if fd >= 0 {
+                    defer { close(fd) }
+                    XCTAssertEqual(flock(fd, LOCK_EX | LOCK_NB), -1, "Recovery cleanup must hold the enrollment lock")
+                }
+            }
+            try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+            CompanionSecureEnclaveEnrollment.testKeyDeleter = nil
+            let old = try CompanionSecureEnclaveEnrollment.inspect(keyID: "old", directory: directory)
+            if phase == .oldKeyRevoked || phase == .completed {
+                XCTAssertEqual(old.state, CompanionSecureEnclaveEnrollment.revoked)
+                XCTAssertEqual(try CompanionSecureEnclaveEnrollment.inspect(keyID: "new", directory: directory).state, CompanionSecureEnclaveEnrollment.active)
+            } else {
+                XCTAssertEqual(old.state, CompanionSecureEnclaveEnrollment.active)
+                XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.inspect(keyID: "new", directory: directory))
+            }
+            XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path))
+        }
+    }
+}
+
+extension ObserveSchemaTests {
+    @MainActor
+    func testIOSQA612CancellationAfterTransportStartedCannotReturnSuccess() async throws {
+        for refuse in [false, true] {
+            let session = CompanionSession(deferPhoneKeyState: true)
+            session.baseURLString = "http://localhost"
+            session.pairingToken = "test-token"
+            session.isPaired = true
+            session.status = CompanionStatus(phase: "active")
+            session.capabilities = CompanionCapabilities(product: "test", mode: "observe", canApprove: false,
+                canExecute: false, canMutateLifecycle: false, canRemoteConfirm: true, boundary: "test")
+            session.challengeInput = "challenge"
+            session.approvePhraseInput = "APPROVE"
+            session.refuseReasonInput = "test refusal"
+            let entered = expectation(description: "Production settlement request entered transport")
+            var resume: CheckedContinuation<Data, Error>?
+            let client = try XCTUnwrap(session.testMakeClient())
+            client.testRequest = { request in
+                XCTAssertEqual(request.url?.path, refuse ? "/v1/remote-confirm-refuse" : "/v1/remote-confirm")
+                return try await withCheckedThrowingContinuation { continuation in
+                    resume = continuation
+                    entered.fulfill()
+                }
+            }
+            let task = Task { @MainActor in
+                if refuse { return await session.submitRemoteRefuse() }
+                return await session.submitRemoteConfirm()
+            }
+            await fulfillment(of: [entered], timeout: 3)
+            task.cancel()
+            let continuation = try XCTUnwrap(resume)
+            continuation.resume(returning: Data((refuse ? "{\"ok\":true,\"refused\":true}" : "{\"ok\":true,\"settled\":true}").utf8))
+            let result = await task.value
+            XCTAssertEqual(result, .cancelled)
+            XCTAssertNil(session.lastRemoteConfirmNote)
+            XCTAssertEqual(session.challengeInput, "challenge")
+        }
+    }
+}
+
+extension ObserveSchemaTests {
+    @MainActor
+    private func qaPairedSession() -> CompanionSession {
+        let session = CompanionSession(deferPhoneKeyState: true)
+        session.baseURLString = "http://localhost"
+        session.pairingToken = "fixture-token"
+        session.isPaired = true
+        session.status = CompanionStatus(phase: "active")
+        session.capabilities = CompanionCapabilities(product: "test", mode: "observe", canApprove: false,
+            canExecute: false, canMutateLifecycle: false, canRemoteConfirm: true, boundary: "fixture")
+        return session
+    }
+
+    @MainActor
+    func testIOSQA604DisconnectRejectsStatusReleasedAfterDisconnect() async throws {
+        let session = qaPairedSession()
+        let client = try XCTUnwrap(session.testMakeClient())
+        let entered = expectation(description: "Status request suspended")
+        var resume: CheckedContinuation<Data, Error>?
+        client.testRequest = { request in
+            if request.url?.path == "/v1/status" {
+                return try await withCheckedThrowingContinuation { continuation in
+                    resume = continuation
+                    entered.fulfill()
+                }
+            }
+            return try JSONEncoder().encode(CompanionCapabilities(product: "test", mode: "observe", canApprove: false,
+                canExecute: false, canMutateLifecycle: false, canRemoteConfirm: true, boundary: "fixture"))
+        }
+        let task = Task { @MainActor in await session.refresh() }
+        await fulfillment(of: [entered], timeout: 3)
+        session.disconnect()
+        try XCTUnwrap(resume).resume(returning: JSONEncoder().encode(CompanionStatus(phase: "active")))
+        await task.value
+        XCTAssertFalse(session.isPaired)
+        XCTAssertNil(session.status)
+        XCTAssertNil(session.capabilities)
+        XCTAssertEqual(session.connectionState, .offline)
+        XCTAssertEqual(session.refreshOutcome, .notAttempted)
+    }
+
+    @MainActor
+    func testIOSQA605CapabilitiesFailureInvalidatesStaleCapabilities() async throws {
+        let session = qaPairedSession()
+        let client = try XCTUnwrap(session.testMakeClient())
+        client.testRequest = { request in
+            if request.url?.path == "/v1/status" {
+                return try JSONEncoder().encode(CompanionStatus(phase: "active"))
+            }
+            throw CompanionClientError.http(503, "unavailable")
+        }
+        await session.refresh()
+        XCTAssertNil(session.capabilities)
+        XCTAssertNotNil(session.lastError)
+        XCTAssertEqual(session.connectionState, .stale)
+        if case .failure = session.refreshOutcome {} else { XCTFail("Capability fetch failure must fail refresh") }
+    }
+
+    @MainActor
+    func testIOSQA605ActionRequiresVerifiedStatusAndRestoredPairCannotAct() {
+        let session = qaPairedSession()
+        session.status = nil
+        let validation = CapabilityValidator.validateForAction(capabilities: session.capabilities, status: session.status)
+        if case .invalid = validation {} else { XCTFail("Capabilities alone must not enable actions") }
+        XCTAssertNotEqual(session.connectionState, .connected)
+    }
+
+    func testIOSQA614CorruptRotationDestinationRemainsUntouched() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(sampleRecord(keyID: "old", state: CompanionSecureEnclaveEnrollment.active, generation: 1), directory: directory) {}
+        let destination = directory.appendingPathComponent("new.pairing.json")
+        let corrupt = Data("{corrupt".utf8)
+        try corrupt.write(to: destination)
+        var creations = 0
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in
+            creations += 1
+            return Data(repeating: 4, count: 65)
+        }
+        do {
+            _ = try await CompanionSecureEnclaveEnrollment.rotate(from: "old", to: "new", directory: directory)
+            XCTFail("Corrupt destination must be occupied")
+        } catch {
+            XCTAssertEqual(creations, 0)
+            XCTAssertEqual(try Data(contentsOf: destination), corrupt)
+        }
+    }
+
+    func testIOSQA608SelectionDoesNotReplaceMissingStoredIdentity() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(sampleRecord(keyID: "other", state: CompanionSecureEnclaveEnrollment.active, generation: 1), directory: directory) {}
+        let selection = try HardwareKeySelection(persistedKeyID: "missing-selected-id", directory: directory)
+        XCTAssertEqual(selection.keyID, "missing-selected-id")
+        XCTAssertEqual(selection.records.map(\.keyID), ["other"])
+        XCTAssertTrue(selection.corruptKeyIDs.isEmpty)
+    }
+
+    func testIOSQA609DisplayedRequestCannotSignWithAnotherSelectedKey() throws {
+        let fields = try RSBA2Package.parse(JSONSerialization.data(withJSONObject: package()))
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: package()), as: UTF8.self)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.signDisplayed(packageText: text, displayed: fields,
+            selectedKeyID: "another-key", directory: directory)) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .staleRequest)
+        }
+    }
+
+    func testIOSQA704MarkUpdatedRefreshCompletesBeforeSuccessOutcome() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var record = sampleRecord(state: CompanionSecureEnclaveEnrollment.active, generation: 1)
+        record.macUpdatePending = true
+        try CompanionSecureEnclaveEnrollment.storeEnrollment(record, directory: directory) {}
+        var refreshed = false
+        let outcome = try HardwareKeyActions.markMacUpdated(keyID: record.keyID, directory: directory) {
+            refreshed = true
+            XCTAssertFalse(try CompanionSecureEnclaveEnrollment.inspect(keyID: record.keyID, directory: directory).macUpdatePending)
+        }
+        XCTAssertTrue(refreshed)
+        XCTAssertEqual(outcome, .success("Key marked as updated on Mac."))
+    }
+
+    @MainActor
+    func testIOSQA703StaleLaunchReadCannotRestoreEnrollmentAfterRevoke() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = try fixturePhonePublicKey(Data([1]))
+        let record: [String: Any] = ["generation": 5, "handle": Data([1]).base64EncodedString(), "publicKey": key.base64EncodedString()]
+        try JSONSerialization.data(withJSONObject: record).write(to: directory.appendingPathComponent("custody.json"))
+        let session = CompanionSession(deferPhoneKeyState: true, phoneKeyStage: PhoneKeyStage.fixture(directory: directory))
+        session.refreshPhonePeerKeyState()
+        let captured = session.phonePeerKeyState
+        XCTAssertEqual(captured, .enrolled(generation: 5))
+        let entered = expectation(description: "Launch read suspended")
+        var resume: CheckedContinuation<CompanionSession.PhonePeerKeyState, Never>?
+        session.testPhoneKeyStateRead = {
+            await withCheckedContinuation { continuation in
+                resume = continuation
+                entered.fulfill()
+            }
+        }
+        let task = Task { @MainActor in await session.refreshPhonePeerKeyStateAsync() }
+        await fulfillment(of: [entered], timeout: 3)
+        try await session.revokePhonePeerKey()
+        try XCTUnwrap(resume).resume(returning: captured)
+        await task.value
+        XCTAssertEqual(session.phonePeerKeyState, .noKey)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("custody.json").path))
+    }
+
+    @MainActor
+    func testIOSQA611AsyncStateReportsRotationAndCorruption() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let stage = PhoneKeyStage.fixture(directory: directory)
+        let session = CompanionSession(deferPhoneKeyState: true, phoneKeyStage: stage)
+        let key = try fixturePhonePublicKey(Data([1]))
+        try stage.stage(handle: Data([1]), publicKey: key)
+        await session.refreshPhonePeerKeyStateAsync()
+        XCTAssertEqual(session.phonePeerKeyState, .rotating(oldGeneration: 0, newPublicKey: key.base64EncodedString()))
+        try Data("bad record".utf8).write(to: directory.appendingPathComponent("custody.json"))
+        await session.refreshPhonePeerKeyStateAsync()
+        if case .error = session.phonePeerKeyState {} else { XCTFail("Corruption must not look like no enrollment") }
+    }
+}
+
+extension ObserveSchemaTests {
+    @MainActor
+    func testIOSQA612AcknowledgedSettlementSurvivesRefreshFailure() async throws {
+        for refuse in [false, true] {
+            let session = qaPairedSession()
+            session.challengeInput = "challenge"
+            session.approvePhraseInput = "APPROVE"
+            session.refuseReasonInput = "test refusal"
+            let client = try XCTUnwrap(session.testMakeClient())
+            client.testRequest = { request in
+                if request.url?.path == "/v1/remote-confirm" {
+                    return Data("{\"ok\":true,\"settled\":true}".utf8)
+                }
+                if request.url?.path == "/v1/remote-confirm-refuse" {
+                    return Data("{\"ok\":true,\"refused\":true}".utf8)
+                }
+                throw CompanionClientError.http(503, "status unavailable")
+            }
+            let outcome = refuse ? await session.submitRemoteRefuse() : await session.submitRemoteConfirm()
+            XCTAssertEqual(outcome, refuse ? .refused : .confirmed)
+            XCTAssertNotNil(session.lastRemoteConfirmNote)
+            XCTAssertEqual(session.connectionState, .stale)
+        }
+    }
+}
+
+extension ObserveSchemaTests {
+    @MainActor
+    func testTypedRefreshFailureCarriesTheActualTransportError() async throws {
+        let session = qaPairedSession()
+        let client = try XCTUnwrap(session.testMakeClient())
+        let error = CompanionClientError.http(503, "fixture unavailable")
+        client.testRequest = { _ in throw error }
+        await session.refresh()
+        XCTAssertEqual(session.refreshOutcome, .failure(error.localizedDescription))
+        XCTAssertEqual(session.lastError, error.localizedDescription)
+        XCTAssertEqual(session.connectionState, .stale)
+    }
+}
+
+private func fixturePhonePublicKey(_ handle: Data) throws -> Data {
+    try P256.Signing.PrivateKey(rawRepresentation: Data(SHA256.hash(data: handle))).publicKey.x963Representation
+}
+
+private extension PhoneKeyStage {
+    static func fixture(directory: URL) -> Self {
+        Self(directory: directory, testPublicKeyForHandle: fixturePhonePublicKey)
+    }
+}
+
+private final class BackgroundCheckingSigner: PhoneChallengeSigning {
+    var signs = 0
+    func sign(message: Data) throws -> (publicKey: String, signature: String) {
+        XCTAssertFalse(Thread.isMainThread, "Production session must dispatch signing off the main actor")
+        signs += 1
+        return ("cHVibGlj", "c2ln")
+    }
+}
+
+extension ObserveSchemaTests {
+    func testIOSQA602RotationExportStateSurvivesSelectionRefreshAndRelaunch() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+        _ = try CompanionSecureEnclaveEnrollment.enroll(keyID: "old", directory: directory)
+        _ = try await CompanionSecureEnclaveEnrollment.rotate(from: "old", to: "new", directory: directory)
+        let initial = try HardwareRotationExport.pending(directory: directory)
+        XCTAssertEqual(Set(initial.map(\.keyID)), ["old", "new"])
+        XCTAssertEqual(initial.first { $0.keyID == "old" }?.isRevoked, true)
+        XCTAssertEqual(initial.first { $0.keyID == "new" }?.isRevoked, false)
+        _ = try CompanionSecureEnclaveEnrollment.enroll(keyID: "unrelated", directory: directory)
+        let selection = try HardwareKeySelection(persistedKeyID: "unrelated", directory: directory)
+        XCTAssertEqual(selection.keyID, "unrelated")
+        let afterSelectionAndRefresh = try HardwareRotationExport.pending(directory: directory)
+        XCTAssertEqual(afterSelectionAndRefresh, initial)
+        let restored = try CompanionSecureEnclaveEnrollment.inspect(keyID: "new", directory: directory)
+        XCTAssertEqual(restored.replacesKeyID, "old")
+        XCTAssertEqual(try HardwareRotationExport.pending(directory: directory), initial)
+        _ = try await CompanionSecureEnclaveEnrollment.rotate(from: "new", to: "newer", directory: directory)
+        XCTAssertEqual(Set(try HardwareRotationExport.pending(directory: directory).map(\.keyID)), ["old", "new", "newer"])
+        for id in ["old", "new", "newer"] { try CompanionSecureEnclaveEnrollment.markMacUpdated(keyID: id, directory: directory) }
+        XCTAssertTrue(try HardwareRotationExport.pending(directory: directory).isEmpty)
+    }
+
+    func testIOSQA607RejectsRandomPublicKeyAndMismatchedHandle() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let stage = PhoneKeyStage.fixture(directory: directory)
+        try stage.stage(handle: Data("handle".utf8), publicKey: Data(repeating: 4, count: 65))
+        XCTAssertThrowsError(try stage.commit())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("custody.json").path))
+        try stage.stage(handle: Data("handle".utf8), publicKey: fixturePhonePublicKey(Data("different-handle".utf8)))
+        XCTAssertThrowsError(try stage.commit())
+        // The production Secure Enclave resolver must reject opaque junk too.
+        let productionStage = PhoneKeyStage(directory: directory)
+        try productionStage.stage(handle: Data("not-an-enclave-handle".utf8), publicKey: fixturePhonePublicKey(Data("handle".utf8)))
+        XCTAssertThrowsError(try productionStage.commit())
+    }
+
+    func testIOSQA607CorruptCustodyNeverRestartsGenerationOrOverwritesRecord() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let stage = PhoneKeyStage.fixture(directory: directory)
+        let handle = Data("next".utf8)
+        let publicKey = try fixturePhonePublicKey(handle)
+        let recordURL = directory.appendingPathComponent("custody.json")
+        for generation: Any in [true, 0, -1, Int.max, "1"] {
+            let object: [String: Any] = ["generation": generation, "handle": handle.base64EncodedString(), "publicKey": publicKey.base64EncodedString()]
+            let corrupt = try JSONSerialization.data(withJSONObject: object)
+            try corrupt.write(to: recordURL)
+            try stage.stage(handle: handle, publicKey: publicKey)
+            XCTAssertThrowsError(try stage.commit())
+            XCTAssertEqual(try Data(contentsOf: recordURL), corrupt)
+        }
+        let corrupt = Data("{broken-custody".utf8)
+        try corrupt.write(to: recordURL)
+        XCTAssertThrowsError(try stage.commit())
+        XCTAssertEqual(try Data(contentsOf: recordURL), corrupt)
+    }
+
+    @MainActor
+    func testIOSQA606RevokeRequiresBiometricsAndCancellationPreservesCustody() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let stage = PhoneKeyStage.fixture(directory: directory)
+        let handle = Data("old".utf8)
+        try stage.stage(handle: handle, publicKey: fixturePhonePublicKey(handle))
+        try stage.commit()
+        let session = CompanionSession(deferPhoneKeyState: true, phoneKeyStage: stage)
+        session.refreshPhonePeerKeyState()
+        let previous = try Data(contentsOf: directory.appendingPathComponent("custody.json"))
+        var authentications = 0
+        CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in
+            authentications += 1
+            throw CompanionHardwareRefusal.automationRefused
+        }
+        do { try await session.revokePhonePeerKey(); XCTFail("Cancelled biometrics must refuse revocation") }
+        catch { XCTAssertEqual(error as? CompanionHardwareRefusal, .automationRefused) }
+        XCTAssertEqual(authentications, 1)
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent("custody.json")), previous)
+        XCTAssertEqual(session.phonePeerKeyState, .enrolled(generation: 1))
+        CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in authentications += 1 }
+        try await session.revokePhonePeerKey()
+        XCTAssertEqual(authentications, 2)
+        XCTAssertEqual(session.phonePeerKeyState, .noKey)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("custody.json").path))
+    }
+
+    @MainActor
+    func testIOSQA606RotationCompletionRequiresSignedReceiptAndBiometrics() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let stage = PhoneKeyStage.fixture(directory: directory)
+        try stage.stage(handle: Data("old".utf8), publicKey: fixturePhonePublicKey(Data("old".utf8)))
+        try stage.commit()
+        let peer = MockPhonePeerTransport()
+        let challenge = try await peer.fetchPhonePeerChallenge()
+        let newHandle = Data("replacement".utf8)
+        let newPublicKey = try fixturePhonePublicKey(newHandle)
+        try stage.stage(handle: newHandle, publicKey: newPublicKey, challengeId: challenge.challengeId)
+        let session = CompanionSession(deferPhoneKeyState: true, phoneKeyStage: stage)
+        let configured = qaPairedSession()
+        session.isPaired = true
+        session.status = configured.status
+        session.capabilities = configured.capabilities
+        let signer = LivePhoneSecureEnclaveSigner(stage: stage)
+        var authentications = 0
+        CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in authentications += 1 }
+        do { try await session.completePhonePeerKeyRotation(signer: signer, peer: peer); XCTFail("No signed challenge must not complete") } catch { }
+        XCTAssertEqual(try stage.committedGeneration(), 1)
+        session.phoneChallenge = challenge
+        session.signedPhonePublicKey = newPublicKey.base64EncodedString()
+        peer.verification = PhoneHolderVerification(verified: true, consumed: true, invalidated: false)
+        do { try await session.completePhonePeerKeyRotation(signer: signer, peer: peer); XCTFail("Flags are not a holder receipt") } catch { }
+        XCTAssertEqual(authentications, 0)
+        XCTAssertEqual(try stage.committedGeneration(), 1)
+        let mac = P256.Signing.PrivateKey()
+        session.macSessionPublicKey = mac.publicKey.x963Representation.base64EncodedString()
+        peer.verification = try signedPhoneReceipt(key: mac, challenge: challenge, phonePublicKey: newPublicKey.base64EncodedString())
+        CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in
+            authentications += 1
+            throw CompanionHardwareRefusal.automationRefused
+        }
+        do { try await session.completePhonePeerKeyRotation(signer: signer, peer: peer); XCTFail("Biometric refusal must preserve old custody") } catch { }
+        XCTAssertEqual(authentications, 1)
+        XCTAssertEqual(try stage.committedGeneration(), 1)
+        CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in authentications += 1 }
+        try await session.completePhonePeerKeyRotation(signer: signer, peer: peer)
+        XCTAssertEqual(authentications, 2)
+        XCTAssertEqual(try stage.committedGeneration(), 2)
+        XCTAssertEqual(try stage.committedPublicKey(), newPublicKey)
+        XCTAssertEqual(session.phonePeerKeyState, .enrolled(generation: 2))
+    }
+
+    @MainActor
+    func testIOSQA613SessionSignsOffMainActor() async {
+        let session = qaPairedSession()
+        let signer = BackgroundCheckingSigner()
+        await session.signPhonePeerChallenge(signer: signer, peer: MockPhonePeerTransport())
+        XCTAssertEqual(signer.signs, 1)
+        XCTAssertEqual(session.signedPhonePublicKey, "cHVibGlj")
+    }
+
+    @MainActor
+    func testIOSQA613CancellationInvalidatesContextWhileWorkerIsBlocked() async throws {
+        let entered = expectation(description: "Crypto operation started")
+        let invalidated = expectation(description: "Context invalidated before worker completes")
+        let release = DispatchSemaphore(value: 0)
+        CryptoOperationContext.testDidInvalidate = { invalidated.fulfill() }
+        let task = Task {
+            try await CryptoWorker.withContext { _ in
+                XCTAssertFalse(Thread.isMainThread)
+                entered.fulfill()
+                release.wait()
+                return "must not publish"
+            }
+        }
+        await fulfillment(of: [entered], timeout: 3)
+        task.cancel()
+        await fulfillment(of: [invalidated], timeout: 3)
+        release.signal()
+        do { _ = try await task.value; XCTFail("Cancelled crypto result must not escape") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        CryptoOperationContext.testDidInvalidate = nil
+    }
+
+    @MainActor
+    func testIOSQA613HardwareViewSigningEntryRunsKeyOperationOffMainActor() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        CompanionSecureEnclaveEnrollment.clock = { 1_600_000_000 }
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in
+            XCTAssertFalse(Thread.isMainThread)
+            return Data(repeating: 4, count: 65)
+        }
+        _ = try await CompanionSecureEnclaveEnrollment.enrollAsync(keyID: "phone-vector", directory: directory)
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: package()), as: UTF8.self)
+        let fields = try RSBA2Package.parse(Data(text.utf8))
+        CompanionSecureEnclaveEnrollment.testSignatureProducer = { bytes in
+            XCTAssertFalse(Thread.isMainThread)
+            XCTAssertFalse(bytes.isEmpty)
+            return Data([1, 2, 3])
+        }
+        let signature = try await CompanionSecureEnclaveEnrollment.signDisplayedAsync(packageText: text,
+            displayed: fields, selectedKeyID: "phone-vector", directory: directory)
+        XCTAssertEqual(signature, Data([1, 2, 3]))
+    }
+
+    func testIOSQA613LateCleanupCannotDeleteSuccessorOperationStage() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let stage = PhoneKeyStage.fixture(directory: directory)
+        try stage.stage(handle: Data("old".utf8), publicKey: fixturePhonePublicKey(Data("old".utf8)), challengeId: "old", operationID: "operation-old")
+        try stage.stage(handle: Data("new".utf8), publicKey: fixturePhonePublicKey(Data("new".utf8)), challengeId: "new", operationID: "operation-new")
+        stage.discard(ownedByOperation: "operation-old")
+        XCTAssertEqual(try stage.stagedHandle(), Data("new".utf8))
+        stage.discard(ownedByOperation: "operation-new")
+        XCTAssertFalse(stage.hasAnyStagedParts())
+    }
+}
+
+extension ObserveSchemaTests {
+    func testIOSQA607OpaqueInvalidHandleCannotCommit() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let stage = PhoneKeyStage(directory: directory)
+        try stage.stage(handle: Data("invalid-enclave-handle".utf8), publicKey: P256.Signing.PrivateKey().publicKey.x963Representation)
+        XCTAssertThrowsError(try stage.commit())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("custody.json").path))
+    }
+}
+
+extension ObserveSchemaTests {
+    @MainActor
+    func testIOSQA702PairingWriteFailureKeepsPreviousConfigurationAndToken() throws {
+        let key = "rs.observe.pairing"
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: key)
+        defer {
+            defaults.set(previous, forKey: key)
+            CompanionSession.testTokenRead = nil
+            CompanionSession.testTokenWrite = nil
+        }
+        let old = PairingConfig(baseURL: URL(string: "https://old.example")!, pairingToken: "", tlsFingerprint: "old-pin")
+        let oldData = try JSONEncoder().encode(old)
+        defaults.set(oldData, forKey: key)
+        CompanionSession.testTokenRead = { "old-token" }
+        CompanionSession.testTokenWrite = { _ in errSecInteractionNotAllowed }
+        let session = CompanionSession(deferPhoneKeyState: true)
+        let replacement = PairingConfig(baseURL: URL(string: "https://new.example")!, pairingToken: "new-token", tlsFingerprint: "new-pin")
+        XCTAssertThrowsError(try session.persist(replacement)) { error in
+            XCTAssertTrue(error.localizedDescription.contains(String(errSecInteractionNotAllowed)))
+        }
+        XCTAssertEqual(defaults.data(forKey: key), oldData)
+        XCTAssertEqual(session.baseURLString, old.baseURL.absoluteString)
+        XCTAssertEqual(session.pairingToken, "old-token")
+        CompanionSession.testTokenWrite = { _ in errSecSuccess }
+        try session.persist(replacement)
+        let saved = try JSONDecoder().decode(PairingConfig.self, from: XCTUnwrap(defaults.data(forKey: key)))
+        XCTAssertEqual(saved.baseURL, replacement.baseURL)
+        XCTAssertEqual(saved.pairingToken, "")
+        XCTAssertEqual(session.pairingToken, "new-token")
+    }
+}
+
+
+extension ObserveSchemaTests {
+    func testIOSQA607RevocationNeverReusesGeneration() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for generation in 1...3 {
+            let stage = PhoneKeyStage.fixture(directory: directory)
+            let handle = Data("key-\(generation)".utf8)
+            try stage.stage(handle: handle, publicKey: fixturePhonePublicKey(handle))
+            try stage.commit()
+            XCTAssertEqual(try stage.committedGeneration(), generation)
+            try stage.revoke()
+            XCTAssertThrowsError(try stage.committedHandle())
+            XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("custody.json").path))
+        }
+        let stage = PhoneKeyStage.fixture(directory: directory)
+        let reservation = directory.appendingPathComponent("custody-generation.json")
+        let corrupt = Data("broken-counter".utf8)
+        try corrupt.write(to: reservation)
+        let handle = Data("next".utf8)
+        try stage.stage(handle: handle, publicKey: fixturePhonePublicKey(handle))
+        XCTAssertThrowsError(try stage.commit())
+        XCTAssertEqual(try Data(contentsOf: reservation), corrupt)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("custody.json").path))
+    }
+
+    @MainActor
+    func testIOSQA6N5RecoveryFailureRemainsVisibleUntilSuccessfulRetry() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+        _ = try CompanionSecureEnclaveEnrollment.enroll(keyID: "old", directory: directory)
+        let journal = directory.appendingPathComponent(".rotation-state.json")
+        try JSONEncoder().encode(RotationState(oldKeyID: "old", newKeyID: "new", phase: .started,
+            oldKeyRevoked: false, newKeyCreated: false)).write(to: journal)
+        CompanionSecureEnclaveEnrollment.testRotationFileRemoval = { _ in throw CocoaError(.fileWriteNoPermission) }
+        let session = CompanionSession(deferPhoneKeyState: true)
+        await session.recoverHardwareRotation(directory: directory)
+        XCTAssertNotNil(session.rotationRecoveryError)
+        XCTAssertFalse(session.rotationRecoveryInProgress)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: journal.path))
+        CompanionSecureEnclaveEnrollment.testRotationFileRemoval = nil
+        await session.recoverHardwareRotation(directory: directory)
+        XCTAssertNil(session.rotationRecoveryError)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+    }
+}
+
+extension ObserveSchemaTests {
+    func testIOSQA601JournalWriteFailuresRecoverUnderLock() async throws {
+        for phase in [RotationState.RotationPhase.started, .newKeyStaged, .newKeyCommitted, .oldKeyRevoked, .completed] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+            _ = try CompanionSecureEnclaveEnrollment.enroll(keyID: "old", directory: directory)
+            var reached = false
+            CompanionSecureEnclaveEnrollment.testRotationWillWrite = { state in
+                let fd = open(directory.appendingPathComponent("enrollment.lock").path, O_RDWR)
+                XCTAssertGreaterThanOrEqual(fd, 0)
+                if fd >= 0 {
+                    defer { close(fd) }
+                    XCTAssertEqual(flock(fd, LOCK_EX | LOCK_NB), -1, "Journal checkpoints must hold the enrollment lock")
+                }
+                if state.phase == phase {
+                    reached = true
+                    throw CocoaError(.fileWriteUnknown)
+                }
+            }
+            do {
+                _ = try await CompanionSecureEnclaveEnrollment.rotate(from: "old", to: "new", directory: directory)
+                XCTFail("Injected checkpoint failure must propagate")
+            } catch { XCTAssertTrue(reached) }
+            XCTAssertTrue(reached)
+            CompanionSecureEnclaveEnrollment.testRotationWillWrite = nil
+            CompanionSecureEnclaveEnrollment.testKeyDeleter = { _ in
+                let fd = open(directory.appendingPathComponent("enrollment.lock").path, O_RDWR)
+                XCTAssertGreaterThanOrEqual(fd, 0)
+                if fd >= 0 {
+                    defer { close(fd) }
+                    XCTAssertEqual(flock(fd, LOCK_EX | LOCK_NB), -1, "Recovery cleanup must hold the enrollment lock")
+                }
+            }
+            try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+            CompanionSecureEnclaveEnrollment.testKeyDeleter = nil
+            let old = try CompanionSecureEnclaveEnrollment.inspect(keyID: "old", directory: directory)
+            if phase == .oldKeyRevoked || phase == .completed {
+                XCTAssertEqual(old.state, CompanionSecureEnclaveEnrollment.revoked)
+                XCTAssertEqual(try CompanionSecureEnclaveEnrollment.inspect(keyID: "new", directory: directory).state, CompanionSecureEnclaveEnrollment.active)
+            } else {
+                XCTAssertEqual(old.state, CompanionSecureEnclaveEnrollment.active)
+                XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.inspect(keyID: "new", directory: directory))
+            }
+            XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".rotation-state.json").path))
+        }
+    }
+}
+
+extension ObserveSchemaTests {
+    func testIOSQA608MissingSavedSelectionIsExplicitlyUnavailable() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+        _ = try CompanionSecureEnclaveEnrollment.enroll(keyID: "other", directory: directory)
+        let missing = try HardwareKeySelection(persistedKeyID: "gone", directory: directory)
+        XCTAssertEqual(missing.keyID, "gone")
+        XCTAssertTrue(missing.isUnavailable)
+        XCTAssertFalse(try HardwareKeySelection(persistedKeyID: "other", directory: directory).isUnavailable)
+    }
+}
+
+extension ObserveSchemaTests {
+    func testIOSQA601MissingReplacementPreservesRecoveryEvidence() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+        let old = try CompanionSecureEnclaveEnrollment.enroll(keyID: "old", directory: directory)
+        _ = try CompanionSecureEnclaveEnrollment.enroll(keyID: "new", directory: directory)
+        _ = try CompanionSecureEnclaveEnrollment.persistRevocation(old, directory: directory) { _ in }
+        let replacementURL = directory.appendingPathComponent("new.pairing.json")
+        let replacement = try Data(contentsOf: replacementURL)
+        try FileManager.default.removeItem(at: replacementURL)
+        let journal = directory.appendingPathComponent(".rotation-state.json")
+        try JSONEncoder().encode(RotationState(oldKeyID: "old", newKeyID: "new", phase: .oldKeyRevoked,
+            oldKeyRevoked: true, newKeyCreated: true)).write(to: journal)
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: journal.path))
+        try replacement.write(to: replacementURL)
+        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+        XCTAssertEqual(try CompanionSecureEnclaveEnrollment.inspect(keyID: "new", directory: directory).state, CompanionSecureEnclaveEnrollment.active)
+    }
+
+    func testIOSQA601StagedRollbackDeletesReplacementRecordWithoutHooks() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        CompanionSecureEnclaveEnrollment.testKeyCreator = { _ in Data(repeating: 4, count: 65) }
+        _ = try CompanionSecureEnclaveEnrollment.enroll(keyID: "old", directory: directory)
+        _ = try CompanionSecureEnclaveEnrollment.enroll(keyID: "new", directory: directory)
+        try JSONEncoder().encode(RotationState(oldKeyID: "old", newKeyID: "new", phase: .newKeyStaged,
+            oldKeyRevoked: false, newKeyCreated: true)).write(to: directory.appendingPathComponent(".rotation-state.json"))
+        try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.inspect(keyID: "new", directory: directory))
+        XCTAssertEqual(try CompanionSecureEnclaveEnrollment.inspect(keyID: "old", directory: directory).state, CompanionSecureEnclaveEnrollment.active)
+    }
+}
+
+
+extension ObserveSchemaTests {
+    @MainActor
+    func testIOSQA8C1RejectedCandidateIsNeverPersistedOrRestored() async throws {
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: "rs.observe.pairing")
+        defer { defaults.set(previous, forKey: "rs.observe.pairing"); CompanionSession.testTokenRead = nil; CompanionSession.testTokenWrite = nil }
+        defaults.removeObject(forKey: "rs.observe.pairing")
+        var token: String?
+        var writes = 0
+        CompanionSession.testTokenRead = { token }
+        CompanionSession.testTokenWrite = { value in writes += 1; token = value; return errSecSuccess }
+        let session = CompanionSession(deferPhoneKeyState: true)
+        session.baseURLString = "https://localhost"
+        session.pairingToken = "candidate-token"
+        session.tlsFingerprint = "candidate-pin"
+        let client = CompanionClient(config: PairingConfig(baseURL: URL(string: session.baseURLString)!, pairingToken: session.pairingToken, tlsFingerprint: session.tlsFingerprint))
+        var reject = true
+        client.testRequest = { request in
+            if request.url?.path == "/v1/status" {
+                if reject { throw CompanionClientError.tlsPinMismatch }
+                return try JSONEncoder().encode(CompanionStatus(phase: "active"))
+            }
+            return try JSONEncoder().encode(CompanionCapabilities(product: "test", mode: "observe", canApprove: false,
+                canExecute: false, canMutateLifecycle: false, canRemoteConfirm: true, boundary: "fixture"))
+        }
+        await session.saveAndPair(client: client)
+        XCTAssertFalse(session.isPaired)
+        XCTAssertEqual(writes, 0)
+        XCTAssertNil(defaults.data(forKey: "rs.observe.pairing"))
+        XCTAssertNil(token)
+        XCTAssertFalse(CompanionSession(deferPhoneKeyState: true).isPaired)
+        reject = false
+        await session.saveAndPair(client: client)
+        XCTAssertTrue(session.isPaired)
+        XCTAssertEqual(writes, 1)
+        XCTAssertNotNil(session.status)
+        XCTAssertNotNil(session.capabilities)
+        XCTAssertTrue(CompanionSession(deferPhoneKeyState: true).isPaired)
+    }
+
+    @MainActor
+    func testIOSQA8C2DismissalPreservesEvidenceAndDiagnosticsUntilRetrySucceeds() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = directory.appendingPathComponent(".rotation-state.json")
+        let bytes = try JSONEncoder().encode(RotationState(oldKeyID: "old", newKeyID: "new", phase: .started, oldKeyRevoked: false, newKeyCreated: false))
+        try bytes.write(to: journal)
+        CompanionSecureEnclaveEnrollment.testRotationFileRemoval = { _ in throw CocoaError(.fileWriteNoPermission) }
+        let session = CompanionSession(deferPhoneKeyState: true)
+        await session.recoverHardwareRotation(directory: directory)
+        XCTAssertNotNil(session.rotationRecoveryError)
+        session.dismissRotationRecoveryNotice()
+        XCTAssertTrue(session.rotationRecoveryDismissed)
+        XCTAssertTrue(session.rotationRecoveryDiagnostics.contains("Recovery evidence is retained"))
+        XCTAssertEqual(try Data(contentsOf: journal), bytes)
+        await session.recoverHardwareRotation(directory: directory)
+        XCTAssertTrue(session.rotationRecoveryDismissed, "Repeated failure must not force the dismissed banner back")
+        session.showRotationRecoveryNotice()
+        XCTAssertFalse(session.rotationRecoveryDismissed)
+        CompanionSecureEnclaveEnrollment.testRotationFileRemoval = nil
+        await session.recoverHardwareRotation(directory: directory)
+        XCTAssertNil(session.rotationRecoveryError)
+        XCTAssertFalse(session.rotationRecoveryDismissed)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+    }
+
+    @MainActor
+    func testIOSQA8C3CounterRepairRequiresBiometricsAndPreservesHighWater() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let stage = PhoneKeyStage.fixture(directory: directory)
+        let handle = Data("first".utf8)
+        try stage.stage(handle: handle, publicKey: fixturePhonePublicKey(handle))
+        try stage.commit()
+        try stage.revoke()
+        let primary = directory.appendingPathComponent("custody-generation.json")
+        let recovery = directory.appendingPathComponent("custody-generation-recovery.json")
+        // The recovery write can lead a failed primary write by a generation.
+        try JSONEncoder().encode(7).write(to: recovery)
+        let corrupt = Data("broken-counter".utf8)
+        try corrupt.write(to: primary)
+        let session = CompanionSession(deferPhoneKeyState: true, phoneKeyStage: stage)
+        session.refreshPhonePeerKeyState()
+        guard case .error(let message) = session.phonePeerKeyState else { return XCTFail("Counter damage must surface in the key UI") }
+        XCTAssertTrue(message.contains("Repair saved key counter"))
+        CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in throw CompanionHardwareRefusal.automationRefused }
+        do { try await session.repairPhoneKeyCounter(); XCTFail("Biometric refusal must not repair") } catch { }
+        XCTAssertEqual(try Data(contentsOf: primary), corrupt)
+        CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in }
+        try await session.repairPhoneKeyCounter()
+        XCTAssertEqual(session.phonePeerKeyState, .noKey)
+        let replacement = Data("replacement".utf8)
+        try stage.stage(handle: replacement, publicKey: fixturePhonePublicKey(replacement))
+        try stage.commit()
+        XCTAssertEqual(try stage.committedGeneration(), 8)
+    }
+
+    func testIOSQA8C3MissingRecoveryRefusesResetAndLegacyCounterMigrates() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let stage = PhoneKeyStage.fixture(directory: directory)
+        let primary = directory.appendingPathComponent("custody-generation.json")
+        let corrupt = Data("bad".utf8)
+        try corrupt.write(to: primary)
+        XCTAssertThrowsError(try stage.repairGenerationReservation()) { error in
+            XCTAssertEqual(error as? PhoneKeyStage.CounterRecoveryError, .noTrustedRecovery)
+        }
+        XCTAssertEqual(try Data(contentsOf: primary), corrupt)
+        try JSONEncoder().encode(9).write(to: primary)
+        let handle = Data("legacy-next".utf8)
+        try stage.stage(handle: handle, publicKey: fixturePhonePublicKey(handle))
+        try stage.commit()
+        XCTAssertEqual(try stage.committedGeneration(), 10)
+        try FileManager.default.removeItem(at: primary)
+        XCTAssertThrowsError(try stage.checkGenerationReservation())
+        try stage.repairGenerationReservation()
+        try stage.revoke()
+        try stage.stage(handle: handle, publicKey: fixturePhonePublicKey(handle))
+        try stage.commit()
+        XCTAssertEqual(try stage.committedGeneration(), 11)
+    }
+
+    func testIOSQA8C4OwnedCommitResolvesStagedHandleOnceAndRechecksNextOperation() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var resolutions = 0
+        var stage = PhoneKeyStage(directory: directory)
+        stage.testPublicKeyForHandle = { handle in resolutions += 1; return try fixturePhonePublicKey(handle) }
+        let handle = Data("first".utf8)
+        let publicKey = try fixturePhonePublicKey(handle)
+        try stage.stage(handle: handle, publicKey: publicKey, challengeId: "challenge")
+        try stage.commit(ownedBy: "challenge", publicKey: publicKey)
+        XCTAssertEqual(resolutions, 1, "Ownership and commit must share one validated staged snapshot")
+        try stage.stage(handle: handle, publicKey: publicKey, challengeId: "next")
+        resolutions = 0
+        try stage.claimOperation("operation")
+        XCTAssertEqual(resolutions, 1)
+        // No cross-operation cache may accept bytes altered after validation.
+        try Data("different".utf8).write(to: directory.appendingPathComponent("phone-session-handle.pending"))
+        XCTAssertThrowsError(try stage.validateStagedParts())
+        XCTAssertEqual(resolutions, 2)
+    }
+}
+
+extension ObserveSchemaTests {
+    @MainActor
+    func testIOSQA8C1FailedOrCancelledReplacementKeepsPreviouslySavedPairing() async throws {
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: "rs.observe.pairing")
+        defer { defaults.set(previous, forKey: "rs.observe.pairing"); CompanionSession.testTokenRead = nil; CompanionSession.testTokenWrite = nil }
+        var token = "old-token"
+        var writes = 0
+        CompanionSession.testTokenRead = { token }
+        CompanionSession.testTokenWrite = { value in token = value; writes += 1; return errSecSuccess }
+        let old = PairingConfig(baseURL: URL(string: "https://old.example")!, pairingToken: "old-token", tlsFingerprint: "old-pin")
+        let session = CompanionSession(deferPhoneKeyState: true)
+        try session.persist(old)
+        let oldBytes = defaults.data(forKey: "rs.observe.pairing")
+        writes = 0
+        session.baseURLString = "https://new.example"
+        session.pairingToken = "new-token"
+        session.tlsFingerprint = "new-pin"
+        let client = CompanionClient(config: PairingConfig(baseURL: URL(string: session.baseURLString)!, pairingToken: session.pairingToken, tlsFingerprint: session.tlsFingerprint))
+        let entered = expectation(description: "Candidate verification suspended")
+        var resume: CheckedContinuation<Data, Error>?
+        var hold = false
+        client.testRequest = { request in
+            if request.url?.path == "/v1/status" {
+                if !hold { throw CompanionClientError.http(503, "unavailable") }
+                return try await withCheckedThrowingContinuation { continuation in resume = continuation; entered.fulfill() }
+            }
+            return try JSONEncoder().encode(CompanionCapabilities(product: "test", mode: "observe", canApprove: false,
+                canExecute: false, canMutateLifecycle: false, canRemoteConfirm: true, boundary: "fixture"))
+        }
+        await session.saveAndPair(client: client)
+        XCTAssertEqual(defaults.data(forKey: "rs.observe.pairing"), oldBytes)
+        XCTAssertEqual(token, "old-token")
+        XCTAssertEqual(CompanionSession(deferPhoneKeyState: true).baseURLString, old.baseURL.absoluteString)
+        hold = true
+        let task = Task { @MainActor in await session.saveAndPair(client: client) }
+        await fulfillment(of: [entered], timeout: 3)
+        task.cancel()
+        try XCTUnwrap(resume).resume(returning: JSONEncoder().encode(CompanionStatus(phase: "active")))
+        await task.value
+        XCTAssertEqual(writes, 0)
+        XCTAssertEqual(token, "old-token")
+        XCTAssertEqual(defaults.data(forKey: "rs.observe.pairing"), oldBytes)
+        XCTAssertFalse(session.isPaired)
+    }
+}

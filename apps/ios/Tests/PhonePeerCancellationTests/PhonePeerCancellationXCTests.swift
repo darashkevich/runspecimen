@@ -6,6 +6,12 @@ final class PhonePeerCancellationXCTests: XCTestCase {
     override func setUp() {
         super.setUp()
         executionTimeAllowance = 60
+        CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in }
+    }
+
+    override func tearDown() {
+        CompanionSecureEnclaveEnrollment.testAuthenticator = nil
+        super.tearDown()
     }
 
     @MainActor
@@ -128,5 +134,38 @@ final class PhonePeerCancellationXCTests: XCTestCase {
     @MainActor
     func test_DisconnectCancelsInFlightPhonePeerOperation() async throws {
         try await testDisconnectCancelsInFlightPhonePeerOperation()
+    }
+}
+
+extension PhonePeerCancellationXCTests {
+    @MainActor
+    func testIOSQA610SupersededTaskCannotDiscardNewStageOrClearNewResult() async throws {
+        let session = CompanionSession(deferPhoneKeyState: true)
+        session.isPaired = true
+        session.status = CompanionStatus(phase: "active")
+        session.capabilities = CompanionCapabilities(product: "test", mode: "observe", canApprove: false,
+            canExecute: false, canMutateLifecycle: false, canRemoteConfirm: true, boundary: "fixture")
+        let signer = CountingSigner()
+        let oldHold = FetchHold()
+        let entered = expectation(description: "Old operation suspended after signing")
+        await oldHold.observeEntry { entered.fulfill() }
+        let oldPeer = HoldingPeer(hold: oldHold)
+        oldPeer.holdFetch = false
+        oldPeer.holdBeforePost = true
+        let old = Task { @MainActor in await session.signPhonePeerChallenge(signer: signer, peer: oldPeer) }
+        await fulfillment(of: [entered], timeout: 3)
+        let newPeer = HoldingPeer(hold: FetchHold())
+        newPeer.holdFetch = false
+        await session.signPhonePeerChallenge(signer: signer, peer: newPeer)
+        XCTAssertEqual(signer.signs, 2)
+        XCTAssertEqual(newPeer.posts, 1)
+        let newPublicKey = session.signedPhonePublicKey
+        XCTAssertNotNil(newPublicKey)
+        XCTAssertEqual(signer.discards, 1, "Only the superseded stage is cleaned before the new sign")
+        await oldHold.release()
+        await old.value
+        XCTAssertEqual(signer.discards, 1, "The late old completion cannot discard the new stage")
+        XCTAssertEqual(session.signedPhonePublicKey, newPublicKey)
+        XCTAssertEqual(oldPeer.posts, 0)
     }
 }

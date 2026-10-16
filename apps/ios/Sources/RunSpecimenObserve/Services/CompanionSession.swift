@@ -17,6 +17,9 @@ final class CompanionSession: ObservableObject {
     @Published var isPaired: Bool = false
     @Published var capabilities: CompanionCapabilities?
     @Published var status: CompanionStatus?
+    @Published private(set) var rotationRecoveryError: String?
+    @Published private(set) var rotationRecoveryInProgress = false
+    @Published private(set) var rotationRecoveryDismissed = false
     @Published var lastError: String?
     @Published var lastSuccessfulRefresh: Date?
     @Published var refreshOutcome: RefreshOutcome = .notAttempted
@@ -44,16 +47,21 @@ final class CompanionSession: ObservableObject {
     var phoneChallenge: PhonePeerChallengeMessage?
     var signedPhonePublicKey: String?
     private var phoneSignGeneration = 0
+    private var explicitlyCancelledSignGeneration: Int?
+    private var postingSignGeneration: Int?
     private var phonePeerKeyStateRevision = 0
     private var exactRunGeneration = 0
     private var reviewedExactRun: ParsedExactRun?
     private var reviewedExactRunKeyGeneration: Int?
     private var acceptedReceiptSignatures: Set<String> = []
 
+    private var activeKeyLifecycleTask: Task<Void, Error>?
+    private var keyLifecycleGeneration = 0
     private var activeRefreshTask: Task<Void, Never>?
     private var activePhonePeerTask: Task<Void, Never>?
+    private var activePhonePeerSigner: (any PhoneChallengeSigning)?
     private var activeExactRunTask: Task<Void, Never>?
-    private var activeRemoteConfirmTask: Task<Void, Never>?
+    private var activeRemoteConfirmTask: Task<RemoteSettleOutcome, Never>?
     private var refreshTaskGeneration = 0
     private var phonePeerTaskGeneration = 0
     private var exactRunTaskGeneration = 0
@@ -61,6 +69,16 @@ final class CompanionSession: ObservableObject {
 
     private var cachedClient: CompanionClient?
     private var cachedClientConfig: PairingConfig?
+
+    #if RUNSPECIMEN_TEST_HOOKS
+    var testHardwareRecoveryDirectory: URL?
+    var testPhoneKeyStateRead: (() async -> PhonePeerKeyState)?
+    static var testTokenDelete: (() -> Void)?
+    static var testTokenRead: (() -> String?)?
+    static var testTokenWrite: ((String) -> OSStatus)?
+    #endif
+
+    private let phoneKeyStage: PhoneKeyStage
 
     private let defaultsKey = "rs.observe.pairing"
     private let keychainService = "com.darashkevich.runspecimen.observe.pairing"
@@ -89,7 +107,55 @@ final class CompanionSession: ObservableObject {
         }
     }
 
-    init(deferPhoneKeyState: Bool = false) {
+    nonisolated static var hardwareEnrollmentDirectory: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("RunSpecimenObservePairing", isDirectory: true)
+    }
+
+    func recoverHardwareRotation(directory suppliedDirectory: URL? = nil) async {
+        let directory: URL
+        #if RUNSPECIMEN_TEST_HOOKS
+        directory = suppliedDirectory ?? testHardwareRecoveryDirectory ?? Self.hardwareEnrollmentDirectory
+        #else
+        directory = suppliedDirectory ?? Self.hardwareEnrollmentDirectory
+        #endif
+        guard !rotationRecoveryInProgress else { return }
+        rotationRecoveryInProgress = true
+        defer { rotationRecoveryInProgress = false }
+        do {
+            try await CryptoWorker.shared.perform {
+                try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
+            }
+            rotationRecoveryError = nil
+            rotationRecoveryDismissed = false
+        } catch {
+            rotationRecoveryError = "Key recovery needs attention: \(error.localizedDescription)"
+        }
+    }
+
+    func dismissRotationRecoveryNotice() { rotationRecoveryDismissed = true }
+    func showRotationRecoveryNotice() { rotationRecoveryDismissed = false }
+
+    var rotationRecoveryDiagnostics: String {
+        "RunSpecimen key recovery\n" + (rotationRecoveryError ?? "No pending hardware-key recovery error.")
+            + "\nRecovery evidence is retained. Retry after restoring storage access; do not delete key records or reset generation counters."
+    }
+
+    func repairPhoneKeyCounter() async throws {
+        try await withKeyLifecycle { [self] in
+            try await CompanionSecureEnclaveEnrollment.authenticateWithBiometrics(reason: "Authenticate to repair the saved phone key counter")
+            let stage = phoneKeyStage
+            try await CryptoWorker.shared.perform { try stage.repairGenerationReservation() }
+            phonePeerKeyStateRevision += 1
+            await refreshPhonePeerKeyStateAsync()
+            phonePeerNote = "Saved key counter repaired from its recovery record. No key was replaced and no generation was reset."
+        }
+    }
+
+    init(deferPhoneKeyState: Bool = false,
+         phoneKeyStage: PhoneKeyStage = LivePhoneSecureEnclaveSigner().stage) {
+        self.phoneKeyStage = phoneKeyStage
         #if DEBUG
         let start = CFAbsoluteTimeGetCurrent()
         launchLogger.info("CompanionSession.init() START, deferPhoneKeyState=\(deferPhoneKeyState)")
@@ -115,21 +181,7 @@ final class CompanionSession: ObservableObject {
         #endif
 
         phonePeerKeyStateRevision += 1
-        let signer = LivePhoneSecureEnclaveSigner()
-        do {
-            let generation = try signer.stage.committedGeneration()
-            if signer.stage.hasStagedKey(), let staged = try? signer.stage.stagedPublicKey() {
-                phonePeerKeyState = .rotating(oldGeneration: generation, newPublicKey: staged.base64EncodedString())
-            } else {
-                phonePeerKeyState = .enrolled(generation: generation)
-            }
-        } catch {
-            if signer.stage.hasStagedKey(), let staged = try? signer.stage.stagedPublicKey() {
-                phonePeerKeyState = .rotating(oldGeneration: 0, newPublicKey: staged.base64EncodedString())
-            } else {
-                phonePeerKeyState = .noKey
-            }
-        }
+        phonePeerKeyState = Self.readPhoneKeyState(stage: phoneKeyStage)
 
         #if DEBUG
         let end = CFAbsoluteTimeGetCurrent()
@@ -146,15 +198,17 @@ final class CompanionSession: ObservableObject {
         phonePeerKeyStateRevision += 1
         let capturedRevision = phonePeerKeyStateRevision
 
-        let result: PhonePeerKeyState = await Task.detached(priority: .userInitiated) {
-            let signer = LivePhoneSecureEnclaveSigner()
-            do {
-                let generation = try signer.stage.committedGeneration()
-                return .enrolled(generation: generation)
-            } catch {
-                return .noKey
-            }
-        }.value
+        let stage = phoneKeyStage
+        let result: PhonePeerKeyState
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let read = testPhoneKeyStateRead {
+            result = await read()
+        } else {
+            result = await Task.detached { Self.readPhoneKeyState(stage: stage) }.value
+        }
+        #else
+        result = await Task.detached { Self.readPhoneKeyState(stage: stage) }.value
+        #endif
 
         guard capturedRevision == phonePeerKeyStateRevision else {
             #if DEBUG
@@ -171,50 +225,124 @@ final class CompanionSession: ObservableObject {
         #endif
     }
 
-    func revokePhonePeerKey() throws {
-        exactRunGeneration += 1
-        reviewedExactRun = nil
-        reviewedExactRunLines = []
-        reviewedExactRunArgv = []
-        reviewedExactRunKeyGeneration = nil
-        let signer = LivePhoneSecureEnclaveSigner()
-        try signer.revokeEnrollment()
-        phonePeerKeyState = .noKey
-        phoneChallenge = nil
-        signedPhonePublicKey = nil
-        phonePeerNote = "Phone-peer key revoked. Re-enroll by signing a new challenge."
+    nonisolated private static func readPhoneKeyState(stage: PhoneKeyStage) -> PhonePeerKeyState {
+        do {
+            try stage.checkGenerationReservation()
+            let generation: Int
+            do { generation = try stage.committedGeneration() }
+            catch let error as CocoaError where error.code == .fileReadNoSuchFile { generation = 0 }
+            if stage.hasAnyStagedParts() {
+                return .rotating(oldGeneration: generation, newPublicKey: try stage.stagedPublicKey().base64EncodedString())
+            }
+            return generation == 0 ? .noKey : .enrolled(generation: generation)
+        } catch {
+            return .error(error.localizedDescription)
+        }
     }
 
-    func rotatePhonePeerKey() throws {
-        exactRunGeneration += 1
-        reviewedExactRun = nil
-        reviewedExactRunLines = []
-        reviewedExactRunArgv = []
-        reviewedExactRunKeyGeneration = nil
-        let signer = LivePhoneSecureEnclaveSigner()
-        try signer.rotateEnrollment()
-        refreshPhonePeerKeyState()
-        phonePeerNote = "Phone-peer key rotation started. Export the new key to the Mac, then complete the rotation."
+    private func withKeyLifecycle(_ operation: @escaping @MainActor () async throws -> Void) async throws {
+        activeKeyLifecycleTask?.cancel()
+        keyLifecycleGeneration += 1
+        let generation = keyLifecycleGeneration
+        let task = Task { @MainActor in try await operation() }
+        activeKeyLifecycleTask = task
+        defer { if generation == keyLifecycleGeneration { activeKeyLifecycleTask = nil } }
+        try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: { task.cancel() }
     }
-    
-    func completePhonePeerKeyRotation() throws {
-        let signer = LivePhoneSecureEnclaveSigner()
-        guard signer.stage.hasStagedKey() else {
-            throw CompanionClientError.transport("No rotation in progress")
+
+    private func invalidatePhonePeerOperation() {
+        explicitlyCancelledSignGeneration = nil
+        activePhonePeerTask?.cancel()
+        if activePhonePeerTask != nil { activePhonePeerSigner?.discardStagedEnrollment() }
+        activePhonePeerTask = nil
+        activePhonePeerSigner = nil
+        phonePeerTaskGeneration += 1
+        phoneSignGeneration += 1
+        phoneChallenge = nil
+        signedPhonePublicKey = nil
+    }
+
+    func revokePhonePeerKey() async throws {
+        try await withKeyLifecycle { [self] in
+            invalidatePhonePeerOperation()
+            phonePeerKeyStateRevision += 1
+            exactRunGeneration += 1
+            reviewedExactRun = nil
+            reviewedExactRunLines = []
+            reviewedExactRunArgv = []
+            reviewedExactRunKeyGeneration = nil
+            try await CompanionSecureEnclaveEnrollment.authenticateWithBiometrics(reason: "Authenticate to revoke this phone-peer key")
+            let stage = phoneKeyStage
+            try await CryptoWorker.shared.perform { try stage.revoke() }
+            phonePeerKeyState = .noKey
+            phoneChallenge = nil
+            signedPhonePublicKey = nil
+            phonePeerNote = "Phone-peer key revoked. Re-enroll by signing a new challenge."
         }
-        try signer.stage.commit()
-        refreshPhonePeerKeyState()
-        phonePeerNote = "Phone-peer key rotation completed. The old key was revoked."
     }
-    
-    func cancelPhonePeerKeyRotation() {
-        let signer = LivePhoneSecureEnclaveSigner()
-        signer.stage.discard()
-        refreshPhonePeerKeyState()
-        phonePeerNote = "Phone-peer key rotation cancelled. The old key is still active."
+
+    func rotatePhonePeerKey() async throws {
+        try await withKeyLifecycle { [self] in
+            invalidatePhonePeerOperation()
+            phonePeerKeyStateRevision += 1
+            exactRunGeneration += 1
+            reviewedExactRun = nil
+            reviewedExactRunLines = []
+            reviewedExactRunArgv = []
+            reviewedExactRunKeyGeneration = nil
+            try await CompanionSecureEnclaveEnrollment.authenticateWithBiometrics(reason: "Authenticate to rotate this phone-peer key")
+            let signer = LivePhoneSecureEnclaveSigner(stage: phoneKeyStage)
+            try await signer.rotateEnrollmentAsync()
+            await refreshPhonePeerKeyStateAsync()
+            phonePeerNote = "Phone-peer key rotation staged. Sign its challenge, then verify the Mac holder receipt to complete."
+        }
+    }
+
+    func completePhonePeerKeyRotation(signer: (any PhoneChallengeSigning)? = nil, peer: (any PhonePeerTransport)? = nil) async throws {
+        try await withKeyLifecycle { [self] in
+            phonePeerKeyStateRevision += 1
+            let stage = phoneKeyStage
+            let stagedPublicKey = try await CryptoWorker.shared.perform { try stage.stagedPublicKey() }
+            guard let publicKey = signedPhonePublicKey,
+                  publicKey == stagedPublicKey.base64EncodedString(), phoneChallenge != nil else {
+                throw CompanionClientError.transport("Sign the staged replacement challenge and verify its holder receipt before completing rotation")
+            }
+            let outcome = await commitPhoneKeyAfterHolderVerification(
+                signer: signer ?? LivePhoneSecureEnclaveSigner(stage: phoneKeyStage), peer: peer)
+            switch outcome {
+            case .enrolled: phonePeerNote = "Phone-peer key rotation completed after biometric and holder-receipt verification."
+            case .cancelled: throw CancellationError()
+            case .refused(let reason): throw CompanionClientError.transport(reason)
+            }
+        }
+    }
+
+    func cancelPhonePeerKeyRotation() async throws {
+        try await withKeyLifecycle { [self] in
+            invalidatePhonePeerOperation()
+            phonePeerKeyStateRevision += 1
+            let stage = phoneKeyStage
+            try await CryptoWorker.shared.perform { stage.discard() }
+            await refreshPhonePeerKeyStateAsync()
+            phonePeerNote = "Phone-peer key rotation cancelled. The old key is still active."
+        }
     }
 
     func cancelAllTasks() {
+        keyLifecycleGeneration += 1
+        activeKeyLifecycleTask?.cancel()
+        activeKeyLifecycleTask = nil
+        // Clean the current stage before invalidating its generation. A stale
+        // completion must never clean a successor's shared stage directory.
+        if activePhonePeerTask != nil { activePhonePeerSigner?.discardStagedEnrollment() }
+        activePhonePeerSigner = nil
+        refreshTaskGeneration += 1
+        phonePeerTaskGeneration += 1
+        exactRunTaskGeneration += 1
+        remoteConfirmTaskGeneration += 1
+        phoneSignGeneration += 1
         activeRefreshTask?.cancel()
         activePhonePeerTask?.cancel()
         activeExactRunTask?.cancel()
@@ -227,6 +355,20 @@ final class CompanionSession: ObservableObject {
 
     func rememberPinnedHolderId() {
         UserDefaults.standard.set(pinnedHolderId, forKey: holderPinKey)
+    }
+
+    enum ConnectionState: Equatable {
+        case offline, checking, stale, connected
+    }
+
+    var connectionState: ConnectionState {
+        guard isPaired else { return .offline }
+        if case .inProgress = refreshOutcome { return .checking }
+        guard status != nil, capabilities != nil else { return .stale }
+        switch refreshOutcome {
+        case .failure, .cancelled: return .stale
+        default: return .connected
+        }
     }
 
     var boundaryCopy: String {
@@ -242,7 +384,9 @@ final class CompanionSession: ObservableObject {
             || capabilities?.canRemoteConfirm == true
     }
 
-    func saveAndPair() async {
+    func saveAndPair(client suppliedClient: CompanionClient? = nil) async {
+        refreshTaskGeneration += 1
+        let generation = refreshTaskGeneration
         lastError = nil
         guard let url = URL(string: baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)),
               !pairingToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -263,7 +407,7 @@ final class CompanionSession: ObservableObject {
             pairingToken: pairingToken.trimmingCharacters(in: .whitespacesAndNewlines),
             tlsFingerprint: fingerprint.isEmpty ? nil : fingerprint
         )
-        let client = CompanionClient(config: config)
+        let client = suppliedClient ?? CompanionClient(config: config)
         do {
             let caps = try await client.fetchCapabilities()
             switch CapabilityValidator.validateForPairing(capabilities: caps) {
@@ -274,11 +418,25 @@ final class CompanionSession: ObservableObject {
                 isPaired = false
                 return
             }
+            let verifiedStatus = try await client.fetchStatus()
+            switch CapabilityValidator.validateForAction(capabilities: caps, status: verifiedStatus) {
+            case .valid: break
+            case .invalid(let reason): throw CompanionClientError.transport(reason)
+            }
+            try Task.checkCancellation()
+            guard generation == refreshTaskGeneration else { throw CancellationError() }
+            // A rejected candidate must never replace the saved pairing.
+            try persist(config)
+            status = verifiedStatus
             capabilities = caps
-            persist(config)
             isPaired = true
-            try await refreshStatus()
+            let now = Date()
+            lastSuccessfulRefresh = now
+            refreshOutcome = .success(now)
         } catch {
+            guard generation == refreshTaskGeneration else { return }
+            capabilities = nil
+            status = nil
             lastError = error.localizedDescription
             isPaired = false
         }
@@ -286,17 +444,28 @@ final class CompanionSession: ObservableObject {
 
     func refreshStatus() async throws {
         guard let client = makeClient() else { throw CompanionClientError.notPaired }
-        let fetchedStatus = try await client.fetchStatus()
-        status = fetchedStatus
-        if let caps = try? await client.fetchCapabilities() {
-            capabilities = caps
-        }
-        switch CapabilityValidator.validateForRefresh(status: fetchedStatus) {
-        case .valid:
-            break
-        case .invalid(let reason):
-            lastError = "\(reason) Disconnecting."
-            disconnect()
+        let generation = refreshTaskGeneration
+        do {
+            let fetchedStatus = try await client.fetchStatus()
+            try Task.checkCancellation()
+            guard isPaired, generation == refreshTaskGeneration else { throw CancellationError() }
+            let fetchedCapabilities = try await client.fetchCapabilities()
+            try Task.checkCancellation()
+            guard isPaired, generation == refreshTaskGeneration else { throw CancellationError() }
+            switch CapabilityValidator.validateForAction(capabilities: fetchedCapabilities, status: fetchedStatus) {
+            case .valid:
+                status = fetchedStatus
+                capabilities = fetchedCapabilities
+            case .invalid(let reason):
+                disconnect()
+                lastError = reason
+                throw CompanionClientError.transport(reason)
+            }
+        } catch {
+            if isPaired, generation == refreshTaskGeneration, !Task.isCancelled {
+                capabilities = nil
+            }
+            throw error
         }
     }
 
@@ -306,15 +475,18 @@ final class CompanionSession: ObservableObject {
         let myGeneration = refreshTaskGeneration
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
+            guard self.refreshTaskGeneration == myGeneration else { return }
             self.lastError = nil
             self.refreshOutcome = .inProgress
             do {
-                guard !Task.isCancelled else {
+                guard !Task.isCancelled, self.isPaired, self.refreshTaskGeneration == myGeneration else {
+                    if self.refreshTaskGeneration != myGeneration { return }
                     self.refreshOutcome = .cancelled
                     return
                 }
                 try await self.refreshStatus()
-                guard !Task.isCancelled else {
+                guard !Task.isCancelled, self.isPaired, self.refreshTaskGeneration == myGeneration else {
+                    if self.refreshTaskGeneration != myGeneration { return }
                     self.refreshOutcome = .cancelled
                     return
                 }
@@ -322,10 +494,12 @@ final class CompanionSession: ObservableObject {
                 self.lastSuccessfulRefresh = now
                 self.refreshOutcome = .success(now)
             } catch is CancellationError {
+                guard self.refreshTaskGeneration == myGeneration else { return }
                 self.refreshOutcome = .cancelled
                 return
             } catch {
-                guard !Task.isCancelled else {
+                guard !Task.isCancelled, self.isPaired, self.refreshTaskGeneration == myGeneration else {
+                    if self.refreshTaskGeneration != myGeneration { return }
                     self.refreshOutcome = .cancelled
                     return
                 }
@@ -348,7 +522,10 @@ final class CompanionSession: ObservableObject {
         signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
         peer: (any PhonePeerTransport)? = nil
     ) async {
+        explicitlyCancelledSignGeneration = nil
         activePhonePeerTask?.cancel()
+        if activePhonePeerTask != nil { activePhonePeerSigner?.discardStagedEnrollment() }
+        activePhonePeerSigner = signer
         phonePeerTaskGeneration += 1
         let myGeneration = phonePeerTaskGeneration
         let task = Task { @MainActor [weak self] in
@@ -356,6 +533,7 @@ final class CompanionSession: ObservableObject {
             await self.signPhonePeerChallengeImpl(signer: signer, peer: peer)
             if self.phonePeerTaskGeneration == myGeneration {
                 self.activePhonePeerTask = nil
+                self.activePhonePeerSigner = nil
             }
         }
         activePhonePeerTask = task
@@ -405,26 +583,25 @@ final class CompanionSession: ObservableObject {
             try Task.checkCancellation()
             guard generation == phoneSignGeneration else { throw PhonePeerSignError.cancelled }
             guard !Task.isCancelled else { throw PhonePeerSignError.cancelled }
-            let signed = try signer.sign(message: bytes)
+            let signed = try await signer.signAsync(message: bytes)
             try Task.checkCancellation()
             guard generation == phoneSignGeneration else {
-                signer.discardStagedEnrollment()
                 throw PhonePeerSignError.cancelled
             }
             guard !Task.isCancelled else {
-                signer.discardStagedEnrollment()
+                if generation == phoneSignGeneration { signer.discardStagedEnrollment() }
                 throw PhonePeerSignError.cancelled
             }
             try await transport.willSubmitPhonePeerSignature()
             try Task.checkCancellation()
             guard generation == phoneSignGeneration else {
-                signer.discardStagedEnrollment()
                 throw PhonePeerSignError.cancelled
             }
             guard !Task.isCancelled else {
-                signer.discardStagedEnrollment()
+                if generation == phoneSignGeneration { signer.discardStagedEnrollment() }
                 throw PhonePeerSignError.cancelled
             }
+            postingSignGeneration = generation
             try await transport.submitPhonePeerSignature(
                 challengeId: message.challengeId,
                 challenge: message.challenge,
@@ -432,12 +609,11 @@ final class CompanionSession: ObservableObject {
                 signature: signed.signature
             )
             guard generation == phoneSignGeneration else {
-                signer.discardStagedEnrollment()
                 try? await transport.invalidatePhonePeerChallenge(challengeId: message.challengeId)
                 throw PhonePeerSignError.cancellationTooLate
             }
             guard !Task.isCancelled else {
-                signer.discardStagedEnrollment()
+                if generation == phoneSignGeneration { signer.discardStagedEnrollment() }
                 try? await transport.invalidatePhonePeerChallenge(challengeId: message.challengeId)
                 throw PhonePeerSignError.cancellationTooLate
             }
@@ -445,38 +621,49 @@ final class CompanionSession: ObservableObject {
             signedPhonePublicKey = signed.publicKey
             phonePeerNote = "Mailbox accepted challenge \(message.challengeId). That is not holder verification and the key is not enrolled."
         } catch PhonePeerSignError.cancelled {
+            guard generation == phoneSignGeneration else { return }
             phoneChallenge = nil
             signedPhonePublicKey = nil
             signer.discardStagedEnrollment()
             phonePeerNote = "Phone peer challenge cancelled before a signature was returned."
             lastError = nil
         } catch PhonePeerSignError.cancellationTooLate {
+            guard generation == phoneSignGeneration || explicitlyCancelledSignGeneration == generation else { return }
             signedPhonePublicKey = nil
             phonePeerNote = "Phone peer challenge cancellation was too late. The signature left the device and must not enroll."
             lastError = nil
         } catch is CancellationError {
+            guard generation == phoneSignGeneration else { return }
             phoneChallenge = nil
             signedPhonePublicKey = nil
             signer.discardStagedEnrollment()
             phonePeerNote = "Phone peer challenge cancelled before a signature was returned."
             lastError = nil
         } catch {
+            guard generation == phoneSignGeneration else { return }
             signer.discardStagedEnrollment()
             lastError = error.localizedDescription
         }
     }
 
     /// Enroll only after the phone verifies a holder receipt. Caller flags are ignored.
+    enum PhoneEnrollmentOutcome: Equatable {
+        case enrolled, cancelled
+        case refused(String)
+    }
+
+    @discardableResult
     func commitPhoneKeyAfterHolderVerification(
         signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
         peer: (any PhonePeerTransport)? = nil
-    ) async {
+    ) async -> PhoneEnrollmentOutcome {
         activePhonePeerTask?.cancel()
         phonePeerTaskGeneration += 1
         let myGeneration = phonePeerTaskGeneration
+        var outcome: PhoneEnrollmentOutcome = .cancelled
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.commitPhoneKeyAfterHolderVerificationImpl(signer: signer, peer: peer)
+            outcome = await self.commitPhoneKeyAfterHolderVerificationImpl(signer: signer, peer: peer)
             if self.phonePeerTaskGeneration == myGeneration {
                 self.activePhonePeerTask = nil
             }
@@ -487,22 +674,24 @@ final class CompanionSession: ObservableObject {
         } onCancel: {
             task.cancel()
         }
+        guard !task.isCancelled, myGeneration == phonePeerTaskGeneration else { return .cancelled }
+        return outcome
     }
 
     private func commitPhoneKeyAfterHolderVerificationImpl(
         signer: PhoneChallengeSigning,
         peer: (any PhonePeerTransport)?
-    ) async {
+    ) async -> PhoneEnrollmentOutcome {
         guard !Task.isCancelled else {
             phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
-            return
+            return .refused(lastError ?? phonePeerNote)
         }
         switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
         case .valid:
             break
         case .invalid(let reason):
             lastError = "Action refused: \(reason)"
-            return
+            return .refused(lastError ?? phonePeerNote)
         }
         let transport: any PhonePeerTransport
         if let peer {
@@ -511,11 +700,11 @@ final class CompanionSession: ObservableObject {
             transport = client
         } else {
             lastError = CompanionClientError.notPaired.localizedDescription
-            return
+            return .refused(lastError ?? phonePeerNote)
         }
         guard let message = phoneChallenge, let phonePublicKey = signedPhonePublicKey else {
             phonePeerNote = "Mailbox acceptance is not holder verification."
-            return
+            return .refused(lastError ?? phonePeerNote)
         }
         let generation = phoneSignGeneration
         let challengeId = message.challengeId
@@ -525,7 +714,7 @@ final class CompanionSession: ObservableObject {
             try Task.checkCancellation()
             guard generation == phoneSignGeneration, phoneChallenge?.challengeId == challengeId, signedPhonePublicKey == phonePublicKey else {
                 phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
-                return
+                return .refused(lastError ?? phonePeerNote)
             }
             guard !Task.isCancelled else { throw CancellationError() }
             let decision = phoneReceiptAuthentic(
@@ -537,27 +726,37 @@ final class CompanionSession: ObservableObject {
             )
             guard decision == .accept, let signature = record.signature else {
                 phonePeerNote = "A caller flag is not a holder receipt."
-                return
+                return .refused(lastError ?? phonePeerNote)
             }
             guard generation == phoneSignGeneration, phoneChallenge?.challengeId == challengeId else {
                 phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
-                return
+                return .refused(lastError ?? phonePeerNote)
             }
             guard !Task.isCancelled else { throw CancellationError() }
-            try signer.commitEnrollment(ownedBy: challengeId, publicKey: phonePublicKey)
+            try await CompanionSecureEnclaveEnrollment.authenticateWithBiometrics(reason: "Authenticate to enroll the holder-verified phone-peer key")
+            try Task.checkCancellation()
+            guard generation == phoneSignGeneration, phoneChallenge?.challengeId == challengeId,
+                  signedPhonePublicKey == phonePublicKey else { return .cancelled }
+            phonePeerKeyStateRevision += 1
+            try await signer.commitEnrollmentAsync(ownedBy: challengeId, publicKey: phonePublicKey)
             guard !Task.isCancelled else { throw CancellationError() }
             acceptedReceiptSignatures.insert(signature)
             phoneChallenge = nil
-            refreshPhonePeerKeyState()
+            await refreshPhonePeerKeyStateAsync()
+            guard generation == phoneSignGeneration, !Task.isCancelled else { return .cancelled }
             phonePeerNote = "Holder receipt verified for challenge \(challengeId). The phone key is enrolled."
+            return .enrolled
         } catch PhonePeerSignError.cancelled {
             phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
             lastError = nil
+            return .cancelled
         } catch is CancellationError {
             phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
             lastError = nil
+            return .cancelled
         } catch {
             lastError = error.localizedDescription
+            return .refused(error.localizedDescription)
         }
     }
 
@@ -785,7 +984,7 @@ final class CompanionSession: ObservableObject {
                 return
             }
             guard !Task.isCancelled else { throw CancellationError() }
-            let signed = try signer.signCommitted(message: reviewed.bound)
+            let signed = try await signer.signCommittedAsync(message: reviewed.bound)
             try Task.checkCancellation()
             guard !Task.isCancelled else { throw CancellationError() }
             let again = try await transport.fetchRetainedExactRun()
@@ -844,9 +1043,16 @@ final class CompanionSession: ObservableObject {
     func cancelPhonePeerChallenge() async {
         activePhonePeerTask?.cancel()
         activePhonePeerTask = nil
+        activePhonePeerSigner?.discardStagedEnrollment()
+        activePhonePeerSigner = nil
+        explicitlyCancelledSignGeneration = phoneSignGeneration
+        let mayHavePublished = postingSignGeneration == phoneSignGeneration
         phoneSignGeneration += 1
         phoneChallenge = nil
-        phonePeerNote = "Phone peer challenge cancelled before a signature was returned."
+        signedPhonePublicKey = nil
+        phonePeerNote = mayHavePublished
+            ? "Phone peer challenge cancellation was too late. The signature left the device and must not enroll."
+            : "Phone peer challenge cancelled before a signature was returned."
         lastError = nil
     }
 
@@ -895,157 +1101,170 @@ final class CompanionSession: ObservableObject {
         }
     }
 
-    func submitRemoteConfirm() async {
+    enum RemoteSettleOutcome: Equatable {
+        case confirmed
+        case refused
+        case cancelled
+        case failure(String)
+    }
+
+    @discardableResult
+    func submitRemoteConfirm() async -> RemoteSettleOutcome {
+        guard !Task.isCancelled else { return .cancelled }
         activeRemoteConfirmTask?.cancel()
         remoteConfirmTaskGeneration += 1
         let myGeneration = remoteConfirmTaskGeneration
-        let task = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.submitRemoteConfirmImpl()
+        let task = Task<RemoteSettleOutcome, Never> { @MainActor [weak self] in
+            guard let self else { return .cancelled }
+            let outcome = await self.submitRemoteConfirmImpl()
             if self.remoteConfirmTaskGeneration == myGeneration {
                 self.activeRemoteConfirmTask = nil
             }
+            guard !Task.isCancelled, self.remoteConfirmTaskGeneration == myGeneration else { return .cancelled }
+            return outcome
         }
         activeRemoteConfirmTask = task
-        await withTaskCancellationHandler {
+        return await withTaskCancellationHandler {
             await task.value
         } onCancel: {
             task.cancel()
         }
     }
 
-    private func submitRemoteConfirmImpl() async {
+    private func submitRemoteConfirmImpl() async -> RemoteSettleOutcome {
         lastError = nil
         lastRemoteConfirmNote = nil
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return .cancelled }
         switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
         case .valid:
             break
         case .invalid(let reason):
-            lastError = "Action refused: \(reason)"
-            return
+            return settlementFailure("Action refused: \(reason)")
         }
         guard remoteConfirmPending else {
-            lastError = "No Mac-armed remote confirm is pending."
-            return
+            return settlementFailure("No Mac-armed remote confirm is pending.")
         }
         let challenge = challengeInput.trimmingCharacters(in: .whitespacesAndNewlines)
         let phrase = approvePhraseInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !challenge.isEmpty else {
-            lastError = "Enter the challenge shown on the Mac."
-            return
+            return settlementFailure("Enter the challenge shown on the Mac.")
         }
         guard phrase == "APPROVE" else {
-            lastError = "Phrase must be exactly APPROVE (typed, not one-tap)."
-            return
+            return settlementFailure("Phrase must be exactly APPROVE (typed, not one-tap).")
         }
         guard let client = makeClient() else {
-            lastError = CompanionClientError.notPaired.localizedDescription
-            return
+            return settlementFailure(CompanionClientError.notPaired.localizedDescription)
         }
         do {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return .cancelled }
             let result = try await client.submitRemoteConfirm(challenge: challenge, phrase: phrase)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return .cancelled }
             if result.isAmbiguous {
-                lastError = "Server returned ambiguous confirm response. Refresh status to check state."
-                return
+                return settlementFailure("Server returned ambiguous confirm response. Refresh status to check state.")
             }
             guard result.confirmedSuccessfully else {
-                lastError = result.note ?? "Confirm was not accepted by the server."
-                return
+                return settlementFailure(result.note ?? "Confirm was not accepted by the server.")
             }
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return .cancelled }
             lastRemoteConfirmNote = result.note
                 ?? "Remote human confirm settled. This is not equivalent to local TTY APPROVE."
             challengeInput = ""
             approvePhraseInput = ""
-            try await refreshStatus()
+            // Settlement is already acknowledged; refresh cannot change its outcome.
+            do { try await refreshStatus() } catch { }
+            guard !Task.isCancelled else { return .cancelled }
+            return .confirmed
         } catch is CancellationError {
-            return
+            return .cancelled
         } catch {
-            lastError = error.localizedDescription
+            return settlementFailure(error.localizedDescription)
         }
     }
 
-    func submitRemoteRefuse() async {
+    @discardableResult
+    func submitRemoteRefuse() async -> RemoteSettleOutcome {
+        guard !Task.isCancelled else { return .cancelled }
         activeRemoteConfirmTask?.cancel()
         remoteConfirmTaskGeneration += 1
         let myGeneration = remoteConfirmTaskGeneration
-        let task = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.submitRemoteRefuseImpl()
+        let task = Task<RemoteSettleOutcome, Never> { @MainActor [weak self] in
+            guard let self else { return .cancelled }
+            let outcome = await self.submitRemoteRefuseImpl()
             if self.remoteConfirmTaskGeneration == myGeneration {
                 self.activeRemoteConfirmTask = nil
             }
+            guard !Task.isCancelled, self.remoteConfirmTaskGeneration == myGeneration else { return .cancelled }
+            return outcome
         }
         activeRemoteConfirmTask = task
-        await withTaskCancellationHandler {
+        return await withTaskCancellationHandler {
             await task.value
         } onCancel: {
             task.cancel()
         }
     }
 
-    private func submitRemoteRefuseImpl() async {
+    private func submitRemoteRefuseImpl() async -> RemoteSettleOutcome {
         lastError = nil
         lastRemoteConfirmNote = nil
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return .cancelled }
         switch CapabilityValidator.validateForAction(capabilities: capabilities, status: status) {
         case .valid:
             break
         case .invalid(let reason):
-            lastError = "Action refused: \(reason)"
-            return
+            return settlementFailure("Action refused: \(reason)")
         }
         guard remoteConfirmPending else {
-            lastError = "No Mac-armed remote confirm is pending."
-            return
+            return settlementFailure("No Mac-armed remote confirm is pending.")
         }
         let challenge = challengeInput.trimmingCharacters(in: .whitespacesAndNewlines)
         let reason = refuseReasonInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !challenge.isEmpty else {
-            lastError = "Enter the challenge shown on the Mac."
-            return
+            return settlementFailure("Enter the challenge shown on the Mac.")
         }
         guard (1 ... 240).contains(reason.count) else {
-            lastError = "Refuse requires a reason (1–240 characters). This does not approve."
-            return
+            return settlementFailure("Refuse requires a reason (1–240 characters). This does not approve.")
         }
         guard let client = makeClient() else {
-            lastError = CompanionClientError.notPaired.localizedDescription
-            return
+            return settlementFailure(CompanionClientError.notPaired.localizedDescription)
         }
         do {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return .cancelled }
             let result = try await client.submitRemoteRefuse(challenge: challenge, reason: reason)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return .cancelled }
             if result.isAmbiguous {
-                lastError = "Server returned ambiguous refuse response. Refresh status to check state."
-                return
+                return settlementFailure("Server returned ambiguous refuse response. Refresh status to check state.")
             }
             guard result.refusedSuccessfully else {
-                lastError = result.note ?? "Refuse was not accepted by the server."
-                return
+                return settlementFailure(result.note ?? "Refuse was not accepted by the server.")
             }
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return .cancelled }
             lastRemoteConfirmNote = result.note
                 ?? "Pending refused. Re-arm or use local TTY APPROVE. Not an approval."
             challengeInput = ""
             approvePhraseInput = ""
             refuseReasonInput = ""
-            try await refreshStatus()
+            // Settlement is already acknowledged; refresh cannot change its outcome.
+            do { try await refreshStatus() } catch { }
+            guard !Task.isCancelled else { return .cancelled }
+            return .refused
         } catch is CancellationError {
-            return
+            return .cancelled
         } catch {
-            lastError = error.localizedDescription
+            return settlementFailure(error.localizedDescription)
         }
+    }
+
+    private func settlementFailure(_ message: String) -> RemoteSettleOutcome {
+        lastError = message
+        return .failure(message)
     }
 
     func disconnect() {
         cancelAllTasks()
         invalidateCachedClient()
         isPaired = false
+        refreshOutcome = .notAttempted
         capabilities = nil
         status = nil
         challengeInput = ""
@@ -1118,17 +1337,18 @@ final class CompanionSession: ObservableObject {
     }
     #endif
 
-    private func persist(_ config: PairingConfig) {
+    func persist(_ config: PairingConfig) throws {
+        var publicConfig = config
+        publicConfig.pairingToken = ""
+        let publicData = try JSONEncoder().encode(publicConfig)
+        let status = savePairingTokenToKeychain(config.pairingToken)
+        guard status == errSecSuccess else {
+            throw CompanionClientError.transport("Could not save pairing token (Keychain status \(status)). Previous pairing retained.")
+        }
+        UserDefaults.standard.set(publicData, forKey: defaultsKey)
         baseURLString = config.baseURL.absoluteString
         pairingToken = config.pairingToken
         tlsFingerprint = config.tlsFingerprint ?? ""
-
-        var publicConfig = config
-        publicConfig.pairingToken = ""
-        if let data = try? JSONEncoder().encode(publicConfig) {
-            UserDefaults.standard.set(data, forKey: defaultsKey)
-        }
-        savePairingTokenToKeychain(config.pairingToken)
     }
 
     private func load() {
@@ -1150,7 +1370,11 @@ final class CompanionSession: ObservableObject {
             pairingToken = config.pairingToken
             tlsFingerprint = config.tlsFingerprint ?? ""
             isPaired = true
-            savePairingTokenToKeychain(config.pairingToken)
+            let migrationStatus = savePairingTokenToKeychain(config.pairingToken)
+            guard migrationStatus == errSecSuccess else {
+                lastError = "Pairing token migration failed (Keychain status \(migrationStatus)). Legacy token retained for retry."
+                return
+            }
             var sanitized = config
             sanitized.pairingToken = ""
             if let sanitizedData = try? JSONEncoder().encode(sanitized) {
@@ -1159,15 +1383,19 @@ final class CompanionSession: ObservableObject {
         }
     }
 
-    private func savePairingTokenToKeychain(_ token: String) {
+    @discardableResult
+    private func savePairingTokenToKeychain(_ token: String) -> OSStatus {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let write = Self.testTokenWrite { return write(token) }
+        #endif
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: keychainAccount,
         ]
-        SecItemDelete(query as CFDictionary)
-
-        guard !token.isEmpty, let data = token.data(using: .utf8) else { return }
+        guard !token.isEmpty, let data = token.data(using: .utf8) else { return errSecParam }
+        let updateStatus = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        guard updateStatus == errSecItemNotFound else { return updateStatus }
         let addQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -1175,10 +1403,13 @@ final class CompanionSession: ObservableObject {
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
-        SecItemAdd(addQuery as CFDictionary, nil)
+        return SecItemAdd(addQuery as CFDictionary, nil)
     }
 
     private func loadPairingTokenFromKeychain() -> String? {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let read = Self.testTokenRead { return read() }
+        #endif
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -1193,6 +1424,9 @@ final class CompanionSession: ObservableObject {
     }
 
     private func deletePairingTokenFromKeychain() {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let delete = Self.testTokenDelete { delete(); return }
+        #endif
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -1331,6 +1565,9 @@ protocol ExactRunPhoneSigningTransport {
 
 protocol PhoneChallengeSigning {
     func sign(message: Data) throws -> (publicKey: String, signature: String)
+    func signAsync(message: Data) async throws -> (publicKey: String, signature: String)
+    func signCommittedAsync(message: Data) async throws -> (publicKey: String, signature: String)
+    func commitEnrollmentAsync(ownedBy challengeId: String, publicKey: String) async throws
     func signCommitted(message: Data) throws -> (publicKey: String, signature: String)
     func bindStagedOwnership(challengeId: String, publicKey: String) throws
     func commitEnrollment(ownedBy challengeId: String, publicKey: String) throws
@@ -1338,6 +1575,15 @@ protocol PhoneChallengeSigning {
 }
 
 extension PhoneChallengeSigning {
+    func signAsync(message: Data) async throws -> (publicKey: String, signature: String) {
+        try await CryptoWorker.shared.perform { try self.sign(message: message) }
+    }
+    func signCommittedAsync(message: Data) async throws -> (publicKey: String, signature: String) {
+        try await CryptoWorker.shared.perform { try self.signCommitted(message: message) }
+    }
+    func commitEnrollmentAsync(ownedBy challengeId: String, publicKey: String) async throws {
+        try await CryptoWorker.shared.perform { try self.commitEnrollment(ownedBy: challengeId, publicKey: publicKey) }
+    }
     func signCommitted(message: Data) throws -> (publicKey: String, signature: String) {
         throw CompanionClientError.transport("phone session key is not enrolled")
     }
@@ -1460,19 +1706,51 @@ func parseExactRun(fetched: FetchedExactRun, now: Int, pinnedHolderId: String) t
 /// the Secure Enclave. A new key stays pending until commit.
 struct PhoneKeyStage {
     let directory: URL
+    #if RUNSPECIMEN_TEST_HOOKS
+    var testPublicKeyForHandle: ((Data) throws -> Data)? = nil
+    #endif
+
+    private func validateKey(handle: Data, publicKey: Data) throws {
+        do { _ = try P256.Signing.PublicKey(x963Representation: publicKey) }
+        catch { throw CompanionClientError.transport("phone key public key is malformed (incomplete-stage)") }
+        let actual: Data
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let resolve = testPublicKeyForHandle { actual = try resolve(handle) }
+        else { actual = try Self.enclavePublicKey(handle) }
+        #else
+        actual = try Self.enclavePublicKey(handle)
+        #endif
+        guard actual == publicKey else {
+            throw CompanionClientError.transport("phone key handle/public key mismatch")
+        }
+    }
+
+    private static func enclavePublicKey(_ handle: Data) throws -> Data {
+        let context = LAContext()
+        defer { context.invalidate() }
+        return try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: handle,
+            authenticationContext: context).publicKey.x963Representation
+    }
+
+    private struct CustodyRecord: Codable {
+        let generation: Int
+        let handle: Data
+        let publicKey: Data
+    }
 
     func stage(handle: Data, publicKey: Data) throws {
         try stage(handle: handle, publicKey: publicKey, challengeId: "")
     }
 
-    func stage(handle: Data, publicKey: Data, challengeId: String) throws {
+    func stage(handle: Data, publicKey: Data, challengeId: String, operationID: String? = nil) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try handle.write(to: pendingHandle, options: .atomic)
         try publicKey.write(to: pendingPublic, options: .atomic)
-        let owner: [String: String] = [
+        var owner: [String: String] = [
             "challengeId": challengeId,
             "publicKey": publicKey.base64EncodedString(),
         ]
+        owner["operationID"] = operationID
         let encoded = try JSONSerialization.data(withJSONObject: owner)
         try encoded.write(to: pendingOwner, options: .atomic)
     }
@@ -1482,15 +1760,37 @@ struct PhoneKeyStage {
         guard staged == publicKey else {
             throw CompanionClientError.transport("staged phone key belongs to another challenge")
         }
-        let owner: [String: String] = [
+        var owner: [String: String] = [
             "challengeId": challengeId,
             "publicKey": publicKey.base64EncodedString(),
         ]
+        if let existing = try JSONSerialization.jsonObject(with: Data(contentsOf: pendingOwner)) as? [String: String] {
+            owner["operationID"] = existing["operationID"]
+        }
         let encoded = try JSONSerialization.data(withJSONObject: owner)
         try encoded.write(to: pendingOwner, options: .atomic)
     }
 
-    func validateStagedParts() throws {
+    @discardableResult
+    func claimOperation(_ operationID: String) throws -> (handle: Data, publicKey: Data) {
+        let parts = try validateStagedParts()
+        guard var owner = try JSONSerialization.jsonObject(with: Data(contentsOf: pendingOwner)) as? [String: String] else {
+            throw CompanionClientError.transport("staged phone key owner is malformed")
+        }
+        owner["operationID"] = operationID
+        try JSONSerialization.data(withJSONObject: owner).write(to: pendingOwner, options: .atomic)
+        return parts
+    }
+
+    func discard(ownedByOperation operationID: String) {
+        guard let bytes = try? Data(contentsOf: pendingOwner),
+              let owner = try? JSONSerialization.jsonObject(with: bytes) as? [String: String],
+              owner["operationID"] == operationID else { return }
+        discard()
+    }
+
+    @discardableResult
+    func validateStagedParts() throws -> (handle: Data, publicKey: Data) {
         guard FileManager.default.fileExists(atPath: pendingHandle.path) else {
             throw CompanionClientError.transport("phone key handle not staged (incomplete-stage)")
         }
@@ -1505,12 +1805,15 @@ struct PhoneKeyStage {
         guard publicKey.count == 65 else {
             throw CompanionClientError.transport("phone key public key is malformed (incomplete-stage)")
         }
+        try validateKey(handle: handle, publicKey: publicKey)
+        return (handle, publicKey)
     }
 
     #if RUNSPECIMEN_TEST_HOOKS
     func commit(ownedBy challengeId: String, publicKey: Data, failAfterFirstWrite: Bool = false) throws {
-        try validateOwnership(challengeId: challengeId, publicKey: publicKey)
-        try commitInternal(failAfterFirstWrite: failAfterFirstWrite)
+        let parts = try validateStagedParts()
+        try validateOwnership(challengeId: challengeId, publicKey: publicKey, stagedPublicKey: parts.publicKey)
+        try commitInternal(failAfterFirstWrite: failAfterFirstWrite, validatedParts: parts)
     }
 
     func commit(failAfterFirstWrite: Bool = false) throws {
@@ -1518,8 +1821,9 @@ struct PhoneKeyStage {
     }
     #else
     func commit(ownedBy challengeId: String, publicKey: Data) throws {
-        try validateOwnership(challengeId: challengeId, publicKey: publicKey)
-        try commitInternal(failAfterFirstWrite: false)
+        let parts = try validateStagedParts()
+        try validateOwnership(challengeId: challengeId, publicKey: publicKey, stagedPublicKey: parts.publicKey)
+        try commitInternal(failAfterFirstWrite: false, validatedParts: parts)
     }
 
     func commit() throws {
@@ -1527,8 +1831,7 @@ struct PhoneKeyStage {
     }
     #endif
 
-    private func validateOwnership(challengeId: String, publicKey: Data) throws {
-        try validateStagedParts()
+    private func validateOwnership(challengeId: String, publicKey: Data, stagedPublicKey: Data) throws {
         guard FileManager.default.fileExists(atPath: pendingOwner.path) else {
             throw CompanionClientError.transport("staged phone key belongs to another challenge")
         }
@@ -1540,33 +1843,35 @@ struct PhoneKeyStage {
         else {
             throw CompanionClientError.transport("staged phone key belongs to another challenge")
         }
-        let staged = try Data(contentsOf: pendingPublic)
-        guard staged == publicKey else {
+        guard stagedPublicKey == publicKey else {
             throw CompanionClientError.transport("staged phone key belongs to another challenge")
         }
     }
 
     /// One record. A failure after the next-file write leaves the previous generation.
-    private func commitInternal(failAfterFirstWrite: Bool) throws {
+    private func commitInternal(failAfterFirstWrite: Bool, validatedParts: (handle: Data, publicKey: Data)? = nil) throws {
         guard FileManager.default.fileExists(atPath: pendingHandle.path),
               FileManager.default.fileExists(atPath: pendingPublic.path)
         else {
             throw CompanionClientError.transport("phone key not staged (incomplete-stage)")
         }
-        try validateStagedParts()
-        let handle = try Data(contentsOf: pendingHandle)
-        let publicKey = try Data(contentsOf: pendingPublic)
-        let generation = ((try? committedGeneration()) ?? 0) + 1
-        let record: [String: Any] = [
-            "generation": generation,
-            "handle": handle.base64EncodedString(),
-            "publicKey": publicKey.base64EncodedString(),
-        ]
-        let encoded = try JSONSerialization.data(withJSONObject: record)
+        let (handle, publicKey) = try validatedParts ?? validateStagedParts()
+        let previousGeneration: Int
+        do { previousGeneration = try readRecord().generation }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile { previousGeneration = 0 }
+        let highestGeneration = max(previousGeneration, try reservedGeneration())
+        guard highestGeneration < Int.max else { throw CompanionClientError.transport("phone key generation overflow") }
+        let record = CustodyRecord(generation: highestGeneration + 1, handle: handle, publicKey: publicKey)
+        let encoded = try JSONEncoder().encode(record)
+        try Task.checkCancellation()
         try encoded.write(to: nextRecordURL, options: .atomic)
         if failAfterFirstWrite {
             throw CompanionClientError.transport("phone custody commit stopped after the first write")
         }
+        try Task.checkCancellation()
+        // Reserve before publishing custody. A failed publish may skip a number,
+        // but revocation or a crash can never reissue an earlier generation.
+        try reserveGeneration(record.generation)
         if FileManager.default.fileExists(atPath: recordURL.path) {
             _ = try FileManager.default.replaceItemAt(recordURL, withItemAt: nextRecordURL)
         } else {
@@ -1581,19 +1886,14 @@ struct PhoneKeyStage {
         try? FileManager.default.removeItem(at: pendingOwner)
     }
 
-    func committedGeneration() throws -> Int {
-        let object = try readRecord()
-        if let number = object["generation"] as? Int { return number }
-        if let number = object["generation"] as? NSNumber { return number.intValue }
-        throw CompanionClientError.transport("phone session key is not enrolled")
+    func committedGeneration() throws -> Int { try readRecord().generation }
+    func committedHandle() throws -> Data { try readRecord().handle }
+    func committedPublicKey() throws -> Data { try readRecord().publicKey }
+    func stagedHandle() throws -> Data {
+        try validateStagedParts().handle
     }
-
-    func committedHandle() throws -> Data {
-        try decodedRecordField("handle")
-    }
-
-    func committedPublicKey() throws -> Data {
-        try decodedRecordField("publicKey")
+    func hasAnyStagedParts() -> Bool {
+        [pendingHandle, pendingPublic, pendingOwner].contains { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     func rotate(handle: Data, publicKey: Data) throws {
@@ -1601,6 +1901,11 @@ struct PhoneKeyStage {
     }
 
     func revoke() throws {
+        let generation: Int
+        do { generation = try readRecord().generation }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile { generation = 0 }
+        let highestGeneration = max(generation, try reservedGeneration())
+        if highestGeneration > 0 { try reserveGeneration(highestGeneration) }
         discard()
         var errors: [Error] = []
         do {
@@ -1631,7 +1936,7 @@ struct PhoneKeyStage {
         guard hasStagedKey() else {
             throw CompanionClientError.transport("no staged key")
         }
-        return try Data(contentsOf: pendingPublic)
+        return try validateStagedParts().publicKey
     }
 
     private var pendingHandle: URL { directory.appendingPathComponent("phone-session-handle.pending") }
@@ -1640,81 +1945,194 @@ struct PhoneKeyStage {
     private var recordURL: URL { directory.appendingPathComponent("custody.json") }
     private var nextRecordURL: URL { directory.appendingPathComponent("custody-next.json") }
 
-    private func readRecord() throws -> [String: Any] {
-        let data = try Data(contentsOf: recordURL)
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw CompanionClientError.transport("phone session key is not enrolled")
+    private var generationURL: URL { directory.appendingPathComponent("custody-generation.json") }
+
+    enum CounterRecoveryError: LocalizedError, Equatable {
+        case damagedReservation
+        case noTrustedRecovery
+        var errorDescription: String? {
+            switch self {
+            case .damagedReservation:
+                return "Saved phone key counter is damaged. Use Repair saved key counter; enrollment is paused to prevent generation reuse."
+            case .noTrustedRecovery:
+                return "No trustworthy counter recovery record is available. Export diagnostics and restore the original app data with support. The counter cannot safely be reset."
+            }
         }
-        return object
     }
 
-    private func decodedRecordField(_ name: String) throws -> Data {
-        guard let text = try readRecord()[name] as? String, let data = Data(base64Encoded: text) else {
-            throw CompanionClientError.transport("phone session key is not enrolled")
+    private var recoveryGenerationURL: URL { directory.appendingPathComponent("custody-generation-recovery.json") }
+
+    private func readGeneration(_ url: URL) throws -> Int {
+        let generation = try JSONDecoder().decode(Int.self, from: Data(contentsOf: url))
+        guard generation > 0 else { throw CounterRecoveryError.damagedReservation }
+        return generation
+    }
+
+    private func reservedGeneration() throws -> Int {
+        let generation: Int
+        do { generation = try readGeneration(generationURL) }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            // Once recovery evidence exists, a missing primary is damage, not a
+            // fresh installation. Require explicit authenticated repair.
+            guard !FileManager.default.fileExists(atPath: recoveryGenerationURL.path) else {
+                throw CounterRecoveryError.damagedReservation
+            }
+            return 0
         }
-        return data
+        catch { throw CounterRecoveryError.damagedReservation }
+        // A recovery write can be ahead after a failed primary publication.
+        do { return max(generation, try readGeneration(recoveryGenerationURL)) }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile { return generation }
+        catch { throw CounterRecoveryError.noTrustedRecovery }
+    }
+
+    private func reserveGeneration(_ generation: Int) throws {
+        let encoded = try JSONEncoder().encode(generation)
+        // This independent high-water record always leads the primary write and
+        // survives custody revocation. It contains no private key material.
+        try encoded.write(to: recoveryGenerationURL, options: .atomic)
+        try encoded.write(to: generationURL, options: .atomic)
+    }
+
+    func checkGenerationReservation() throws { _ = try reservedGeneration() }
+
+    func repairGenerationReservation() throws {
+        let floor: Int
+        do { floor = try readGeneration(recoveryGenerationURL) }
+        catch { throw CounterRecoveryError.noTrustedRecovery }
+        // Never lower a readable primary (including migrated legacy data).
+        let primary: Int
+        do { primary = try readGeneration(generationURL) }
+        catch { primary = 0 }
+        try Task.checkCancellation()
+        try reserveGeneration(max(floor, primary))
+    }
+
+    private func readRecord() throws -> CustodyRecord {
+        let record = try JSONDecoder().decode(CustodyRecord.self, from: Data(contentsOf: recordURL))
+        guard record.generation > 0, !record.handle.isEmpty else {
+            throw CompanionClientError.transport("phone custody record is malformed")
+        }
+        try validateKey(handle: record.handle, publicKey: record.publicKey)
+        return record
+    }
+}
+
+/// An operation owns its context until completion. Cancellation can invalidate
+/// it from outside the serial crypto executor while a biometric prompt is open.
+final class CryptoOperationContext: @unchecked Sendable {
+    let context = LAContext()
+    private let lock = NSLock()
+    private var invalidated = false
+    #if RUNSPECIMEN_TEST_HOOKS
+    static var testDidInvalidate: (() -> Void)?
+    #endif
+    func invalidate() {
+        lock.lock()
+        guard !invalidated else { lock.unlock(); return }
+        invalidated = true
+        lock.unlock()
+        context.invalidate()
+        #if RUNSPECIMEN_TEST_HOOKS
+        Self.testDidInvalidate?()
+        #endif
     }
 }
 
 actor CryptoWorker {
     static let shared = CryptoWorker()
-    
+
     func perform<T>(_ operation: @Sendable () throws -> T) throws -> T {
-        try operation()
+        try Task.checkCancellation()
+        do {
+            let result = try operation()
+            try Task.checkCancellation()
+            return result
+        } catch {
+            try Task.checkCancellation()
+            throw error
+        }
+    }
+
+    nonisolated static func withContext<T>(_ operation: @escaping @Sendable (LAContext) throws -> T) async throws -> T {
+        let owner = CryptoOperationContext()
+        defer { owner.invalidate() }
+        return try await withTaskCancellationHandler {
+            try await shared.perform { try operation(owner.context) }
+        } onCancel: {
+            owner.invalidate()
+        }
     }
 }
 
 struct LivePhoneSecureEnclaveSigner: PhoneChallengeSigning {
-    var stage = PhoneKeyStage(directory: LivePhoneSecureEnclaveSigner.support)
+    private let operationID = UUID().uuidString
+    var stage: PhoneKeyStage
+    init(stage: PhoneKeyStage = PhoneKeyStage(directory: LivePhoneSecureEnclaveSigner.support)) {
+        self.stage = stage
+    }
 
     func signCommitted(message: Data) throws -> (publicKey: String, signature: String) {
+        let context = LAContext()
+        defer { context.invalidate() }
+        return try signCommitted(message: message, context: context)
+    }
+
+    private func signCommitted(message: Data, context: LAContext) throws -> (publicKey: String, signature: String) {
         let token = try stage.committedHandle()
-        let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: token)
-        let committed = try stage.committedPublicKey()
-        guard key.publicKey.x963Representation == committed else {
+        let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: token, authenticationContext: context)
+        guard key.publicKey.x963Representation == (try stage.committedPublicKey()) else {
             throw CompanionClientError.transport("phone session key is not enrolled")
         }
-        let signature = try key.signature(for: message).rawRepresentation
-        return (
-            key.publicKey.x963Representation.base64EncodedString(),
-            signature.base64EncodedString()
-        )
+        return (key.publicKey.x963Representation.base64EncodedString(), try key.signature(for: message).rawRepresentation.base64EncodedString())
     }
 
     func sign(message: Data) throws -> (publicKey: String, signature: String) {
-        if let token = try? stage.committedHandle() {
-            let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: token)
-            let signature = try key.signature(for: message).rawRepresentation
-            return (
-                key.publicKey.x963Representation.base64EncodedString(),
-                signature.base64EncodedString()
-            )
+        let context = LAContext()
+        defer { context.invalidate() }
+        return try sign(message: message, context: context)
+    }
+
+    private func sign(message: Data, context: LAContext) throws -> (publicKey: String, signature: String) {
+        if stage.hasAnyStagedParts() {
+            let parts = try stage.claimOperation(operationID)
+            let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: parts.handle, authenticationContext: context)
+            return (key.publicKey.x963Representation.base64EncodedString(), try key.signature(for: message).rawRepresentation.base64EncodedString())
         }
+        do { return try signCommitted(message: message, context: context) }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile { }
+        let key = try makeKey(context: context)
+        try stage.stage(handle: key.dataRepresentation, publicKey: key.publicKey.x963Representation, challengeId: "", operationID: operationID)
+        return (key.publicKey.x963Representation.base64EncodedString(), try key.signature(for: message).rawRepresentation.base64EncodedString())
+    }
+
+    private func makeKey(context: LAContext) throws -> SecureEnclave.P256.Signing.PrivateKey {
         var error: Unmanaged<CFError>?
-        guard let access = SecAccessControlCreateWithFlags(
-            kCFAllocatorDefault,
-            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            [.privateKeyUsage, .biometryCurrentSet],
-            &error
-        ) else {
+        guard let access = SecAccessControlCreateWithFlags(kCFAllocatorDefault,
+            kSecAttrAccessibleWhenUnlockedThisDeviceOnly, [.privateKeyUsage, .biometryCurrentSet], &error) else {
             throw CompanionClientError.transport("biometric access policy was refused")
         }
-        let key = try SecureEnclave.P256.Signing.PrivateKey(
-            accessControl: access,
-            authenticationContext: LAContext()
-        )
-        try stage.stage(handle: key.dataRepresentation, publicKey: key.publicKey.x963Representation)
-        let signature = try key.signature(for: message).rawRepresentation
-        return (
-            key.publicKey.x963Representation.base64EncodedString(),
-            signature.base64EncodedString()
-        )
+        return try SecureEnclave.P256.Signing.PrivateKey(accessControl: access, authenticationContext: context)
     }
-    
+
+    private func cleanupCancelledStage() async {
+        // Cleanup gets its own uncancelled task and checks ownership on the same
+        // worker that serializes creation, so it cannot erase a newer stage.
+        _ = await Task.detached { [self] in
+            try? await CryptoWorker.shared.perform { self.stage.discard(ownedByOperation: self.operationID) }
+        }.value
+    }
+
     func signAsync(message: Data) async throws -> (publicKey: String, signature: String) {
-        try await CryptoWorker.shared.perform { [self] in
-            try sign(message: message)
+        do { return try await CryptoWorker.withContext { try self.sign(message: message, context: $0) } }
+        catch {
+            await cleanupCancelledStage()
+            throw error
         }
+    }
+
+    func signCommittedAsync(message: Data) async throws -> (publicKey: String, signature: String) {
+        try await CryptoWorker.withContext { try self.signCommitted(message: message, context: $0) }
     }
 
     func bindStagedOwnership(challengeId: String, publicKey: String) throws {
@@ -1732,37 +2150,30 @@ struct LivePhoneSecureEnclaveSigner: PhoneChallengeSigning {
     }
 
     func discardStagedEnrollment() {
-        stage.discard()
+        stage.discard(ownedByOperation: operationID)
     }
 
     func rotateEnrollment() throws {
-        var error: Unmanaged<CFError>?
-        guard let access = SecAccessControlCreateWithFlags(
-            kCFAllocatorDefault,
-            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            [.privateKeyUsage, .biometryCurrentSet],
-            &error
-        ) else {
-            throw CompanionClientError.transport("biometric access policy was refused")
-        }
-        let key = try SecureEnclave.P256.Signing.PrivateKey(
-            accessControl: access,
-            authenticationContext: LAContext()
-        )
-        try stage.rotate(handle: key.dataRepresentation, publicKey: key.publicKey.x963Representation)
+        let context = LAContext()
+        defer { context.invalidate() }
+        try rotateEnrollment(context: context)
     }
-    
+
+    private func rotateEnrollment(context: LAContext) throws {
+        let key = try makeKey(context: context)
+        try stage.stage(handle: key.dataRepresentation, publicKey: key.publicKey.x963Representation, challengeId: "", operationID: operationID)
+    }
+
     func rotateEnrollmentAsync() async throws {
-        try await CryptoWorker.shared.perform { [self] in
-            try rotateEnrollment()
-        }
+        do { try await CryptoWorker.withContext { try self.rotateEnrollment(context: $0) } }
+        catch { await cleanupCancelledStage(); throw error }
     }
 
     func revokeEnrollment() throws {
         try stage.revoke()
     }
 
-    private static var support: URL {
+    static var support: URL {
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return root.appendingPathComponent("RunSpecimenObserve", isDirectory: true)
     }

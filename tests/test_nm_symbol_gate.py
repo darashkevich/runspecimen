@@ -33,6 +33,18 @@ class NmSymbolGateNegativeTests(unittest.TestCase):
             )
         self.assertIn("beforeFinalSignatureDecision", str(ctx.exception))
 
+    def test_each_current_swift_test_seam_is_rejected(self) -> None:
+        sources = _GATE.parents[1] / "Sources" / "RunSpecimenObserve"
+        import re
+        names = set()
+        for source in sources.rglob("*.swift"):
+            names.update(re.findall(r"\b(?:var|func) (test[A-Z]\w*)", source.read_text()))
+        self.assertGreater(len(names), 8)
+        for name in names:
+            with self.subTest(name=name), self.assertRaises(SymbolGateError):
+                assert_forbidden_absent(f"_$s18RunSpecimenObserve5OwnerC{len(name)}{name}Sgvg", label="Swift seam")
+        assert_forbidden_absent("_$s18RunSpecimenObserve12latestStatusSgvg", label="shipping")
+
     def test_missing_object_is_fatal(self) -> None:
         with self.assertRaises(SymbolGateError) as ctx:
             nm_defined_symbols(Path("/tmp/rs-nm-missing-object-does-not-exist"))

@@ -92,6 +92,7 @@ public struct CompanionPairingRecord: Equatable, Codable {
     public var state: String
     public var generation: Int
     public var macUpdatePending: Bool = false
+    public var replacesKeyID: String? = nil
 
     public var allowsExecution: Bool {
         EnrollmentIdentity.allowsExecution(
@@ -149,19 +150,34 @@ public enum CompanionSecureEnclaveEnrollment {
     static var beforeFinalSignatureDecision: (() -> Void)?
     static var testAuthenticator: ((String) throws -> Void)?
     static var testKeyCreator: ((String) throws -> Data)?
+    static var testSignatureProducer: ((Data) throws -> Data)?
     static var testKeyDeleter: ((String) throws -> Void)?
     static var testInMemoryKeychain: [String: Data]?
+    static var testRotationWillWrite: ((RotationState) throws -> Void)?
+    static var testRotationCheckpoint: ((RotationState) throws -> Void)?
+    static var testRotationFileRemoval: ((URL) throws -> Void)?
     #endif
 
     public static func automationRefused() throws -> Never {
         throw CompanionHardwareRefusal.automationRefused
     }
 
-    public static func enroll(keyID: String, directory: URL) throws -> CompanionPairingRecord {
+    public static func enroll(keyID: String, directory: URL, authenticationContext: LAContext? = nil) throws -> CompanionPairingRecord {
         try enrollReplacingMissingFile(keyID: keyID, directory: directory) {
-            try createEnclaveKey(keyID: keyID)
+            try createEnclaveKey(keyID: keyID, authenticationContext: authenticationContext)
         } cleanup: {
             try? deleteBlob(keyID: keyID)
+        }
+    }
+
+    static func enrollAsync(keyID: String, directory: URL) async throws -> CompanionPairingRecord {
+        try await CryptoWorker.withContext { try enroll(keyID: keyID, directory: directory, authenticationContext: $0) }
+    }
+
+    static func signDisplayedAsync(packageText: String, displayed: RSBA2Package.Fields, selectedKeyID: String, directory: URL) async throws -> Data {
+        try await CryptoWorker.withContext {
+            try signDisplayed(packageText: packageText, displayed: displayed, selectedKeyID: selectedKeyID,
+                              directory: directory, authenticationContext: $0)
         }
     }
 
@@ -203,8 +219,13 @@ public enum CompanionSecureEnclaveEnrollment {
     public static func signDisplayed(
         packageText: String,
         displayed: RSBA2Package.Fields,
-        directory: URL
+        selectedKeyID: String,
+        directory: URL,
+        authenticationContext: LAContext? = nil
     ) throws -> Data {
+        guard selectedKeyID == displayed.companionKeyID else {
+            throw CompanionHardwareRefusal.staleRequest
+        }
         guard let data = packageText.data(using: .utf8) else {
             throw CompanionHardwareRefusal.malformed("package")
         }
@@ -218,17 +239,19 @@ public enum CompanionSecureEnclaveEnrollment {
             throw CompanionHardwareRefusal.staleRequest
         }
         let bytes = try canonical(fresh)
-        return try sign(fields: fresh, displayedCanonical: bytes, directory: directory)
+        return try sign(fields: fresh, displayedCanonical: bytes, directory: directory, authenticationContext: authenticationContext)
     }
 
     public static func revoke(keyID: String, directory: URL) async throws -> CompanionPairingRecord {
         try validateKeyID(keyID)
         try await authenticateWithBiometrics(reason: "Authenticate to revoke this iPhone key")
-        return try withLock(directory) {
+        return try await CryptoWorker.shared.perform {
+            try withLock(directory) {
             let record = try load(keyID: keyID, directory: directory)
             return try persistRevocation(record, directory: directory) { _ in
                 try deleteBlob(keyID: keyID)
             }
+        }
         }
     }
 
@@ -241,6 +264,12 @@ public enum CompanionSecureEnclaveEnrollment {
 
         try await authenticateWithBiometrics(reason: "Authenticate to rotate this iPhone key")
 
+        return try await CryptoWorker.withContext { context in
+            try rotateAuthenticated(from: oldKeyID, to: newKeyID, directory: directory, context: context)
+        }
+    }
+
+    private static func rotateAuthenticated(from oldKeyID: String, to newKeyID: String, directory: URL, context: LAContext) throws -> (newKey: CompanionPairingRecord, revokedKey: CompanionPairingRecord) {
         return try withLock(directory) {
             try recoverIncompleteRotationUnlocked(directory: directory)
 
@@ -249,12 +278,12 @@ public enum CompanionSecureEnclaveEnrollment {
                 throw CompanionHardwareRefusal.malformed("enrollment")
             }
 
-            if let existingNew = try? load(keyID: newKeyID, directory: directory) {
-                if existingNew.state == revoked {
-                    throw CompanionHardwareRefusal.keyIDRevoked
-                } else {
-                    throw CompanionHardwareRefusal.alreadyEnrolled
-                }
+            do {
+                let existingNew = try load(keyID: newKeyID, directory: directory)
+                if existingNew.state == revoked { throw CompanionHardwareRefusal.keyIDRevoked }
+                throw CompanionHardwareRefusal.alreadyEnrolled
+            } catch CompanionHardwareRefusal.missing {
+                // Only an actually missing destination is available.
             }
 
             var state = RotationState(
@@ -268,13 +297,13 @@ public enum CompanionSecureEnclaveEnrollment {
 
             let newPublicKey: Data
             do {
-                newPublicKey = try createEnclaveKey(keyID: newKeyID)
+                newPublicKey = try createEnclaveKey(keyID: newKeyID, authenticationContext: context)
                 state.newKeyCreated = true
                 state.phase = .newKeyStaged
                 try saveRotationState(state, directory: directory)
             } catch {
                 enrollmentLogger.error("Rotation: new key creation failed: \(error.localizedDescription, privacy: .public)")
-                try? clearRotationState(directory: directory)
+                // Keep the journal: key creation may have succeeded before checkpoint failure.
                 throw error
             }
 
@@ -286,7 +315,8 @@ public enum CompanionSecureEnclaveEnrollment {
                 provenance: EnrollmentIdentity.provenanceProduction,
                 state: active,
                 generation: oldRecord.generation + 1,
-                macUpdatePending: true
+                macUpdatePending: true,
+                replacesKeyID: oldKeyID
             )
 
             do {
@@ -295,8 +325,7 @@ public enum CompanionSecureEnclaveEnrollment {
                 try saveRotationState(state, directory: directory)
             } catch {
                 enrollmentLogger.error("Rotation: new key save failed: \(error.localizedDescription, privacy: .public)")
-                try? deleteBlob(keyID: newKeyID)
-                try? clearRotationState(directory: directory)
+                // Recovery owns rollback of both the record and blob under the lock.
                 throw CompanionHardwareRefusal.fileWriteError(newKeyID)
             }
             let revokedRecord: CompanionPairingRecord
@@ -307,17 +336,14 @@ public enum CompanionSecureEnclaveEnrollment {
                 try saveRotationState(state, directory: directory)
             } catch {
                 enrollmentLogger.error("Rotation: old key revocation failed: \(error.localizedDescription, privacy: .public)")
-                throw CompanionHardwareRefusal.rotationIncomplete(oldKeyRevoked: false, newKeyCreated: true)
+                throw CompanionHardwareRefusal.rotationIncomplete(oldKeyRevoked: state.oldKeyRevoked, newKeyCreated: true)
             }
 
-            do {
-                try deleteBlob(keyID: oldKeyID)
-            } catch {
-                enrollmentLogger.warning("Rotation: old key blob cleanup failed (non-fatal): \(error.localizedDescription, privacy: .public)")
-            }
-
+            // Cleanup failures retain the journal so they can be retried.
+            try deleteBlob(keyID: oldKeyID)
             state.phase = .completed
-            try? clearRotationState(directory: directory)
+            try saveRotationState(state, directory: directory)
+            try clearRotationState(directory: directory)
 
             return (newRecord, revokedRecord)
         }
@@ -334,47 +360,52 @@ public enum CompanionSecureEnclaveEnrollment {
 
         enrollmentLogger.info("Recovering incomplete rotation: phase=\(state.phase.rawValue, privacy: .public), oldKeyID=\(state.oldKeyID, privacy: .public), newKeyID=\(state.newKeyID, privacy: .public)")
 
-        let oldRecordExists = (try? load(keyID: state.oldKeyID, directory: directory)) != nil
-        let newRecordExists = (try? load(keyID: state.newKeyID, directory: directory)) != nil
-
-        switch state.phase {
-        case .started:
-            try? deleteBlob(keyID: state.newKeyID)
-            try? clearRotationState(directory: directory)
-
-        case .newKeyStaged:
-            try? deleteBlob(keyID: state.newKeyID)
-            try? clearRotationState(directory: directory)
-
-        case .newKeyCommitted:
-            if newRecordExists {
-                let newRecordURL = fileURL(keyID: state.newKeyID, directory: directory)
-                try? FileManager.default.removeItem(at: newRecordURL)
-                try? deleteBlob(keyID: state.newKeyID)
-                enrollmentLogger.info("Rolled back newKeyCommitted: removed new record and blob")
-            } else {
-                try? deleteBlob(keyID: state.newKeyID)
-            }
-            try? clearRotationState(directory: directory)
-
-        case .oldKeyRevoked:
-            try? deleteBlob(keyID: state.oldKeyID)
-            if !newRecordExists {
-                try? deleteBlob(keyID: state.newKeyID)
-                enrollmentLogger.warning("oldKeyRevoked phase but new record missing - cleaning up blobs")
-            }
-            try? clearRotationState(directory: directory)
-
-        case .completed:
-            try? deleteBlob(keyID: state.oldKeyID)
-            try? clearRotationState(directory: directory)
+        try validateKeyID(state.oldKeyID)
+        try validateKeyID(state.newKeyID)
+        guard state.oldKeyID != state.newKeyID else {
+            throw CompanionHardwareRefusal.malformed("same-key-id")
         }
+        // Disk may be one operation ahead of the journal. Never roll back the
+        // replacement after the old record has durably become revoked.
+        let oldRecord: CompanionPairingRecord?
+        do { oldRecord = try load(keyID: state.oldKeyID, directory: directory) }
+        catch CompanionHardwareRefusal.missing { oldRecord = nil }
+        let keepReplacement = oldRecord?.state == revoked || state.oldKeyRevoked
+            || state.phase == .oldKeyRevoked || state.phase == .completed
+        if keepReplacement {
+            // Keep the recovery evidence if the surviving record is unavailable.
+            let replacement = try load(keyID: state.newKeyID, directory: directory)
+            guard replacement.state == active else {
+                throw CompanionHardwareRefusal.rotationIncomplete(oldKeyRevoked: true, newKeyCreated: false)
+            }
+            try deleteBlob(keyID: state.oldKeyID)
+        } else {
+            // Any early checkpoint can have a replacement record on disk.
+            // Delete its blob first; preserve the journal on every failure.
+            try deleteBlob(keyID: state.newKeyID)
+            try removeRotationFileIfPresent(fileURL(keyID: state.newKeyID, directory: directory))
+        }
+        try clearRotationState(directory: directory)
+    }
+
+    private static func removeRotationFileIfPresent(_ url: URL) throws {
+        #if RUNSPECIMEN_TEST_HOOKS
+        try testRotationFileRemoval?(url)
+        #endif
+        do { try FileManager.default.removeItem(at: url) }
+        catch let error as CocoaError where error.code == .fileNoSuchFile { }
     }
 
     private static func saveRotationState(_ state: RotationState, directory: URL) throws {
         let url = directory.appendingPathComponent(".rotation-state.json")
         let data = try JSONEncoder().encode(state)
+        #if RUNSPECIMEN_TEST_HOOKS
+        try testRotationWillWrite?(state)
+        #endif
         try data.write(to: url, options: .atomic)
+        #if RUNSPECIMEN_TEST_HOOKS
+        try testRotationCheckpoint?(state)
+        #endif
     }
 
     private static func loadRotationState(directory: URL) throws -> RotationState? {
@@ -386,7 +417,7 @@ public enum CompanionSecureEnclaveEnrollment {
 
     private static func clearRotationState(directory: URL) throws {
         let url = directory.appendingPathComponent(".rotation-state.json")
-        try? FileManager.default.removeItem(at: url)
+        try removeRotationFileIfPresent(url)
     }
 
     public static func carriedPairing(keyID: String, directory: URL) throws -> Data {
@@ -532,7 +563,8 @@ public enum CompanionSecureEnclaveEnrollment {
     private static func sign(
         fields: RSBA2Package.Fields,
         displayedCanonical: Data,
-        directory: URL
+        directory: URL,
+        authenticationContext: LAContext?
     ) throws -> Data {
         try validateKeyID(fields.companionKeyID)
         guard fields.policy == "companion" || fields.policy == "dual" else {
@@ -555,7 +587,7 @@ public enum CompanionSecureEnclaveEnrollment {
             }
             return record
         }
-        let produced = try signWithEnclave(keyID: before.keyID, publicKey: before.publicKey, bytes: bytes)
+        let produced = try signWithEnclave(keyID: before.keyID, publicKey: before.publicKey, bytes: bytes, authenticationContext: authenticationContext)
         return try finalizeSignature(
             produced: produced,
             before: before.snapshot,
@@ -632,6 +664,7 @@ public enum CompanionSecureEnclaveEnrollment {
         #endif
 
         let context = LAContext()
+        defer { context.invalidate() }
         context.localizedFallbackTitle = ""
 
         var biometryError: NSError?
@@ -652,7 +685,9 @@ public enum CompanionSecureEnclaveEnrollment {
             throw CompanionHardwareRefusal.biometryUnavailable
         }
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        try Task.checkCancellation()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, error in
                 if success {
                     continuation.resume()
@@ -676,16 +711,22 @@ public enum CompanionSecureEnclaveEnrollment {
                 }
             }
         }
+        } onCancel: {
+            context.invalidate()
+        }
+        try Task.checkCancellation()
+
     }
 
-    private static func createEnclaveKey(keyID: String) throws -> Data {
+    private static func createEnclaveKey(keyID: String, authenticationContext: LAContext? = nil) throws -> Data {
         #if RUNSPECIMEN_TEST_HOOKS
         if let testCreator = testKeyCreator {
             return try testCreator(keyID)
         }
         #endif
 
-        let context = LAContext()
+        let context = authenticationContext ?? LAContext()
+        defer { context.invalidate() }
         context.localizedFallbackTitle = ""
         let key: SecureEnclave.P256.Signing.PrivateKey
         do {
@@ -701,9 +742,13 @@ public enum CompanionSecureEnclaveEnrollment {
         return key.publicKey.x963Representation
     }
 
-    private static func signWithEnclave(keyID: String, publicKey: Data, bytes: Data) throws -> Data {
+    private static func signWithEnclave(keyID: String, publicKey: Data, bytes: Data, authenticationContext: LAContext? = nil) throws -> Data {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let produce = testSignatureProducer { return try produce(bytes) }
+        #endif
         let blob = try loadBlob(keyID: keyID)
-        let context = LAContext()
+        let context = authenticationContext ?? LAContext()
+        defer { context.invalidate() }
         context.localizedFallbackTitle = ""
         let key = try SecureEnclave.P256.Signing.PrivateKey(
             dataRepresentation: blob,
@@ -781,6 +826,12 @@ public enum CompanionSecureEnclaveEnrollment {
             throw CompanionHardwareRefusal.malformed("identity")
         }
         let macUpdatePending = object["mac_update_pending"] as? Bool ?? false
+        let replacesKeyID = object["replaces_key_id"] as? String
+        if object["replaces_key_id"] != nil, replacesKeyID == nil { throw CompanionHardwareRefusal.malformed("replaces_key_id") }
+        if let replacesKeyID {
+            try validateKeyID(replacesKeyID)
+            guard replacesKeyID != keyID else { throw CompanionHardwareRefusal.malformed("replaces_key_id") }
+        }
         return CompanionPairingRecord(
             keyID: keyID,
             publicKey: publicKey,
@@ -789,7 +840,8 @@ public enum CompanionSecureEnclaveEnrollment {
             provenance: provenance,
             state: state,
             generation: generation,
-            macUpdatePending: macUpdatePending
+            macUpdatePending: macUpdatePending,
+            replacesKeyID: replacesKeyID
         )
     }
 
@@ -806,6 +858,7 @@ public enum CompanionSecureEnclaveEnrollment {
         if record.macUpdatePending {
             object["mac_update_pending"] = true
         }
+        if let previous = record.replacesKeyID { object["replaces_key_id"] = previous }
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 

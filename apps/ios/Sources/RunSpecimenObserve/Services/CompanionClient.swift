@@ -31,6 +31,9 @@ enum CompanionClientError: LocalizedError {
 /// HTTP client for the Mac-side companion endpoint.
 /// No plugin-style approve/run helpers — only observe + optional remote-confirm settle.
 final class CompanionClient {
+    #if RUNSPECIMEN_TEST_HOOKS
+    var testRequest: ((URLRequest) async throws -> Data)?
+    #endif
     let config: PairingConfig
     private var pinnedSession: URLSession?
     private var sessionDelegate: CompanionTLSPinningDelegate?
@@ -91,6 +94,9 @@ final class CompanionClient {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         req.timeoutInterval = 8
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let request = testRequest { return try await request(req) }
+        #endif
         let session = try getSession()
         sessionLock.lock()
         sessionDelegate?.clearMismatch()
@@ -278,8 +284,8 @@ final class CompanionTLSPinningDelegate: NSObject, URLSessionDelegate {
 
     static func normalize(_ value: String) -> String {
         value
-            .uppercased()
-            .filter { "0123456789ABCDEF".contains($0) }
+            .lowercased()
+            .filter { "0123456789abcdef".contains($0) }
     }
 
     func urlSession(

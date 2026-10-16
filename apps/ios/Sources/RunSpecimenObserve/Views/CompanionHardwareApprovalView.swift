@@ -63,16 +63,13 @@ enum KeyState: Equatable {
     }
 }
 
-enum ActionOutcome: Equatable {
-    case none
-    case inProgress
-    case success(String)
-    case failure(message: String, detail: String?)
-}
 
 struct CompanionHardwareApprovalView: View {
+    @State private var unavailableSelectionID: String?
     @AppStorage("rs.observe.selectedKeyID") private var persistedKeyID = "iphone-companion"
     @State private var keyID = ""
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var keyOperationTask: Task<Void, Never>?
     @State private var hasInitialized = false
     @State private var replacementKeyID = ""
     @State private var packageText = ""
@@ -80,6 +77,7 @@ struct CompanionHardwareApprovalView: View {
     @State private var fields: RSBA2Package.Fields?
     @State private var pairingText = ""
     @State private var revokedPairingText = ""
+    @State private var rotationExports: [HardwareRotationExport] = []
     @State private var rotatedFromKeyID: String? = nil
     @State private var signatureText = ""
     @State private var keyState: KeyState = .unknown
@@ -108,6 +106,11 @@ struct CompanionHardwareApprovalView: View {
                 enrollSection
                 Divider().background(RSTheme.muted.opacity(0.3))
                 revokeRotateSection
+                ForEach(rotationExports) { card in
+                    if !dismissedExports.contains("rotation-" + card.id) {
+                        exportCard(title: card.title, json: card.json, isRevoked: card.isRevoked, dismissKey: "rotation-" + card.id)
+                    }
+                }
                 Divider().background(RSTheme.muted.opacity(0.3))
                 signRequestSection
             }
@@ -119,8 +122,18 @@ struct CompanionHardwareApprovalView: View {
         .onAppear {
             initializeKeySelection()
         }
+        .onDisappear { keyOperationTask?.cancel() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { keyOperationTask?.cancel() }
+        }
         .onChange(of: keyID) { oldValue, newValue in
             if hasInitialized && oldValue != newValue {
+                keyOperationTask?.cancel()
+                fields = nil
+                lines = []
+                signatureText = ""
+                showOutcome = .none
+                signOutcome = .none
                 persistedKeyID = newValue
                 clearKeyActionOutcomes()
                 if skipNextKeyChangeRefresh {
@@ -132,6 +145,8 @@ struct CompanionHardwareApprovalView: View {
             updateReplacementKeyID()
         }
         .onChange(of: packageText) { _, _ in
+            keyOperationTask?.cancel()
+            clearKeyActionOutcomes()
             lines = []
             fields = nil
             signatureText = ""
@@ -302,8 +317,15 @@ struct CompanionHardwareApprovalView: View {
 
             outcomeView(outcome: enrollOutcome)
 
-            if !pairingText.isEmpty && rotatedFromKeyID == nil && !dismissedExports.contains("active-\(keyID)") {
+            if !rotationExports.contains(where: { $0.keyID == keyID }) && !pairingText.isEmpty && rotatedFromKeyID == nil && !dismissedExports.contains("active-\(keyID)") {
                 exportCard(title: "Active key", json: pairingText, isRevoked: false, dismissKey: "active-\(keyID)")
+            }
+
+            if unavailableSelectionID == keyID {
+                Text("The saved key \(keyID) is unavailable. Select an existing key or enter a different key ID to enroll a new identity.")
+                    .font(.caption)
+                    .foregroundStyle(RSTheme.amber)
+                    .accessibilityIdentifier("unavailableSelectedKey")
             }
 
             if keyState.isRevoked {
@@ -386,7 +408,7 @@ struct CompanionHardwareApprovalView: View {
 
                 outcomeView(outcome: revokeOutcome)
 
-                if !revokedPairingText.isEmpty && rotatedFromKeyID == nil && !dismissedExports.contains("revoked-\(keyID)") {
+                if !rotationExports.contains(where: { $0.keyID == keyID }) && !revokedPairingText.isEmpty && rotatedFromKeyID == nil && !dismissedExports.contains("revoked-\(keyID)") {
                     exportCard(title: "Revoked key (share with Mac)", json: revokedPairingText, isRevoked: true, dismissKey: "revoked-\(keyID)")
                 }
 
@@ -413,25 +435,14 @@ struct CompanionHardwareApprovalView: View {
 
                 outcomeView(outcome: rotateOutcome)
 
-                if let oldKeyID = rotatedFromKeyID {
-                    if !pairingText.isEmpty && !dismissedExports.contains("rotated-new-\(keyID)") {
-                        exportCard(title: "New active key (share with Mac)", json: pairingText, isRevoked: false, dismissKey: "rotated-new-\(keyID)")
-                    }
-                    if !revokedPairingText.isEmpty && !dismissedExports.contains("rotated-old-\(oldKeyID)") {
-                        exportCard(title: "Revoked key '\(oldKeyID)' (share with Mac)", json: revokedPairingText, isRevoked: true, dismissKey: "rotated-old-\(oldKeyID)")
-                    }
-                }
+
 
                 Text("Revoke permanently disables the key. Rotate creates a replacement and revokes the old key. Both require Face ID and produce a revocation record to share with the Mac.")
                     .font(.caption)
                     .foregroundStyle(RSTheme.muted)
             }
 
-            if let oldKeyID = rotatedFromKeyID, !keyState.isActive {
-                if !revokedPairingText.isEmpty && !dismissedExports.contains("rotated-old-\(oldKeyID)") {
-                    exportCard(title: "Revoked key '\(oldKeyID)' (share with Mac)", json: revokedPairingText, isRevoked: true, dismissKey: "rotated-old-\(oldKeyID)")
-                }
-            }
+
         }
     }
 
@@ -653,6 +664,7 @@ struct CompanionHardwareApprovalView: View {
     }
 
     private var canEnroll: Bool {
+        if unavailableSelectionID == keyID { return false }
         if case .active = keyState { return false }
         if case .revoked = keyState { return false }
         if case .corrupt = keyState { return false }
@@ -749,24 +761,19 @@ struct CompanionHardwareApprovalView: View {
     }
 
     private func initializeKeySelection() {
-        loadAllKeys()
-
-        let storedKeyID = persistedKeyID
-        let keyExistsValid = allKeys.contains { $0.keyID == storedKeyID }
-        let keyExistsCorrupt = corruptKeys.contains { $0.keyID == storedKeyID }
-
-        if keyExistsValid || keyExistsCorrupt {
-            keyID = storedKeyID
-        } else if let firstActive = allKeys.first(where: { $0.state == CompanionSecureEnclaveEnrollment.active }) {
-            keyID = firstActive.keyID
-            persistedKeyID = firstActive.keyID
-        } else if let firstKey = allKeys.first {
-            keyID = firstKey.keyID
-            persistedKeyID = firstKey.keyID
-        } else {
-            keyID = storedKeyID
+        do {
+            let selection = try HardwareKeySelection(persistedKeyID: persistedKeyID, directory: directory)
+            keyID = selection.keyID
+            if selection.isUnavailable && UserDefaults.standard.object(forKey: "rs.observe.selectedKeyID") != nil {
+                unavailableSelectionID = selection.keyID
+            }
+            allKeys = selection.records
+            corruptKeys = selection.corruptKeyIDs
+        } catch {
+            keyID = persistedKeyID
+            allKeys = []
+            corruptKeys = []
         }
-
         updateReplacementKeyID()
         hasInitialized = true
         refreshKeyState()
@@ -789,6 +796,7 @@ struct CompanionHardwareApprovalView: View {
             let listing = try CompanionSecureEnclaveEnrollment.listKeysWithCorrupt(directory: directory)
             allKeys = listing.validRecords
             corruptKeys = listing.corruptKeyIDs
+            rotationExports = try HardwareRotationExport.pending(directory: directory)
         } catch {
             allKeys = []
             corruptKeys = []
@@ -862,12 +870,10 @@ struct CompanionHardwareApprovalView: View {
 
         Task {
             do {
-                try CompanionSecureEnclaveEnrollment.markMacUpdated(keyID: keyID, directory: directory)
-                await MainActor.run {
-                    feedbackGenerator.notificationOccurred(.success)
-                    markUpdatedOutcome = .success("Key marked as updated on Mac.")
+                markUpdatedOutcome = try HardwareKeyActions.markMacUpdated(keyID: keyID, directory: directory) {
                     refreshKeyState()
                 }
+                feedbackGenerator.notificationOccurred(.success)
             } catch {
                 await MainActor.run {
                     feedbackGenerator.notificationOccurred(.error)
@@ -888,20 +894,24 @@ struct CompanionHardwareApprovalView: View {
         rotatedFromKeyID = nil
         dismissedExports = []
 
-        Task {
+        keyOperationTask?.cancel()
+        let operationKeyID = keyID
+        keyOperationTask = Task {
             do {
-                let record = try CompanionSecureEnclaveEnrollment.enroll(keyID: keyID, directory: directory)
+                let record = try await CompanionSecureEnclaveEnrollment.enrollAsync(keyID: operationKeyID, directory: directory)
                 let carried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: record.keyID, directory: directory)
                 await MainActor.run {
+                    guard !Task.isCancelled else { return }
                     pairingText = String(decoding: carried, as: UTF8.self)
                     feedbackGenerator.notificationOccurred(.success)
                     enrollOutcome = .success("Key enrolled (generation \(record.generation)). Share the pairing record with the Mac.")
                     keyState = .active(generation: record.generation, macUpdatePending: record.macUpdatePending)
-                    persistedKeyID = keyID
+                    persistedKeyID = operationKeyID
                     loadAllKeys()
                 }
             } catch {
                 await MainActor.run {
+                    guard !Task.isCancelled else { return }
                     feedbackGenerator.notificationOccurred(.error)
                     let (message, detail) = describeError(error, action: "enroll")
                     enrollOutcome = .failure(message: message, detail: detail)
@@ -921,11 +931,14 @@ struct CompanionHardwareApprovalView: View {
         rotatedFromKeyID = nil
         dismissedExports = []
 
-        Task {
+        keyOperationTask?.cancel()
+        let operationKeyID = keyID
+        keyOperationTask = Task {
             do {
-                let revokedRecord = try await CompanionSecureEnclaveEnrollment.revoke(keyID: keyID, directory: directory)
-                let carried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: keyID, directory: directory)
+                let revokedRecord = try await CompanionSecureEnclaveEnrollment.revoke(keyID: operationKeyID, directory: directory)
+                let carried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: operationKeyID, directory: directory)
                 await MainActor.run {
+                    guard !Task.isCancelled else { return }
                     revokedPairingText = String(decoding: carried, as: UTF8.self)
                     feedbackGenerator.notificationOccurred(.success)
                     revokeOutcome = .success("Key revoked (generation \(revokedRecord.generation)). Share the revoked record with the Mac.")
@@ -933,6 +946,7 @@ struct CompanionHardwareApprovalView: View {
                 }
             } catch {
                 await MainActor.run {
+                    guard !Task.isCancelled else { return }
                     feedbackGenerator.notificationOccurred(.error)
                     let (message, detail) = describeError(error, action: "revoke")
                     revokeOutcome = .failure(message: message, detail: detail)
@@ -952,7 +966,9 @@ struct CompanionHardwareApprovalView: View {
         dismissedExports = []
         let oldKeyID = keyID
 
-        Task {
+        keyOperationTask?.cancel()
+        let operationKeyID = keyID
+        keyOperationTask = Task {
             do {
                 let (newRecord, revokedRecord) = try await CompanionSecureEnclaveEnrollment.rotate(
                     from: oldKeyID,
@@ -962,6 +978,7 @@ struct CompanionHardwareApprovalView: View {
                 let newCarried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: newRecord.keyID, directory: directory)
                 let revokedCarried = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: revokedRecord.keyID, directory: directory)
                 await MainActor.run {
+                    guard !Task.isCancelled else { return }
                     skipNextKeyChangeRefresh = true
                     keyID = newRecord.keyID
                     persistedKeyID = newRecord.keyID
@@ -975,6 +992,7 @@ struct CompanionHardwareApprovalView: View {
                 }
             } catch {
                 await MainActor.run {
+                    guard !Task.isCancelled else { return }
                     feedbackGenerator.notificationOccurred(.error)
                     let (message, detail) = describeError(error, action: "rotate")
                     rotateOutcome = .failure(message: message, detail: detail)
@@ -1018,20 +1036,26 @@ struct CompanionHardwareApprovalView: View {
         signOutcome = .inProgress
         signatureText = ""
 
-        Task {
+        keyOperationTask?.cancel()
+        let operationKeyID = keyID
+        let reviewedPackageText = packageText
+        keyOperationTask = Task {
             do {
-                let signature = try CompanionSecureEnclaveEnrollment.signDisplayed(
-                    packageText: packageText,
+                let signature = try await CompanionSecureEnclaveEnrollment.signDisplayedAsync(
+                    packageText: reviewedPackageText,
                     displayed: fields,
+                    selectedKeyID: operationKeyID,
                     directory: directory
                 )
                 await MainActor.run {
+                    guard !Task.isCancelled, keyID == operationKeyID, packageText == reviewedPackageText else { return }
                     feedbackGenerator.notificationOccurred(.success)
                     signatureText = signature.base64EncodedString()
                     signOutcome = .success("Signed. Copy the signature and carry it back to the Mac.")
                 }
             } catch {
                 await MainActor.run {
+                    guard !Task.isCancelled, keyID == operationKeyID, packageText == reviewedPackageText else { return }
                     feedbackGenerator.notificationOccurred(.error)
                     let (message, detail) = describeError(error, action: "sign")
                     signOutcome = .failure(message: message, detail: detail)

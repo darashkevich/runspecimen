@@ -17,7 +17,13 @@ struct RunSpecimenObserveApp: App {
         launchLogger.info("App.init() START at \(initStart, format: .fixed(precision: 3))")
         #endif
 
-        _session = StateObject(wrappedValue: CompanionSession(deferPhoneKeyState: true))
+        let session = CompanionSession(deferPhoneKeyState: true)
+        #if RUNSPECIMEN_TEST_HOOKS
+        if ProcessInfo.processInfo.environment["RUNSPECIMEN_UI_RECOVERY_TEST"] == "1" {
+            session.testHardwareRecoveryDirectory = Self.testRecoveryFixtureDirectory()
+        }
+        #endif
+        _session = StateObject(wrappedValue: session)
 
         #if DEBUG
         let initEnd = CFAbsoluteTimeGetCurrent()
@@ -33,10 +39,8 @@ struct RunSpecimenObserveApp: App {
             RootView()
                 .environmentObject(session)
                 .preferredColorScheme(.dark)
-                .task(priority: .background) {
-                    recoverIncompleteRotationsAfterLaunch()
-                }
-                .task {
+                .task(priority: .userInitiated) {
+                    await session.recoverHardwareRotation()
                     #if DEBUG
                     launchLogger.info("RootView .task starting deferred phone key state refresh")
                     let start = CFAbsoluteTimeGetCurrent()
@@ -50,16 +54,15 @@ struct RunSpecimenObserveApp: App {
         }
     }
 
-    private func recoverIncompleteRotationsAfterLaunch() {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        let directory = base.appendingPathComponent("RunSpecimenObservePairing", isDirectory: true)
-
+    #if RUNSPECIMEN_TEST_HOOKS
+    private static func testRecoveryFixtureDirectory() -> URL {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ui-recovery-" + UUID().uuidString)
         do {
-            try CompanionSecureEnclaveEnrollment.recoverIncompleteRotation(directory: directory)
-            appLogger.info("Rotation recovery check completed after launch")
-        } catch {
-            appLogger.error("Rotation recovery failed after launch: \(error.localizedDescription, privacy: .public)")
-        }
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data("corrupt-journal".utf8).write(to: directory.appendingPathComponent(".rotation-state.json"), options: .atomic)
+        } catch { preconditionFailure("Could not prepare recovery UI fixture") }
+        return directory
     }
+    #endif
+
 }
