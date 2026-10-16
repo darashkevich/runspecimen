@@ -5,6 +5,7 @@ import XCTest
 final class ObserveSchemaTests: XCTestCase {
     override func setUp() {
         super.setUp()
+        executionTimeAllowance = 60
         CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in }
         CompanionSecureEnclaveEnrollment.testKeyCreator = nil
         CompanionSecureEnclaveEnrollment.testKeyDeleter = nil
@@ -1998,13 +1999,25 @@ extension ObserveSchemaTests {
         }
         
         let peer = MockExactRunTransport()
-        peer.fetchedRun = FetchedExactRun(
-            challengeId: "test-challenge",
-            bound: Data("test-bound".utf8),
-            policy: "test-policy",
+        let digest = String(repeating: "ab", count: 32)
+        let expiry = Int(Date().timeIntervalSince1970) + 3600
+        let bound = canonicalExactRunBound(
+            holderId: "holder",
+            payloadDigest: digest,
+            launchArgv: ["/usr/bin/test"],
+            nonce: "test-challenge",
+            policy: "companion",
             generation: 1,
             keyGeneration: 5,
-            expiry: Int(Date().timeIntervalSince1970) + 3600
+            expiry: expiry
+        )
+        peer.fetchedRun = FetchedExactRun(
+            challengeId: "test-challenge",
+            bound: bound,
+            policy: "companion",
+            generation: 1,
+            keyGeneration: 5,
+            expiry: expiry
         )
         
         await MainActor.run {

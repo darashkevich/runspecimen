@@ -3,6 +3,11 @@ import XCTest
 
 final class PhonePeerCancellationXCTests: XCTestCase {
 
+    override func setUp() {
+        super.setUp()
+        executionTimeAllowance = 60
+    }
+
     @MainActor
     func test_DelayedFetchThenCancelDoesNotSignOrPost() async throws {
         try await testDelayedFetchThenCancelDoesNotSignOrPost()

@@ -218,6 +218,15 @@ func testDelayedFetchThenCancelDoesNotSignOrPost() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     let task = Task { await session.signPhonePeerChallenge(signer: signer, peer: peer) }
     while await hold.entered == false {
         await Task.yield()
@@ -238,6 +247,16 @@ func testCancelBeforePostDoesNotPublish() async throws {
     peer.holdBeforePost = true
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     let task = Task { await session.signPhonePeerChallenge(signer: signer, peer: peer) }
     while await hold.entered == false {
         await Task.yield()
@@ -261,6 +280,16 @@ func testPostThatAlreadyLeftIsCancellationTooLate() async throws {
     peer.holdDuringPost = true
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     let task = Task { await session.signPhonePeerChallenge(signer: signer, peer: peer) }
     while peer.published == false {
         await Task.yield()
@@ -314,6 +343,16 @@ func testForgedFlagsWrongKeyChallengeReplayCancelAndStaleDoNotCommit() async thr
     peer.holdFetch = false
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     let task = Task { await session.signPhonePeerChallenge(signer: signer, peer: peer) }
     await task.value
     guard let challenge = session.phoneChallenge else { throw TestFailure.holderVerificationDidNotEnroll }
@@ -359,6 +398,16 @@ func testDelayedReceiptThenCancelDoesNotCommit() async throws {
     peer.holdVerification = true
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     let mac = P256.Signing.PrivateKey()
     session.macSessionPublicKey = mac.publicKey.x963Representation.base64EncodedString()
     let challenge = PhonePeerChallengeMessage(
@@ -391,6 +440,16 @@ func testDelayedReceiptThenNewChallengeDoesNotCommit() async throws {
     peer.holdVerification = true
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     let mac = P256.Signing.PrivateKey()
     session.macSessionPublicKey = mac.publicKey.x963Representation.base64EncodedString()
     let challenge = PhonePeerChallengeMessage(
@@ -424,6 +483,16 @@ func testFailedCommitThenRetryEnrolls() async throws {
     let signer = CountingSigner()
     signer.failCommits = 1
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     let mac = P256.Signing.PrivateKey()
     session.macSessionPublicKey = mac.publicKey.x963Representation.base64EncodedString()
     let challenge = PhonePeerChallengeMessage(
@@ -453,6 +522,16 @@ func testExactRunSignatureUsesTheFetchedNonce() async throws {
     let peer = RecordingExactPeer(fetched: fetched)
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     session.pinnedHolderId = "holder-a"
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     if session.reviewedExactRunLines.contains("policy companion") == false
@@ -472,6 +551,16 @@ func testExactRunCancelDuringReviewDoesNotSign() async throws {
     let peer = RecordingExactPeer(fetched: sampleFetchedExactRun(), hold: hold)
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     session.pinnedHolderId = "holder-a"
     let task = Task { await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer) }
     while await hold.entered == false {
@@ -493,6 +582,16 @@ func testExactRunReplacementDoesNotSubmit() async throws {
     peer.replacement = sampleFetchedExactRun(nonce: "nonce-other")
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     session.pinnedHolderId = "holder-a"
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     await session.approveReviewedExactRun(signer: signer, peer: peer)
@@ -514,6 +613,16 @@ func testExactRunMalformedBoundDoesNotSign() async throws {
     let peer = RecordingExactPeer(fetched: fetched)
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     session.pinnedHolderId = "holder-a"
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     await session.approveReviewedExactRun(signer: signer, peer: peer)
@@ -528,6 +637,16 @@ func testExactRunMissingKeyDoesNotSubmit() async throws {
     let signer = CountingSigner()
     signer.refuseCommitted = true
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     session.pinnedHolderId = "holder-a"
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     await session.approveReviewedExactRun(signer: signer, peer: peer)
@@ -541,6 +660,16 @@ func testExactRunExpiryBeforeApproveDoesNotSign() async throws {
     let peer = RecordingExactPeer(fetched: sampleFetchedExactRun(expiry: 1_800_000_000))
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     session.pinnedHolderId = "holder-a"
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     await session.approveReviewedExactRun(signer: signer, peer: peer, now: { 1_800_000_000 })
@@ -554,6 +683,16 @@ func testExactRunExpiryAfterWaitDoesNotSubmit() async throws {
     let peer = RecordingExactPeer(fetched: sampleFetchedExactRun(expiry: 1_800_000_000))
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     session.pinnedHolderId = "holder-a"
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     var calls = 0
@@ -572,6 +711,16 @@ func testExactRunCancellationBeforeSignDoesNotSign() async throws {
     let peer = RecordingExactPeer(fetched: sampleFetchedExactRun())
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     session.pinnedHolderId = "holder-a"
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     let task = Task {
@@ -596,6 +745,16 @@ func testExactRunCancellationBeforeSubmitDoesNotSubmit() async throws {
     let peer = RecordingExactPeer(fetched: sampleFetchedExactRun())
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     session.pinnedHolderId = "holder-a"
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     await session.approveReviewedExactRun(signer: signer, peer: peer, now: { 1_700_000_000 }, beforeSubmit: {
@@ -611,6 +770,16 @@ func testExactRunUnpinnedHolderDoesNotSign() async throws {
     let peer = RecordingExactPeer(fetched: sampleFetchedExactRun())
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     await session.approveReviewedExactRun(signer: signer, peer: peer, now: { 1_700_000_000 })
     if signer.committedSigns != 0 || peer.submissions != 0 || session.reviewedExactRunLines.isEmpty == false {
@@ -623,6 +792,16 @@ func testExactRunSubstitutedHolderDoesNotSign() async throws {
     let peer = RecordingExactPeer(fetched: sampleFetchedExactRun())
     let signer = CountingSigner()
     let session = CompanionSession()
+    session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     session.pinnedHolderId = "holder-b"
     await session.reviewRetainedExactRun(now: 1_700_000_000, peer: peer)
     await session.approveReviewedExactRun(signer: signer, peer: peer, now: { 1_700_000_000 })
@@ -758,6 +937,15 @@ func testCancelAllTasksCancelsInFlightPhonePeerOperation() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     
     let task = Task {
         await session.signPhonePeerChallenge(signer: signer, peer: peer)
@@ -783,6 +971,15 @@ func testDisconnectCancelsInFlightPhonePeerOperation() async throws {
     let signer = CountingSigner()
     let session = CompanionSession()
     session.isPaired = true
+    session.capabilities = CompanionCapabilities(
+        product: "test",
+        mode: "observe",
+        canApprove: false,
+        canExecute: false,
+        canMutateLifecycle: false,
+        canRemoteConfirm: true,
+        boundary: "test"
+    )
     
     let task = Task {
         await session.signPhonePeerChallenge(signer: signer, peer: peer)
