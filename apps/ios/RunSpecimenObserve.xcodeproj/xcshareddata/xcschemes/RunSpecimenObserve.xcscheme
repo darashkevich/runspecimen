@@ -50,6 +50,28 @@
                ReferencedContainer = "container:RunSpecimenObserve.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "650A3DC8162B81AB02739A94"
+               BuildableName = "PhonePeerCancellationTests.xctest"
+               BlueprintName = "PhonePeerCancellationTests"
+               ReferencedContainer = "container:RunSpecimenObserve.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "63DDEA87E2BB63C642778A25"
+               BuildableName = "ObserveRecoveryUITests.xctest"
+               BlueprintName = "ObserveRecoveryUITests"
+               ReferencedContainer = "container:RunSpecimenObserve.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

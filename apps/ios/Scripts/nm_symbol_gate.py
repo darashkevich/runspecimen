@@ -8,6 +8,7 @@ acceptance and not a Face ID proof.
 from __future__ import annotations
 
 import subprocess
+import re
 from pathlib import Path
 
 FORBIDDEN = (
@@ -56,6 +57,10 @@ def assert_forbidden_absent(nm_text: str, *, label: str) -> None:
     for name in FORBIDDEN:
         if name in nm_text:
             raise SymbolGateError(f"{label} contains forbidden symbol {name}")
+    # Swift mangling retains declaration identifiers after their length.
+    seam = re.search(r"(?:^|[0-9_])(test[A-Z][A-Za-z0-9_]*)", nm_text, re.MULTILINE)
+    if seam:
+        raise SymbolGateError(f"{label} contains forbidden test seam {seam.group(1)}")
 
 
 def scan_path(path: Path) -> str:

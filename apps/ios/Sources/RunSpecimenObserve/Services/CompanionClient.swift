@@ -30,8 +30,22 @@ enum CompanionClientError: LocalizedError {
 
 /// HTTP client for the Mac-side companion endpoint.
 /// No plugin-style approve/run helpers — only observe + optional remote-confirm settle.
-struct CompanionClient {
-    var config: PairingConfig
+final class CompanionClient {
+    #if RUNSPECIMEN_TEST_HOOKS
+    var testRequest: ((URLRequest) async throws -> Data)?
+    #endif
+    let config: PairingConfig
+    private var pinnedSession: URLSession?
+    private var sessionDelegate: CompanionTLSPinningDelegate?
+    private let sessionLock = NSLock()
+
+    init(config: PairingConfig) {
+        self.config = config
+    }
+
+    deinit {
+        pinnedSession?.finishTasksAndInvalidate()
+    }
 
     private func endpoint(_ path: String) throws -> URL {
         let root = config.baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -42,13 +56,21 @@ struct CompanionClient {
         return url
     }
 
-    private func makeSession() throws -> URLSession {
+    private func getSession() throws -> URLSession {
         let scheme = (config.baseURL.scheme ?? "").lowercased()
         if scheme == "https" {
+            sessionLock.lock()
+            defer { sessionLock.unlock() }
+            if let existing = pinnedSession {
+                return existing
+            }
             let pin = (config.tlsFingerprint ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !pin.isEmpty else { throw CompanionClientError.tlsPinRequired }
             let delegate = CompanionTLSPinningDelegate(expectedFingerprint: pin)
-            return URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+            let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+            sessionDelegate = delegate
+            pinnedSession = session
+            return session
         }
         if scheme == "http" {
             let host = (config.baseURL.host ?? "").lowercased()
@@ -72,7 +94,13 @@ struct CompanionClient {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         req.timeoutInterval = 8
-        let session = try makeSession()
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let request = testRequest { return try await request(req) }
+        #endif
+        let session = try getSession()
+        sessionLock.lock()
+        sessionDelegate?.clearMismatch()
+        sessionLock.unlock()
         do {
             let (data, response) = try await session.data(for: req)
             guard let http = response as? HTTPURLResponse else {
@@ -86,6 +114,12 @@ struct CompanionClient {
         } catch let error as CompanionClientError {
             throw error
         } catch {
+            sessionLock.lock()
+            let hadMismatch = sessionDelegate?.hadPinMismatch ?? false
+            sessionLock.unlock()
+            if hadMismatch {
+                throw CompanionClientError.tlsPinMismatch
+            }
             throw CompanionClientError.transport(error.localizedDescription)
         }
     }
@@ -222,6 +256,26 @@ extension CompanionClient: ExactRunPhoneSigningTransport {}
 
 final class CompanionTLSPinningDelegate: NSObject, URLSessionDelegate {
     let expectedFingerprint: String
+    private let lock = NSLock()
+    private var _lastMismatch: Bool = false
+
+    var hadPinMismatch: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _lastMismatch
+    }
+
+    func clearMismatch() {
+        lock.lock()
+        defer { lock.unlock() }
+        _lastMismatch = false
+    }
+
+    private func recordMismatch() {
+        lock.lock()
+        defer { lock.unlock() }
+        _lastMismatch = true
+    }
 
     init(expectedFingerprint: String) {
         self.expectedFingerprint = Self.normalize(expectedFingerprint)
@@ -230,9 +284,8 @@ final class CompanionTLSPinningDelegate: NSObject, URLSessionDelegate {
 
     static func normalize(_ value: String) -> String {
         value
-            .uppercased()
-            .filter { "0123456789ABCDEF".contains($0) }
             .lowercased()
+            .filter { "0123456789abcdef".contains($0) }
     }
 
     func urlSession(
@@ -249,7 +302,11 @@ final class CompanionTLSPinningDelegate: NSObject, URLSessionDelegate {
 
         let cert: SecCertificate?
         if #available(iOS 15.0, *) {
-            cert = SecTrustGetCertificateAtIndex(trust, 0)
+            if let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate], !chain.isEmpty {
+                cert = chain[0]
+            } else {
+                cert = nil
+            }
         } else {
             cert = SecTrustGetCertificateAtIndex(trust, 0)
         }
@@ -262,6 +319,7 @@ final class CompanionTLSPinningDelegate: NSObject, URLSessionDelegate {
         let digest = SHA256.hash(data: data)
         let compact = digest.map { String(format: "%02x", $0) }.joined()
         guard compact == expectedFingerprint else {
+            recordMismatch()
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }

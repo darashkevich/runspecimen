@@ -1,23 +1,89 @@
 import CryptoKit
 import Foundation
 import LocalAuthentication
+import os
 import Security
 
+private let enrollmentLogger = Logger(subsystem: "com.darashkevich.runspecimen.observe", category: "enrollment")
+
 public enum CompanionHardwareRefusal: Error, Equatable {
-    /// Automation called the refusal entry. This is not evidence of a person.
     case automationRefused
     case missing
     case malformed(String)
     case staleRequest
     case alreadyEnrolled
+    case keyIDRevoked
+    case duplicateKeychainItem(OSStatus)
+    case keychainError(OSStatus)
+    case biometryUnavailable
+    case biometryChanged
+    case biometryLockout
+    case incompleteStage
+    case fileReadError(String)
+    case fileWriteError(String)
+    case rotationIncomplete(oldKeyRevoked: Bool, newKeyCreated: Bool)
 }
 
-/// Public pairing material for one iPhone Secure Enclave key.
-///
-/// The private key stays in the Secure Enclave. This record is what a person
-/// can carry to the Mac. It does not open a socket, and its backend string is
-/// not proof on the Mac.
-public struct CompanionPairingRecord: Equatable {
+public extension CompanionHardwareRefusal {
+    var userMessage: String {
+        switch self {
+        case .automationRefused:
+            return "Cancelled by user or system."
+        case .missing:
+            return "No enrollment found for this key."
+        case .malformed(let detail):
+            return "Invalid state: \(detail)."
+        case .staleRequest:
+            return "The request has changed since it was displayed."
+        case .alreadyEnrolled:
+            return "A key with this ID already exists."
+        case .keyIDRevoked:
+            return "This key ID was revoked. Use a different key ID to enroll a new key."
+        case .duplicateKeychainItem:
+            return "A keychain item already exists. Delete it manually or use a different key ID."
+        case .keychainError(let status):
+            return "Keychain operation failed (code \(status))."
+        case .biometryUnavailable:
+            return "Face ID or Touch ID is not available on this device."
+        case .biometryChanged:
+            return "Your biometric enrollment has changed. Re-enroll the key."
+        case .biometryLockout:
+            return "Too many failed attempts. Unlock your device first."
+        case .incompleteStage:
+            return "Key enrollment was incomplete. Try again."
+        case .fileReadError(let path):
+            return "Could not read enrollment file at \(path)."
+        case .fileWriteError(let path):
+            return "Could not write enrollment file at \(path)."
+        case .rotationIncomplete(let oldRevoked, let newCreated):
+            if oldRevoked && newCreated {
+                return "Rotation completed but cleanup failed. Both keys are valid."
+            } else if oldRevoked {
+                return "Old key was revoked but new key creation failed."
+            } else if newCreated {
+                return "New key was created but old key revocation failed."
+            }
+            return "Rotation was interrupted."
+        }
+    }
+
+    var technicalDetail: String? {
+        switch self {
+        case .keychainError(let status):
+            return "OSStatus: \(status)"
+        case .duplicateKeychainItem(let status):
+            return "errSecDuplicateItem, OSStatus: \(status)"
+        case .malformed(let detail):
+            return detail
+        case .fileReadError(let path), .fileWriteError(let path):
+            return path
+        default:
+            return nil
+        }
+    }
+}
+
+public struct CompanionPairingRecord: Equatable, Codable {
     public var keyID: String
     public var publicKey: Data
     public var role: String
@@ -25,6 +91,8 @@ public struct CompanionPairingRecord: Equatable {
     public var provenance: String
     public var state: String
     public var generation: Int
+    public var macUpdatePending: Bool = false
+    public var replacesKeyID: String? = nil
 
     public var allowsExecution: Bool {
         EnrollmentIdentity.allowsExecution(
@@ -48,13 +116,23 @@ public struct CompanionPairingRecord: Equatable {
     }
 }
 
-/// Face ID signing for a carried RSBA2 request.
-///
-/// The button in the app calls the Secure Enclave methods directly. Tests call
-/// `automationRefused()` and the file-only helpers. A Boolean at the call site
-/// is not hardware authentication.
+struct RotationState: Codable {
+    var oldKeyID: String
+    var newKeyID: String
+    var phase: RotationPhase
+    var oldKeyRevoked: Bool
+    var newKeyCreated: Bool
+
+    enum RotationPhase: String, Codable {
+        case started
+        case newKeyStaged
+        case newKeyCommitted
+        case oldKeyRevoked
+        case completed
+    }
+}
+
 #if RUNSPECIMEN_TEST_HOOKS
-/// Visible to the Release symbol gate. Debug must be rejected. Release does not compile this.
 @used
 @_cdecl("beforeFinalSignatureDecision")
 func beforeFinalSignatureDecisionHook() {
@@ -67,26 +145,42 @@ public enum CompanionSecureEnclaveEnrollment {
     public static let active = "active"
     public static let revoked = "revoked"
     static var clock: () -> Int = { Int(Date().timeIntervalSince1970) }
+
     #if RUNSPECIMEN_TEST_HOOKS
-    /// Runs after the fail-fast load and before the decision reload, while the enrollment lock is held.
     static var beforeFinalSignatureDecision: (() -> Void)?
+    static var testAuthenticator: ((String) throws -> Void)?
+    static var testKeyCreator: ((String) throws -> Data)?
+    static var testSignatureProducer: ((Data) throws -> Data)?
+    static var testKeyDeleter: ((String) throws -> Void)?
+    static var testInMemoryKeychain: [String: Data]?
+    static var testRotationWillWrite: ((RotationState) throws -> Void)?
+    static var testRotationCheckpoint: ((RotationState) throws -> Void)?
+    static var testRotationFileRemoval: ((URL) throws -> Void)?
     #endif
 
     public static func automationRefused() throws -> Never {
         throw CompanionHardwareRefusal.automationRefused
     }
 
-    public static func enroll(keyID: String, directory: URL) throws -> CompanionPairingRecord {
+    public static func enroll(keyID: String, directory: URL, authenticationContext: LAContext? = nil) throws -> CompanionPairingRecord {
         try enrollReplacingMissingFile(keyID: keyID, directory: directory) {
-            try createEnclaveKey(keyID: keyID)
+            try createEnclaveKey(keyID: keyID, authenticationContext: authenticationContext)
         } cleanup: {
             try? deleteBlob(keyID: keyID)
         }
     }
 
-    /// Creates a key only when the pairing file is absent. A malformed,
-    /// unreadable, active, or revoked record is returned as an error and the
-    /// file is left as it was. This is not a recovery flow.
+    static func enrollAsync(keyID: String, directory: URL) async throws -> CompanionPairingRecord {
+        try await CryptoWorker.withContext { try enroll(keyID: keyID, directory: directory, authenticationContext: $0) }
+    }
+
+    static func signDisplayedAsync(packageText: String, displayed: RSBA2Package.Fields, selectedKeyID: String, directory: URL) async throws -> Data {
+        try await CryptoWorker.withContext {
+            try signDisplayed(packageText: packageText, displayed: displayed, selectedKeyID: selectedKeyID,
+                              directory: directory, authenticationContext: $0)
+        }
+    }
+
     static func enrollReplacingMissingFile(
         keyID: String,
         directory: URL,
@@ -100,6 +194,9 @@ public enum CompanionSecureEnclaveEnrollment {
                 if existing.state == active {
                     throw CompanionHardwareRefusal.alreadyEnrolled
                 }
+                if existing.state == revoked {
+                    throw CompanionHardwareRefusal.keyIDRevoked
+                }
                 throw CompanionHardwareRefusal.malformed("enrollment")
             } catch CompanionHardwareRefusal.missing {
                 let publicKey = try createKey()
@@ -110,7 +207,8 @@ public enum CompanionSecureEnclaveEnrollment {
                     backend: EnrollmentIdentity.backendSecureEnclave,
                     provenance: EnrollmentIdentity.provenanceProduction,
                     state: active,
-                    generation: 1
+                    generation: 1,
+                    macUpdatePending: true
                 )
                 try storeEnrollment(record, directory: directory, cleanup: cleanup)
                 return record
@@ -121,8 +219,13 @@ public enum CompanionSecureEnclaveEnrollment {
     public static func signDisplayed(
         packageText: String,
         displayed: RSBA2Package.Fields,
-        directory: URL
+        selectedKeyID: String,
+        directory: URL,
+        authenticationContext: LAContext? = nil
     ) throws -> Data {
+        guard selectedKeyID == displayed.companionKeyID else {
+            throw CompanionHardwareRefusal.staleRequest
+        }
         guard let data = packageText.data(using: .utf8) else {
             throw CompanionHardwareRefusal.malformed("package")
         }
@@ -136,39 +239,190 @@ public enum CompanionSecureEnclaveEnrollment {
             throw CompanionHardwareRefusal.staleRequest
         }
         let bytes = try canonical(fresh)
-        return try sign(fields: fresh, displayedCanonical: bytes, directory: directory)
+        return try sign(fields: fresh, displayedCanonical: bytes, directory: directory, authenticationContext: authenticationContext)
     }
 
-    public static func revoke(keyID: String, directory: URL) throws {
+    public static func revoke(keyID: String, directory: URL) async throws -> CompanionPairingRecord {
         try validateKeyID(keyID)
-        try withLock(directory) {
+        try await authenticateWithBiometrics(reason: "Authenticate to revoke this iPhone key")
+        return try await CryptoWorker.shared.perform {
+            try withLock(directory) {
             let record = try load(keyID: keyID, directory: directory)
-            _ = try persistRevocation(record, directory: directory) { _ in
+            return try persistRevocation(record, directory: directory) { _ in
                 try deleteBlob(keyID: keyID)
             }
         }
+        }
     }
 
-    /// Enrolls the new key first. If that fails, the old key stays. If revoking
-    /// the old key fails, the new key is left in place and the error says so.
-    public static func rotate(from oldKeyID: String, to newKeyID: String, directory: URL) throws -> CompanionPairingRecord {
+    public static func rotate(from oldKeyID: String, to newKeyID: String, directory: URL) async throws -> (newKey: CompanionPairingRecord, revokedKey: CompanionPairingRecord) {
         try validateKeyID(oldKeyID)
         try validateKeyID(newKeyID)
         guard oldKeyID != newKeyID else {
-            throw CompanionHardwareRefusal.malformed("enrollment")
+            throw CompanionHardwareRefusal.malformed("same-key-id")
         }
-        let created = try enroll(keyID: newKeyID, directory: directory)
-        do {
-            try revoke(keyID: oldKeyID, directory: directory)
-        } catch {
-            throw CompanionHardwareRefusal.malformed("rotation-incomplete")
+
+        try await authenticateWithBiometrics(reason: "Authenticate to rotate this iPhone key")
+
+        return try await CryptoWorker.withContext { context in
+            try rotateAuthenticated(from: oldKeyID, to: newKeyID, directory: directory, context: context)
         }
-        return created
+    }
+
+    private static func rotateAuthenticated(from oldKeyID: String, to newKeyID: String, directory: URL, context: LAContext) throws -> (newKey: CompanionPairingRecord, revokedKey: CompanionPairingRecord) {
+        return try withLock(directory) {
+            try recoverIncompleteRotationUnlocked(directory: directory)
+
+            let oldRecord = try load(keyID: oldKeyID, directory: directory)
+            guard oldRecord.state == active else {
+                throw CompanionHardwareRefusal.malformed("enrollment")
+            }
+
+            do {
+                let existingNew = try load(keyID: newKeyID, directory: directory)
+                if existingNew.state == revoked { throw CompanionHardwareRefusal.keyIDRevoked }
+                throw CompanionHardwareRefusal.alreadyEnrolled
+            } catch CompanionHardwareRefusal.missing {
+                // Only an actually missing destination is available.
+            }
+
+            var state = RotationState(
+                oldKeyID: oldKeyID,
+                newKeyID: newKeyID,
+                phase: .started,
+                oldKeyRevoked: false,
+                newKeyCreated: false
+            )
+            try saveRotationState(state, directory: directory)
+
+            let newPublicKey: Data
+            do {
+                newPublicKey = try createEnclaveKey(keyID: newKeyID, authenticationContext: context)
+                state.newKeyCreated = true
+                state.phase = .newKeyStaged
+                try saveRotationState(state, directory: directory)
+            } catch {
+                enrollmentLogger.error("Rotation: new key creation failed: \(error.localizedDescription, privacy: .public)")
+                // Keep the journal: key creation may have succeeded before checkpoint failure.
+                throw error
+            }
+
+            let newRecord = CompanionPairingRecord(
+                keyID: newKeyID,
+                publicKey: newPublicKey,
+                role: EnrollmentIdentity.roleCompanion,
+                backend: EnrollmentIdentity.backendSecureEnclave,
+                provenance: EnrollmentIdentity.provenanceProduction,
+                state: active,
+                generation: oldRecord.generation + 1,
+                macUpdatePending: true,
+                replacesKeyID: oldKeyID
+            )
+
+            do {
+                try save(newRecord, directory: directory)
+                state.phase = .newKeyCommitted
+                try saveRotationState(state, directory: directory)
+            } catch {
+                enrollmentLogger.error("Rotation: new key save failed: \(error.localizedDescription, privacy: .public)")
+                // Recovery owns rollback of both the record and blob under the lock.
+                throw CompanionHardwareRefusal.fileWriteError(newKeyID)
+            }
+            let revokedRecord: CompanionPairingRecord
+            do {
+                revokedRecord = try persistRevocationWithoutCleanup(oldRecord, directory: directory)
+                state.oldKeyRevoked = true
+                state.phase = .oldKeyRevoked
+                try saveRotationState(state, directory: directory)
+            } catch {
+                enrollmentLogger.error("Rotation: old key revocation failed: \(error.localizedDescription, privacy: .public)")
+                throw CompanionHardwareRefusal.rotationIncomplete(oldKeyRevoked: state.oldKeyRevoked, newKeyCreated: true)
+            }
+
+            // Cleanup failures retain the journal so they can be retried.
+            try deleteBlob(keyID: oldKeyID)
+            state.phase = .completed
+            try saveRotationState(state, directory: directory)
+            try clearRotationState(directory: directory)
+
+            return (newRecord, revokedRecord)
+        }
+    }
+
+    public static func recoverIncompleteRotation(directory: URL) throws {
+        try withLock(directory) {
+            try recoverIncompleteRotationUnlocked(directory: directory)
+        }
+    }
+
+    private static func recoverIncompleteRotationUnlocked(directory: URL) throws {
+        guard let state = try loadRotationState(directory: directory) else { return }
+
+        enrollmentLogger.info("Recovering incomplete rotation: phase=\(state.phase.rawValue, privacy: .public), oldKeyID=\(state.oldKeyID, privacy: .public), newKeyID=\(state.newKeyID, privacy: .public)")
+
+        try validateKeyID(state.oldKeyID)
+        try validateKeyID(state.newKeyID)
+        guard state.oldKeyID != state.newKeyID else {
+            throw CompanionHardwareRefusal.malformed("same-key-id")
+        }
+        // Disk may be one operation ahead of the journal. Never roll back the
+        // replacement after the old record has durably become revoked.
+        let oldRecord: CompanionPairingRecord?
+        do { oldRecord = try load(keyID: state.oldKeyID, directory: directory) }
+        catch CompanionHardwareRefusal.missing { oldRecord = nil }
+        let keepReplacement = oldRecord?.state == revoked || state.oldKeyRevoked
+            || state.phase == .oldKeyRevoked || state.phase == .completed
+        if keepReplacement {
+            // Keep the recovery evidence if the surviving record is unavailable.
+            let replacement = try load(keyID: state.newKeyID, directory: directory)
+            guard replacement.state == active else {
+                throw CompanionHardwareRefusal.rotationIncomplete(oldKeyRevoked: true, newKeyCreated: false)
+            }
+            try deleteBlob(keyID: state.oldKeyID)
+        } else {
+            // Any early checkpoint can have a replacement record on disk.
+            // Delete its blob first; preserve the journal on every failure.
+            try deleteBlob(keyID: state.newKeyID)
+            try removeRotationFileIfPresent(fileURL(keyID: state.newKeyID, directory: directory))
+        }
+        try clearRotationState(directory: directory)
+    }
+
+    private static func removeRotationFileIfPresent(_ url: URL) throws {
+        #if RUNSPECIMEN_TEST_HOOKS
+        try testRotationFileRemoval?(url)
+        #endif
+        do { try FileManager.default.removeItem(at: url) }
+        catch let error as CocoaError where error.code == .fileNoSuchFile { }
+    }
+
+    private static func saveRotationState(_ state: RotationState, directory: URL) throws {
+        let url = directory.appendingPathComponent(".rotation-state.json")
+        let data = try JSONEncoder().encode(state)
+        #if RUNSPECIMEN_TEST_HOOKS
+        try testRotationWillWrite?(state)
+        #endif
+        try data.write(to: url, options: .atomic)
+        #if RUNSPECIMEN_TEST_HOOKS
+        try testRotationCheckpoint?(state)
+        #endif
+    }
+
+    private static func loadRotationState(directory: URL) throws -> RotationState? {
+        let url = directory.appendingPathComponent(".rotation-state.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(RotationState.self, from: data)
+    }
+
+    private static func clearRotationState(directory: URL) throws {
+        let url = directory.appendingPathComponent(".rotation-state.json")
+        try removeRotationFileIfPresent(url)
     }
 
     public static func carriedPairing(keyID: String, directory: URL) throws -> Data {
         try validateKeyID(keyID)
-        return try json(load(keyID: keyID, directory: directory))
+        return try carriedJson(load(keyID: keyID, directory: directory))
     }
 
     public static func inspect(keyID: String, directory: URL) throws -> CompanionPairingRecord {
@@ -176,9 +430,54 @@ public enum CompanionSecureEnclaveEnrollment {
         return try load(keyID: keyID, directory: directory)
     }
 
-    /// Writes the revoked record before deleting the key. A failed delete leaves
-    /// a revoked record so a later sign fails closed, and a retry deletes the
-    /// key without increasing the generation again.
+    public static func listKeys(directory: URL) throws -> [CompanionPairingRecord] {
+        guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        return files.compactMap { url -> CompanionPairingRecord? in
+            guard url.pathExtension == "json", url.lastPathComponent.hasSuffix(".pairing.json") else { return nil }
+            let keyID = String(url.lastPathComponent.dropLast(".pairing.json".count))
+            return try? load(keyID: keyID, directory: directory)
+        }
+    }
+
+    public struct KeyListingResult {
+        public var validRecords: [CompanionPairingRecord]
+        public var corruptKeyIDs: [(keyID: String, error: String)]
+    }
+
+    public static func listKeysWithCorrupt(directory: URL) throws -> KeyListingResult {
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            return KeyListingResult(validRecords: [], corruptKeyIDs: [])
+        }
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        var validRecords: [CompanionPairingRecord] = []
+        var corruptKeyIDs: [(keyID: String, error: String)] = []
+
+        for url in files {
+            guard url.pathExtension == "json", url.lastPathComponent.hasSuffix(".pairing.json") else { continue }
+            let keyID = String(url.lastPathComponent.dropLast(".pairing.json".count))
+            do {
+                let record = try load(keyID: keyID, directory: directory)
+                validRecords.append(record)
+            } catch let error as CompanionHardwareRefusal {
+                corruptKeyIDs.append((keyID: keyID, error: error.userMessage))
+            } catch {
+                corruptKeyIDs.append((keyID: keyID, error: error.localizedDescription))
+            }
+        }
+
+        return KeyListingResult(validRecords: validRecords, corruptKeyIDs: corruptKeyIDs)
+    }
+
+    public static func markMacUpdated(keyID: String, directory: URL) throws {
+        try validateKeyID(keyID)
+        try withLock(directory) {
+            var record = try load(keyID: keyID, directory: directory)
+            record.macUpdatePending = false
+            try save(record, directory: directory)
+        }
+    }
+
     static func persistRevocation(
         _ record: CompanionPairingRecord,
         directory: URL,
@@ -197,13 +496,29 @@ public enum CompanionSecureEnclaveEnrollment {
         }
         var revokedRecord = record
         revokedRecord.state = revoked
-        revokedRecord.generation += 1
+        revokedRecord.generation = record.generation + 1
+        revokedRecord.macUpdatePending = true
         try save(revokedRecord, directory: directory)
         do {
             try deleteKey(record.publicKey)
         } catch {
             throw CompanionHardwareRefusal.malformed("keychain-cleanup")
         }
+        return revokedRecord
+    }
+
+    private static func persistRevocationWithoutCleanup(
+        _ record: CompanionPairingRecord,
+        directory: URL
+    ) throws -> CompanionPairingRecord {
+        guard record.state == active else {
+            throw CompanionHardwareRefusal.malformed("enrollment")
+        }
+        var revokedRecord = record
+        revokedRecord.state = revoked
+        revokedRecord.generation = record.generation + 1
+        revokedRecord.macUpdatePending = true
+        try save(revokedRecord, directory: directory)
         return revokedRecord
     }
 
@@ -248,7 +563,8 @@ public enum CompanionSecureEnclaveEnrollment {
     private static func sign(
         fields: RSBA2Package.Fields,
         displayedCanonical: Data,
-        directory: URL
+        directory: URL,
+        authenticationContext: LAContext?
     ) throws -> Data {
         try validateKeyID(fields.companionKeyID)
         guard fields.policy == "companion" || fields.policy == "dual" else {
@@ -271,7 +587,7 @@ public enum CompanionSecureEnclaveEnrollment {
             }
             return record
         }
-        let produced = try signWithEnclave(keyID: before.keyID, publicKey: before.publicKey, bytes: bytes)
+        let produced = try signWithEnclave(keyID: before.keyID, publicKey: before.publicKey, bytes: bytes, authenticationContext: authenticationContext)
         return try finalizeSignature(
             produced: produced,
             before: before.snapshot,
@@ -281,9 +597,6 @@ public enum CompanionSecureEnclaveEnrollment {
         )
     }
 
-    /// Linearization point for a signature that has not been returned yet.
-    /// The reload, the test seam, the snapshot, and the clock are one critical
-    /// section. A signature already returned to the caller is not revoked here.
     static func finalizeSignature(
         produced: Data,
         before: CompanionEnrollmentSnapshot,
@@ -292,9 +605,6 @@ public enum CompanionSecureEnclaveEnrollment {
         directory: URL
     ) throws -> Data {
         try withLock(directory) {
-            // This load is the fail-fast check. It must run before the test seam.
-            // Removing it would let an unreadable file reach the seam. The decision
-            // uses `after`, which is loaded again after the seam.
             let readableBeforeWait = try load(keyID: keyID, directory: directory)
             #if RUNSPECIMEN_TEST_HOOKS
             beforeFinalSignatureDecision?()
@@ -331,9 +641,6 @@ public enum CompanionSecureEnclaveEnrollment {
         )
     }
 
-    /// Serializes enrollment in this process. One lock covers every directory,
-    /// and the shipping app uses one directory per launch. Two directories in
-    /// the same process wait on each other.
     private static let processLock = NSLock()
 
     static func withLock<T>(_ directory: URL, _ body: () throws -> T) throws -> T {
@@ -348,20 +655,100 @@ public enum CompanionSecureEnclaveEnrollment {
         return try body()
     }
 
-    private static func createEnclaveKey(keyID: String) throws -> Data {
+    public static func authenticateWithBiometrics(reason: String) async throws {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let testAuth = testAuthenticator {
+            try testAuth(reason)
+            return
+        }
+        #endif
+
         let context = LAContext()
+        defer { context.invalidate() }
         context.localizedFallbackTitle = ""
-        let key = try SecureEnclave.P256.Signing.PrivateKey(
-            accessControl: try accessControl(),
-            authenticationContext: context
-        )
+
+        var biometryError: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &biometryError) else {
+            if let error = biometryError {
+                enrollmentLogger.error("Biometry unavailable: \(error.localizedDescription, privacy: .public)")
+                switch error.code {
+                case LAError.biometryNotAvailable.rawValue:
+                    throw CompanionHardwareRefusal.biometryUnavailable
+                case LAError.biometryNotEnrolled.rawValue:
+                    throw CompanionHardwareRefusal.biometryUnavailable
+                case LAError.biometryLockout.rawValue:
+                    throw CompanionHardwareRefusal.biometryLockout
+                default:
+                    throw CompanionHardwareRefusal.biometryUnavailable
+                }
+            }
+            throw CompanionHardwareRefusal.biometryUnavailable
+        }
+
+        try Task.checkCancellation()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, error in
+                if success {
+                    continuation.resume()
+                } else if let error = error as? LAError {
+                    enrollmentLogger.info("Face ID result: code=\(error.code.rawValue, privacy: .public)")
+                    switch error.code {
+                    case .userCancel, .appCancel, .systemCancel:
+                        continuation.resume(throwing: CompanionHardwareRefusal.automationRefused)
+                    case .biometryLockout:
+                        continuation.resume(throwing: CompanionHardwareRefusal.biometryLockout)
+                    case .biometryNotEnrolled, .biometryNotAvailable:
+                        continuation.resume(throwing: CompanionHardwareRefusal.biometryUnavailable)
+                    default:
+                        continuation.resume(throwing: CompanionHardwareRefusal.malformed("biometric-\(error.code.rawValue)"))
+                    }
+                } else if let error {
+                    enrollmentLogger.error("Face ID failed: \(error.localizedDescription, privacy: .public)")
+                    continuation.resume(throwing: CompanionHardwareRefusal.malformed("biometric"))
+                } else {
+                    continuation.resume(throwing: CompanionHardwareRefusal.malformed("biometric"))
+                }
+            }
+        }
+        } onCancel: {
+            context.invalidate()
+        }
+        try Task.checkCancellation()
+
+    }
+
+    private static func createEnclaveKey(keyID: String, authenticationContext: LAContext? = nil) throws -> Data {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let testCreator = testKeyCreator {
+            return try testCreator(keyID)
+        }
+        #endif
+
+        let context = authenticationContext ?? LAContext()
+        defer { context.invalidate() }
+        context.localizedFallbackTitle = ""
+        let key: SecureEnclave.P256.Signing.PrivateKey
+        do {
+            key = try SecureEnclave.P256.Signing.PrivateKey(
+                accessControl: try accessControl(),
+                authenticationContext: context
+            )
+        } catch {
+            enrollmentLogger.error("Secure Enclave key creation failed: \(error.localizedDescription, privacy: .public)")
+            throw CompanionHardwareRefusal.malformed("secure-enclave")
+        }
         try saveBlob(key.dataRepresentation, keyID: keyID)
         return key.publicKey.x963Representation
     }
 
-    private static func signWithEnclave(keyID: String, publicKey: Data, bytes: Data) throws -> Data {
+    private static func signWithEnclave(keyID: String, publicKey: Data, bytes: Data, authenticationContext: LAContext? = nil) throws -> Data {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let produce = testSignatureProducer { return try produce(bytes) }
+        #endif
         let blob = try loadBlob(keyID: keyID)
-        let context = LAContext()
+        let context = authenticationContext ?? LAContext()
+        defer { context.invalidate() }
         context.localizedFallbackTitle = ""
         let key = try SecureEnclave.P256.Signing.PrivateKey(
             dataRepresentation: blob,
@@ -376,7 +763,7 @@ public enum CompanionSecureEnclaveEnrollment {
     private static func validateKeyID(_ keyID: String) throws {
         let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
         guard (1...64).contains(keyID.count), keyID.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
-            throw CompanionHardwareRefusal.malformed("enrollment")
+            throw CompanionHardwareRefusal.malformed("key-id")
         }
     }
 
@@ -390,7 +777,12 @@ public enum CompanionSecureEnclaveEnrollment {
         let data = try json(record)
         let destination = fileURL(keyID: record.keyID, directory: directory)
         let temporary = directory.appendingPathComponent("." + record.keyID + ".pairing.json.tmp")
-        try data.write(to: temporary, options: .atomic)
+        do {
+            try data.write(to: temporary, options: .atomic)
+        } catch {
+            enrollmentLogger.error("Failed to write temp file: \(error.localizedDescription, privacy: .public)")
+            throw CompanionHardwareRefusal.fileWriteError(temporary.path)
+        }
         if FileManager.default.fileExists(atPath: destination.path) {
             _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
         } else {
@@ -401,34 +793,44 @@ public enum CompanionSecureEnclaveEnrollment {
     private static func load(keyID: String, directory: URL) throws -> CompanionPairingRecord {
         try validateKeyID(keyID)
         let url = fileURL(keyID: keyID, directory: directory)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw CompanionHardwareRefusal.missing
+        }
         let data: Data
         do {
             data = try Data(contentsOf: url)
-        } catch let error as NSError {
-            if error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
-                throw CompanionHardwareRefusal.missing
-            }
-            throw CompanionHardwareRefusal.malformed("enrollment")
+        } catch {
+            enrollmentLogger.error("Failed to read enrollment file: \(error.localizedDescription, privacy: .public)")
+            throw CompanionHardwareRefusal.fileReadError(url.path)
         }
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
-            throw CompanionHardwareRefusal.malformed("enrollment")
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            enrollmentLogger.error("Enrollment file is not valid JSON")
+            throw CompanionHardwareRefusal.malformed("json")
         }
-        guard object["key_id"] == keyID,
-              let publicKey = object["public_key_x963_b64"].flatMap({ Data(base64Encoded: $0) }),
+        guard object["key_id"] as? String == keyID,
+              let publicKeyB64 = object["public_key_x963_b64"] as? String,
+              let publicKey = Data(base64Encoded: publicKeyB64),
               publicKey.count == 65,
-              let role = object["role"],
-              let backend = object["backend"],
-              let provenance = object["provenance"],
-              let state = object["state"],
-              let generationText = object["generation"],
-              let generation = Int(generationText),
+              let role = object["role"] as? String,
+              let backend = object["backend"] as? String,
+              let provenance = object["provenance"] as? String,
+              let state = object["state"] as? String,
+              let generation = (object["generation"] as? Int) ?? Int(object["generation"] as? String ?? ""),
               generation > 0,
-              String(generation) == generationText,
               state == active || state == revoked else {
+            enrollmentLogger.error("Enrollment file has invalid structure for keyID: \(keyID, privacy: .public)")
             throw CompanionHardwareRefusal.malformed("enrollment")
         }
         guard EnrollmentIdentity.isRecognized(role: role, backend: backend, provenance: provenance) else {
-            throw CompanionHardwareRefusal.malformed("enrollment")
+            enrollmentLogger.error("Enrollment identity not recognized for keyID: \(keyID, privacy: .public)")
+            throw CompanionHardwareRefusal.malformed("identity")
+        }
+        let macUpdatePending = object["mac_update_pending"] as? Bool ?? false
+        let replacesKeyID = object["replaces_key_id"] as? String
+        if object["replaces_key_id"] != nil, replacesKeyID == nil { throw CompanionHardwareRefusal.malformed("replaces_key_id") }
+        if let replacesKeyID {
+            try validateKeyID(replacesKeyID)
+            guard replacesKeyID != keyID else { throw CompanionHardwareRefusal.malformed("replaces_key_id") }
         }
         return CompanionPairingRecord(
             keyID: keyID,
@@ -437,11 +839,30 @@ public enum CompanionSecureEnclaveEnrollment {
             backend: backend,
             provenance: provenance,
             state: state,
-            generation: generation
+            generation: generation,
+            macUpdatePending: macUpdatePending,
+            replacesKeyID: replacesKeyID
         )
     }
 
     private static func json(_ record: CompanionPairingRecord) throws -> Data {
+        var object: [String: Any] = [
+            "backend": record.backend,
+            "generation": record.generation,
+            "key_id": record.keyID,
+            "provenance": record.provenance,
+            "public_key_x963_b64": record.publicKey.base64EncodedString(),
+            "role": record.role,
+            "state": record.state,
+        ]
+        if record.macUpdatePending {
+            object["mac_update_pending"] = true
+        }
+        if let previous = record.replacesKeyID { object["replaces_key_id"] = previous }
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    private static func carriedJson(_ record: CompanionPairingRecord) throws -> Data {
         let object: [String: String] = [
             "backend": record.backend,
             "generation": String(record.generation),
@@ -462,12 +883,20 @@ public enum CompanionSecureEnclaveEnrollment {
             [.privateKeyUsage, .biometryCurrentSet],
             &cfError
         ) else {
-            throw CompanionHardwareRefusal.malformed("access control")
+            throw CompanionHardwareRefusal.malformed("access-control")
         }
         return access
     }
 
     private static func saveBlob(_ data: Data, keyID: String) throws {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if testKeyCreator != nil { return }
+        if testInMemoryKeychain != nil {
+            testInMemoryKeychain?[keyID] = data
+            return
+        }
+        #endif
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -476,12 +905,26 @@ public enum CompanionSecureEnclaveEnrollment {
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
         let status = SecItemAdd(query as CFDictionary, nil)
+        if status == errSecDuplicateItem {
+            enrollmentLogger.error("Keychain duplicate for keyID \(keyID, privacy: .public)")
+            throw CompanionHardwareRefusal.duplicateKeychainItem(status)
+        }
         guard status == errSecSuccess else {
-            throw CompanionHardwareRefusal.malformed("keychain")
+            enrollmentLogger.error("Keychain save failed for keyID \(keyID, privacy: .public): OSStatus \(status)")
+            throw CompanionHardwareRefusal.keychainError(status)
         }
     }
 
     private static func loadBlob(keyID: String) throws -> Data {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let inMemory = testInMemoryKeychain {
+            guard let data = inMemory[keyID] else {
+                throw CompanionHardwareRefusal.keychainError(errSecItemNotFound)
+            }
+            return data
+        }
+        #endif
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -492,12 +935,24 @@ public enum CompanionSecureEnclaveEnrollment {
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data else {
-            throw CompanionHardwareRefusal.malformed("keychain")
+            enrollmentLogger.error("Keychain load failed for keyID \(keyID, privacy: .public): OSStatus \(status)")
+            throw CompanionHardwareRefusal.keychainError(status)
         }
         return data
     }
 
-    private static func deleteBlob(keyID: String) throws {
+    static func deleteBlob(keyID: String) throws {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let testDeleter = testKeyDeleter {
+            try testDeleter(keyID)
+            return
+        }
+        if testInMemoryKeychain != nil {
+            testInMemoryKeychain?.removeValue(forKey: keyID)
+            return
+        }
+        #endif
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -505,7 +960,47 @@ public enum CompanionSecureEnclaveEnrollment {
         ]
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw CompanionHardwareRefusal.malformed("keychain")
+            enrollmentLogger.error("Keychain delete failed for keyID \(keyID, privacy: .public): OSStatus \(status)")
+            throw CompanionHardwareRefusal.keychainError(status)
+        }
+    }
+
+    public static func deleteOrphanedBlob(keyID: String) throws {
+        try validateKeyID(keyID)
+        try deleteBlob(keyID: keyID)
+    }
+
+    public static func deriveReplacementKeyID(from baseKeyID: String, existingKeyIDs: Set<String>) -> String {
+        guard !baseKeyID.isEmpty else {
+            return findAvailableID(prefix: "iphone-companion", startN: 2, existingKeyIDs: existingKeyIDs)
+        }
+
+        if let match = baseKeyID.range(of: #"-(\d+)$"#, options: .regularExpression) {
+            let suffixStr = String(baseKeyID[match].dropFirst())
+            guard suffixStr.count <= 18 else {
+                return findAvailableID(prefix: baseKeyID, startN: 2, existingKeyIDs: existingKeyIDs)
+            }
+            guard let n = Int(suffixStr), n < Int.max - 1 else {
+                return findAvailableID(prefix: baseKeyID, startN: 2, existingKeyIDs: existingKeyIDs)
+            }
+            let prefix = String(baseKeyID[..<match.lowerBound])
+            return findAvailableID(prefix: prefix, startN: n + 1, existingKeyIDs: existingKeyIDs)
+        } else {
+            return findAvailableID(prefix: baseKeyID, startN: 2, existingKeyIDs: existingKeyIDs)
+        }
+    }
+
+    private static func findAvailableID(prefix: String, startN: Int, existingKeyIDs: Set<String>) -> String {
+        var n = startN
+        while true {
+            let candidate = "\(prefix)-\(n)"
+            if !existingKeyIDs.contains(candidate) {
+                return candidate
+            }
+            n += 1
+            if n > 9999 {
+                return "\(prefix)-\(startN)-overflow"
+            }
         }
     }
 }

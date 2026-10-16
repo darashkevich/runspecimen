@@ -50,3 +50,65 @@ struct CompanionApprovalPreview: Equatable {
         }
     }
 }
+
+enum ActionOutcome: Equatable {
+    case none
+    case inProgress
+    case success(String)
+    case failure(message: String, detail: String?)
+}
+
+/// The selection displayed by the view retains the person's stored identity even
+/// when its file is missing. Other active keys never silently replace it.
+struct HardwareKeySelection {
+    let keyID: String
+    let records: [CompanionPairingRecord]
+    let isUnavailable: Bool
+    let corruptKeyIDs: [(keyID: String, error: String)]
+
+    init(persistedKeyID: String, directory: URL) throws {
+        let listing = try CompanionSecureEnclaveEnrollment.listKeysWithCorrupt(directory: directory)
+        keyID = persistedKeyID
+        records = listing.validRecords
+        corruptKeyIDs = listing.corruptKeyIDs
+        isUnavailable = !records.contains { $0.keyID == persistedKeyID }
+            && !corruptKeyIDs.contains { $0.keyID == persistedKeyID }
+    }
+}
+
+enum HardwareKeyActions {
+    static func markMacUpdated(keyID: String, directory: URL, refresh: () throws -> Void) throws -> ActionOutcome {
+        try CompanionSecureEnclaveEnrollment.markMacUpdated(keyID: keyID, directory: directory)
+        try refresh()
+        return .success("Key marked as updated on Mac.")
+    }
+}
+
+/// Persisted replacement relationships keep every outstanding export available
+/// across selection changes, refreshes and app relaunches.
+struct HardwareRotationExport: Identifiable, Equatable {
+    let keyID: String
+    let generation: Int
+    let isRevoked: Bool
+    let json: String
+    var id: String { keyID + ":" + String(generation) }
+    var title: String { isRevoked ? "Revoked key '\(keyID)' (share with Mac)" : "New active key '\(keyID)' (share with Mac)" }
+
+    static func pending(directory: URL) throws -> [Self] {
+        let records = try CompanionSecureEnclaveEnrollment.listKeysWithCorrupt(directory: directory).validRecords
+        var cards: [String: Self] = [:]
+        for replacement in records {
+            guard let previousID = replacement.replacesKeyID else { continue }
+            let previous = try CompanionSecureEnclaveEnrollment.inspect(keyID: previousID, directory: directory)
+            guard previous.state == CompanionSecureEnclaveEnrollment.revoked,
+                  replacement.macUpdatePending || previous.macUpdatePending else { continue }
+            for record in [replacement, previous] {
+                let json = try CompanionSecureEnclaveEnrollment.carriedPairing(keyID: record.keyID, directory: directory)
+                let card = Self(keyID: record.keyID, generation: record.generation,
+                    isRevoked: record.state == CompanionSecureEnclaveEnrollment.revoked, json: String(decoding: json, as: UTF8.self))
+                cards[card.id] = card
+            }
+        }
+        return cards.values.sorted { $0.id < $1.id }
+    }
+}

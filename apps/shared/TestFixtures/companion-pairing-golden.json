@@ -1,0 +1,61 @@
+{
+  "version": "1",
+  "description": "Golden fixtures for cross-platform companion pairing record schema. Both iOS and Mac tests consume these to verify schema compatibility.",
+  "fixtures": {
+    "active": {
+      "description": "Freshly enrolled active key with generation 1",
+      "record": {
+        "backend": "secure-enclave",
+        "generation": "1",
+        "key_id": "golden-active",
+        "provenance": "production",
+        "public_key_x963_b64": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
+        "role": "companion",
+        "state": "active"
+      }
+    },
+    "revoked": {
+      "description": "Revoked key with generation incremented from original (gen 1 -> gen 2). Mac requires revoked generation > active generation.",
+      "record": {
+        "backend": "secure-enclave",
+        "generation": "2",
+        "key_id": "golden-revoked",
+        "provenance": "production",
+        "public_key_x963_b64": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
+        "role": "companion",
+        "state": "revoked"
+      }
+    },
+    "rotated_new": {
+      "description": "New key after rotation, inherits old generation + 1. If old key was gen 5, new key is gen 6.",
+      "record": {
+        "backend": "secure-enclave",
+        "generation": "6",
+        "key_id": "golden-rotated-new",
+        "provenance": "production",
+        "public_key_x963_b64": "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+        "role": "companion",
+        "state": "active"
+      }
+    },
+    "rotated_old": {
+      "description": "Old key after rotation (revoked), gets old generation + 1 same as new key. Both have gen 6.",
+      "record": {
+        "backend": "secure-enclave",
+        "generation": "6",
+        "key_id": "golden-rotated-old",
+        "provenance": "production",
+        "public_key_x963_b64": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
+        "role": "companion",
+        "state": "revoked"
+      }
+    }
+  },
+  "schema_contract": {
+    "format": "All values must be strings for Mac [String: String] compatibility",
+    "generation_on_revoke": "revoked.generation = active.generation + 1 (Mac requires revoked > existing)",
+    "generation_on_rotate": "new.generation = old.generation + 1, revoked_old.generation = old.generation + 1",
+    "excluded_from_carried_export": ["mac_update_pending"],
+    "required_fields": ["backend", "generation", "key_id", "provenance", "public_key_x963_b64", "role", "state"]
+  }
+}

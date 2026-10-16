@@ -19,8 +19,11 @@
 		2C588E244912C0AE00564961 /* DevelopmentCompanionSignView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 579CD1E4F1A9F5A13673BF67 /* DevelopmentCompanionSignView.swift */; };
 		43666DAD55A82C14D615CD04 /* CompanionSecureEnclaveEnrollment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 303DAB53830A36E39215494A /* CompanionSecureEnclaveEnrollment.swift */; };
 		45057E8879E0E5CB7B749A10 /* BoundaryBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB26E0BC6AF5E9D6DFB8B630 /* BoundaryBanner.swift */; };
+		453385FD567540CACBAC5BB7 /* PhonePeerCancellationXCTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B771B47F25AB7F4EFB5C09E /* PhonePeerCancellationXCTests.swift */; };
 		484FA601AD300487184F26E5 /* CompanionHardwareApprovalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E18B40D2B7A6AD44110C637 /* CompanionHardwareApprovalView.swift */; };
 		551180D3C83D335E1F709136 /* RunSpecimenObserveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABA0291E3FAEE87B278158B4 /* RunSpecimenObserveApp.swift */; };
+		603F610FCABA9BC3ED152C60 /* PhonePeerCancellationTestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0916945718615A1E79D5743B /* PhonePeerCancellationTestHelpers.swift */; };
+		64D6D57E830BBF9BD7FBB603 /* RecoveryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8962F69864C827E1D5E24672 /* RecoveryUITests.swift */; };
 		68A1F78ED049CCC55B094B30 /* RunSpecimenObserveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABA0291E3FAEE87B278158B4 /* RunSpecimenObserveApp.swift */; };
 		730E00318EC0A16E41EF9194 /* CompanionSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E6180F0A8F12A57871A31B /* CompanionSession.swift */; };
 		77812F6887B1229954BCCB85 /* RSTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD27DE1469C9CD6E323B5794 /* RSTheme.swift */; };
@@ -56,15 +59,32 @@
 			remoteGlobalIDString = 4D1D554ECCE70DFB91431966;
 			remoteInfo = RunSpecimenObserve;
 		};
+		DCF52AFA65D17304FF1AF047 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6BF9A08FC707FD0336170C82 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4D1D554ECCE70DFB91431966;
+			remoteInfo = RunSpecimenObserve;
+		};
+		F9AD6D0ADEC6D3EF68DF1672 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6BF9A08FC707FD0336170C82 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4D1D554ECCE70DFB91431966;
+			remoteInfo = RunSpecimenObserve;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		01E77BCF1F7A993119E9CE6A /* CompanionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionModels.swift; sourceTree = "<group>"; };
+		0916945718615A1E79D5743B /* PhonePeerCancellationTestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhonePeerCancellationTestHelpers.swift; sourceTree = "<group>"; };
 		1E18B40D2B7A6AD44110C637 /* CompanionHardwareApprovalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionHardwareApprovalView.swift; sourceTree = "<group>"; };
 		2A770B9FAB0B4D0E31CF4A64 /* CompanionApprovalPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionApprovalPreview.swift; sourceTree = "<group>"; };
 		2AAE24715CE6EF0998517617 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		303DAB53830A36E39215494A /* CompanionSecureEnclaveEnrollment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionSecureEnclaveEnrollment.swift; sourceTree = "<group>"; };
 		4B646DFB9E62C7B92D5E9457 /* mark.svg */ = {isa = PBXFileReference; path = mark.svg; sourceTree = "<group>"; };
+		4B771B47F25AB7F4EFB5C09E /* PhonePeerCancellationXCTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhonePeerCancellationXCTests.swift; sourceTree = "<group>"; };
+		525E3273C7AE1A60F98B7DC9 /* PhonePeerCancellationTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PhonePeerCancellationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		561075E95870606683FBC66D /* SchemaTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemaTests.swift; sourceTree = "<group>"; };
 		579CD1E4F1A9F5A13673BF67 /* DevelopmentCompanionSignView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopmentCompanionSignView.swift; sourceTree = "<group>"; };
 		5F92FB5B28E2DE08D564DC17 /* CompanionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionClient.swift; sourceTree = "<group>"; };
@@ -72,6 +92,8 @@
 		704BB881AA608E64C1544791 /* RunSpecimenObserveDev.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = RunSpecimenObserveDev.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7205FFEDAD45C5DD7E763965 /* ObserveSchemaTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ObserveSchemaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		737DB085CE33C4BA6B8B1C69 /* DevelopmentCompanionSigner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopmentCompanionSigner.swift; sourceTree = "<group>"; };
+		7E88263D23335A022763238F /* ObserveRecoveryUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ObserveRecoveryUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		8962F69864C827E1D5E24672 /* RecoveryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecoveryUITests.swift; sourceTree = "<group>"; };
 		A1425E3AAE6F7EBB1944FDA2 /* StatusObserveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusObserveView.swift; sourceTree = "<group>"; };
 		ABA0291E3FAEE87B278158B4 /* RunSpecimenObserveApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunSpecimenObserveApp.swift; sourceTree = "<group>"; };
 		BEAA469635D330E16249C35E /* RunSpecimenObserve.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = RunSpecimenObserve.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -86,6 +108,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		2AABFF7478B4707785B36810 /* ObserveRecoveryUITests */ = {
+			isa = PBXGroup;
+			children = (
+				8962F69864C827E1D5E24672 /* RecoveryUITests.swift */,
+			);
+			path = ObserveRecoveryUITests;
+			sourceTree = "<group>";
+		};
 		36F8BE8C3E50337E70C61250 /* ObserveSchemaTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -119,6 +149,15 @@
 			path = RunSpecimenCore;
 			sourceTree = "<group>";
 		};
+		59D926F7E30E0F2876582CC2 /* PhonePeerCancellationTests */ = {
+			isa = PBXGroup;
+			children = (
+				0916945718615A1E79D5743B /* PhonePeerCancellationTestHelpers.swift */,
+				4B771B47F25AB7F4EFB5C09E /* PhonePeerCancellationXCTests.swift */,
+			);
+			path = PhonePeerCancellationTests;
+			sourceTree = "<group>";
+		};
 		7B67E51B0B1620760AEA3731 /* Services */ = {
 			isa = PBXGroup;
 			children = (
@@ -144,7 +183,9 @@
 		95EF76E0A246F57C4FF0B5FE /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				7E88263D23335A022763238F /* ObserveRecoveryUITests.xctest */,
 				7205FFEDAD45C5DD7E763965 /* ObserveSchemaTests.xctest */,
+				525E3273C7AE1A60F98B7DC9 /* PhonePeerCancellationTests.xctest */,
 				BEAA469635D330E16249C35E /* RunSpecimenObserve.app */,
 				704BB881AA608E64C1544791 /* RunSpecimenObserveDev.app */,
 			);
@@ -195,7 +236,9 @@
 		C5EC6FF012858AA1DB7EC1B5 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				2AABFF7478B4707785B36810 /* ObserveRecoveryUITests */,
 				36F8BE8C3E50337E70C61250 /* ObserveSchemaTests */,
+				59D926F7E30E0F2876582CC2 /* PhonePeerCancellationTests */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -294,6 +337,42 @@
 			productReference = 7205FFEDAD45C5DD7E763965 /* ObserveSchemaTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		63DDEA87E2BB63C642778A25 /* ObserveRecoveryUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D75A3C208BD9A7110E52760F /* Build configuration list for PBXNativeTarget "ObserveRecoveryUITests" */;
+			buildPhases = (
+				2AD7333020D335CD515A522A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				6001BF9308DB816390A48795 /* PBXTargetDependency */,
+			);
+			name = ObserveRecoveryUITests;
+			packageProductDependencies = (
+			);
+			productName = ObserveRecoveryUITests;
+			productReference = 7E88263D23335A022763238F /* ObserveRecoveryUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		650A3DC8162B81AB02739A94 /* PhonePeerCancellationTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4323FF9D85BEE7F9A5F29AD0 /* Build configuration list for PBXNativeTarget "PhonePeerCancellationTests" */;
+			buildPhases = (
+				67D597D64140AFE8FE1A737D /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				783F5D760AD74D112FF71295 /* PBXTargetDependency */,
+			);
+			name = PhonePeerCancellationTests;
+			packageProductDependencies = (
+			);
+			productName = PhonePeerCancellationTests;
+			productReference = 525E3273C7AE1A60F98B7DC9 /* PhonePeerCancellationTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -312,6 +391,15 @@
 						ProvisioningStyle = Automatic;
 					};
 					5765A1F4F691D601C889827F = {
+						DevelopmentTeam = UN6KF8636A;
+						ProvisioningStyle = Automatic;
+					};
+					63DDEA87E2BB63C642778A25 = {
+						DevelopmentTeam = UN6KF8636A;
+						ProvisioningStyle = Automatic;
+						TestTargetID = 4D1D554ECCE70DFB91431966;
+					};
+					650A3DC8162B81AB02739A94 = {
 						DevelopmentTeam = UN6KF8636A;
 						ProvisioningStyle = Automatic;
 					};
@@ -334,6 +422,8 @@
 				4D1D554ECCE70DFB91431966 /* RunSpecimenObserve */,
 				3FE169B56D9C3D3B5DCFBFCC /* RunSpecimenObserveDev */,
 				5765A1F4F691D601C889827F /* ObserveSchemaTests */,
+				650A3DC8162B81AB02739A94 /* PhonePeerCancellationTests */,
+				63DDEA87E2BB63C642778A25 /* ObserveRecoveryUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -362,11 +452,28 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		2AD7333020D335CD515A522A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				64D6D57E830BBF9BD7FBB603 /* RecoveryUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		5E96E5FB2F489916B9CA5F65 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				7830580895FF5184BF6ADF7E /* SchemaTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		67D597D64140AFE8FE1A737D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				603F610FCABA9BC3ED152C60 /* PhonePeerCancellationTestHelpers.swift in Sources */,
+				453385FD567540CACBAC5BB7 /* PhonePeerCancellationXCTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -419,6 +526,16 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		6001BF9308DB816390A48795 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4D1D554ECCE70DFB91431966 /* RunSpecimenObserve */;
+			targetProxy = F9AD6D0ADEC6D3EF68DF1672 /* PBXContainerItemProxy */;
+		};
+		783F5D760AD74D112FF71295 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4D1D554ECCE70DFB91431966 /* RunSpecimenObserve */;
+			targetProxy = DCF52AFA65D17304FF1AF047 /* PBXContainerItemProxy */;
+		};
 		88B5ADCAF14D8235FAFDAF03 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 4D1D554ECCE70DFB91431966 /* RunSpecimenObserve */;
@@ -484,6 +601,7 @@
 				INFOPLIST_KEY_NSBonjourServices = "";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "RunSpecimen Observe uses Face ID to sign a carried approval request with a key that stays in this iPhone's Secure Enclave. It does not approve a Mac run by itself.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "RunSpecimen Observe pairs only with a Mac you enable on your local network or Tailscale. Non-loopback requires TLS. It cannot approve or execute runs.";
+				INFOPLIST_KEY_UILaunchScreen_BackgroundColor = launchBackground;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
@@ -510,6 +628,25 @@
 					"@loader_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "com.darashkevich.runspecimen.observe.schema-tests";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) RUNSPECIMEN_TEST_HOOKS";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RunSpecimenObserve.app/RunSpecimenObserve";
+			};
+			name = Debug;
+		};
+		360673D9C44077F4D4D63A2F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.darashkevich.runspecimen.observe.phonepeer-tests";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) RUNSPECIMEN_TEST_HOOKS";
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -584,6 +721,23 @@
 			};
 			name = Debug;
 		};
+		75699DD4EE7C316CE71A0330 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.darashkevich.runspecimen.observe.recovery-ui-tests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = RunSpecimenObserve;
+			};
+			name = Debug;
+		};
 		766387A12CA7F643856194A1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -635,6 +789,7 @@
 				INFOPLIST_KEY_NSBonjourServices = "";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "RunSpecimen Observe uses Face ID to sign a carried approval request with a key that stays in this iPhone's Secure Enclave. It does not approve a Mac run by itself.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "RunSpecimen Observe pairs only with a Mac you enable on your local network or Tailscale. Non-loopback requires TLS. It cannot approve or execute runs.";
+				INFOPLIST_KEY_UILaunchScreen_BackgroundColor = launchBackground;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
@@ -645,6 +800,25 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		8889D246AE056CE720ED0E20 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.darashkevich.runspecimen.observe.phonepeer-tests";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) RUNSPECIMEN_TEST_HOOKS";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RunSpecimenObserve.app/RunSpecimenObserve";
 			};
 			name = Release;
 		};
@@ -673,6 +847,23 @@
 			};
 			name = Release;
 		};
+		E6222D9813390ABC5019EF3E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.darashkevich.runspecimen.observe.recovery-ui-tests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = RunSpecimenObserve;
+			};
+			name = Release;
+		};
 		E7702ACCD7FC6A3AA54223CB /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -698,6 +889,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		4323FF9D85BEE7F9A5F29AD0 /* Build configuration list for PBXNativeTarget "PhonePeerCancellationTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				360673D9C44077F4D4D63A2F /* Debug */,
+				8889D246AE056CE720ED0E20 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		6B91710B94B75530C613E566 /* Build configuration list for PBXProject "RunSpecimenObserve" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -721,6 +921,15 @@
 			buildConfigurations = (
 				7049FA213EEF135718513778 /* Debug */,
 				E7702ACCD7FC6A3AA54223CB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D75A3C208BD9A7110E52760F /* Build configuration list for PBXNativeTarget "ObserveRecoveryUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				75699DD4EE7C316CE71A0330 /* Debug */,
+				E6222D9813390ABC5019EF3E /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

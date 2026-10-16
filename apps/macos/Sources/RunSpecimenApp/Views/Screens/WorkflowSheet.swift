@@ -580,7 +580,18 @@ struct WorkflowSheet: View {
         guard let data = pairingText.data(using: .utf8) else { return }
         do {
             let record = try BiometricEnrollmentDirectory.pinCarriedCompanion(data, directory: carriedDirectory)
-            carriedStatus = "Pinned \(record.keyID) as an unverified carried key. The file's Secure Enclave label was not accepted."
+            if record.state == BiometricEnrollmentRecord.revoked {
+                carriedStatus = "The key \(record.keyID) is now marked revoked. The iPhone revoked this key."
+            } else {
+                carriedStatus = "Pinned \(record.keyID) as an unverified carried key. The file's Secure Enclave label was not accepted."
+            }
+        } catch let error as BiometricApprovalError {
+            switch error {
+            case .revoked:
+                carriedStatus = "The carried key is revoked or the local record is already revoked. It cannot be used."
+            default:
+                carriedStatus = "The carried key was not pinned."
+            }
         } catch {
             carriedStatus = "The carried key was not pinned."
         }

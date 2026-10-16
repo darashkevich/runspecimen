@@ -10,6 +10,7 @@ settings:
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1,2"
     INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    INFOPLIST_KEY_UILaunchScreen_BackgroundColor: launchBackground
     INFOPLIST_KEY_CFBundleDisplayName: RunSpecimen Observe
     INFOPLIST_KEY_NSLocalNetworkUsageDescription: RunSpecimen Observe pairs only with a Mac you enable on your local network or Tailscale. Non-loopback requires TLS. It cannot approve or execute runs.
     INFOPLIST_KEY_NSFaceIDUsageDescription: RunSpecimen Observe uses Face ID to sign a carried approval request with a key that stays in this iPhone's Secure Enclave. It does not approve a Mac run by itself.
@@ -79,6 +80,32 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen.observe.schema-tests
         CODE_SIGN_STYLE: Automatic
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) RUNSPECIMEN_TEST_HOOKS"
+  PhonePeerCancellationTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/PhonePeerCancellationTests
+    dependencies:
+      - target: RunSpecimenObserve
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen.observe.phonepeer-tests
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) RUNSPECIMEN_TEST_HOOKS"
+  ObserveRecoveryUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tests/ObserveRecoveryUITests
+    dependencies:
+      - target: RunSpecimenObserve
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.darashkevich.runspecimen.observe.recovery-ui-tests
+        TEST_TARGET_NAME: RunSpecimenObserve
+
 schemes:
   RunSpecimenObserve:
     build:
@@ -87,6 +114,8 @@ schemes:
     test:
       targets:
         - ObserveSchemaTests
+        - PhonePeerCancellationTests
+        - ObserveRecoveryUITests
   RunSpecimenObserveDev:
     build:
       targets:

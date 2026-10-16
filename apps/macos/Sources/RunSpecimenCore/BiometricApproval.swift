@@ -343,13 +343,12 @@ public enum BiometricEnrollmentDirectory {
 
     /// Stores an active public key from a file a person carried.
     ///
-    /// The pairing schema accepts `active` or `revoked`. This pin accepts only
-    /// `active`. A missing, revoked, or other state is refused before any
-    /// enrollment file is written. A locally revoked record is not replaced by
-    /// a later active import, including one with another generation. The file's
-    /// backend and provenance strings are ignored. A label of `secure-enclave`
-    /// does not make the key production enrollment. This is not installed
-    /// admission.
+    /// The pairing schema accepts `active` or `revoked`. A revoked import
+    /// updates any existing local record to revoked and returns that record.
+    /// A locally revoked record is not replaced by a later active import.
+    /// The file's backend and provenance strings are ignored. A label of
+    /// `secure-enclave` does not make the key production enrollment. This is
+    /// not installed admission.
     public static func pinCarriedCompanion(_ data: Data, directory: URL) throws -> BiometricEnrollmentRecord {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: String] else {
             throw BiometricApprovalError.malformed("enrollment")
@@ -374,36 +373,46 @@ public enum BiometricEnrollmentDirectory {
         guard let state = object["state"] else {
             throw BiometricApprovalError.malformed("state")
         }
-        if state == BiometricEnrollmentRecord.revoked {
-            throw BiometricApprovalError.revoked
-        }
-        guard state == BiometricEnrollmentRecord.active else {
+        guard state == BiometricEnrollmentRecord.active || state == BiometricEnrollmentRecord.revoked else {
             throw BiometricApprovalError.malformed("state")
         }
-        let record = BiometricEnrollmentRecord(
-            keyID: keyID,
-            publicKey: publicKey,
-            state: state,
-            backend: EnrollmentIdentity.backendUnverified,
-            role: EnrollmentIdentity.roleCompanion,
-            provenance: EnrollmentIdentity.provenanceCarriedPin,
-            generation: generation
-        )
         return try withExclusiveAccess(directory) {
             let url = recordURL(directory, keyID)
             if FileManager.default.fileExists(atPath: url.path) {
                 let existing = try load(keyID: keyID, directory: directory)
-                guard existing.state == BiometricEnrollmentRecord.active else {
+                if existing.state == BiometricEnrollmentRecord.revoked {
                     throw BiometricApprovalError.revoked
                 }
                 guard existing.publicKey == publicKey else {
                     throw BiometricApprovalError.malformed("public_key")
+                }
+                if state == BiometricEnrollmentRecord.revoked {
+                    guard generation > existing.generation else {
+                        throw BiometricApprovalError.malformed("generation")
+                    }
+                    var revokedRecord = existing
+                    revokedRecord.state = BiometricEnrollmentRecord.revoked
+                    revokedRecord.generation = generation
+                    try save(revokedRecord, directory: directory)
+                    return revokedRecord
                 }
                 guard existing.generation == generation else {
                     throw BiometricApprovalError.malformed("generation")
                 }
                 return existing
             }
+            if state == BiometricEnrollmentRecord.revoked {
+                throw BiometricApprovalError.revoked
+            }
+            let record = BiometricEnrollmentRecord(
+                keyID: keyID,
+                publicKey: publicKey,
+                state: state,
+                backend: EnrollmentIdentity.backendUnverified,
+                role: EnrollmentIdentity.roleCompanion,
+                provenance: EnrollmentIdentity.provenanceCarriedPin,
+                generation: generation
+            )
             try save(record, directory: directory)
             return record
         }

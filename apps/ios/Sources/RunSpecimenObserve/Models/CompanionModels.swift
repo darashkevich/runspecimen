@@ -129,6 +129,59 @@ struct RemoteConfirmResult: Codable, Equatable {
         case ok, settled, refused, note, reason
         case confirmChannel = "confirm_channel"
     }
+
+    var confirmedSuccessfully: Bool {
+        ok == true && settled == true && refused != true
+    }
+
+    var refusedSuccessfully: Bool {
+        ok == true && refused == true && settled != true
+    }
+
+    var isAmbiguous: Bool {
+        ok == nil || (settled == nil && refused == nil) || (settled == true && refused == true)
+    }
+}
+
+enum CapabilityValidationResult: Equatable {
+    case valid
+    case invalid(reason: String)
+}
+
+enum CapabilityValidator {
+    static func validate(capabilities: CompanionCapabilities?, status: CompanionStatus?) -> CapabilityValidationResult {
+        guard let caps = capabilities else {
+            return .invalid(reason: "Capabilities not verified.")
+        }
+        if caps.canApprove || caps.canExecute || caps.canMutateLifecycle {
+            return .invalid(reason: "Companion advertised plugin-style approve/execute (violates ADR-004).")
+        }
+        if let companion = status?.companion {
+            if companion.canApprove == true || companion.canExecute == true {
+                return .invalid(reason: "Server claimed approve/execute capability.")
+            }
+        }
+        return .valid
+    }
+
+    static func validateForPairing(capabilities: CompanionCapabilities) -> CapabilityValidationResult {
+        if capabilities.canApprove || capabilities.canExecute || capabilities.canMutateLifecycle {
+            return .invalid(reason: "Companion advertised plugin-style approve/execute (violates ADR-004).")
+        }
+        return .valid
+    }
+
+    static func validateForRefresh(status: CompanionStatus) -> CapabilityValidationResult {
+        if status.companion?.canApprove == true || status.companion?.canExecute == true {
+            return .invalid(reason: "Server claimed approve/execute capability.")
+        }
+        return .valid
+    }
+
+    static func validateForAction(capabilities: CompanionCapabilities?, status: CompanionStatus?) -> CapabilityValidationResult {
+        guard status != nil else { return .invalid(reason: "Status not verified.") }
+        return validate(capabilities: capabilities, status: status)
+    }
 }
 
 struct PairingConfig: Codable, Equatable {
