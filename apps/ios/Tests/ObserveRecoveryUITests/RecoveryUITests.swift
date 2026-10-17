@@ -18,6 +18,13 @@ final class RecoveryUITests: XCTestCase {
         reopen.tap()
         XCTAssertTrue(banner.waitForExistence(timeout: 5))
         app.buttons["Export recovery diagnostics"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["Copy"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        // The first cold Simulator share service can populate its remote view
+        // after five seconds (CI logs showed Copy created just after that deadline).
+        // Wait for the actual action, then exercise it; never sleep or retry export.
+        let copy = app.descendants(matching: .any)["Copy"].firstMatch
+        XCTAssertTrue(copy.waitForExistence(timeout: 30), app.debugDescription)
+        copy.tap()
+        let sheetClosed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: copy)
+        wait(for: [sheetClosed], timeout: 10)
     }
 }
