@@ -608,26 +608,47 @@ class HolderSocketAdmissionTests(unittest.TestCase):
         server.start()
         self.addCleanup(server.stop)
 
-        def stall() -> None:
-            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            sock.connect(str(server.socket_path))
-            try:
-                sock.sendall(b"x" * 16)  # no newline
-                time.sleep(0.6)
-            finally:
-                sock.close()
+        # Observe the real worker while admission is held; scheduling sleeps can
+        # let its read deadline expire before the second client ever connects.
+        from runspecimen import holder_adapter
 
-        t = threading.Thread(target=stall)
-        t.start()
-        time.sleep(0.05)
-        # While stalled connection holds admission, second client is refused.
-        sock2 = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock2.connect(str(server.socket_path))
-        sock2.sendall(b'{"ok":false}\n')
-        raw = sock2.recv(4096).decode("utf-8")
-        sock2.close()
-        t.join(timeout=2)
-        self.assertIn("admission limit reached", raw)
+        entered = threading.Event()
+        resume_read = threading.Event()
+        left = threading.Event()
+        real_read = holder_adapter.read_frame
+        real_leave = server._admission.leave
+
+        def observed_read(*args, **kwargs):
+            if not entered.is_set():
+                entered.set()
+                if not resume_read.wait(timeout=10):
+                    raise RuntimeError("test did not release the admitted reader")
+            return real_read(*args, **kwargs)
+
+        def observed_leave():
+            real_leave()
+            left.set()
+
+        with mock.patch.object(holder_adapter, "read_frame", side_effect=observed_read), \
+                mock.patch.object(server._admission, "leave", side_effect=observed_leave):
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stalled:
+                stalled.settimeout(5)
+                stalled.connect(str(server.socket_path))
+                stalled.sendall(b"x" * 16)  # no newline
+                try:
+                    self.assertTrue(entered.wait(timeout=5), "first worker did not enter")
+                    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as second:
+                        second.settimeout(5)
+                        second.connect(str(server.socket_path))
+                        second.sendall(b'{"ok":false}\n')
+                        raw = second.recv(4096).decode("utf-8")
+                    self.assertIn("admission limit reached", raw)
+                finally:
+                    resume_read.set()
+                # Now exercise the production read deadline, then wait until
+                # the production worker has actually released its admission.
+                self.assertIn("read deadline exceeded", stalled.recv(4096).decode("utf-8"))
+                self.assertTrue(left.wait(timeout=5), "first admission was not released")
 
         # Oversize frame
         sock3 = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
