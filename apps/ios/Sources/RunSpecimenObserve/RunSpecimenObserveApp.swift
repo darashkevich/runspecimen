@@ -23,6 +23,20 @@ struct RunSpecimenObserveApp: App {
             session.testHardwareRecoveryDirectory = Self.testRecoveryFixtureDirectory()
         }
         #endif
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let scenario = ProcessInfo.processInfo.environment["RUNSPECIMEN_UI_REFRESH_TEST"] {
+            session.baseURLString = "http://localhost"
+            session.pairingToken = "ui-fixture-only"
+            session.isPaired = true
+            session.status = CompanionStatus(phase: "active")
+            session.capabilities = CompanionCapabilities(product: "test", mode: "observe", canApprove: false,
+                canExecute: false, canMutateLifecycle: false, canRemoteConfirm: true, boundary: "UI fixture")
+            session.testMakeClient()?.testRequest = { _ in
+                if scenario == "cancelled" { throw CancellationError() }
+                throw CompanionClientError.transport("Fixture Mac is unreachable")
+            }
+        }
+        #endif
         _session = StateObject(wrappedValue: session)
 
         #if DEBUG

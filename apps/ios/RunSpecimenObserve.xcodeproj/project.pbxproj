@@ -22,6 +22,7 @@
 		453385FD567540CACBAC5BB7 /* PhonePeerCancellationXCTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B771B47F25AB7F4EFB5C09E /* PhonePeerCancellationXCTests.swift */; };
 		484FA601AD300487184F26E5 /* CompanionHardwareApprovalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E18B40D2B7A6AD44110C637 /* CompanionHardwareApprovalView.swift */; };
 		551180D3C83D335E1F709136 /* RunSpecimenObserveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABA0291E3FAEE87B278158B4 /* RunSpecimenObserveApp.swift */; };
+		5714DB9972DE96FD6C8AD6C3 /* RefreshUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 322838F49A8F7AEE37E1D090 /* RefreshUITests.swift */; };
 		603F610FCABA9BC3ED152C60 /* PhonePeerCancellationTestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0916945718615A1E79D5743B /* PhonePeerCancellationTestHelpers.swift */; };
 		64D6D57E830BBF9BD7FBB603 /* RecoveryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8962F69864C827E1D5E24672 /* RecoveryUITests.swift */; };
 		68A1F78ED049CCC55B094B30 /* RunSpecimenObserveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABA0291E3FAEE87B278158B4 /* RunSpecimenObserveApp.swift */; };
@@ -82,6 +83,7 @@
 		2A770B9FAB0B4D0E31CF4A64 /* CompanionApprovalPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionApprovalPreview.swift; sourceTree = "<group>"; };
 		2AAE24715CE6EF0998517617 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		303DAB53830A36E39215494A /* CompanionSecureEnclaveEnrollment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionSecureEnclaveEnrollment.swift; sourceTree = "<group>"; };
+		322838F49A8F7AEE37E1D090 /* RefreshUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefreshUITests.swift; sourceTree = "<group>"; };
 		4B646DFB9E62C7B92D5E9457 /* mark.svg */ = {isa = PBXFileReference; path = mark.svg; sourceTree = "<group>"; };
 		4B771B47F25AB7F4EFB5C09E /* PhonePeerCancellationXCTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhonePeerCancellationXCTests.swift; sourceTree = "<group>"; };
 		525E3273C7AE1A60F98B7DC9 /* PhonePeerCancellationTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PhonePeerCancellationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -112,6 +114,7 @@
 			isa = PBXGroup;
 			children = (
 				8962F69864C827E1D5E24672 /* RecoveryUITests.swift */,
+				322838F49A8F7AEE37E1D090 /* RefreshUITests.swift */,
 			);
 			path = ObserveRecoveryUITests;
 			sourceTree = "<group>";
@@ -457,6 +460,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				64D6D57E830BBF9BD7FBB603 /* RecoveryUITests.swift in Sources */,
+				5714DB9972DE96FD6C8AD6C3 /* RefreshUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -4,7 +4,6 @@ import UIKit
 struct StatusObserveView: View {
     @EnvironmentObject private var session: CompanionSession
     @State private var busy = false
-    @State private var lastRefreshTime: Date?
     @State private var showDisconnectConfirmation = false
     @State private var confirmOutcome: ActionResultState = .idle
     @State private var refuseOutcome: ActionResultState = .idle
@@ -91,10 +90,10 @@ struct StatusObserveView: View {
             .rsReadableWidth(720)
         }
         .refreshable {
-            await refreshWithTimestamp()
+            await refreshStatus()
         }
         .task {
-            await refreshWithTimestamp()
+            await refreshStatus()
         }
         .confirmationDialog(
             "Disconnect from Mac?",
@@ -127,11 +126,12 @@ struct StatusObserveView: View {
                 Text(statusLabel)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(RSTheme.ink)
-                if let time = lastRefreshTime {
-                    Text("Updated \(time, style: .relative) ago")
+                if let time = session.lastSuccessfulRefresh {
+                    Text("Last successful update \(time, style: .relative) ago")
                         .font(.caption2)
                         .foregroundStyle(RSTheme.muted)
                 }
+                refreshFeedback
             }
             Spacer()
         }
@@ -484,8 +484,9 @@ struct StatusObserveView: View {
     private var actionsCard: some View {
         VStack(spacing: 10) {
             actionButton("Refresh status", tint: RSTheme.cyan) {
-                await refreshWithTimestamp()
+                await refreshStatus()
             }
+            refreshFeedback
             actionButton("Request attention on Mac", tint: RSTheme.amber) {
                 await session.requestAttention()
             }
@@ -771,10 +772,23 @@ struct StatusObserveView: View {
         .disabled(!alwaysEnabled && busy)
     }
 
-    private func refreshWithTimestamp() async {
-        await session.refresh()
-        if session.lastError == nil {
-            lastRefreshTime = Date()
+    @ViewBuilder
+    private var refreshFeedback: some View {
+        switch session.refreshOutcome {
+        case .notAttempted:
+            EmptyView()
+        case .inProgress:
+            ProgressView("Refreshing status…")
+        case .success:
+            Text("Status refreshed.").font(.footnote).foregroundStyle(RSTheme.signal)
+        case .failure(let reason):
+            Text(reason).font(.footnote).foregroundStyle(RSTheme.danger)
+        case .cancelled:
+            Text("Refresh cancelled.").font(.footnote).foregroundStyle(RSTheme.muted)
         }
+    }
+
+    private func refreshStatus() async {
+        await session.refresh()
     }
 }
