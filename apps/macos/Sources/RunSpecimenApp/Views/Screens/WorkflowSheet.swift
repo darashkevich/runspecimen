@@ -33,6 +33,7 @@ struct WorkflowSheet: View {
     @State private var pairingText = ""
     @State private var packageText = ""
     @State private var expectedPolicy = "package"
+    @State private var carriedKeyStatus = ""
     @State private var carriedStatus = ""
 
     var body: some View {
@@ -539,6 +540,14 @@ struct WorkflowSheet: View {
                 .accessibilityLabel("Carried public key")
             Button("Pin carried public key") { pinCarriedKey() }
                 .disabled(pairingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            if !carriedKeyStatus.isEmpty {
+                Text(carriedKeyStatus)
+                    .font(.system(size: 12))
+                    .foregroundStyle(RSTheme.ink)
+                    .accessibilityLabel("Carried key pin status")
+                    .accessibilityValue(carriedKeyStatus)
+                    .accessibilityIdentifier("carriedKeyPinStatus")
+            }
             Text("Approval package")
                 .font(.system(size: 12))
                 .foregroundStyle(RSTheme.muted)
@@ -581,19 +590,19 @@ struct WorkflowSheet: View {
         do {
             let record = try BiometricEnrollmentDirectory.pinCarriedCompanion(data, directory: carriedDirectory)
             if record.state == BiometricEnrollmentRecord.revoked {
-                carriedStatus = "The key \(record.keyID) is now marked revoked. The iPhone revoked this key."
+                carriedKeyStatus = "The key \(record.keyID) is now marked revoked. The iPhone revoked this key."
             } else {
-                carriedStatus = "Pinned \(record.keyID) as an unverified carried key. The file's Secure Enclave label was not accepted."
+                carriedKeyStatus = "Pinned \(record.keyID) as an unverified carried key. The file's Secure Enclave label was not accepted."
             }
         } catch let error as BiometricApprovalError {
             switch error {
             case .revoked:
-                carriedStatus = "The carried key is revoked or the local record is already revoked. It cannot be used."
+                carriedKeyStatus = "The carried key is revoked or the local record is already revoked. It cannot be used."
             default:
-                carriedStatus = "The carried key was not pinned."
+                carriedKeyStatus = "The carried key was not pinned."
             }
         } catch {
-            carriedStatus = "The carried key was not pinned."
+            carriedKeyStatus = "The carried key was not pinned."
         }
     }
 

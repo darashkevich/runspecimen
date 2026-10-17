@@ -118,22 +118,27 @@ struct StatusObserveView: View {
         case .stale: statusLabel = "Stale"; statusColor = RSTheme.amber
         case .connected: statusLabel = "Connected"; statusColor = RSTheme.signal
         }
-        return HStack(spacing: 10) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 10, height: 10)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(statusLabel)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(RSTheme.ink)
-                if let time = session.lastSuccessfulRefresh {
-                    Text("Last successful update \(time, style: .relative) ago")
-                        .font(.caption2)
-                        .foregroundStyle(RSTheme.muted)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 10, height: 10)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(statusLabel)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(RSTheme.ink)
+                    if let time = session.lastSuccessfulRefresh {
+                        Text("Last successful update \(time, style: .relative) ago")
+                            .font(.caption2)
+                            .foregroundStyle(RSTheme.muted)
+                    }
+                    refreshFeedback
                 }
-                refreshFeedback
+                Spacer()
             }
-            Spacer()
+            actionButton("Refresh status", tint: RSTheme.cyan) {
+                await refreshStatus()
+            }
         }
         .padding(12)
         .background(RSTheme.panel)
@@ -483,10 +488,6 @@ struct StatusObserveView: View {
 
     private var actionsCard: some View {
         VStack(spacing: 10) {
-            actionButton("Refresh status", tint: RSTheme.cyan) {
-                await refreshStatus()
-            }
-            refreshFeedback
             actionButton("Request attention on Mac", tint: RSTheme.amber) {
                 await session.requestAttention()
             }

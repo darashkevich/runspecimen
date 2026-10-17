@@ -31,8 +31,17 @@ struct RunSpecimenObserveApp: App {
             session.status = CompanionStatus(phase: "active")
             session.capabilities = CompanionCapabilities(product: "test", mode: "observe", canApprove: false,
                 canExecute: false, canMutateLifecycle: false, canRemoteConfirm: true, boundary: "UI fixture")
-            session.testMakeClient()?.testRequest = { _ in
+            var fixtureRequests = 0
+            session.testMakeClient()?.testRequest = { request in
+                fixtureRequests += 1
                 if scenario == "cancelled" { throw CancellationError() }
+                if scenario == "recover", fixtureRequests > 1 {
+                    if request.url?.path == "/v1/status" {
+                        return try JSONEncoder().encode(CompanionStatus(phase: "active", campaignId: "button-refresh"))
+                    }
+                    return try JSONEncoder().encode(CompanionCapabilities(product: "test", mode: "observe", canApprove: false,
+                        canExecute: false, canMutateLifecycle: false, canRemoteConfirm: true, boundary: "UI fixture"))
+                }
                 throw CompanionClientError.transport("Fixture Mac is unreachable")
             }
         }
