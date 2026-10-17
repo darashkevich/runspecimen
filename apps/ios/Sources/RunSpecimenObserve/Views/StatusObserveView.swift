@@ -8,6 +8,7 @@ struct StatusObserveView: View {
     @State private var showDisconnectConfirmation = false
     @State private var confirmOutcome: ActionResultState = .idle
     @State private var refuseOutcome: ActionResultState = .idle
+    @State private var phoneEnrollmentOutcome: ActionResultState = .idle
     @State private var phonePeerRevokeOutcome: ActionResultState = .idle
     @State private var phonePeerRotateOutcome: ActionResultState = .idle
     @State private var showPhonePeerRevokeConfirmation = false
@@ -184,8 +185,17 @@ struct StatusObserveView: View {
                 await session.cancelPhonePeerChallenge()
             }
             actionButton("Enroll phone key after verification", tint: RSTheme.ink.opacity(0.85)) {
-                await session.commitPhoneKeyAfterHolderVerification()
+                phoneEnrollmentOutcome = .inProgress
+                switch await session.commitPhoneKeyAfterHolderVerification() {
+                case .enrolled:
+                    phoneEnrollmentOutcome = .success("Phone key enrolled after holder verification.")
+                case .refused(let reason):
+                    phoneEnrollmentOutcome = .failure(reason)
+                case .cancelled:
+                    phoneEnrollmentOutcome = .idle
+                }
             }
+            outcomeView(phoneEnrollmentOutcome)
 
             if session.phonePeerKeyState.isEnrolled {
                 Divider().background(RSTheme.muted.opacity(0.3))

@@ -703,8 +703,10 @@ final class CompanionSession: ObservableObject {
             return .refused(lastError ?? phonePeerNote)
         }
         guard let message = phoneChallenge, let phonePublicKey = signedPhonePublicKey else {
-            phonePeerNote = "Mailbox acceptance is not holder verification."
-            return .refused(lastError ?? phonePeerNote)
+            let reason = "Sign a phone peer challenge first, then verify it on the Mac before enrolling."
+            phonePeerNote = reason
+            lastError = reason
+            return .refused(reason)
         }
         let generation = phoneSignGeneration
         let challengeId = message.challengeId

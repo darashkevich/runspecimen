@@ -3128,3 +3128,21 @@ extension ObserveSchemaTests {
         XCTAssertFalse(session.isPaired)
     }
 }
+
+
+extension ObserveSchemaTests {
+    @MainActor
+    func testIOSQAUXEnrollmentWithoutSignedChallengeExplainsNextStep() async throws {
+        let session = qaPairedSession()
+        let client = try XCTUnwrap(session.testMakeClient())
+        client.testRequest = { _ in
+            XCTFail("Enrollment without a signed challenge must not contact the holder")
+            throw CompanionClientError.http(500, "unexpected request")
+        }
+        let expected = "Sign a phone peer challenge first, then verify it on the Mac before enrolling."
+        let outcome = await session.commitPhoneKeyAfterHolderVerification()
+        XCTAssertEqual(outcome, .refused(expected))
+        XCTAssertEqual(session.lastError, expected)
+        XCTAssertEqual(session.phonePeerNote, expected)
+    }
+}
