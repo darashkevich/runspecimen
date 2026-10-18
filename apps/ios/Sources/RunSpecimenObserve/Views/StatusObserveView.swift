@@ -7,7 +7,6 @@ struct StatusObserveView: View {
     @State private var showDisconnectConfirmation = false
     @State private var confirmOutcome: ActionResultState = .idle
     @State private var refuseOutcome: ActionResultState = .idle
-    @State private var phoneEnrollmentOutcome: ActionResultState = .idle
     @State private var phonePeerRevokeOutcome: ActionResultState = .idle
     @State private var phonePeerRotateOutcome: ActionResultState = .idle
     @State private var showPhonePeerRevokeConfirmation = false
@@ -131,6 +130,7 @@ struct StatusObserveView: View {
                         Text("Last successful update \(time, style: .relative) ago")
                             .font(.caption2)
                             .foregroundStyle(RSTheme.muted)
+                            .accessibilityIdentifier("lastSuccessfulRefresh")
                     }
                     refreshFeedback
                 }
@@ -140,6 +140,8 @@ struct StatusObserveView: View {
                 await refreshStatus()
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("connectionStatusCard")
         .padding(12)
         .background(RSTheme.panel)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -190,17 +192,16 @@ struct StatusObserveView: View {
                 await session.cancelPhonePeerChallenge()
             }
             actionButton("Enroll phone key after verification", tint: RSTheme.ink.opacity(0.85)) {
-                phoneEnrollmentOutcome = .inProgress
-                switch await session.commitPhoneKeyAfterHolderVerification() {
-                case .enrolled:
-                    phoneEnrollmentOutcome = .success("Phone key enrolled after holder verification.")
-                case .refused(let reason):
-                    phoneEnrollmentOutcome = .failure(reason)
-                case .cancelled:
-                    phoneEnrollmentOutcome = .idle
-                }
+                await session.commitPhoneKeyAfterHolderVerification()
             }
-            outcomeView(phoneEnrollmentOutcome)
+            switch session.phoneEnrollmentFeedback {
+            case .enrolled:
+                outcomeView(.success("Phone key enrolled after holder verification."))
+            case .refused(let reason):
+                outcomeView(.failure(reason))
+            case .cancelled, nil:
+                EmptyView()
+            }
 
             if session.phonePeerKeyState.isEnrolled {
                 Divider().background(RSTheme.muted.opacity(0.3))
@@ -783,7 +784,7 @@ struct StatusObserveView: View {
         case .success:
             Text("Status refreshed.").font(.footnote).foregroundStyle(RSTheme.signal)
         case .failure(let reason):
-            Text(reason).font(.footnote).foregroundStyle(RSTheme.danger)
+            Text(reason).font(.footnote).foregroundStyle(RSTheme.danger).accessibilityIdentifier("connectionRefreshFailure")
         case .cancelled:
             Text("Refresh cancelled.").font(.footnote).foregroundStyle(RSTheme.muted)
         }

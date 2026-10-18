@@ -1,0 +1,60 @@
+# Independent QA remediation — 2026-10-18
+
+Release state: **DO-NOT-SHIP pending independent recheck and remaining evidence**.
+PR #76 remains draft. PR #75 was merged as `4514bdc`; Yahor confirmed Mac 0.1.5
+withdrawn from review. The preparation identity is 0.1.6 (16), not permission
+to upload, submit, publish, change trust, or run a contract.
+
+The original DeepSeek report and reproductions are preserved outside this
+checkout in `outputs/final-qa-2026-10-17/`. Remediation logs are in
+`outputs/deepseek-remediation/`. The reviewed source archives remain unchanged.
+
+| ID | Remediation / remaining evidence |
+| --- | --- |
+| MAIN-01 | Validated confirm/refuse acknowledgements survive post-ack cancellation in both the operation and task wrapper. Both-action production regressions pass. Pre-ack cancellation behavior is retained. |
+| MAIN-02 | Disconnect clears token, URL, TLS pin, Mac key, holder pin (including UserDefaults), and refresh timestamp. Regression checks all fields and persisted holder pin. |
+| MAIN-03 | Validation-driven disconnect publishes failure after invalidating tasks, preserving the refusal reason. Production regression passes. |
+| MAIN-04 | CLI floor raised to rc15 to match the current upgrade guidance. Tests reject rc9/rc14 and accept rc15/final. This is a compatibility decision for the current app, not proof of hardware antirollback. |
+| MAIN-05 | Schema fixtures isolate/restore pairing and holder defaults and use token read/write/delete seams. The failed-refresh test uses a controlled transport and directly asserts timestamp preservation. |
+| MAIN-06 | **UNVERIFIED:** direct real-certificate delegate coverage remains; a live TLS handshake and physical Mac pairing need separate validation. |
+| PR76-01 | Timestamp UI query uses its production accessibility identifier; initial Refresh hittability is asserted without scrolling; failure text has a unique connection-feedback identifier. Unit tests assert cancellation/failure timestamp preservation. Focused Refresh UI suite passes 3/3. |
+| PR76-02 | Enrollment outcome belongs to the session, clears on new signing/invalidation/disconnect and changed key state, and is only published for the current operation. Regression covers refusal-to-key-state transition. |
+| PR76-03 | Editing carried-key input clears its previous pin result. |
+| PR76-04 | The system Copy smoke test is retained. A production-session test asserts the exact string supplied to ShareLink includes the actual recovery failure and retention guidance. This does not prove the system pasteboard bytes. |
+| PR76-05 | **UNVERIFIED:** automated macOS pin layout assertion still absent; build/code evidence does not replace visual layout verification. |
+| PR75-01 | Active Store metadata, version/build tables and candidate documents aligned to 0.1.6 (16); historical artifact identities retained. New CI-discovered test compares binary/project identities with the Store paste sheets. It rejects the frozen PR75 snapshot. |
+| PR75-02 | Preparation authorization and current identity recorded, superseding historical proposal; release remains blocked on QA. |
+| PR75-03 | Export instructions invoke the script with a local destination; committed TEAMID plist is explicitly a template. |
+| PR75-04 | Reported attributesOfItem call removed; stub detection reads at most 64 content bytes instead of file metadata. **UNVERIFIED:** archive-level required-reason API scan remains; diagnostic fstat-family code must be assessed in final linked Store bytes. |
+| PR75-05 | Plist and script default to local export; upload requires explicit destination. Export gate tests pass. |
+| DSH-01 | Candidate 0.2.2 reports maximum dashboard lifetime in its tool output and README. The existing bounded-lifetime contract is retained. |
+| DSH-02 | EPERM inspection means group present; bounded escalation continues. Unconfirmed cleanup returns typed failure through CLI/dashboard tools. Deterministic permanent-EPERM regression passes. |
+| DSH-03 | Root package-lock license aligned to Apache-2.0; third-party dependency licenses preserved. |
+| DSH-04 | Dashboard test awaits process completion at a short lifetime and checks PID death and entry removal. No synchronization sleep. |
+| DSH-05 | Budget expiry is timedOut, caller abort is cancelled; both are distinct from cleanupFailed. |
+| DSH-06 | **UNVERIFIED:** clean registry install, real host model dispatch/hot reload, Windows and physical power loss. Windows remains explicitly unsupported, not claimed functional. |
+| OBSERVE-ICON | Built simulator app contains primary AppIcon declarations and iPhone/iPad icon files. Source PNG is 1024x1024 without alpha. App Store Connect placeholder remains until an appropriate processed build is verified; no upload was performed. |
+
+## Evidence so far
+
+- iOS targeted outcome regressions: 4/4 pass; the initial confirm case failed
+  against the pre-fix code. DeepSeek's independent failing reproductions are retained.
+- Final schema/cancellation run: 125 schema/regression tests + 26 cancellation tests,
+  zero failures. Dedicated disposable Simulator, Xcode 27.1/iOS 27.
+- macOS native SwiftPM: 116 executed, 1 skipped, zero failures. Default Xcode-backed
+  SwiftPM failed signing due to filesystem metadata; that log is preserved.
+- Store identity: 2 tests pass; frozen PR75 is rejected by the same checker.
+- Store export gate suite passes. No archive export/upload/submission performed.
+- DSH candidate: 40/40 tests pass. Three new regressions fail against original
+  0.2.1; original red log and new green log preserved.
+- Full iOS run passed schema/cancellation and the recovery UI smoke test, then
+  stalled during the following app relaunch. That run was interrupted and is not
+  counted as a complete pass. A subsequent focused Refresh UI suite passes 3/3; the interrupted full run remains preserved.
+
+The DSH source candidate is `work/dsh-final-qa-fixes`; its 0.2.2 tarball is in
+`outputs/deepseek-remediation/`. It has not been installed or published.
+
+Physical biometrics, real network pairing, power-loss durability, the final Store
+archive/privacy scan and processed Observe icon require their own evidence. No
+passing local suite closes those limits. Independent DeepSeek re-review of exact
+new heads and candidate bytes is required before release.

@@ -353,10 +353,13 @@ actor CLIService {
             // Ignore non-executable placeholders (README / .gitkeep copies).
             guard fm.isExecutableFile(atPath: path) else { continue }
             // Refuse obviously tiny stub markers.
-            if let attrs = try? fm.attributesOfItem(atPath: path),
-               let size = attrs[.size] as? NSNumber,
-               size.intValue < 64 {
-                continue
+            // Read a bounded prefix instead of file attributes: this check needs
+            // content length only, and must not collect file timestamps.
+            if let handle = try? FileHandle(forReadingFrom: url) {
+                defer { try? handle.close() }
+                if let prefix = try? handle.read(upToCount: 64), prefix.count < 64 {
+                    continue
+                }
             }
             return url.resolvingSymlinksInPath()
         }

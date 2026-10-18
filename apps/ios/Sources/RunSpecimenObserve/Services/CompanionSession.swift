@@ -43,7 +43,10 @@ final class CompanionSession: ObservableObject {
     @Published var macSessionPublicKey: String = ""
     /// Entered by the person from the Mac. A holder id inside a mailbox request is not this pin.
     @Published var pinnedHolderId: String = ""
-    @Published var phonePeerKeyState: PhonePeerKeyState = .unknown
+    @Published private(set) var phoneEnrollmentFeedback: PhoneEnrollmentOutcome?
+    @Published var phonePeerKeyState: PhonePeerKeyState = .unknown {
+        didSet { if oldValue != phonePeerKeyState { phoneEnrollmentFeedback = nil } }
+    }
     var phoneChallenge: PhonePeerChallengeMessage?
     var signedPhonePublicKey: String?
     private var phoneSignGeneration = 0
@@ -253,6 +256,7 @@ final class CompanionSession: ObservableObject {
     }
 
     private func invalidatePhonePeerOperation() {
+        phoneEnrollmentFeedback = nil
         explicitlyCancelledSignGeneration = nil
         activePhonePeerTask?.cancel()
         if activePhonePeerTask != nil { activePhonePeerSigner?.discardStagedEnrollment() }
@@ -459,6 +463,9 @@ final class CompanionSession: ObservableObject {
             case .invalid(let reason):
                 disconnect()
                 lastError = reason
+                // Disconnect invalidates refresh tasks; publish the refusal after
+                // that reset so the initiating refresh cannot erase the reason.
+                refreshOutcome = .failure(reason)
                 throw CompanionClientError.transport(reason)
             }
         } catch {
@@ -522,6 +529,7 @@ final class CompanionSession: ObservableObject {
         signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
         peer: (any PhonePeerTransport)? = nil
     ) async {
+        phoneEnrollmentFeedback = nil
         explicitlyCancelledSignGeneration = nil
         activePhonePeerTask?.cancel()
         if activePhonePeerTask != nil { activePhonePeerSigner?.discardStagedEnrollment() }
@@ -657,6 +665,7 @@ final class CompanionSession: ObservableObject {
         signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
         peer: (any PhonePeerTransport)? = nil
     ) async -> PhoneEnrollmentOutcome {
+        phoneEnrollmentFeedback = nil
         activePhonePeerTask?.cancel()
         phonePeerTaskGeneration += 1
         let myGeneration = phonePeerTaskGeneration
@@ -675,6 +684,7 @@ final class CompanionSession: ObservableObject {
             task.cancel()
         }
         guard !task.isCancelled, myGeneration == phonePeerTaskGeneration else { return .cancelled }
+        phoneEnrollmentFeedback = outcome
         return outcome
     }
 
@@ -1122,6 +1132,9 @@ final class CompanionSession: ObservableObject {
             if self.remoteConfirmTaskGeneration == myGeneration {
                 self.activeRemoteConfirmTask = nil
             }
+            // A validated server acknowledgement survives later local cancellation
+            // or a newer request. Only unacknowledged work can become cancelled.
+            if outcome == .confirmed || outcome == .refused { return outcome }
             guard !Task.isCancelled, self.remoteConfirmTaskGeneration == myGeneration else { return .cancelled }
             return outcome
         }
@@ -1174,7 +1187,6 @@ final class CompanionSession: ObservableObject {
             approvePhraseInput = ""
             // Settlement is already acknowledged; refresh cannot change its outcome.
             do { try await refreshStatus() } catch { }
-            guard !Task.isCancelled else { return .cancelled }
             return .confirmed
         } catch is CancellationError {
             return .cancelled
@@ -1195,6 +1207,9 @@ final class CompanionSession: ObservableObject {
             if self.remoteConfirmTaskGeneration == myGeneration {
                 self.activeRemoteConfirmTask = nil
             }
+            // A validated server acknowledgement survives later local cancellation
+            // or a newer request. Only unacknowledged work can become cancelled.
+            if outcome == .confirmed || outcome == .refused { return outcome }
             guard !Task.isCancelled, self.remoteConfirmTaskGeneration == myGeneration else { return .cancelled }
             return outcome
         }
@@ -1248,7 +1263,6 @@ final class CompanionSession: ObservableObject {
             refuseReasonInput = ""
             // Settlement is already acknowledged; refresh cannot change its outcome.
             do { try await refreshStatus() } catch { }
-            guard !Task.isCancelled else { return .cancelled }
             return .refused
         } catch is CancellationError {
             return .cancelled
@@ -1263,9 +1277,17 @@ final class CompanionSession: ObservableObject {
     }
 
     func disconnect() {
+        phoneEnrollmentFeedback = nil
         cancelAllTasks()
         invalidateCachedClient()
         isPaired = false
+        pairingToken = ""
+        baseURLString = ""
+        tlsFingerprint = ""
+        macSessionPublicKey = ""
+        pinnedHolderId = ""
+        UserDefaults.standard.removeObject(forKey: holderPinKey)
+        lastSuccessfulRefresh = nil
         refreshOutcome = .notAttempted
         capabilities = nil
         status = nil

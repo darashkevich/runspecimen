@@ -4,7 +4,7 @@ import Security
 import Darwin
 @testable import RunSpecimenObserve
 
-final class ObserveSchemaTests: XCTestCase {
+final class ObserveSchemaTests: IsolatedCompanionSessionTests {
     override func setUp() {
         super.setUp()
         executionTimeAllowance = 60
@@ -1595,31 +1595,21 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertFalse(client1 === client3, "After invalidation, a new instance should be returned")
     }
 
+    @MainActor
     func testFailedRefreshShowsStaleWithoutAdvancingTimestamp() async throws {
-        let session = await CompanionSession()
-
-        let statusBefore = await MainActor.run { session.status }
-        let isPairedBefore = await MainActor.run { session.isPaired }
-
-        await MainActor.run {
-            session.baseURLString = "http://localhost:9999"
-            session.pairingToken = "test-token"
-            session.tlsFingerprint = ""
-            session.isPaired = true
-        }
-
-        await MainActor.run {
-            XCTAssertNil(session.status, "Status should be nil before refresh")
-            XCTAssertNil(session.lastError, "lastError should be nil before refresh")
-        }
-
+        let session = CompanionSession(deferPhoneKeyState: true)
+        session.baseURLString = "http://localhost"
+        session.pairingToken = "fixture-token"
+        session.isPaired = true
+        let previous = Date(timeIntervalSince1970: 100)
+        session.lastSuccessfulRefresh = previous
+        let client = try XCTUnwrap(session.testMakeClient())
+        client.testRequest = { _ in throw CompanionClientError.transport("fixture unavailable") }
         await session.refresh()
-
-        await MainActor.run {
-            XCTAssertNotNil(session.lastError, "Failed refresh should set lastError")
-            XCTAssertNil(session.status, "Status should remain nil after failed refresh (Offline)")
-            XCTAssertTrue(session.isPaired, "isPaired should remain true after failed refresh")
-        }
+        XCTAssertEqual(session.lastSuccessfulRefresh, previous)
+        XCTAssertEqual(session.refreshOutcome, .failure("fixture unavailable"))
+        XCTAssertEqual(session.connectionState, .stale)
+        XCTAssertTrue(session.isPaired)
     }
 
     func testPhonePeerKeyStateRefreshesAfterHolderVerifiedCommit() async throws {

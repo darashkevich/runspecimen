@@ -535,6 +535,7 @@ struct WorkflowSheet: View {
                 .font(.system(size: 12))
                 .foregroundStyle(RSTheme.muted)
             TextEditor(text: $pairingText)
+                .onChange(of: pairingText) { _ in carriedKeyStatus = "" }
                 .font(RSTheme.monoSmall)
                 .frame(minHeight: 48)
                 .accessibilityLabel("Carried public key")
