@@ -357,9 +357,10 @@ actor CLIService {
             // content length only, and must not collect file timestamps.
             if let handle = try? FileHandle(forReadingFrom: url) {
                 defer { try? handle.close() }
-                if let prefix = try? handle.read(upToCount: 64), prefix.count < 64 {
-                    continue
-                }
+                do {
+                    let prefix = try handle.read(upToCount: 64)
+                    if (prefix?.count ?? 0) < 64 { continue }
+                } catch { /* Preserve discovery behavior when content is unreadable. */ }
             }
             return url.resolvingSymlinksInPath()
         }
