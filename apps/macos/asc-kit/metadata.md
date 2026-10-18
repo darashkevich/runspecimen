@@ -68,4 +68,4 @@ Uses HTTPS only for optional docs links in-browser. Standard export-compliance a
 
 ## Copyright
 
-Copyright © RunSpecimen Contributors. Apache-2.0.
+Copyright © 2026 Yahor Darashkevich. Apache-2.0.
