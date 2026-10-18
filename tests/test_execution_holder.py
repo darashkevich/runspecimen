@@ -640,7 +640,9 @@ class HolderSocketAdmissionTests(unittest.TestCase):
                     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as second:
                         second.settimeout(5)
                         second.connect(str(server.socket_path))
-                        second.sendall(b'{"ok":false}\n')
+                        # Admission refusal happens before the server reads any
+                        # request. Sending here races its deliberate close and
+                        # can raise BrokenPipe on macOS; assert the refusal bytes.
                         raw = second.recv(4096).decode("utf-8")
                     self.assertIn("admission limit reached", raw)
                 finally:
