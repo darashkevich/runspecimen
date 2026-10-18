@@ -26,7 +26,7 @@ final class AppModel: ObservableObject {
     @Published var showWorkflows = false
     /// Consequential workflow waiting for an explicit human confirmation.
     @Published var pendingWorkflow: WorkflowRequest?
-    /// Persistent banner when CLI is missing, stale bookmark, or below 0.2.0rc9.
+    /// Persistent banner when CLI is missing, stale bookmark, or below 0.2.0rc15.
     @Published var cliSetupIssue: String?
     @Published var cliSourceLabel: String?
     @Published var dashboardRunning = false

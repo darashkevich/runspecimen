@@ -15,7 +15,7 @@ Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `
 <summary>Release identity details</summary>
 
 - **Previous release:** [v0.2.0-rc.14](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.14) / PyPI `runspecimen==0.2.0rc14` (identical bytes; checksum-only, not SLSA-attested).
-- **Mac App Store:** version **0.1.4 (9)** with engine `0.2.0rc14` was removed from App Store (EU trader status missing in App Store Connect). The local label on this branch is **0.1.5 (15)** and is not an upload.
+- **Mac App Store:** version **0.1.4 (9)** with engine `0.2.0rc14` was removed from App Store (EU trader status missing in App Store Connect). The local label on this branch is **0.1.6 (16)** and is not an upload.
 - Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `v0.2.0-rc.12`. See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
 </details>
 

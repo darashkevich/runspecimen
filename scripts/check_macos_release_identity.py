@@ -13,6 +13,13 @@ FILES = (
     "apps/macos/APP_STORE.md",
 )
 
+ACTIVE_DOCS = {
+    "README.md": r"local label on this branch is \*\*([0-9.]+) \(([0-9]+)\)\*\*",
+    "docs/FAQ.md": r"branch's local label is \*\*([0-9.]+) \(([0-9]+)\)\*\*",
+    "docs/CANDIDATE_MANIFEST.md": r"App marketing version in the project \| \*\*([0-9.]+) \(([0-9]+)\)\*\*",
+    "docs/NATIVE_FEATURE_COVERAGE.md": r"branch's local label is marketing \*\*([0-9.]+)\*\*, build \*\*([0-9]+)\*\*",
+}
+
 def check(root):
     root = Path(root)
     identity = plistlib.loads((root / FILES[0]).read_bytes())
@@ -33,6 +40,10 @@ def check(root):
         short = re.search(r"^\| Short version \| `?([0-9.]+)`? \|", text, re.M)
         number = re.search(r"^\| Build \| `?([0-9]+)`?", text, re.M)
         if not short or short[1] != version or not number or number[1] != build:
+            errors.append(name)
+    for name, pattern in ACTIVE_DOCS.items():
+        match = re.search(pattern, (root / name).read_text())
+        if not match or match.groups() != (version, build):
             errors.append(name)
     if errors:
         raise ValueError("Mac release identity mismatch: " + ", ".join(errors))

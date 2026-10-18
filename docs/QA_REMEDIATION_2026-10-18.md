@@ -58,3 +58,32 @@ Physical biometrics, real network pairing, power-loss durability, the final Stor
 archive/privacy scan and processed Observe icon require their own evidence. No
 passing local suite closes those limits. Independent DeepSeek re-review of exact
 new heads and candidate bytes is required before release.
+
+## Independent second-pass follow-up
+
+DeepSeek independently verified the fixed code paths on c7476c4, with the same
+125 schema +26 cancellation +3 Refresh UI results. Its report is preserved as
+`outputs/deepseek-remediation/FINAL-QA-RECHECK-REPORT.md`; combined DO-NOT-SHIP.
+
+- R-01: four active overview/FAQ/candidate documents aligned to 0.1.6 (16).
+  Identity checker now checks those four in addition to the six Store files;
+  a stale-overview regression and the original metadata mutation both pass.
+  Extended checker failed on all four stale docs before their correction.
+- DSH-01/R-03: the split-line README contradiction is corrected in candidate
+  0.2.3. Normal parent exit with a remaining descendant returns a typed cleanup
+  result after escalation. New regression fails on frozen 0.2.2; full suite41/41.
+  Candidate0.2.2 source and artifacts remain preserved.
+- R-02: an unsigned iOS device Release archive succeeds. Its120px/152px app icon
+  PNGs have no alpha; both1024px AppIcon marketing renditions in Assets.car are
+  Opaque=true. The simulator's opaque-alpha PNGs are not the device archive's
+  output. Scan: observe-device-release-icon-scan.json. ASC placeholder still
+  needs verification after an authorized upload; none was performed.
+- R-04: stale rc9 comment corrected; existing successful enrollment production
+  test now revokes the fixture key and asserts enrollment feedback disappears.
+  This uses disposable storage/in-memory test hooks, not a real key action.
+  A macOS pin-edit/layout UI test remains absent.
+- The e20c35a CI follow-up removes an unnecessary socket write after admission
+  refusal; real refusal bytes, deadline and frame bounds remain asserted.
+  Targeted1/full46holder tests pass; original macOS CI failure is retained.
+
+External evidence gates remain explicit. No release is authorized by these fixes.

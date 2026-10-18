@@ -1669,6 +1669,12 @@ final class ObserveSchemaTests: IsolatedCompanionSessionTests {
 
         let generation = try signer.stage.committedGeneration()
         XCTAssertEqual(generation, 1, "Signer's stage should have generation 1 after commit")
+        await MainActor.run { XCTAssertEqual(session.phoneEnrollmentFeedback, .enrolled) }
+        try await session.revokePhonePeerKey()
+        await MainActor.run {
+            XCTAssertEqual(session.phonePeerKeyState, .noKey)
+            XCTAssertNil(session.phoneEnrollmentFeedback, "enrollment success must disappear after revocation")
+        }
     }
 
     private func package() throws -> [String: String] {
