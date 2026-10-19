@@ -34,3 +34,6 @@ apps/macos/.swiftpm/
 
 .wrangler/
 apps/ios/build/
+
+# Local Node dependencies (DSH plugin tests)
+node_modules/

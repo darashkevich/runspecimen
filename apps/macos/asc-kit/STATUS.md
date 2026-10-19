@@ -1,6 +1,10 @@
 # ASC kit status (honest)
 
-## Current: 0.1.4 (9) READY_FOR_SALE
+## Current candidate: 0.1.6 (16), not submitted
+
+PR #75 merged as `4514bdc` on 2026-10-18. Yahor confirmed Mac 0.1.5 withdrawn from review. The candidate remains blocked by independent QA findings; no upload or submission is authorized by this file.
+
+## Historical Store record: 0.1.4 (9)
 
 **0.1.4 (9)** is now **Removed from App Store** (EU trader status missing) on the Mac App Store.
 
@@ -19,7 +23,7 @@ Rejection of **0.1.3 (8)** (submission `9c19e1cd-…`, review 2026-09-23):
 `_lzma` symbols), **Design 4** missing main-window reopen menu, **2.4.5(i)** unused
 `network.server`. See [REJECTION-2026-09-23.md](REJECTION-2026-09-23.md).
 
-In-flight note: that `/inflight` URL is historical (saved while **0.1.4 (9)** was waiting). The current Connect state in this file is `Removed from App Store` (EU trader status missing) for **0.1.4 (9)** — see the top section. This integrated branch is unpublished **0.1.5 (13)** / engine **0.2.0rc15** and is not that Store package. Do not withdraw, replace, or claim a new Store submission from this note.
+In-flight note: that `/inflight` URL is historical (saved while **0.1.4 (9)** was waiting). The current Connect state in this file is `Removed from App Store` (EU trader status missing) for **0.1.4 (9)** — see the top section. This integrated branch is unpublished **0.1.6 (16)** / engine **0.2.0rc15** and is not that Store package. Do not withdraw, replace, or claim a new Store submission from this note.
 
 These identities are different artifacts. Do not treat them as the same package because an older local build reused the text **0.1.4 (9)**.
 
@@ -168,7 +172,7 @@ Build **9** (`0.1.4`) is now **Removed from App Store** (EU trader status missin
 | Apple Distribution cert + MAS profile | **Present** (2026-09-18): `Apple Distribution: YAHOR DARASHKEVICH (UN6KF8636A)`; installer `3rd Party Mac Developer Installer: YAHOR DARASHKEVICH (UN6KF8636A)` in the keychain; profile `RunSpecimen MAS` UUID `0c5ef3dc-ebad-429b-8928-fdfcfee98c29` (`OSX`, `UN6KF8636A.com.darashkevich.runspecimen`, **one** Application `DeveloperCertificate`, no `get-task-allow`, no `ProvisionedDevices`). The profile **correctly omits** the installer cert (code-signing EKU vs installer EKU). Do **not** regenerate the app profile “to include” the installer identity. Developer ID Application is **not** a MAS substitute. |
 | Distribution-signed archive | **Done** — `RS_MAS_EXPORT=0 ./Scripts/archive_mas.sh` from `/tmp/rs-clean-checkout` (`44ddfed`). App + helper `TeamIdentifier=UN6KF8636A`, Authority `Apple Distribution`, `codesign --verify --strict`, App Sandbox + helper inherit, `Assets.car` + `AppIcon.icns`. |
 | Local MAS `.pkg` export | **Done** — `RS_EXPORT_DESTINATION=export` + `installerSigningCertificate` + profile **UUID** (display name `RunSpecimen MAS` is not what `exportArchive` resolves). Proof: [evidence/export-mas-local-pkg-ok.txt](evidence/export-mas-local-pkg-ok.txt). SHA-256 `e6ea0a7f12f4094ed430ea1ebc956ad6db2d67ecfa0f52e1eb0ebb66283f1bbf`. Extracted app **0.1.3 (5)** `mas`, both binaries `--verify --strict`, sandbox + inherit. **This local pkg is not what Apple is reviewing** (exported after PR #15 packaging fixes). First attempt without installer cert / UUID: [evidence/export-mas-local-pkg-installer-profile-mismatch.txt](evidence/export-mas-local-pkg-installer-profile-mismatch.txt). |
-| `ExportOptions.mas.plist` committed `teamID` | Still placeholder `TEAMID`; `export_mas.sh` rewrites a temp copy (team ID + profile UUID). Default `destination=upload` — set `RS_EXPORT_DESTINATION=export` for a local pkg. Never `-allowProvisioningUpdates` without Yahor. |
+| `ExportOptions.mas.plist` committed `teamID` | Still placeholder `TEAMID`; `export_mas.sh` rewrites a temp copy (team ID + profile UUID). Default `destination=export` produces a local pkg; `RS_EXPORT_DESTINATION=upload` explicitly opts into upload. Never `-allowProvisioningUpdates` without Yahor. |
 | Connect upload | **0.1.4 (9)** `Removed from App Store` (EU trader status missing). |
 
 State ladder (do not collapse these):

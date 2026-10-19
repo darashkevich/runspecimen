@@ -365,7 +365,7 @@ from a draft. Do not publish the rc11 draft.
 
 ## 3b. Mac App Store (`com.darashkevich.runspecimen`)
 
-**Status (App Store Connect):** macOS version **0.1.4 (9)** is **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded. Removed from the Mac App Store (EU trader status missing). Build **14** (0.1.5) was uploaded; next upload is build **15**.
+**Status (App Store Connect):** macOS version **0.1.4 (9)** is **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded. Removed from the Mac App Store (EU trader status missing). Build **14** (0.1.5) was uploaded; next candidate is **0.1.6 (16)**. Yahor confirmed Mac 0.1.5 was withdrawn from review on 2026-10-18. Submission remains blocked on final QA closure.
 
 The Mac App Store listing is now live with a public `apps.apple.com` URL.
 
@@ -382,11 +382,13 @@ The Mac App Store listing is now live with a public `apps.apple.com` URL.
      -archivePath build/RunSpecimen.xcarchive archive
    ```
 
-3. **Export with manual signing** (Apple Distribution + 3rd Party Mac Developer Installer + RunSpecimen MAS profile, destination upload):
+3. **Export locally with manual signing** (Apple Distribution + 3rd Party Mac Developer Installer + RunSpecimen MAS profile):
    ```bash
-   xcodebuild -exportArchive -archivePath build/RunSpecimen.xcarchive \
-     -exportOptionsPlist Config/ExportOptions.mas.plist -exportPath build/export
+   RS_ARCHIVE_PATH="$PWD/build/RunSpecimen.xcarchive" \
+   RS_EXPORT_DIR="$PWD/build/export" \
+   RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh
    ```
+   The committed plist is a template; the script binds the real team/profile in a temporary copy. Upload requires explicit `RS_EXPORT_DESTINATION=upload` after release authorization.
 
 **Never use `-allowProvisioningUpdates`.** Manual signing only.
 

@@ -32,6 +32,8 @@ targets:
     platform: macOS
     sources:
       - path: Sources/RunSpecimenCore
+        excludes:
+          - TouchIDDiagnosticGate.swift
     settings:
       base:
         PRODUCT_NAME: RunSpecimenCore
