@@ -11,6 +11,7 @@ struct RootView: View {
 
     #if RUNSPECIMEN_TEST_HOOKS
     @State private var copiedRecoveryDiagnostics = ""
+    @State private var recoveryDiagnosticsCopied = false
     #endif
 
     var body: some View {
@@ -63,6 +64,13 @@ struct RootView: View {
                             Task { await session.recoverHardwareRotation() }
                         }
                         .disabled(session.rotationRecoveryInProgress)
+                        Button("Copy recovery diagnostics") {
+                            UIPasteboard.general.string = session.rotationRecoveryDiagnostics
+                            recoveryDiagnosticsCopied = true
+                        }
+                        if recoveryDiagnosticsCopied {
+                            Text("Recovery diagnostics copied.").font(.footnote)
+                        }
                         ShareLink("Export recovery diagnostics", item: session.rotationRecoveryDiagnostics)
                         #if RUNSPECIMEN_TEST_HOOKS
                         if ProcessInfo.processInfo.environment["RUNSPECIMEN_UI_RECOVERY_TEST"] == "1" {

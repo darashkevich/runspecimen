@@ -332,7 +332,7 @@ struct StatusObserveView: View {
                 Button("Repair saved key counter") {
                     Task {
                         do { try await session.repairPhoneKeyCounter() }
-                        catch { session.phonePeerNote = error.localizedDescription }
+                        catch { session.phonePeerNote = CompanionHardwareErrorPresentation.describe(error).message }
                     }
                 }
                 ShareLink("Export key diagnostics", item: "RunSpecimen phone key state: " + message + "\n" + session.phonePeerNote)
@@ -357,7 +357,7 @@ struct StatusObserveView: View {
                 phonePeerRevokeOutcome = .success("Phone-peer key revoked")
             } catch {
                 feedbackGenerator.notificationOccurred(.error)
-                phonePeerRevokeOutcome = .failure(error.localizedDescription)
+                phonePeerRevokeOutcome = .failure(CompanionHardwareErrorPresentation.describe(error).message)
             }
         }
     }
@@ -372,7 +372,7 @@ struct StatusObserveView: View {
                 phonePeerRotateOutcome = .success("Phone-peer key rotation started")
             } catch {
                 feedbackGenerator.notificationOccurred(.error)
-                phonePeerRotateOutcome = .failure(error.localizedDescription)
+                phonePeerRotateOutcome = .failure(CompanionHardwareErrorPresentation.describe(error).message)
             }
         }
     }
@@ -387,7 +387,7 @@ struct StatusObserveView: View {
                 phonePeerRotateOutcome = .success("Phone-peer key rotation completed")
             } catch {
                 feedbackGenerator.notificationOccurred(.error)
-                phonePeerRotateOutcome = .failure(error.localizedDescription)
+                phonePeerRotateOutcome = .failure(CompanionHardwareErrorPresentation.describe(error).message)
             }
         }
     }
@@ -399,7 +399,7 @@ struct StatusObserveView: View {
                 feedbackGenerator.notificationOccurred(.warning)
                 phonePeerRotateOutcome = .idle
             } catch {
-                phonePeerRotateOutcome = .failure(error.localizedDescription)
+                phonePeerRotateOutcome = .failure(CompanionHardwareErrorPresentation.describe(error).message)
             }
         }
     }

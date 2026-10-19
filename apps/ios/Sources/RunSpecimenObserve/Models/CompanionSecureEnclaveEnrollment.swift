@@ -721,13 +721,13 @@ public enum CompanionSecureEnclaveEnrollment {
                     enrollmentLogger.info("Face ID result: code=\(error.code.rawValue, privacy: .public)")
                     switch error.code {
                     case .userCancel, .appCancel, .systemCancel:
-                        continuation.resume(throwing: CompanionHardwareRefusal.automationRefused)
+                        continuation.resume(throwing: error)
                     case .biometryLockout:
                         continuation.resume(throwing: CompanionHardwareRefusal.biometryLockout)
                     case .biometryNotEnrolled, .biometryNotAvailable:
                         continuation.resume(throwing: CompanionHardwareRefusal.biometryUnavailable)
                     default:
-                        continuation.resume(throwing: CompanionHardwareRefusal.malformed("biometric-\(error.code.rawValue)"))
+                        continuation.resume(throwing: error)
                     }
                 } else if let error {
                     enrollmentLogger.error("Face ID failed: \(error.localizedDescription, privacy: .public)")
@@ -1037,6 +1037,12 @@ enum CompanionHardwareErrorPresentation {
     static func describe(_ error: Error) -> (message: String, detail: String?) {
         if error is CancellationError { return ("Authentication cancelled.", nil) }
         if let refusal = error as? CompanionHardwareRefusal {
+            if refusal == .automationRefused { return ("Authentication cancelled.", nil) }
+            if case .malformed(let detail) = refusal,
+               detail.hasPrefix("biometric-"),
+               let code = Int(detail.dropFirst("biometric-".count)) {
+                return describe(NSError(domain: LAError.errorDomain, code: code))
+            }
             if case .keychainError(let status) = refusal, status == errSecUserCanceled {
                 return ("Authentication cancelled.", nil)
             }

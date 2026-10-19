@@ -405,6 +405,9 @@ final class CompanionSession: ObservableObject {
         let candidateURL = candidate?.baseURL.absoluteString ?? baseURLString
         let candidateToken = candidate?.pairingToken ?? pairingToken
         let candidateFingerprint = candidate.map { $0.tlsFingerprint ?? "" } ?? tlsFingerprint
+        activeRefreshTask?.cancel()
+        activeRefreshTask = nil
+        if refreshOutcome == .inProgress { refreshOutcome = .cancelled }
         refreshTaskGeneration += 1
         let generation = refreshTaskGeneration
         lastError = nil
@@ -429,7 +432,10 @@ final class CompanionSession: ObservableObject {
         )
         let client = suppliedClient ?? CompanionClient(config: config)
         do {
+            try Task.checkCancellation()
             let caps = try await client.fetchCapabilities()
+            try Task.checkCancellation()
+            guard generation == refreshTaskGeneration else { return false }
             switch CapabilityValidator.validateForPairing(capabilities: caps) {
             case .valid:
                 break
@@ -462,6 +468,12 @@ final class CompanionSession: ObservableObject {
             refuseReasonInput = ""
             lastRemoteConfirmNote = nil
             lastAttentionNote = nil
+            phonePeerNote = "No phone-peer signature has been returned. Signing uses the published challenge. It does not approve a run."
+            exactRunNote = "No exact run is waiting for review. Phone approval is not physical presence at the Mac."
+            lastError = nil
+            macSessionPublicKey = ""
+            pinnedHolderId = ""
+            UserDefaults.standard.removeObject(forKey: holderPinKey)
             status = verifiedStatus
             capabilities = caps
             isPaired = true
@@ -475,7 +487,7 @@ final class CompanionSession: ObservableObject {
                 capabilities = nil
                 status = nil
             }
-            lastError = error.localizedDescription
+            lastError = (Task.isCancelled || error is CancellationError) ? nil : error.localizedDescription
             isPaired = wasPaired
             return false
         }
@@ -509,6 +521,8 @@ final class CompanionSession: ObservableObject {
         } catch {
             if isPaired, generation == refreshTaskGeneration, !Task.isCancelled {
                 capabilities = nil
+                lastError = error.localizedDescription
+                refreshOutcome = .failure(error.localizedDescription)
             }
             throw error
         }
@@ -812,8 +826,10 @@ final class CompanionSession: ObservableObject {
             lastError = nil
             return .cancelled
         } catch {
-            lastError = error.localizedDescription
-            return .refused(error.localizedDescription)
+            let message = CompanionHardwareErrorPresentation.describe(error).message
+            phonePeerNote = message
+            lastError = message
+            return .refused(message)
         }
     }
 
@@ -1182,7 +1198,7 @@ final class CompanionSession: ObservableObject {
             }
             // A validated server acknowledgement survives later local cancellation
             // or a newer request. Only unacknowledged work can become cancelled.
-            if outcome == .confirmed || outcome == .refused { return outcome }
+            if outcome == .confirmed || outcome == .refused || outcome == .failure(Self.unknownSettlementMessage) { return outcome }
             guard !Task.isCancelled, self.remoteConfirmTaskGeneration == myGeneration else { return .cancelled }
             return outcome
         }
@@ -1195,6 +1211,7 @@ final class CompanionSession: ObservableObject {
     }
 
     private func submitRemoteConfirmImpl() async -> RemoteSettleOutcome {
+        let generation = remoteConfirmTaskGeneration
         lastError = nil
         lastRemoteConfirmNote = nil
         guard !Task.isCancelled else { return .cancelled }
@@ -1221,6 +1238,7 @@ final class CompanionSession: ObservableObject {
         do {
             guard !Task.isCancelled else { return .cancelled }
             let result = try await client.submitRemoteConfirm(challenge: challenge, phrase: phrase)
+            if Task.isCancelled && !result.confirmedSuccessfully { return settlementUnknown(generation: generation) }
             if result.isAmbiguous {
                 return settlementFailure("Server returned ambiguous confirm response. Refresh status to check state.")
             }
@@ -1235,8 +1253,9 @@ final class CompanionSession: ObservableObject {
             do { try await refreshStatus() } catch { }
             return .confirmed
         } catch is CancellationError {
-            return .cancelled
+            return settlementUnknown(generation: generation)
         } catch {
+            if Task.isCancelled { return settlementUnknown(generation: generation) }
             return settlementFailure(error.localizedDescription)
         }
     }
@@ -1257,7 +1276,7 @@ final class CompanionSession: ObservableObject {
             }
             // A validated server acknowledgement survives later local cancellation
             // or a newer request. Only unacknowledged work can become cancelled.
-            if outcome == .confirmed || outcome == .refused { return outcome }
+            if outcome == .confirmed || outcome == .refused || outcome == .failure(Self.unknownSettlementMessage) { return outcome }
             guard !Task.isCancelled, self.remoteConfirmTaskGeneration == myGeneration else { return .cancelled }
             return outcome
         }
@@ -1270,6 +1289,7 @@ final class CompanionSession: ObservableObject {
     }
 
     private func submitRemoteRefuseImpl() async -> RemoteSettleOutcome {
+        let generation = remoteConfirmTaskGeneration
         lastError = nil
         lastRemoteConfirmNote = nil
         guard !Task.isCancelled else { return .cancelled }
@@ -1296,6 +1316,7 @@ final class CompanionSession: ObservableObject {
         do {
             guard !Task.isCancelled else { return .cancelled }
             let result = try await client.submitRemoteRefuse(challenge: challenge, reason: reason)
+            if Task.isCancelled && !result.refusedSuccessfully { return settlementUnknown(generation: generation) }
             if result.isAmbiguous {
                 return settlementFailure("Server returned ambiguous refuse response. Refresh status to check state.")
             }
@@ -1311,10 +1332,22 @@ final class CompanionSession: ObservableObject {
             do { try await refreshStatus() } catch { }
             return .refused
         } catch is CancellationError {
-            return .cancelled
+            return settlementUnknown(generation: generation)
         } catch {
+            if Task.isCancelled { return settlementUnknown(generation: generation) }
             return settlementFailure(error.localizedDescription)
         }
+    }
+
+    static let unknownSettlementMessage = "Request outcome is unknown. Refresh status before trying again."
+
+    private func settlementUnknown(generation: Int) -> RemoteSettleOutcome {
+        if generation == remoteConfirmTaskGeneration {
+            challengeInput = ""
+            approvePhraseInput = ""
+            refuseReasonInput = ""
+        }
+        return .failure(Self.unknownSettlementMessage)
     }
 
     private func settlementFailure(_ message: String) -> RemoteSettleOutcome {

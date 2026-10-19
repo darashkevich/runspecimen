@@ -202,19 +202,27 @@ extension SettlementOutcomeRegressionTests {
         let client = try XCTUnwrap(session.testMakeClient())
         client.testRequest = { request in
             if request.url?.path == "/v1/remote-confirm" {
+                try Task.checkCancellation()
                 return try await withCheckedThrowingContinuation { resume = $0; entered.fulfill() }
             }
             if request.url?.path == "/v1/remote-confirm-refuse" { XCTFail("must not send competing refusal") }
             throw CancellationError()
         }
         let confirm = Task { await session.submitRemoteConfirm() }
-        await fulfillment(of: [entered], timeout: 5)
+        let readiness = await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+        guard readiness == .completed, let continuation = resume else {
+            confirm.cancel()
+            resume?.resume(throwing: CancellationError())
+            _ = await confirm.value
+            XCTFail("confirm transport did not become ready")
+            return
+        }
         let refused = await session.submitRemoteRefuse()
         if case .failure = refused { /* expected: confirm still owns the request */ }
         else { XCTFail("competing settlement must be refused") }
         // Always resume and await the original task, including the red path.
         // Returning at the assertion would leave its continuation suspended.
-        try XCTUnwrap(resume).resume(returning: Data("{\"ok\":true,\"settled\":true}".utf8))
+        continuation.resume(returning: Data("{\"ok\":true,\"settled\":true}".utf8))
         let result = await confirm.value
         XCTAssertEqual(result, .confirmed)
     }
@@ -367,5 +375,109 @@ extension SettlementOutcomeRegressionTests {
         XCTAssertFalse(paired)
         XCTAssertEqual(session.baseURLString, "http://localhost")
         XCTAssertEqual(session.pairingToken, "fixture-token")
+    }
+}
+
+extension SettlementOutcomeRegressionTests {
+    @MainActor
+    func testGrokP3DirectRefreshFailureReplacesSuccess() async throws {
+        let s = qaSession()
+        s.refreshOutcome = .success(Date())
+        let c = try XCTUnwrap(s.testMakeClient())
+        c.testRequest = { _ in throw CompanionClientError.transport("offline fixture") }
+        do { try await s.refreshStatus(); XCTFail("expected failure") } catch {}
+        XCTAssertEqual(s.refreshOutcome, .failure("offline fixture"))
+    }
+
+    func testGrokN1LegacyBiometricErrorsUseHumanCopy() {
+        XCTAssertEqual(CompanionHardwareErrorPresentation.describe(CompanionHardwareRefusal.automationRefused).message, "Authentication cancelled.")
+        XCTAssertEqual(CompanionHardwareErrorPresentation.describe(CompanionHardwareRefusal.malformed("biometric--1")).message, "Authentication did not succeed. Try again when you are ready.")
+    }
+
+    @MainActor
+    func testGrokN2FailedCandidateEndsObsoleteRefresh() async throws {
+        let s = qaSession()
+        s.refreshOutcome = .inProgress
+        let c = try XCTUnwrap(s.testMakeClient())
+        c.testRequest = { _ in throw CompanionClientError.transport("candidate refused") }
+        let paired = await s.saveAndPair(client: c)
+        XCTAssertFalse(paired)
+        XCTAssertNotEqual(s.refreshOutcome, .inProgress)
+    }
+
+    @MainActor
+    func testGrokN2CancelledConnectDoesNotPublishError() async throws {
+        let s = qaSession()
+        let c = try XCTUnwrap(s.testMakeClient())
+        c.testRequest = { _ in throw CancellationError() }
+        let paired = await s.saveAndPair(client: c)
+        XCTAssertFalse(paired)
+        XCTAssertNil(s.lastError)
+    }
+
+    @MainActor
+    func testGrokN3CancelledTransportHasUnknownOutcomeAndClearsInputs() async throws {
+        for refuse in [false, true] {
+            let s = qaSession()
+            s.challengeInput = "challenge"; s.approvePhraseInput = "APPROVE"; s.refuseReasonInput = "reason"
+            let c = try XCTUnwrap(s.testMakeClient())
+            c.testRequest = { _ in throw CancellationError() }
+            let outcome = refuse ? await s.submitRemoteRefuse() : await s.submitRemoteConfirm()
+            XCTAssertEqual(outcome, .failure("Request outcome is unknown. Refresh status before trying again."))
+            XCTAssertNil(s.lastError)
+            XCTAssertEqual(s.challengeInput, "")
+            XCTAssertEqual(s.approvePhraseInput, "")
+        }
+    }
+
+    @MainActor
+    func testGrokN4VerifiedReplacementResetsOldMacNotesAndTrust() async throws {
+        let s = qaSession()
+        let baseline = qaSession()
+        s.phonePeerNote = "old phone note"; s.exactRunNote = "old exact note"
+        s.macSessionPublicKey = "old mac key"; s.pinnedHolderId = "old holder"
+        let c = try XCTUnwrap(s.testMakeClient())
+        c.testRequest = { r in
+            if r.url?.path == "/v1/status" { return try JSONEncoder().encode(CompanionStatus(phase: "active")) }
+            return try JSONEncoder().encode(CompanionCapabilities(product: "test", mode: "observe", canApprove: false, canExecute: false, canMutateLifecycle: false, canRemoteConfirm: true, boundary: "fixture"))
+        }
+        let paired = await s.saveAndPair(candidate: PairingConfig(baseURL: URL(string: "http://new-mac.invalid")!, pairingToken: "new-token", tlsFingerprint: nil), client: c)
+        XCTAssertTrue(paired)
+        XCTAssertEqual(s.phonePeerNote, baseline.phonePeerNote)
+        XCTAssertEqual(s.exactRunNote, baseline.exactRunNote)
+        XCTAssertEqual(s.macSessionPublicKey, "")
+        XCTAssertEqual(s.pinnedHolderId, "")
+        XCTAssertNil(s.lastError)
+    }
+}
+
+
+extension SettlementOutcomeRegressionTests {
+    @MainActor
+    func testGrokN3CancelledTaskDoesNotPublishLateTransportError() async throws {
+        for refuse in [false, true] {
+            let s = qaSession()
+            s.challengeInput = "challenge"; s.approvePhraseInput = "APPROVE"; s.refuseReasonInput = "reason"
+            let entered = expectation(description: "settlement entered transport")
+            var resume: CheckedContinuation<Data, Error>?
+            let c = try XCTUnwrap(s.testMakeClient())
+            c.testRequest = { _ in
+                try Task.checkCancellation()
+                return try await withCheckedThrowingContinuation { resume = $0; entered.fulfill() }
+            }
+            let task = Task { refuse ? await s.submitRemoteRefuse() : await s.submitRemoteConfirm() }
+            let ready = await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+            guard ready == .completed, let continuation = resume else {
+                task.cancel(); resume?.resume(throwing: CancellationError()); _ = await task.value
+                XCTFail("transport never entered"); return
+            }
+            task.cancel()
+            continuation.resume(throwing: CompanionClientError.transport("late network failure"))
+            let outcome = await task.value
+            XCTAssertEqual(outcome, .failure(CompanionSession.unknownSettlementMessage))
+            XCTAssertNil(s.lastError)
+            XCTAssertEqual(s.challengeInput, "")
+            XCTAssertEqual(s.approvePhraseInput, "")
+        }
     }
 }
