@@ -1030,3 +1030,41 @@ public enum CompanionSecureEnclaveEnrollment {
         }
     }
 }
+
+
+/// Shared presentation for hardware approval failures, including errors returned by CryptoKit.
+enum CompanionHardwareErrorPresentation {
+    static func describe(_ error: Error) -> (message: String, detail: String?) {
+        if error is CancellationError { return ("Authentication cancelled.", nil) }
+        if let refusal = error as? CompanionHardwareRefusal {
+            if case .keychainError(let status) = refusal, status == errSecUserCanceled {
+                return ("Authentication cancelled.", nil)
+            }
+            return (refusal.userMessage, refusal.technicalDetail)
+        }
+        // CryptoKit can wrap LocalAuthentication or Security errors. Inspect only
+        // known domains/codes, never classify by localized text.
+        var current = error as NSError
+        for _ in 0..<8 {
+            if current.domain == LAError.errorDomain {
+                switch current.code {
+                case LAError.userCancel.rawValue, LAError.appCancel.rawValue, LAError.systemCancel.rawValue:
+                    return ("Authentication cancelled.", nil)
+                case LAError.biometryNotAvailable.rawValue, LAError.biometryNotEnrolled.rawValue:
+                    return ("Face ID or Touch ID is unavailable. Check biometric access for this app in Settings.", current.localizedDescription)
+                case LAError.biometryLockout.rawValue:
+                    return ("Biometric authentication is locked. Unlock your iPhone, then try again.", nil)
+                case LAError.authenticationFailed.rawValue:
+                    return ("Authentication did not succeed. Try again when you are ready.", nil)
+                default: break
+                }
+            }
+            if current.domain == NSOSStatusErrorDomain, current.code == Int(errSecUserCanceled) {
+                return ("Authentication cancelled.", nil)
+            }
+            guard let underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError else { break }
+            current = underlying
+        }
+        return ("Could not complete this action.", error.localizedDescription)
+    }
+}

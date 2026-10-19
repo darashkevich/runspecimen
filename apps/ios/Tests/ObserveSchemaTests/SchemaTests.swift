@@ -1,4 +1,5 @@
 import CryptoKit
+import LocalAuthentication
 import XCTest
 import Security
 import Darwin
@@ -3194,5 +3195,22 @@ extension ObserveSchemaTests {
         }
         XCTAssertFalse(created)
         XCTAssertEqual(CompanionSecureEnclaveEnrollment.testInMemoryKeychain?["yd-phone-2"], Data([1, 2, 3]))
+    }
+}
+
+
+extension ObserveSchemaTests {
+    func testDeviceFaceIDCancellationHasExpectedFeedback() {
+        let error = NSError(domain: LAError.errorDomain, code: LAError.userCancel.rawValue)
+        XCTAssertEqual(CompanionHardwareErrorPresentation.describe(error).message, "Authentication cancelled.")
+    }
+    func testDeviceFaceIDPermissionDeniedGivesSettingsGuidance() {
+        let error = NSError(domain: LAError.errorDomain, code: LAError.biometryNotAvailable.rawValue)
+        XCTAssertTrue(CompanionHardwareErrorPresentation.describe(error).message.contains("Settings"))
+    }
+    func testDeviceWrappedKeychainCancellationHasExpectedFeedback() {
+        let error = NSError(domain: NSOSStatusErrorDomain, code: Int(errSecUserCanceled))
+        let wrapper = NSError(domain: "CryptoKit", code: 1, userInfo: [NSUnderlyingErrorKey: error])
+        XCTAssertEqual(CompanionHardwareErrorPresentation.describe(wrapper).message, "Authentication cancelled.")
     }
 }

@@ -1082,9 +1082,6 @@ struct CompanionHardwareApprovalView: View {
     }
 
     private func describeError(_ error: Error, action: String) -> (message: String, detail: String?) {
-        if let refusal = error as? CompanionHardwareRefusal {
-            return (refusal.userMessage, refusal.technicalDetail)
-        }
-        return ("Unexpected error.", error.localizedDescription)
+        CompanionHardwareErrorPresentation.describe(error)
     }
 }
