@@ -16,12 +16,12 @@ checkout in `outputs/final-qa-2026-10-17/`. Remediation logs are in
 | MAIN-03 | Validation-driven disconnect publishes failure after invalidating tasks, preserving the refusal reason. Production regression passes. |
 | MAIN-04 | CLI floor raised to rc15 to match the current upgrade guidance. Tests reject rc9/rc14 and accept rc15/final. This is a compatibility decision for the current app, not proof of hardware antirollback. |
 | MAIN-05 | Schema fixtures isolate/restore pairing and holder defaults and use token read/write/delete seams. The failed-refresh test uses a controlled transport and directly asserts timestamp preservation. |
-| MAIN-06 | **UNVERIFIED:** direct real-certificate delegate coverage remains; a live TLS handshake and physical Mac pairing need separate validation. |
+| MAIN-06 | Direct real-certificate delegate coverage exists in testIOSQA701AcceptsRealCertificateThroughDelegate, covering matching/normalized and mismatched pins. This does not prove a live handshake. User physically paired and tested Remote Confirm on c6b43f8; captured endpoint/certificate-specific live TLS evidence remains separate. |
 | PR76-01 | Timestamp UI query uses its production accessibility identifier; initial Refresh hittability is asserted without scrolling; failure text has a unique connection-feedback identifier. Unit tests assert cancellation/failure timestamp preservation. Focused Refresh UI suite passes 3/3. |
 | PR76-02 | Enrollment outcome belongs to the session, clears on new signing/invalidation/disconnect and changed key state, and is only published for the current operation. Regression covers refusal-to-key-state transition. |
 | PR76-03 | Editing carried-key input clears its previous pin result. |
-| PR76-04 | The system Copy smoke test is retained. A production-session test asserts the exact string supplied to ShareLink includes the actual recovery failure and retention guidance. This does not prove the system pasteboard bytes. |
-| PR76-05 | **UNVERIFIED:** automated macOS pin layout assertion still absent; build/code evidence does not replace visual layout verification. |
+| PR76-04 | Actual system share-sheet Copy followed by foreground-app pasteboard inspection compares full diagnostics with the failure/retention guidance. Passed recovery-ui-verified.log; older interrupted runner logs retained. |
+| PR76-05 | User screenshot at 16:07 on c6b43f8 verifies pin feedback directly below Pin after stale Xcode app was stopped. Visual check passed; automated macOS layout assertion remains absent. |
 | PR75-01 | Active Store metadata, version/build tables and candidate documents aligned to 0.1.6 (16); historical artifact identities retained. New CI-discovered test compares binary/project identities with the Store paste sheets. It rejects the frozen PR75 snapshot. |
 | PR75-02 | Preparation authorization and current identity recorded, superseding historical proposal; release remains blocked on QA. |
 | PR75-03 | Export instructions invoke the script with a local destination; committed TEAMID plist is explicitly a template. |
@@ -56,8 +56,7 @@ The DSH source candidate is `work/dsh-final-qa-fixes`; its 0.2.2 tarball is in
 
 Physical biometrics, real network pairing, power-loss durability, the final Store
 archive/privacy scan and processed Observe icon require their own evidence. No
-passing local suite closes those limits. Independent DeepSeek re-review of exact
-new heads and candidate bytes is required before release.
+passing local suite closes those limits. The user ended DeepSeek QA on 2026-10-19. Its historical reports remain preserved; no further DeepSeek continuation is required or scheduled. Release qualification remains incomplete.
 
 ## Independent second-pass follow-up
 
@@ -128,3 +127,14 @@ Evidence: `outputs/grok-remediation/device-red.log` records three failing regres
 User verified live countdown and expiry-card removal. After stopping a stale Oct 17 Xcode Mac instance, a screenshot verifies pin feedback directly below Pin. Phone screenshots verify retained yd-phone-2 detection and new-ID yd-phone-3 enrollment at generation 1; user confirms Mac pin/import and Mark Mac updated. Permission-denied signing refused; user explicitly confirms Face ID scanned/authenticated before the subsequent Signed result. A fresh diagnostic request then refused cancelled authentication and showed no signed output. Evidence is preserved under outputs/grok-remediation (device-countdown-result.md and named screenshots). These are diagnostic UI/device checks, not signature verification, native provenance qualification, crash-recovery or release approval.
 
 New UX defect: LocalAuthentication/Keychain errors surfaced as Unexpected error. Shared feedback now recognizes typed cancellation, denied/unavailable biometrics, lockout and failed authentication, including underlying wrapped errors. Unknown failures retain details under a neutral action-failure headline. This changes presentation only; no biometric policy, signing, trust or key-state behavior changed. Three regression tests failed before the correction (biometric-feedback-red.log); 139 iOS tests passed (biometric-feedback-green.log). New feedback still needs physical recheck on the updated build.
+
+
+## Current remaining-work audit — 2026-10-19
+
+- All original Grok f646ce3 P2/P3 code findings were addressed in a50f101/a64c297; see above and preserved red/green evidence. The older report is not an unreviewed current-head defect list.
+- New paired-form issue reproduced: a failed re-pair cleared a working session. Pairing fields (including holder pins) also edited live session state before Connect. Fields now stay in a local draft, and only successful validation/persistence replaces live config and holder fields. Failed candidates retain current status, capabilities, credentials and pins. A Boolean operation result prevents an invalidated attempt from applying draft trust fields merely because an old connection remains paired. Initial failing test and final regression/UI results are under outputs/grok-remediation/pairing-edit-red.log, remaining-fixes-serial.log and pairing-context-final.log. Successful replacement clears old requests and cancels old tasks; leaving the form cancels its pending attempt.
+- Remaining evidence, not automatically closed: physical wording/draft-form retest on final head, physical rotation crash/power-loss recovery and device cancel races, cryptographic export/verification of human-produced diagnostic signature, final linked Store privacy/required-reason scan, processed ASC icon after separately authorized upload, and exact-head CI completion.
+- Mac service provisioning still requires CLI setup. Automatic discovery/network/certificate provisioning is a separate feature requiring a defined authenticated provisioning flow; the phone cannot start a Mac service that is not listening. No trust/network changes were made to simulate its completion.
+- Privileged-holder/native enrollment integration limitations remain those documented in SCOPE_MATRIX and BIOMETRIC_APPROVAL. Diagnostic carried signing does not qualify that execution boundary. No merge, upload, publication, release, trust changes or human approval by an agent.
+
+Validation accounting: remaining-fixes-serial.log completes 143 schema/regression tests, 26 cancellation tests and 6 UI tests, including backing out of edited pairing fields. A subsequent full schema/cancellation run in pairing-context-final.log covers the final successful-pair request-context reset. Mac native suite: 117 tests, 1 skipped, no failures (remaining-fixes-macos.log). Overlapping intermediate simulator runs were stopped and preserved; they are not claimed as complete passes.

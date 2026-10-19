@@ -527,10 +527,16 @@ struct WorkflowSheet: View {
             Text("The package policy is imported as written. A different choice does not switch it, and nothing here starts a run.")
                 .font(.system(size: 12))
                 .foregroundStyle(RSTheme.muted)
-            Text(ProductionNativeBridgeGate.status())
+            Text("Carried keys are unverified. Hardware-backed execution is not yet supported by this Store app.")
                 .font(.system(size: 12))
                 .foregroundStyle(RSTheme.muted)
-                .accessibilityLabel("Production native bridge")
+            DisclosureGroup("Signing support and limitations") {
+                Text(ProductionNativeBridgeGate.status())
+                    .font(.system(size: 12))
+                    .foregroundStyle(RSTheme.muted)
+                    .accessibilityLabel("Production native bridge")
+            }
+            .font(.system(size: 12))
             Text("Carried public key")
                 .font(.system(size: 12))
                 .foregroundStyle(RSTheme.muted)

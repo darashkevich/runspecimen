@@ -44,4 +44,24 @@ final class RefreshUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Connect to your Mac"].exists, app.debugDescription)
     }
 
+    func testPairingEditsAreDiscardedWhenGoingBack() {
+        let app = XCUIApplication()
+        app.launchEnvironment["RUNSPECIMEN_UI_REFRESH_TEST"] = "recover"
+        app.launch()
+        let entry = app.buttons["pairIPhone"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 15), app.debugDescription)
+        entry.tap()
+        let url = app.textFields["https://192.168.x.y:8787/"]
+        XCTAssertTrue(url.waitForExistence(timeout: 5))
+        XCTAssertEqual(url.value as? String, "http://localhost")
+        url.tap()
+        url.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "http://localhost".count) + "https://candidate.invalid")
+        XCTAssertNotEqual(url.value as? String, "http://localhost")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(entry.waitForExistence(timeout: 5), app.debugDescription)
+        entry.tap()
+        XCTAssertTrue(url.waitForExistence(timeout: 5))
+        XCTAssertEqual(url.value as? String, "http://localhost", "Backing out must not change the working connection")
+    }
+
 }

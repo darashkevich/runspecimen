@@ -280,3 +280,92 @@ extension SettlementOutcomeRegressionTests {
         XCTAssertEqual(requests, 0)
     }
 }
+
+
+extension SettlementOutcomeRegressionTests {
+    @MainActor
+    func testRejectedRePairRetainsWorkingConnection() async throws {
+        let session = qaSession()
+        let previousStatus = session.status
+        let previousCapabilities = session.capabilities
+        let client = try XCTUnwrap(session.testMakeClient())
+        client.testRequest = { _ in throw CompanionClientError.transport("candidate unavailable") }
+        await session.saveAndPair(client: client)
+        XCTAssertTrue(session.isPaired)
+        XCTAssertEqual(session.status, previousStatus)
+        XCTAssertEqual(session.capabilities, previousCapabilities)
+        XCTAssertEqual(session.baseURLString, "http://localhost")
+        XCTAssertEqual(session.pairingToken, "fixture-token")
+        XCTAssertNotNil(session.lastError)
+    }
+}
+
+
+extension SettlementOutcomeRegressionTests {
+    @MainActor
+    func testRejectedCandidateNeverChangesLivePairingOrPins() async throws {
+        let session = qaSession()
+        session.macSessionPublicKey = "old-mac-key"
+        session.pinnedHolderId = "old-holder"
+        let client = try XCTUnwrap(session.testMakeClient())
+        client.testRequest = { _ in throw CompanionClientError.transport("candidate unavailable") }
+        let candidate = PairingConfig(baseURL: URL(string: "https://candidate.invalid")!, pairingToken: "new-token", tlsFingerprint: "new-pin")
+        await session.saveAndPair(candidate: candidate, client: client)
+        XCTAssertTrue(session.isPaired)
+        XCTAssertEqual(session.baseURLString, "http://localhost")
+        XCTAssertEqual(session.pairingToken, "fixture-token")
+        XCTAssertEqual(session.macSessionPublicKey, "old-mac-key")
+        XCTAssertEqual(session.pinnedHolderId, "old-holder")
+        XCTAssertNotEqual(session.tlsFingerprint, "new-pin")
+    }
+}
+
+
+extension SettlementOutcomeRegressionTests {
+    @MainActor
+    func testVerifiedCandidateCommitsOnlyAfterValidation() async throws {
+        let session = qaSession()
+        session.challengeInput = "old-challenge"
+        session.approvePhraseInput = "APPROVE"
+        session.lastRemoteConfirmNote = "old result"
+        session.reviewedExactRunLines = ["old request"]
+        let client = try XCTUnwrap(session.testMakeClient())
+        client.testRequest = { request in
+            if request.url?.path == "/v1/status" { return try JSONEncoder().encode(CompanionStatus(phase: "active")) }
+            return try JSONEncoder().encode(CompanionCapabilities(product: "test", mode: "observe", canApprove: false,
+                canExecute: false, canMutateLifecycle: false, canRemoteConfirm: true, boundary: "fixture"))
+        }
+        let candidate = PairingConfig(baseURL: URL(string: "https://candidate.invalid")!, pairingToken: "new-token", tlsFingerprint: "new-pin")
+        let paired = await session.saveAndPair(candidate: candidate, client: client)
+        XCTAssertTrue(paired)
+        XCTAssertEqual(session.challengeInput, "")
+        XCTAssertEqual(session.approvePhraseInput, "")
+        XCTAssertNil(session.lastRemoteConfirmNote)
+        XCTAssertEqual(session.reviewedExactRunLines, [])
+        XCTAssertEqual(session.baseURLString, candidate.baseURL.absoluteString)
+        XCTAssertEqual(session.pairingToken, "new-token")
+        XCTAssertEqual(session.tlsFingerprint, "new-pin")
+    }
+}
+
+
+extension SettlementOutcomeRegressionTests {
+    @MainActor
+    func testInvalidatedPairingReturnsFailureWithoutReplacingConnection() async throws {
+        let session = qaSession()
+        let client = try XCTUnwrap(session.testMakeClient())
+        client.testRequest = { request in
+            if request.url?.path == "/v1/status" {
+                session.cancelAllTasks()
+                return try JSONEncoder().encode(CompanionStatus(phase: "active"))
+            }
+            return try JSONEncoder().encode(CompanionCapabilities(product: "test", mode: "observe", canApprove: false,
+                canExecute: false, canMutateLifecycle: false, canRemoteConfirm: true, boundary: "fixture"))
+        }
+        let candidate = PairingConfig(baseURL: URL(string: "https://candidate.invalid")!, pairingToken: "new-token", tlsFingerprint: "new-pin")
+        let paired = await session.saveAndPair(candidate: candidate, client: client)
+        XCTAssertFalse(paired)
+        XCTAssertEqual(session.baseURLString, "http://localhost")
+        XCTAssertEqual(session.pairingToken, "fixture-token")
+    }
+}

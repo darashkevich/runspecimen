@@ -399,27 +399,32 @@ final class CompanionSession: ObservableObject {
         return String(format: "%.0fs", max(0, ceil(expiry - date.timeIntervalSince1970)))
     }
 
-    func saveAndPair(client suppliedClient: CompanionClient? = nil) async {
+    @discardableResult
+    func saveAndPair(candidate: PairingConfig? = nil, client suppliedClient: CompanionClient? = nil) async -> Bool {
+        let wasPaired = isPaired
+        let candidateURL = candidate?.baseURL.absoluteString ?? baseURLString
+        let candidateToken = candidate?.pairingToken ?? pairingToken
+        let candidateFingerprint = candidate.map { $0.tlsFingerprint ?? "" } ?? tlsFingerprint
         refreshTaskGeneration += 1
         let generation = refreshTaskGeneration
         lastError = nil
-        guard let url = URL(string: baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)),
-              !pairingToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard let url = URL(string: candidateURL.trimmingCharacters(in: .whitespacesAndNewlines)),
+              !candidateToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
             lastError = "Enter a companion URL and pairing token from the Mac."
-            isPaired = false
-            return
+            isPaired = wasPaired
+            return false
         }
         let scheme = (url.scheme ?? "").lowercased()
-        let fingerprint = tlsFingerprint.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fingerprint = candidateFingerprint.trimmingCharacters(in: .whitespacesAndNewlines)
         if scheme == "https", fingerprint.isEmpty {
             lastError = "HTTPS requires the Mac tls_fingerprint_sha256 from companion --print-token."
-            isPaired = false
-            return
+            isPaired = wasPaired
+            return false
         }
         let config = PairingConfig(
             baseURL: url,
-            pairingToken: pairingToken.trimmingCharacters(in: .whitespacesAndNewlines),
+            pairingToken: candidateToken.trimmingCharacters(in: .whitespacesAndNewlines),
             tlsFingerprint: fingerprint.isEmpty ? nil : fingerprint
         )
         let client = suppliedClient ?? CompanionClient(config: config)
@@ -430,8 +435,8 @@ final class CompanionSession: ObservableObject {
                 break
             case .invalid(let reason):
                 lastError = "Refusing pair: \(reason)"
-                isPaired = false
-                return
+                isPaired = wasPaired
+                return false
             }
             let verifiedStatus = try await client.fetchStatus()
             switch CapabilityValidator.validateForAction(capabilities: caps, status: verifiedStatus) {
@@ -442,18 +447,37 @@ final class CompanionSession: ObservableObject {
             guard generation == refreshTaskGeneration else { throw CancellationError() }
             // A rejected candidate must never replace the saved pairing.
             try persist(config)
+            // The newly verified connection must not inherit requests from the old Mac.
+            cancelAllTasks()
+            phoneEnrollmentFeedback = nil
+            phoneChallenge = nil
+            signedPhonePublicKey = nil
+            exactRunGeneration += 1
+            reviewedExactRun = nil
+            reviewedExactRunKeyGeneration = nil
+            reviewedExactRunLines = []
+            reviewedExactRunArgv = []
+            challengeInput = ""
+            approvePhraseInput = ""
+            refuseReasonInput = ""
+            lastRemoteConfirmNote = nil
+            lastAttentionNote = nil
             status = verifiedStatus
             capabilities = caps
             isPaired = true
             let now = Date()
             lastSuccessfulRefresh = now
             refreshOutcome = .success(now)
+            return true
         } catch {
-            guard generation == refreshTaskGeneration else { return }
-            capabilities = nil
-            status = nil
+            guard generation == refreshTaskGeneration else { return false }
+            if !wasPaired {
+                capabilities = nil
+                status = nil
+            }
             lastError = error.localizedDescription
-            isPaired = false
+            isPaired = wasPaired
+            return false
         }
     }
 
