@@ -20,6 +20,7 @@ Evidence directory in the task workspace: `outputs/grok-followup/`.
 - `green.log`: 24 targeted tests pass after the initial fixes.
 - `copy-red.log`: direct-copy UI regression fails before the action exists.
 - `full-green.log`: 150 schema/regression + 26 phone-peer cancellation + 6 UI tests passed (182 total).
+- `release-red.log` / `release-green.log`: Release compilation caught the new copy-feedback state inside a test-only guard; the state is now compiled in every configuration, and the generic Simulator Release build passes.
 - Original failed CI run 39280097788 and its downloaded result bundle are retained in `ci-evidence/`; its log is also retained in `outputs/grok-coordination/ci-d5db4d3-failure.log`.
 
 Simulator tests do not establish physical Face ID behavior, real device rotation/power-loss durability, App Store processed assets or a release approval. No merge, release, live trust/key changes or human approvals are part of this follow-up.

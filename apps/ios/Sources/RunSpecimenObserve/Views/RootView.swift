@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import os
 
 #if DEBUG
@@ -9,9 +10,9 @@ struct RootView: View {
     @EnvironmentObject private var session: CompanionSession
     @Environment(\.scenePhase) private var scenePhase
 
+    @State private var recoveryDiagnosticsCopied = false
     #if RUNSPECIMEN_TEST_HOOKS
     @State private var copiedRecoveryDiagnostics = ""
-    @State private var recoveryDiagnosticsCopied = false
     #endif
 
     var body: some View {
