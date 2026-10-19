@@ -537,18 +537,21 @@ struct WorkflowSheet: View {
             TextEditor(text: $pairingText)
                 .onChange(of: pairingText) { _ in carriedKeyStatus = "" }
                 .font(RSTheme.monoSmall)
-                .frame(minHeight: 48)
+                .frame(height: 72)
                 .accessibilityLabel("Carried public key")
-            Button("Pin carried public key") { pinCarriedKey() }
-                .disabled(pairingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            if !carriedKeyStatus.isEmpty {
-                Text(carriedKeyStatus)
-                    .font(.system(size: 12))
-                    .foregroundStyle(RSTheme.ink)
-                    .accessibilityLabel("Carried key pin status")
-                    .accessibilityValue(carriedKeyStatus)
-                    .accessibilityIdentifier("carriedKeyPinStatus")
+            VStack(alignment: .leading, spacing: 6) {
+                Button("Pin carried public key") { pinCarriedKey() }
+                    .disabled(pairingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if !carriedKeyStatus.isEmpty {
+                    Text(carriedKeyStatus)
+                        .font(.system(size: 12))
+                        .foregroundStyle(RSTheme.ink)
+                        .accessibilityLabel("Carried key pin status")
+                        .accessibilityValue(carriedKeyStatus)
+                        .accessibilityIdentifier("carriedKeyPinStatus")
+                }
             }
+            .fixedSize(horizontal: false, vertical: true)
             Text("Approval package")
                 .font(.system(size: 12))
                 .foregroundStyle(RSTheme.muted)

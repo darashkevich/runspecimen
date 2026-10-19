@@ -10,6 +10,7 @@ enum CompanionHardwareHints {
 enum KeyState: Equatable {
     case unknown
     case noKey
+    case orphaned
     case active(generation: Int, macUpdatePending: Bool)
     case revoked(generation: Int, macUpdatePending: Bool)
     case corrupt(error: String)
@@ -17,7 +18,8 @@ enum KeyState: Equatable {
     var statusLabel: String {
         switch self {
         case .unknown: return "Checking…"
-        case .noKey: return "No key enrolled"
+        case .noKey: return "No carried approval key enrolled"
+        case .orphaned: return "Key retained · enrollment record missing"
         case .active(let gen, let pending):
             return pending ? "Active (gen \(gen)) · Mac update needed" : "Active (generation \(gen))"
         case .revoked(let gen, let pending):
@@ -31,6 +33,7 @@ enum KeyState: Equatable {
         switch self {
         case .unknown: return RSTheme.muted
         case .noKey: return RSTheme.muted
+        case .orphaned: return RSTheme.amber
         case .active(_, let pending): return pending ? RSTheme.amber : RSTheme.signal
         case .revoked: return RSTheme.danger
         case .corrupt: return RSTheme.danger
@@ -41,6 +44,7 @@ enum KeyState: Equatable {
         switch self {
         case .unknown: return "questionmark.circle"
         case .noKey: return "key.slash"
+        case .orphaned: return "exclamationmark.shield"
         case .active(_, let pending): return pending ? "exclamationmark.shield" : "checkmark.shield.fill"
         case .revoked: return "xmark.shield.fill"
         case .corrupt: return "exclamationmark.triangle.fill"
@@ -213,6 +217,16 @@ struct CompanionHardwareApprovalView: View {
             .padding(14)
             .background(RSTheme.panel)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            if keyState == .orphaned {
+                Text(CompanionHardwareRefusal.orphanedKey.userMessage)
+                    .font(.footnote).foregroundStyle(RSTheme.amber)
+                Button("Choose a new key ID") {
+                    keyID = CompanionSecureEnclaveEnrollment.deriveReplacementKeyID(
+                        from: keyID, existingKeyIDs: Set(allKeys.map(\.keyID) + [keyID]))
+                    refreshKeyState()
+                }
+            }
 
             if hasMacUpdatePending {
                 actionButton(
@@ -668,6 +682,7 @@ struct CompanionHardwareApprovalView: View {
         if case .active = keyState { return false }
         if case .revoked = keyState { return false }
         if case .corrupt = keyState { return false }
+        if case .orphaned = keyState { return false }
         if case .inProgress = enrollOutcome { return false }
         return true
     }
@@ -824,6 +839,8 @@ struct CompanionHardwareApprovalView: View {
                     revokedPairingText = String(decoding: carried, as: UTF8.self)
                 }
             }
+        } catch CompanionHardwareRefusal.orphanedKey {
+            keyState = .orphaned
         } catch CompanionHardwareRefusal.missing {
             keyState = .noKey
         } catch let error as CompanionHardwareRefusal {

@@ -382,10 +382,21 @@ final class CompanionSession: ObservableObject {
             + "Plugins cannot approve. This app is not an OS sandbox."
     }
 
-    var remoteConfirmPending: Bool {
-        status?.companion?.remoteConfirm?.pending == true
-            || status?.companion?.canRemoteConfirm == true
-            || capabilities?.canRemoteConfirm == true
+    var remoteConfirmPending: Bool { remoteConfirmPending(at: Date()) }
+
+    func remoteConfirmPending(at date: Date) -> Bool {
+        if let arm = status?.companion?.remoteConfirm {
+            if let expiry = arm.expiresAtUnix, !expiry.isFinite || expiry <= date.timeIntervalSince1970 { return false }
+            if let pending = arm.pending { return pending }
+        }
+        return status?.companion?.canRemoteConfirm == true || capabilities?.canRemoteConfirm == true
+    }
+
+    func remoteConfirmExpiry(at date: Date) -> String {
+        guard let expiry = status?.companion?.remoteConfirm?.expiresAtUnix, expiry.isFinite else {
+            return status?.companion?.remoteConfirm?.chips?.expiry ?? "—"
+        }
+        return String(format: "%.0fs", max(0, ceil(expiry - date.timeIntervalSince1970)))
     }
 
     func saveAndPair(client suppliedClient: CompanionClient? = nil) async {

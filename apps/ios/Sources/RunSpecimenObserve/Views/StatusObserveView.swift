@@ -41,12 +41,14 @@ struct StatusObserveView: View {
 
                 lifecycleCard
 
-                if session.remoteConfirmPending {
-                    remoteConfirmPanel
-                } else {
-                    Text("No remote confirm pending. Primary approval is the Mac's local APPROVE command.")
-                        .font(.footnote)
-                        .foregroundStyle(RSTheme.muted)
+                TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                    if session.remoteConfirmPending(at: timeline.date) {
+                        remoteConfirmPanel
+                    } else {
+                        Text("No remote confirm pending. Primary approval is the Mac's local APPROVE command.")
+                            .font(.footnote)
+                            .foregroundStyle(RSTheme.muted)
+                    }
                 }
 
                 phonePeerCard
@@ -69,7 +71,7 @@ struct StatusObserveView: View {
                     HStack {
                         Image(systemName: "key.fill")
                             .foregroundStyle(RSTheme.cyan)
-                        Text("Manage this iPhone's key")
+                        Text("Manage carried approval keys")
                             .foregroundStyle(RSTheme.ink)
                         Spacer()
                         Image(systemName: "chevron.right")
@@ -104,7 +106,7 @@ struct StatusObserveView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This removes the pairing but does not revoke your iPhone key. To revoke, go to 'Manage this iPhone's key' first.")
+            Text("This removes the pairing but does not revoke your iPhone key. To revoke, go to 'Manage carried approval keys' first.")
         }
     }
 
@@ -175,7 +177,7 @@ struct StatusObserveView: View {
 
     private var phonePeerCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("PHONE PEER KEY")
+            Text("ONLINE PHONE-PEER KEY")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(RSTheme.muted)
                 .tracking(0.6)
@@ -295,7 +297,7 @@ struct StatusObserveView: View {
             HStack(spacing: 6) {
                 Image(systemName: "key.slash")
                     .foregroundStyle(RSTheme.muted)
-                Text("No phone-peer key enrolled")
+                Text("No online phone-peer key enrolled. Carried approval keys are managed separately.")
                     .font(.caption)
                     .foregroundStyle(RSTheme.muted)
             }
@@ -511,6 +513,8 @@ struct StatusObserveView: View {
             .foregroundStyle(RSTheme.muted)
             .fixedSize(horizontal: false, vertical: true)
 
+            Text("Uses the Mac challenge and typed APPROVE. Does not request Face ID or sign with an enrolled key. For biometric signing, use carried approval or online phone-peer approval.")
+                .font(.footnote).foregroundStyle(RSTheme.muted)
             chipRow
 
             VStack(alignment: .leading, spacing: 4) {
@@ -710,7 +714,9 @@ struct StatusObserveView: View {
         ) {
             chip("Who", pending?.who ?? "operator · workspace")
             chip("What", pending?.what ?? "—")
-            chip("Expiry", chips?.expiry ?? "—")
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                chip("Expiry", session.remoteConfirmExpiry(at: timeline.date))
+            }
             chip("Lease", chips?.lease ?? leaseLabel)
             chip("Isolation", chips?.isolation ?? "native-unspecified")
             chip("Predecessor", chips?.predecessor ?? "none")

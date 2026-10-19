@@ -242,3 +242,41 @@ extension SettlementOutcomeRegressionTests {
         XCTAssertNil(session.phoneEnrollmentFeedback)
     }
 }
+
+
+extension SettlementOutcomeRegressionTests {
+    @MainActor
+    func testDeviceExpiredArmOverridesAdvertisedCapability() throws {
+        let session = qaSession()
+        session.status = try JSONDecoder().decode(CompanionStatus.self, from: Data("{\"phase\":\"active\",\"companion\":{\"can_remote_confirm\":true,\"remote_confirm\":{\"pending\":true,\"expires_at_unix\":1}}}".utf8))
+        XCTAssertFalse(session.remoteConfirmPending)
+    }
+
+    @MainActor
+    func testDeviceSettledArmOverridesAdvertisedCapability() throws {
+        let session = qaSession()
+        session.status = try JSONDecoder().decode(CompanionStatus.self, from: Data("{\"phase\":\"active\",\"companion\":{\"can_remote_confirm\":true,\"remote_confirm\":{\"pending\":false}}}".utf8))
+        XCTAssertFalse(session.remoteConfirmPending)
+    }
+}
+
+
+extension SettlementOutcomeRegressionTests {
+    @MainActor
+    func testDeviceCountdownAdvancesWithoutRefreshAndHidesAtDeadline() async throws {
+        let session = qaSession()
+        session.status = try JSONDecoder().decode(CompanionStatus.self, from: Data("{\"phase\":\"active\",\"companion\":{\"remote_confirm\":{\"pending\":true,\"expires_at_unix\":1000,\"chips\":{\"expiry\":\"588s\"}}}}".utf8))
+        XCTAssertEqual(session.remoteConfirmExpiry(at: Date(timeIntervalSince1970: 412)), "588s")
+        XCTAssertEqual(session.remoteConfirmExpiry(at: Date(timeIntervalSince1970: 413)), "587s")
+        XCTAssertTrue(session.remoteConfirmPending(at: Date(timeIntervalSince1970: 999)))
+        XCTAssertFalse(session.remoteConfirmPending(at: Date(timeIntervalSince1970: 1000)))
+        XCTAssertEqual(session.remoteConfirmExpiry(at: Date(timeIntervalSince1970: 1001)), "0s")
+        session.challengeInput = "challenge"
+        session.approvePhraseInput = "APPROVE"
+        var requests = 0
+        session.testMakeClient()?.testRequest = { _ in requests += 1; return Data() }
+        let result = await session.submitRemoteConfirm()
+        if case .failure = result {} else { XCTFail("Expired arm must fail") }
+        XCTAssertEqual(requests, 0)
+    }
+}

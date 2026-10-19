@@ -3166,3 +3166,33 @@ extension ObserveSchemaTests {
         XCTAssertEqual(session.phonePeerNote, expected)
     }
 }
+
+
+extension ObserveSchemaTests {
+    func testDeviceReinstallDoesNotReportSurvivingKeyAsMissing() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        CompanionSecureEnclaveEnrollment.testInMemoryKeychain = ["yd-phone-2": Data([1, 2, 3])]
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.inspect(keyID: "yd-phone-2", directory: directory)) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .orphanedKey)
+        }
+        XCTAssertEqual(CompanionSecureEnclaveEnrollment.testInMemoryKeychain?["yd-phone-2"], Data([1, 2, 3]))
+    }
+}
+
+
+extension ObserveSchemaTests {
+    func testDeviceReinstallEnrollmentPreservesExistingKey() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        CompanionSecureEnclaveEnrollment.testInMemoryKeychain = ["yd-phone-2": Data([1, 2, 3])]
+        var created = false
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.enrollReplacingMissingFile(keyID: "yd-phone-2", directory: directory, createKey: {
+            created = true
+            return Data(repeating: 1, count: 65)
+        }, cleanup: {})) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .orphanedKey)
+        }
+        XCTAssertFalse(created)
+        XCTAssertEqual(CompanionSecureEnclaveEnrollment.testInMemoryKeychain?["yd-phone-2"], Data([1, 2, 3]))
+    }
+}

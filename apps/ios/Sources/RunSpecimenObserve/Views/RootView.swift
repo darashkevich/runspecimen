@@ -28,6 +28,12 @@ struct RootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(RSTheme.bg.ignoresSafeArea())
             .toolbar {
+                if session.isPaired {
+                    ToolbarItem(placement: .topBarLeading) {
+                        NavigationLink("Pair iPhone") { PairingView() }
+                            .accessibilityIdentifier("pairIPhone")
+                    }
+                }
                 if session.rotationRecoveryError != nil && session.rotationRecoveryDismissed {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Key recovery") { session.showRotationRecoveryNotice() }

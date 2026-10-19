@@ -9,6 +9,7 @@ private let enrollmentLogger = Logger(subsystem: "com.darashkevich.runspecimen.o
 public enum CompanionHardwareRefusal: Error, Equatable {
     case automationRefused
     case missing
+    case orphanedKey
     case malformed(String)
     case staleRequest
     case alreadyEnrolled
@@ -31,6 +32,8 @@ public extension CompanionHardwareRefusal {
             return "Cancelled by user or system."
         case .missing:
             return "No enrollment found for this key."
+        case .orphanedKey:
+            return "A key survived reinstall, but its enrollment record is missing. Choose a new key ID and enroll it, then import its public key on the Mac. The old key is preserved."
         case .malformed(let detail):
             return "Invalid state: \(detail)."
         case .staleRequest:
@@ -40,7 +43,7 @@ public extension CompanionHardwareRefusal {
         case .keyIDRevoked:
             return "This key ID was revoked. Use a different key ID to enroll a new key."
         case .duplicateKeychainItem:
-            return "A keychain item already exists. Delete it manually or use a different key ID."
+            return "A key with this ID remains in Keychain. Choose a new key ID; the existing key will be preserved."
         case .keychainError(let status):
             return "Keychain operation failed (code \(status))."
         case .biometryUnavailable:
@@ -199,6 +202,7 @@ public enum CompanionSecureEnclaveEnrollment {
                 }
                 throw CompanionHardwareRefusal.malformed("enrollment")
             } catch CompanionHardwareRefusal.missing {
+                if try retainedKeyExists(keyID: keyID) { throw CompanionHardwareRefusal.orphanedKey }
                 let publicKey = try createKey()
                 let record = CompanionPairingRecord(
                     keyID: keyID,
@@ -427,7 +431,29 @@ public enum CompanionSecureEnclaveEnrollment {
 
     public static func inspect(keyID: String, directory: URL) throws -> CompanionPairingRecord {
         try validateKeyID(keyID)
-        return try load(keyID: keyID, directory: directory)
+        do {
+            return try load(keyID: keyID, directory: directory)
+        } catch CompanionHardwareRefusal.missing {
+            if try retainedKeyExists(keyID: keyID) { throw CompanionHardwareRefusal.orphanedKey }
+            throw CompanionHardwareRefusal.missing
+        }
+    }
+
+    private static func retainedKeyExists(keyID: String) throws -> Bool {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let keys = testInMemoryKeychain { return keys[keyID] != nil }
+        #endif
+        // Query existence only; do not reconstruct trust or read private key material.
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keyID,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        if status == errSecItemNotFound { return false }
+        guard status == errSecSuccess else { throw CompanionHardwareRefusal.keychainError(status) }
+        return true
     }
 
     public static func listKeys(directory: URL) throws -> [CompanionPairingRecord] {

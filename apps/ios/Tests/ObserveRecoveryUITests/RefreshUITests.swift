@@ -32,4 +32,16 @@ final class RefreshUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(identifier: "Status refreshed.").allElementsBoundByIndex.contains(where: { $0.isHittable }), app.debugDescription)
     }
 
+    func testPairedPhoneHasVisiblePairingEntry() {
+        let app = XCUIApplication()
+        app.launchEnvironment["RUNSPECIMEN_UI_REFRESH_TEST"] = "recover"
+        app.launch()
+        let entry = app.buttons["pairIPhone"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(entry.isHittable, app.debugDescription)
+        entry.tap()
+        XCTAssertTrue(app.textFields["https://192.168.x.y:8787/"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Connect to your Mac"].exists, app.debugDescription)
+    }
+
 }

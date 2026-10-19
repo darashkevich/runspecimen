@@ -57,18 +57,25 @@ struct PairingView: View {
                         .frame(width: 56, height: 56)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Observe")
+                        Text("Pair iPhone")
                             .font(.largeTitle.weight(.semibold))
                             .foregroundStyle(RSTheme.ink)
                             .minimumScaleFactor(0.7)
                             .lineLimit(1)
-                        Text("Connect to a Mac you control to observe runs and sign requests.")
+                        Text("Connect this iPhone to your Mac to observe runs. Key enrollment is a separate step.")
                             .font(.subheadline)
                             .foregroundStyle(RSTheme.muted)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Connect to your Mac").font(.headline)
+                    Text("1. Start the companion service on your Mac.\n2. Copy its reachable HTTPS URL, pairing token, and certificate fingerprint below.\n3. Tap Pair. Keep both devices on a network that can reach the Mac.")
+                        .font(.footnote)
+                    Text("The Mac must already provide a companion service. This screen does not start it or change the Mac’s network settings.")
+                        .font(.caption).foregroundStyle(RSTheme.muted)
+                }
                 BoundaryBanner(text: session.boundaryCopy)
 
                 VStack(alignment: .leading, spacing: 10) {

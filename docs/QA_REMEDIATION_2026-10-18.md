@@ -108,3 +108,16 @@ Regression evidence is preserved under outputs/grok-remediation at the sf worksp
 All physical/live TLS/Mac layout/final privacy/processed App Store Observe-icon gates above remain open. The user requested “Push and stop; no release”; PR76 remains draft and requires independent review of the new head.
 
 Test harness cleanup follow-up: the red competing-settlement test previously returned at its failed expectation without resuming/awaiting the original request. It now drains that task on both success and assertion-failure paths. A targeted rerun passes (competing-task-cleanup.log). Grok displayed a user-reported Swift XCTest concurrency abort from the earlier failing broad run; the old acknowledgement fixture also incorrectly treated the post-ack status request as another settlement continuation. Both test-lifetime hazards are corrected; this is not a claim of a reproduced product crash or a completed exact-head CI run.
+
+
+## Device follow-up — a64c297, 2026-10-19 15:33 Lisbon
+
+The user observed Remote Confirm reaching APPROVED with the Mac challenge and typed APPROVE, without Face ID. This matches ADR-004: Remote Confirm is an opt-in, Mac-armed, pairing-token-authenticated HTTP settlement, not a Secure Enclave signature. `submitRemoteConfirmImpl` does not invoke a signer. Biometrics protect the distinct carried approval signing path. Added explicit UI copy so Remote Confirm does not imply biometric approval; no authorization policy was silently changed.
+
+- Reinstall: detect a retained Keychain key when its enrollment file is absent. Show a dedicated retained-key state and offer “Choose a new key ID.” Enrollment refuses before creating a replacement under the same ID. Existing private keys remain untouched; missing generation/revocation records are never reconstructed as trusted active enrollment. A fresh ID still needs enrollment and import on the Mac.
+- Key status: label online phone-peer and carried approval keys separately. Enrolling one does not enroll the other.
+- Remote expiry: derive the countdown from `expires_at_unix` on a one-second timeline. Explicit expired/settled arm state overrides stale advertised capability. The submission boundary independently rejects expired arms.
+- Mac pin feedback: bound the public-key editor height and group Pin plus its result in a fixed-height-content stack. Physical Mac layout recheck remains required.
+- iPhone pairing: add a visible “Pair iPhone” navigation entry even while paired, rename the initial screen, and provide setup steps. The existing Mac companion service must still be configured on the Mac; this change does not remove its CLI setup requirement or create a new discovery/provisioning protocol.
+
+Evidence: `outputs/grok-remediation/device-red.log` records three failing regressions before the fixes (expired arm, settled arm, retained key reported missing). `device-green.log` records 134 passing iOS tests. Expanded validation: 136 iOS tests and 5 UI tests passed (`device-final.log`), including the visible pairing navigation. Mac: 117 tests, 1 skipped, 0 failures (`device-macos.log`). Device observations supplied by the user are not substitutes for a rerun of the changed build. No real keys were enrolled, revoked, replaced, or deleted during this remediation. No release actions.
