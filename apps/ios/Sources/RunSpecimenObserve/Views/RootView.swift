@@ -9,6 +9,10 @@ struct RootView: View {
     @EnvironmentObject private var session: CompanionSession
     @Environment(\.scenePhase) private var scenePhase
 
+    #if RUNSPECIMEN_TEST_HOOKS
+    @State private var copiedRecoveryDiagnostics = ""
+    #endif
+
     var body: some View {
         #if DEBUG
         let _ = launchLogger.info("RootView.body evaluated, isPaired=\(session.isPaired), scenePhase=\(String(describing: scenePhase))")
@@ -54,6 +58,14 @@ struct RootView: View {
                         }
                         .disabled(session.rotationRecoveryInProgress)
                         ShareLink("Export recovery diagnostics", item: session.rotationRecoveryDiagnostics)
+                        #if RUNSPECIMEN_TEST_HOOKS
+                        if ProcessInfo.processInfo.environment["RUNSPECIMEN_UI_RECOVERY_TEST"] == "1" {
+                            Button("Inspect copied diagnostics") {
+                                copiedRecoveryDiagnostics = UIPasteboard.general.string ?? "<empty>"
+                            }
+                            Text(copiedRecoveryDiagnostics).accessibilityIdentifier("copiedRecoveryDiagnostics")
+                        }
+                        #endif
                         Button("Dismiss notice") { session.dismissRotationRecoveryNotice() }
                     }
                     .padding()

@@ -96,7 +96,7 @@ jobs:
         run: bash apps/ios/Scripts/test_ios_observe.sh
       - name: Preserve iOS test evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ios-observe-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: |

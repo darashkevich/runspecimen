@@ -1612,7 +1612,19 @@ final class ObserveSchemaTests: IsolatedCompanionSessionTests {
         XCTAssertTrue(session.isPaired)
     }
 
+    func testGrokEnrollmentCommitSurvivesCancellation() async throws {
+        try await verifyEnrollmentCommit(cancelDuringCommit: true)
+    }
+
+    func testGrokExplicitCancelAfterCommitReconcilesEnrolledKey() async throws {
+        try await verifyEnrollmentCommit(cancelDuringCommit: false, cancelChallengeAfterCommit: true)
+    }
+
     func testPhonePeerKeyStateRefreshesAfterHolderVerifiedCommit() async throws {
+        try await verifyEnrollmentCommit(cancelDuringCommit: false)
+    }
+
+    private func verifyEnrollmentCommit(cancelDuringCommit: Bool, cancelChallengeAfterCommit: Bool = false) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-commit-refresh-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -1658,7 +1670,10 @@ final class ObserveSchemaTests: IsolatedCompanionSessionTests {
             session.isPaired = true
         }
 
-        await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
+        signer.cancelAfterCommit = cancelDuringCommit
+        if cancelChallengeAfterCommit { signer.afterCommit = { await session.cancelPhonePeerChallenge() } }
+        let outcome = await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
+        XCTAssertEqual(outcome, .enrolled)
 
         await MainActor.run {
             XCTAssertEqual(signer.commits, 1, "signer.commitEnrollment should be called once")
@@ -1700,6 +1715,8 @@ final class TempDirectoryTestSigner: PhoneChallengeSigning {
     let publicKey: Data
     let publicKeyBase64: String
     var commits = 0
+    var cancelAfterCommit = false
+    var afterCommit: (() async -> Void)?
 
     init(directory: URL) {
         self.stage = PhoneKeyStage.fixture(directory: directory)
@@ -1721,6 +1738,11 @@ final class TempDirectoryTestSigner: PhoneChallengeSigning {
         try stage.bindOwner(challengeId: challengeId, publicKey: key)
     }
 
+    func commitEnrollmentAsync(ownedBy challengeId: String, publicKey: String) async throws {
+        try await CryptoWorker.shared.performCommit { try self.commitEnrollment(ownedBy: challengeId, publicKey: publicKey) }
+        await afterCommit?()
+    }
+
     func commitEnrollment(ownedBy challengeId: String, publicKey: String) throws {
         guard let key = Data(base64Encoded: publicKey) else {
             throw CompanionClientError.transport("invalid key")
@@ -1728,6 +1750,7 @@ final class TempDirectoryTestSigner: PhoneChallengeSigning {
         try stage.stage(handle: Data("test-handle".utf8), publicKey: key, challengeId: challengeId)
         try stage.commit(ownedBy: challengeId, publicKey: key)
         commits += 1
+        if cancelAfterCommit { withUnsafeCurrentTask { $0?.cancel() } }
     }
 
     func discardStagedEnrollment() {
@@ -2270,7 +2293,7 @@ extension ObserveSchemaTests {
 
 extension ObserveSchemaTests {
     @MainActor
-    func testIOSQA612CancellationAfterTransportStartedCannotReturnSuccess() async throws {
+    func testIOSQA612CancellationAfterTransportStartedPreservesAcknowledgement() async throws {
         for refuse in [false, true] {
             let session = CompanionSession(deferPhoneKeyState: true)
             session.baseURLString = "http://localhost"
@@ -2286,6 +2309,7 @@ extension ObserveSchemaTests {
             var resume: CheckedContinuation<Data, Error>?
             let client = try XCTUnwrap(session.testMakeClient())
             client.testRequest = { request in
+                if request.url?.path == "/v1/status" { throw CancellationError() }
                 XCTAssertEqual(request.url?.path, refuse ? "/v1/remote-confirm-refuse" : "/v1/remote-confirm")
                 return try await withCheckedThrowingContinuation { continuation in
                     resume = continuation
@@ -2301,9 +2325,9 @@ extension ObserveSchemaTests {
             let continuation = try XCTUnwrap(resume)
             continuation.resume(returning: Data((refuse ? "{\"ok\":true,\"refused\":true}" : "{\"ok\":true,\"settled\":true}").utf8))
             let result = await task.value
-            XCTAssertEqual(result, .cancelled)
-            XCTAssertNil(session.lastRemoteConfirmNote)
-            XCTAssertEqual(session.challengeInput, "challenge")
+            XCTAssertEqual(result, refuse ? .refused : .confirmed)
+            XCTAssertNotNil(session.lastRemoteConfirmNote)
+            XCTAssertEqual(session.challengeInput, "")
         }
     }
 }

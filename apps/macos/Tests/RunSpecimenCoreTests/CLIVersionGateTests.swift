@@ -2,6 +2,12 @@ import XCTest
 @testable import RunSpecimenCore
 
 final class CLIVersionGateTests: XCTestCase {
+    func testGrokRejectsEarlierPrereleaseKinds() {
+        for version in ["0.2.0a99", "0.2.0alpha99", "0.2.0b99", "0.2.0beta99", "0.2.0.dev99", "0.2.0rc15.dev1"] {
+            if case .ok = CLIVersionGate.evaluate(versionOutput: version) { XCTFail("must reject \(version)") }
+        }
+    }
+
     func testParseFinal() {
         let v = CLIVersionGate.parse(from: "runspecimen 0.2.0")
         XCTAssertEqual(v, CLIVersionGate.ParsedVersion(major: 0, minor: 2, patch: 0, preKind: 1, preNum: 0))

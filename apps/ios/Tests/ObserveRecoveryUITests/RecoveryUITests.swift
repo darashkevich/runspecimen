@@ -17,6 +17,7 @@ final class RecoveryUITests: XCTestCase {
         XCTAssertTrue(reopen.waitForExistence(timeout: 5))
         reopen.tap()
         XCTAssertTrue(banner.waitForExistence(timeout: 5))
+        let failure = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Key recovery needs attention:")).firstMatch.label
         app.buttons["Export recovery diagnostics"].tap()
         // The first cold Simulator share service can populate its remote view
         // after five seconds (CI logs showed Copy created just after that deadline).
@@ -26,5 +27,8 @@ final class RecoveryUITests: XCTestCase {
         copy.tap()
         let sheetClosed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: copy)
         wait(for: [sheetClosed], timeout: 10)
+        app.buttons["Inspect copied diagnostics"].tap()
+        let copied = app.staticTexts["copiedRecoveryDiagnostics"].label
+        XCTAssertEqual(copied, "RunSpecimen key recovery\n" + failure + "\nRecovery evidence is retained. Retry after restoring storage access; do not delete key records or reset generation counters.")
     }
 }

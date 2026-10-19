@@ -47,7 +47,7 @@ public enum CLIVersionGate {
     public static func parse(from versionOutput: String) -> ParsedVersion? {
         // Accept "runspecimen 0.2.0rc15", "0.2.0rc15", "0.2.0-rc.9", "0.2.0"
         let lowered = versionOutput.lowercased()
-        let pattern = #"(\d+)\.(\d+)\.(\d+)(?:[-.]?(?:rc|a|b|alpha|beta)\.?(\d+))?"#
+        let pattern = #"(?<![\w.])(\d+)\.(\d+)\.(\d+)(?:[-.]?rc\.?(\d+))?(?![\w.\-])"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(lowered.startIndex..<lowered.endIndex, in: lowered)
         guard let match = regex.firstMatch(in: lowered, range: range) else { return nil }

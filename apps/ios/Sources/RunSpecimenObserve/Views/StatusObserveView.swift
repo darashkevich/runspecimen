@@ -582,7 +582,7 @@ struct StatusObserveView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(RSTheme.signal)
-            .disabled(!confirmIsValid || confirmOutcome == .inProgress)
+            .disabled(!confirmIsValid || confirmOutcome == .inProgress || refuseOutcome == .inProgress)
 
             outcomeView(confirmOutcome)
 
@@ -634,7 +634,7 @@ struct StatusObserveView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(RSTheme.danger)
-            .disabled(!refuseIsValid || refuseOutcome == .inProgress)
+            .disabled(!refuseIsValid || refuseOutcome == .inProgress || confirmOutcome == .inProgress)
 
             outcomeView(refuseOutcome)
         }

@@ -87,3 +87,22 @@ DeepSeek independently verified the fixed code paths on c7476c4, with the same
   Targeted1/full46holder tests pass; original macOS CI failure is retained.
 
 External evidence gates remain explicit. No release is authorized by these fixes.
+
+## Grok review follow-up (2026-10-19)
+
+Reviewed the user-supplied independent findings against f646ce3. No release authorization.
+
+- P2-1: enrollment commits use a crypto operation that checks cancellation before starting but preserves a successful durable write. The receipt/challenge is consumed and key state reconciled after commit; later cancellation cannot report it as cancelled. Tests cover task cancellation at commit and explicit challenge cancellation after commit.
+- P2-2: validated Confirm/Refuse acknowledgements survive cancellation at response delivery. Competing settlements are refused at the session boundary; both UI buttons disable while either operation runs. The prior transport-cancellation test expected acknowledged success to be erased and was corrected to assert the actual settlement.
+- P3 refresh freshness: successful internal refresh updates the successful timestamp and outcome, clearing stale feedback.
+- P3 disconnect evidence: test seeds saved pairing and an in-memory Keychain-token seam and asserts both persisted values are removed, alongside trust/field checks. It does not manipulate the user's real Keychain.
+- P3 recovery export: UI test exercises the real share-sheet Copy action, then a test-only foreground-app pasteboard inspection compares the entire copied string with the visible failure and retention guidance. The original background test-runner pasteboard read stalled; those logs are retained.
+- P3 admission evidence: new private-socket test runs the actual holder_daemon.serve accept/worker loop, with installation/identity/message handling mocked; real admission, framing, read deadline and cleanup remain in use. It proves busy refusal and admission recovery after timeout. It does not run the installed privileged service.
+- P3 docs: asc-kit/STATUS.md now describes local export as the default and upload as explicit opt-in.
+- P3 CI: upload-artifact actions consistently use v5.
+- P3 stale enrollment refusal: Cancel clears session feedback.
+- P3 version floor: parser rejects unsupported alpha/beta/dev suffixes instead of treating them as final/rc builds.
+
+Regression evidence is preserved under outputs/grok-remediation at the sf workspace root. Initial targeted iOS tests failed with 12 assertions before fixes; six prerelease assertions failed before the parser fix. Coverage-only additions and documentation/CI corrections are not claimed as reproduced product failures. Earlier broad iOS runs also exposed an obsolete acknowledgement expectation and its status-refresh fixture; those failures are preserved rather than rerun away. The final runs use the corrected semantic expectation.
+
+All physical/live TLS/Mac layout/final privacy/processed App Store Observe-icon gates above remain open. The user requested “Push and stop; no release”; PR76 remains draft and requires independent review of the new head.

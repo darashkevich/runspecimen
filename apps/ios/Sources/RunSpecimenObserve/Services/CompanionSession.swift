@@ -460,6 +460,9 @@ final class CompanionSession: ObservableObject {
             case .valid:
                 status = fetchedStatus
                 capabilities = fetchedCapabilities
+                let now = Date()
+                lastSuccessfulRefresh = now
+                refreshOutcome = .success(now)
             case .invalid(let reason):
                 disconnect()
                 lastError = reason
@@ -683,6 +686,10 @@ final class CompanionSession: ObservableObject {
         } onCancel: {
             task.cancel()
         }
+        if outcome == .enrolled {
+            if myGeneration == phonePeerTaskGeneration || (isPaired && phoneChallenge == nil) { phoneEnrollmentFeedback = outcome }
+            return outcome
+        }
         guard !task.isCancelled, myGeneration == phonePeerTaskGeneration else { return .cancelled }
         phoneEnrollmentFeedback = outcome
         return outcome
@@ -751,12 +758,15 @@ final class CompanionSession: ObservableObject {
                   signedPhonePublicKey == phonePublicKey else { return .cancelled }
             phonePeerKeyStateRevision += 1
             try await signer.commitEnrollmentAsync(ownedBy: challengeId, publicKey: phonePublicKey)
-            guard !Task.isCancelled else { throw CancellationError() }
+            // A successful durable commit is the outcome, even if cancellation
+            // arrived during the final write. Never leave its receipt reusable.
             acceptedReceiptSignatures.insert(signature)
-            phoneChallenge = nil
-            await refreshPhonePeerKeyStateAsync()
-            guard generation == phoneSignGeneration, !Task.isCancelled else { return .cancelled }
-            phonePeerNote = "Holder receipt verified for challenge \(challengeId). The phone key is enrolled."
+            if phoneChallenge?.challengeId == challengeId { phoneChallenge = nil; signedPhonePublicKey = nil }
+            if generation == phoneSignGeneration || (isPaired && phoneChallenge == nil) {
+                await Task { @MainActor in await self.refreshPhonePeerKeyStateAsync() }.value
+                phonePeerNote = "Holder receipt verified for challenge \(challengeId). The phone key is enrolled."
+                lastError = nil
+            }
             return .enrolled
         } catch PhonePeerSignError.cancelled {
             phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
@@ -1053,6 +1063,7 @@ final class CompanionSession: ObservableObject {
     }
 
     func cancelPhonePeerChallenge() async {
+        phoneEnrollmentFeedback = nil
         activePhonePeerTask?.cancel()
         activePhonePeerTask = nil
         activePhonePeerSigner?.discardStagedEnrollment()
@@ -1123,7 +1134,9 @@ final class CompanionSession: ObservableObject {
     @discardableResult
     func submitRemoteConfirm() async -> RemoteSettleOutcome {
         guard !Task.isCancelled else { return .cancelled }
-        activeRemoteConfirmTask?.cancel()
+        guard activeRemoteConfirmTask == nil else {
+            return .failure("A remote settlement is already in progress.")
+        }
         remoteConfirmTaskGeneration += 1
         let myGeneration = remoteConfirmTaskGeneration
         let task = Task<RemoteSettleOutcome, Never> { @MainActor [weak self] in
@@ -1173,14 +1186,12 @@ final class CompanionSession: ObservableObject {
         do {
             guard !Task.isCancelled else { return .cancelled }
             let result = try await client.submitRemoteConfirm(challenge: challenge, phrase: phrase)
-            guard !Task.isCancelled else { return .cancelled }
             if result.isAmbiguous {
                 return settlementFailure("Server returned ambiguous confirm response. Refresh status to check state.")
             }
             guard result.confirmedSuccessfully else {
                 return settlementFailure(result.note ?? "Confirm was not accepted by the server.")
             }
-            guard !Task.isCancelled else { return .cancelled }
             lastRemoteConfirmNote = result.note
                 ?? "Remote human confirm settled. This is not equivalent to local TTY APPROVE."
             challengeInput = ""
@@ -1198,7 +1209,9 @@ final class CompanionSession: ObservableObject {
     @discardableResult
     func submitRemoteRefuse() async -> RemoteSettleOutcome {
         guard !Task.isCancelled else { return .cancelled }
-        activeRemoteConfirmTask?.cancel()
+        guard activeRemoteConfirmTask == nil else {
+            return .failure("A remote settlement is already in progress.")
+        }
         remoteConfirmTaskGeneration += 1
         let myGeneration = remoteConfirmTaskGeneration
         let task = Task<RemoteSettleOutcome, Never> { @MainActor [weak self] in
@@ -1248,14 +1261,12 @@ final class CompanionSession: ObservableObject {
         do {
             guard !Task.isCancelled else { return .cancelled }
             let result = try await client.submitRemoteRefuse(challenge: challenge, reason: reason)
-            guard !Task.isCancelled else { return .cancelled }
             if result.isAmbiguous {
                 return settlementFailure("Server returned ambiguous refuse response. Refresh status to check state.")
             }
             guard result.refusedSuccessfully else {
                 return settlementFailure(result.note ?? "Refuse was not accepted by the server.")
             }
-            guard !Task.isCancelled else { return .cancelled }
             lastRemoteConfirmNote = result.note
                 ?? "Pending refused. Re-arm or use local TTY APPROVE. Not an approval."
             challengeInput = ""
@@ -1606,7 +1617,7 @@ extension PhoneChallengeSigning {
         try await CryptoWorker.shared.perform { try self.signCommitted(message: message) }
     }
     func commitEnrollmentAsync(ownedBy challengeId: String, publicKey: String) async throws {
-        try await CryptoWorker.shared.perform { try self.commitEnrollment(ownedBy: challengeId, publicKey: publicKey) }
+        try await CryptoWorker.shared.performCommit { try self.commitEnrollment(ownedBy: challengeId, publicKey: publicKey) }
     }
     func signCommitted(message: Data) throws -> (publicKey: String, signature: String) {
         throw CompanionClientError.transport("phone session key is not enrolled")
@@ -2065,6 +2076,13 @@ final class CryptoOperationContext: @unchecked Sendable {
 
 actor CryptoWorker {
     static let shared = CryptoWorker()
+
+    /// Commit operations enforce cancellation before starting; once their
+    /// durable write succeeds, cancellation cannot turn success into failure.
+    func performCommit<T>(_ operation: @Sendable () throws -> T) throws -> T {
+        try Task.checkCancellation()
+        return try operation()
+    }
 
     func perform<T>(_ operation: @Sendable () throws -> T) throws -> T {
         try Task.checkCancellation()
