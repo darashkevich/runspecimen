@@ -34,11 +34,13 @@ class MacReleaseIdentityTests(unittest.TestCase):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / name, target)
             overview = root / "README.md"
-            overview.write_text(overview.read_text().replace("local label on this branch is **0.1.6 (16)**", "local label on this branch is **0.1.5 (15)**"))
+            version, build = identity.check(ROOT)
+            overview.write_text(overview.read_text().replace(f"local label on this branch is **{version} ({build})**", "local label on this branch is **9.9.9 (999999)**"))
             with self.assertRaisesRegex(ValueError, "README.md"):
                 identity.check(root)
 
     def test_each_release_identity_source_rejects_version_drift(self):
+        version, _ = identity.check(ROOT)
         for changed in (*identity.FILES, *identity.ACTIVE_DOCS):
             with self.subTest(changed=changed), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -48,7 +50,7 @@ class MacReleaseIdentityTests(unittest.TestCase):
                     shutil.copyfile(ROOT / name, target)
                 target = root / changed
                 before = target.read_text()
-                self.assertIn("0.1.6", before)
-                target.write_text(before.replace("0.1.6", "9.9.9"))
+                self.assertIn(version, before)
+                target.write_text(before.replace(version, "9.9.9"))
                 with self.assertRaises(ValueError):
                     identity.check(root)

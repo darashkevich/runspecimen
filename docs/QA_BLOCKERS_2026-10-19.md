@@ -31,13 +31,13 @@ Evidence retained outside the checkout under `sf/outputs/grok-remediation/`:
 - `authorized-store-green.log`: release identity/export/privacy/source-staging checks pass. CI includes these checks.
 - `authorized-dsh-baseline-red.log`: 0.2.1 fails timeout/lifetime/descendant regressions. The EPERM baseline was not rerun against 0.2.1 because that implementation lacks the bounded cleanup guarantee.
 - `authorized-dsh-022-check.log`: 0.2.2 passes timeout, persistent EPERM and lifetime regressions, but fails the added typed parent-exit regression.
-- `authorized-dsh-green-final.log`: 43 DSH tests passed; candidate lib files remain those of frozen 0.2.3.
+- `authorized-dsh-green-final.log`: 43 DSH tests passed; candidate lib files remain those of frozen 0.2.3. `authorized-dsh-ci-red.log` caught Node 22 rejecting the directory-style test argument; the test script now uses explicit test-file globbing. `authorized-dsh-node22-green.log` records all 43 passing on Node 22.23.3.
 - `authorized-macos-tests-clean.log`: 110 Core tests (one skipped) plus six app tests passed. The first attempt hit a generated-bundle resource-fork signing error; a clean temporary scratch directory resolved it.
 - `authorized-store-core-build.log`, `authorized-store-core-symbols.log`: Xcode Release Core build and undefined-symbol audit.
 
 The simulator XCTest logs report all tests passing. Xcode's result finalizer logs an invalid operatingSystemBuild value on this host and can remain running after the suites finish; these logs are test-suite evidence, not a clean archive/export result.
 
-The broader offline release gate initially stopped at its environment prerequisite: this Python installation lacks setuptools >=77 in its non-user site-packages. It did not build or validate a distributable release.
+The broader offline release gate initially stopped at its environment prerequisite: this Python installation lacks setuptools >=77 in its non-user site-packages. The same environment caused five wheel-fixture failures and one backend error in the initial 947-test Python run. A dedicated temporary venv with the required backend was then created; the full offline gate is being rerun there, with its outcome recorded in `authorized-release-check-fixed-env.log`.
 
 ## Decisions left with Yahor
 
