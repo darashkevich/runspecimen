@@ -1034,6 +1034,27 @@ public enum CompanionSecureEnclaveEnrollment {
 
 /// Shared presentation for hardware approval failures, including errors returned by CryptoKit.
 enum CompanionHardwareErrorPresentation {
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let refusal = error as? CompanionHardwareRefusal {
+            if refusal == .automationRefused { return true }
+            if case .keychainError(let status) = refusal { return status == errSecUserCanceled }
+            if case .malformed(let detail) = refusal, detail.hasPrefix("biometric-"),
+               let code = Int(detail.dropFirst("biometric-".count)) {
+                return isCancellation(NSError(domain: LAError.errorDomain, code: code))
+            }
+        }
+        var current = error as NSError
+        for _ in 0..<8 {
+            if current.domain == LAError.errorDomain,
+               [LAError.userCancel.rawValue, LAError.appCancel.rawValue, LAError.systemCancel.rawValue].contains(current.code) { return true }
+            if current.domain == NSOSStatusErrorDomain, current.code == Int(errSecUserCanceled) { return true }
+            guard let underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError else { break }
+            current = underlying
+        }
+        return false
+    }
+
     static func describe(_ error: Error) -> (message: String, detail: String?) {
         if error is CancellationError { return ("Authentication cancelled.", nil) }
         if let refusal = error as? CompanionHardwareRefusal {

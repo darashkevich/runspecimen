@@ -18,6 +18,8 @@ struct PairingView: View {
     @State private var draftMacKey = ""
     @State private var draftHolderID = ""
     @State private var didLoadDraft = false
+    @State private var initialMacKey = ""
+    @State private var initialHolderID = ""
     @State private var pairingOutcome: PairingOutcome = .none
     @State private var showAdvanced = false
     private let feedbackGenerator = UINotificationFeedbackGenerator()
@@ -200,9 +202,7 @@ struct PairingView: View {
                         let paired = await session.saveAndPair(candidate: candidate)
                         busy = false
                         if paired {
-                            session.macSessionPublicKey = macKey
-                            session.pinnedHolderId = holderID
-                            session.rememberPinnedHolderId()
+                            session.applyVerifiedPairingTrustEdits(previousMacKey: initialMacKey, previousHolderID: initialHolderID, macKey: macKey, holderID: holderID)
                             feedbackGenerator.notificationOccurred(.success)
                             pairingOutcome = .success
                         } else {
@@ -339,6 +339,8 @@ struct PairingView: View {
             draftURL = session.baseURLString
             draftToken = session.pairingToken
             draftFingerprint = session.tlsFingerprint
+            initialMacKey = session.macSessionPublicKey
+            initialHolderID = session.pinnedHolderId
             draftMacKey = session.macSessionPublicKey
             draftHolderID = session.pinnedHolderId
             didLoadDraft = true

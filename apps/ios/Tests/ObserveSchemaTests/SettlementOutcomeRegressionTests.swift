@@ -112,20 +112,20 @@ extension SettlementOutcomeRegressionTests {
         session.tlsFingerprint = "aabbcc"
         session.macSessionPublicKey = "mac-public-key"
         session.pinnedHolderId = "holder-a"
-        UserDefaults.standard.set("holder-a", forKey: "rs.observe.pinnedHolderId")
+        CompanionSession.storageDefaults.set("holder-a", forKey: "rs.observe.pinnedHolderId")
         var savedToken: String? = "secret-token"
-        UserDefaults.standard.set(Data("saved-pairing".utf8), forKey: "rs.observe.pairing")
+        CompanionSession.storageDefaults.set(Data("saved-pairing".utf8), forKey: "rs.observe.pairing")
         CompanionSession.testTokenDelete = { savedToken = nil }
         defer { CompanionSession.testTokenDelete = nil }
         session.disconnect()
         XCTAssertNil(savedToken, "disconnect must delete the persisted keychain token")
-        XCTAssertNil(UserDefaults.standard.object(forKey: "rs.observe.pairing"))
+        XCTAssertNil(CompanionSession.storageDefaults.object(forKey: "rs.observe.pairing"))
         XCTAssertEqual(session.pairingToken, "", "disconnect must forget the bearer token")
         XCTAssertEqual(session.baseURLString, "", "disconnect must clear the URL")
         XCTAssertEqual(session.tlsFingerprint, "", "disconnect must clear the pin")
         XCTAssertEqual(session.macSessionPublicKey, "", "disconnect must clear the Mac trust anchor")
         XCTAssertEqual(session.pinnedHolderId, "", "disconnect must clear the holder trust anchor")
-        XCTAssertNil(UserDefaults.standard.object(forKey: "rs.observe.pinnedHolderId"))
+        XCTAssertNil(CompanionSession.storageDefaults.object(forKey: "rs.observe.pinnedHolderId"))
     }
     @MainActor
     func testCancelledRefreshPreservesSuccessfulTimestamp() async throws {
@@ -479,5 +479,68 @@ extension SettlementOutcomeRegressionTests {
             XCTAssertEqual(s.challengeInput, "")
             XCTAssertEqual(s.approvePhraseInput, "")
         }
+    }
+}
+
+
+extension SettlementOutcomeRegressionTests {
+    @MainActor
+    func testP3CancelAllTasksClearsInterruptedSettlementFields() async throws {
+        for refuse in [false, true] {
+            let s = qaSession()
+            s.challengeInput = "challenge"; s.approvePhraseInput = "APPROVE"; s.refuseReasonInput = "reason"
+            let entered = expectation(description: "transport suspended")
+            var resume: CheckedContinuation<Data, Error>?
+            let c = try XCTUnwrap(s.testMakeClient())
+            c.testRequest = { _ in try await withCheckedThrowingContinuation { resume = $0; entered.fulfill() } }
+            let task = Task { refuse ? await s.submitRemoteRefuse() : await s.submitRemoteConfirm() }
+            let ready = await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+            guard ready == .completed, let continuation = resume else {
+                task.cancel(); resume?.resume(throwing: CancellationError()); _ = await task.value
+                XCTFail("transport never entered"); return
+            }
+            s.cancelAllTasks()
+            continuation.resume(throwing: CancellationError())
+            _ = await task.value
+            XCTAssertEqual(s.challengeInput, "")
+            XCTAssertEqual(s.approvePhraseInput, "")
+            XCTAssertEqual(s.refuseReasonInput, "")
+        }
+    }
+
+    @MainActor
+    func testP3VerifiedPairingFormDoesNotRestoreUneditedOldTrust() {
+        let s = qaSession()
+        s.applyVerifiedPairingTrustEdits(previousMacKey: "old-key", previousHolderID: "old-holder", macKey: "old-key", holderID: "old-holder")
+        XCTAssertEqual(s.macSessionPublicKey, "")
+        XCTAssertEqual(s.pinnedHolderId, "")
+    }
+
+    @MainActor
+    func testP3VerifiedPairingFormKeepsOnlyDeliberatelyEditedPins() {
+        let s = qaSession()
+        s.applyVerifiedPairingTrustEdits(previousMacKey: "old-key", previousHolderID: "old-holder", macKey: "replacement-key", holderID: "old-holder")
+        XCTAssertEqual(s.macSessionPublicKey, "replacement-key")
+        XCTAssertEqual(s.pinnedHolderId, "")
+        s.macSessionPublicKey = ""
+        s.applyVerifiedPairingTrustEdits(previousMacKey: "old-key", previousHolderID: "old-holder", macKey: "old-key", holderID: "replacement-holder")
+        XCTAssertEqual(s.macSessionPublicKey, "")
+        XCTAssertEqual(s.pinnedHolderId, "replacement-holder")
+        XCTAssertEqual(CompanionSession.storageDefaults.string(forKey: "rs.observe.pinnedHolderId"), "replacement-holder")
+    }
+
+    @MainActor
+    func testIdleCancelPreservesUnsubmittedSettlementDraft() {
+        let s = qaSession()
+        s.challengeInput = "challenge"; s.approvePhraseInput = "APPROVE"; s.refuseReasonInput = "reason"
+        s.cancelAllTasks()
+        XCTAssertEqual(s.challengeInput, "challenge")
+        XCTAssertEqual(s.approvePhraseInput, "APPROVE")
+        XCTAssertEqual(s.refuseReasonInput, "reason")
+    }
+
+    @MainActor
+    func testSchemaStorageIsNotStandardDefaults() {
+        XCTAssertFalse(CompanionSession.storageDefaults === UserDefaults.standard)
     }
 }

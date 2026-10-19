@@ -1625,7 +1625,11 @@ final class ObserveSchemaTests: IsolatedCompanionSessionTests {
         try await verifyEnrollmentCommit(cancelDuringCommit: false)
     }
 
-    private func verifyEnrollmentCommit(cancelDuringCommit: Bool, cancelChallengeAfterCommit: Bool = false) async throws {
+    func testP3PhonePeerEnrollmentBiometricCancelIsNeutral() async throws {
+        try await verifyEnrollmentCommit(cancelDuringCommit: false, biometricCancellation: true)
+    }
+
+    private func verifyEnrollmentCommit(cancelDuringCommit: Bool, cancelChallengeAfterCommit: Bool = false, biometricCancellation: Bool = false) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-commit-refresh-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -1673,7 +1677,14 @@ final class ObserveSchemaTests: IsolatedCompanionSessionTests {
 
         signer.cancelAfterCommit = cancelDuringCommit
         if cancelChallengeAfterCommit { signer.afterCommit = { await session.cancelPhonePeerChallenge() } }
+        if biometricCancellation { CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in throw CompanionHardwareRefusal.automationRefused } }
         let outcome = await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
+        if biometricCancellation {
+            XCTAssertEqual(outcome, .cancelled)
+            XCTAssertEqual(signer.commits, 0)
+            await MainActor.run { XCTAssertNil(session.lastError); XCTAssertEqual(session.phoneEnrollmentFeedback, .cancelled) }
+            return
+        }
         XCTAssertEqual(outcome, .enrolled)
 
         await MainActor.run {
@@ -1950,7 +1961,7 @@ extension ObserveSchemaTests {
         let session = await CompanionSession()
         
         await MainActor.run {
-            let defaults = UserDefaults.standard
+            let defaults = CompanionSession.storageDefaults
             let oldKey = "rs.observe.pairing"
             
             if let existingConfig = defaults.dictionary(forKey: oldKey),
@@ -2126,7 +2137,7 @@ extension ObserveSchemaTests {
 
     @MainActor
     func testIOSQA702MigrationRetainsTokenUntilKeychainWriteSucceeds() throws {
-        let defaults = UserDefaults.standard
+        let defaults = CompanionSession.storageDefaults
         let key = "rs.observe.pairing"
         let previous = defaults.object(forKey: key)
         defer {
@@ -2780,7 +2791,7 @@ extension ObserveSchemaTests {
     @MainActor
     func testIOSQA702PairingWriteFailureKeepsPreviousConfigurationAndToken() throws {
         let key = "rs.observe.pairing"
-        let defaults = UserDefaults.standard
+        let defaults = CompanionSession.storageDefaults
         let previous = defaults.object(forKey: key)
         defer {
             defaults.set(previous, forKey: key)
@@ -2960,7 +2971,7 @@ extension ObserveSchemaTests {
 extension ObserveSchemaTests {
     @MainActor
     func testIOSQA8C1RejectedCandidateIsNeverPersistedOrRestored() async throws {
-        let defaults = UserDefaults.standard
+        let defaults = CompanionSession.storageDefaults
         let previous = defaults.object(forKey: "rs.observe.pairing")
         defer { defaults.set(previous, forKey: "rs.observe.pairing"); CompanionSession.testTokenRead = nil; CompanionSession.testTokenWrite = nil }
         defaults.removeObject(forKey: "rs.observe.pairing")
@@ -3106,7 +3117,7 @@ extension ObserveSchemaTests {
 extension ObserveSchemaTests {
     @MainActor
     func testIOSQA8C1FailedOrCancelledReplacementKeepsPreviouslySavedPairing() async throws {
-        let defaults = UserDefaults.standard
+        let defaults = CompanionSession.storageDefaults
         let previous = defaults.object(forKey: "rs.observe.pairing")
         defer { defaults.set(previous, forKey: "rs.observe.pairing"); CompanionSession.testTokenRead = nil; CompanionSession.testTokenWrite = nil }
         var token = "old-token"

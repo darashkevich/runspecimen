@@ -201,7 +201,9 @@ struct StatusObserveView: View {
                 outcomeView(.success("Phone key enrolled after holder verification."))
             case .refused(let reason):
                 outcomeView(.failure(reason))
-            case .cancelled, nil:
+            case .cancelled:
+                Text("Enrollment cancelled.").font(.footnote).foregroundStyle(RSTheme.muted)
+            case nil:
                 EmptyView()
             }
 
