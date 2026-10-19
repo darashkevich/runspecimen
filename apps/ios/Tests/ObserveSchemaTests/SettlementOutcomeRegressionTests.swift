@@ -210,7 +210,10 @@ extension SettlementOutcomeRegressionTests {
         let confirm = Task { await session.submitRemoteConfirm() }
         await fulfillment(of: [entered], timeout: 5)
         let refused = await session.submitRemoteRefuse()
-        guard case .failure = refused else { return XCTFail("competing settlement must be refused") }
+        if case .failure = refused { /* expected: confirm still owns the request */ }
+        else { XCTFail("competing settlement must be refused") }
+        // Always resume and await the original task, including the red path.
+        // Returning at the assertion would leave its continuation suspended.
         try XCTUnwrap(resume).resume(returning: Data("{\"ok\":true,\"settled\":true}".utf8))
         let result = await confirm.value
         XCTAssertEqual(result, .confirmed)
