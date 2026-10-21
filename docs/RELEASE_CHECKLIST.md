@@ -40,7 +40,7 @@ Run `python3 scripts/release_check.py` before tagging. A release candidate is no
 a stable release and does not change the explicit limitations in the threat model.
 
 
-## Stable historical 0.2.0 gate
+## Stable 0.2.0 gate
 
 **Status: not met.** Published package remains **`0.2.0rc15`**. Do not retag,
 promote, or claim rc13 as stable. A release candidate is not a stable release.
@@ -64,7 +64,7 @@ promote, or claim rc13 as stable. A release candidate is not a stable release.
 
 ### Still required before tagging `v0.2.0`
 
-- [ ] Version / classifier bump from `0.2.0rc15` → `historical 0.2.0` (package, plugins,
+- [ ] Version / classifier bump from `0.2.0rc15` → `0.2.0` (package, plugins,
       docs identity pins) on a dedicated PR.
 - [ ] CI green on the exact cut commit (Linux 3.9–3.14, macOS 3.11/3.14, macos-app).
 - [ ] Copy audit: USER_GUIDE, THREAT_MODEL, FAQ, SUBMISSION, site pins — no

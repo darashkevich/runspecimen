@@ -19,8 +19,8 @@ Built from **origin/main** `0f50a2c` (engine **0.2.0rc14**) plus macOS rejection
 ## Historical: 0.1.3 (8) rejection (2026-09-23)
 
 Rejection of **historical 0.1.3 (8)** (submission `9c19e1cd-…`, review 2026-09-23):
-**historical 2.5.1** private/deprecated API refs in Apple Python 3.9 (`TrustEvaluationAgent`,
-`_lzma` symbols), **Design 4** missing main-window reopen menu, **historical 2.4.5(i)** unused
+**2.5.1** private/deprecated API refs in Apple Python 3.9 (`TrustEvaluationAgent`,
+`_lzma` symbols), **Design 4** missing main-window reopen menu, **2.4.5(i)** unused
 `network.server`. See [REJECTION-2026-09-23.md](REJECTION-2026-09-23.md).
 
 In-flight note: that `/inflight` URL is historical (saved while **historical 0.1.4 (9)** was waiting). The current Connect state in this file is `Removed from App Store` (EU trader status missing) for **historical 0.1.4 (9)** — see the top section. This integrated branch is unpublished **0.1.6 (16)** / engine **0.2.0rc15** and is not that Store package. Do not withdraw, replace, or claim a new Store submission from this note.
@@ -97,7 +97,7 @@ What the rejected binary asked reviewers to do (build 5 / rc10):
 - Review notes pointed at `examples/showcase` with **no zip attached**
 - Showcase is not inside the Store `.app`
 
-That is a 2.1 completeness / historical 2.4.5(ii)(viii) fail even without Apple’s paragraph.
+That is a 2.1 completeness / 2.4.5(ii)(viii) fail even without Apple’s paragraph.
 Fix in this tree: bundled `Resources/ReviewerDemo`, MAS empty state **Open Reviewer Demo**,
 no pip/Select-CLI on Store builds, metadata keywords no longer lead with “sandbox”.
 That fix shipped as **historical 0.1.3 (6)** (rejected) and again as **historical 0.1.3 (8)**, which Apple rejected on 2026-09-23. Engine **0.2.0rc12**. The package recorded as waiting is **historical 0.1.4 (9)**.
