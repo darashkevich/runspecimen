@@ -78,3 +78,15 @@ class MacReleaseIdentityTests(unittest.TestCase):
             metadata.write_text(metadata.read_text() + "\n| Short version | 9.9.9 |\n| Build | 999999 |\n")
             with self.assertRaisesRegex(ValueError, "metadata.md"):
                 identity.check(root)
+
+    def test_stale_version_without_build_number_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in (*identity.FILES, *identity.ACTIVE_DOCS):
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / name, target)
+            status = root / "apps/macos/asc-kit/STATUS.md"
+            status.write_text(status.read_text() + "\nThe integrated candidate is 0.1.5.\n")
+            with self.assertRaisesRegex(ValueError, "STATUS.md"):
+                identity.check(root)

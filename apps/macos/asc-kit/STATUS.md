@@ -2,7 +2,7 @@
 
 ## Current candidate: 0.1.6 (16), not submitted
 
-PR #75 merged as `4514bdc` on 2026-10-18. Yahor confirmed Mac 0.1.5 withdrawn from review. The candidate remains blocked by independent QA findings; no upload or submission is authorized by this file.
+PR #75 merged as `4514bdc` on 2026-10-18. Yahor confirmed Mac historical 0.1.5 withdrawn from review. The candidate remains blocked by independent QA findings; no upload or submission is authorized by this file.
 
 ## Historical Store record: historical 0.1.4 (9)
 
@@ -12,15 +12,15 @@ Built from **origin/main** `0f50a2c` (engine **0.2.0rc14**) plus macOS rejection
 
 | Connect field | Value |
 | --- | --- |
-| Version | **0.1.4** `Removed from App Store` (EU trader status missing) (id `6cfe298b-92c1-460d-b83b-5687a67f2cff`) |
+| Version | **historical 0.1.4** `Removed from App Store` (EU trader status missing) (id `6cfe298b-92c1-460d-b83b-5687a67f2cff`) |
 | Build | **9** id `51a18894-02e3-4846-86f5-29cc345567f0` `VALID` |
 | Package SHA-256 | `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` |
 
 ## Historical: 0.1.3 (8) rejection (2026-09-23)
 
 Rejection of **historical 0.1.3 (8)** (submission `9c19e1cd-…`, review 2026-09-23):
-**2.5.1** private/deprecated API refs in Apple Python 3.9 (`TrustEvaluationAgent`,
-`_lzma` symbols), **Design 4** missing main-window reopen menu, **2.4.5(i)** unused
+**historical 2.5.1** private/deprecated API refs in Apple Python 3.9 (`TrustEvaluationAgent`,
+`_lzma` symbols), **Design 4** missing main-window reopen menu, **historical 2.4.5(i)** unused
 `network.server`. See [REJECTION-2026-09-23.md](REJECTION-2026-09-23.md).
 
 In-flight note: that `/inflight` URL is historical (saved while **historical 0.1.4 (9)** was waiting). The current Connect state in this file is `Removed from App Store` (EU trader status missing) for **historical 0.1.4 (9)** — see the top section. This integrated branch is unpublished **0.1.6 (16)** / engine **0.2.0rc15** and is not that Store package. Do not withdraw, replace, or claim a new Store submission from this note.
@@ -51,7 +51,7 @@ ASC API. Same generic body as the first rejection.
 
 | Connect field | Value |
 | --- | --- |
-| Version | **0.1.3** `WAITING_FOR_REVIEW` |
+| Version | **historical 0.1.3** `WAITING_FOR_REVIEW` |
 | App Info | `WAITING_FOR_REVIEW` |
 | Build | **8** id `c5575ef9-2444-4452-aec8-c9afdc7dd611` `VALID` uploaded 2026-09-20T22:35:19-07:00 |
 | Submission | `9c19e1cd-ebd1-4705-b683-5a5fdc2671f6` submitted 2026-09-21T05:36:49Z |
@@ -68,7 +68,7 @@ EU DSA trader declaration (Business → Compliance). The `/apps` banner is still
 
 | Connect field | Value |
 | --- | --- |
-| Version | **0.1.3** `WAITING_FOR_REVIEW` |
+| Version | **historical 0.1.3** `WAITING_FOR_REVIEW` |
 | App Info | `WAITING_FOR_REVIEW` |
 | Build | **6** id `643b57e5-c679-4dd3-a97b-8d64e23c29e6` `VALID` uploaded 2026-09-19T08:20:03-07:00 |
 | Submission | `cd198ca0-c74c-4cbc-b626-89fd116030b9` submitted 2026-09-19T15:29:40Z |
@@ -85,7 +85,7 @@ return Resolution Center guideline text.
 
 | Connect field | Value |
 | --- | --- |
-| Version | **0.1.3** `REJECTED` / `appVersionState=REJECTED` |
+| Version | **historical 0.1.3** `REJECTED` / `appVersionState=REJECTED` |
 | App Info | **REJECTED** |
 | Review submission | `5a2f17dd-3b82-4730-b0e5-ac1655845074` `UNRESOLVED_ISSUES` (actor APPLE) |
 | Review item | version rejected; **no** review attachments |
@@ -97,7 +97,7 @@ What the rejected binary asked reviewers to do (build 5 / rc10):
 - Review notes pointed at `examples/showcase` with **no zip attached**
 - Showcase is not inside the Store `.app`
 
-That is a 2.1 completeness / 2.4.5(ii)(viii) fail even without Apple’s paragraph.
+That is a 2.1 completeness / historical 2.4.5(ii)(viii) fail even without Apple’s paragraph.
 Fix in this tree: bundled `Resources/ReviewerDemo`, MAS empty state **Open Reviewer Demo**,
 no pip/Select-CLI on Store builds, metadata keywords no longer lead with “sandbox”.
 That fix shipped as **historical 0.1.3 (6)** (rejected) and again as **historical 0.1.3 (8)**, which Apple rejected on 2026-09-23. Engine **0.2.0rc12**. The package recorded as waiting is **historical 0.1.4 (9)**.
@@ -118,7 +118,7 @@ Connect timestamps + the git timeline.
 | Connect field | Value |
 | --- | --- |
 | App | `6813492506` `RunSpecimen` `com.darashkevich.runspecimen` SKU `runspecimen-mac` |
-| macOS version | **0.1.3** id `6cfe298b-92c1-460d-b83b-5687a67f2cff` `MAC_OS` `releaseType=AFTER_APPROVAL` |
+| macOS version | **historical 0.1.3** id `6cfe298b-92c1-460d-b83b-5687a67f2cff` `MAC_OS` `releaseType=AFTER_APPROVAL` |
 | State | was `WAITING_FOR_REVIEW`, later rejected (not the current submission) |
 | Submission | `appStoreVersionSubmissions` id `6cfe298b-92c1-460d-b83b-5687a67f2cff` |
 | Build | **5** id `17c7d179-78e4-4b93-86ce-753cef186b20` `processingState=VALID` `expired=false` min OS 14.0 |
@@ -156,7 +156,7 @@ Commits that **cannot** be inside Apple’s binary (all after 15:38 CEST):
 
 ### Recommendation (superseded)
 
-Build **9** (`0.1.4`) is now **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded.
+Build **9** (`historical 0.1.4`) is now **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded.
 
 ## Packaging checklist (this operator Mac)
 

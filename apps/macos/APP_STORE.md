@@ -6,7 +6,7 @@ path — see [NOTARIZATION.md](NOTARIZATION.md).
 
 Consult current Apple docs before each submission:
 
-- [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) (esp. **2.4.5**, **2.5.1**, **4.2**, **5.1**)
+- [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) (esp. **historical 2.4.5**, **historical 2.5.1**, **4.2**, **5.1**)
 - [App Sandbox](https://developer.apple.com/documentation/security/app_sandbox)
 - [Accessing files from the macOS App Sandbox](https://developer.apple.com/documentation/security/accessing-files-from-the-macos-app-sandbox)
 - [Privacy manifest files](https://developer.apple.com/documentation/bundleresources/privacy_manifest_files)
@@ -21,16 +21,16 @@ Consult current Apple docs before each submission:
 
 ### Why MAS-first now
 
-1. **Guideline 2.4.5(viii)** — Store builds embed a **frozen Mach-O** helper
+1. **Guideline historical 2.4.5(viii)** — Store builds embed a **frozen Mach-O** helper
    (`Contents/Resources/RunSpecimenEngine/`, PyInstaller **onedir** + `_internal/`)
    built from the current engine (`0.2.0rc15` on this branch). **Onefile is not used**
    — its bootloader needs SysV semaphores denied by App Sandbox. No host Python /
    optionally installed PyPI CLI is required for Store builds. `--from-src`
    host-Python launchers are **local/CI only** and are rejected at runtime when
    `RSDistributionChannel=mas`.
-2. **Guideline 2.4.5(i)** — App Sandbox + justified entitlements
+2. **Guideline historical 2.4.5(i)** — App Sandbox + justified entitlements
    (`Entitlements/RunSpecimen.mas.entitlements`).
-3. **Guideline 2.4.5(ii)** — Self-contained `.app`; never `pip install` into shared
+3. **Guideline historical 2.4.5(ii)** — Self-contained `.app`; never `pip install` into shared
    locations from the app.
 4. **Guideline 4.2** — Native SwiftUI control surface (status, evidence, PTY approve),
    not a web clipping. Screenshots must lead with native UX.
@@ -130,7 +130,7 @@ Operator steps (once per machine; no credential handling in git):
 6. Verify: `pkgutil --check-signature` (installer chain), then extract and
    `codesign --verify --strict` the `.app` and nested helper; entitlements
    sandbox + inherit; `RSDistributionChannel=mas`.
-7. Build **9** (`0.1.4`) is **Removed from App Store** (EU trader status missing). Ready for the next build when needed.
+7. Build **9** (`historical 0.1.4`) is **Removed from App Store** (EU trader status missing). Ready for the next build when needed.
 
 ASC paste pack (metadata / screenshots checklist / reviewer demo):
 [asc-kit/](asc-kit/) — mark screenshot PNGs and Connect record as **pending** until Yahor fills them.
@@ -154,13 +154,13 @@ Xcode build phases **Embed Frozen Helper** and **Clear Codesign Xattrs** call
 
 | Entitlement | Purpose |
 | --- | --- |
-| `com.apple.security.app-sandbox` | Required for MAS (2.4.5(i)) |
+| `com.apple.security.app-sandbox` | Required for MAS (historical 2.4.5(i)) |
 | `com.apple.security.files.user-selected.read-write` | Workspace + evidence via Open panel |
 | `com.apple.security.files.user-selected.executable` | Execute user-picked CLI override (optional; Store prefers bundled helper) |
 | `com.apple.security.network.client` | Optional docs links (GitHub / privacy) in browser; no telemetry |
 
 Store builds intentionally omit `com.apple.security.network.server` (guideline
-2.4.5(i) — Apple rejected it when unused). The optional loopback browser
+historical 2.4.5(i) — Apple rejected it when unused). The optional loopback browser
 dashboard is hidden/refused on MAS; native evidence views remain. Developer ID
 builds may still use `network.server` for the local dashboard.
 
@@ -182,7 +182,7 @@ Same sandbox entitlements preferred. Hardened Runtime via
 Declare **Data Not Collected** while true: no analytics, crash uploaders, ads,
 accounts, or phone-home.
 
-### In-app privacy policy (5.1.1)
+### In-app privacy policy (historical 5.1.1)
 
 Settings → Privacy, Help → Privacy Policy, About →
 https://runspecimen.darashkevich.com/privacy/ (+ GitHub `SECURITY.md`).
@@ -241,14 +241,14 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 
 | Risk | Guideline | Mitigation |
 | --- | --- | --- |
-| Optionally installed Python/CLI | 2.4.5(viii) | Frozen helper required for `--mas`; fail closed |
+| Optionally installed Python/CLI | historical 2.4.5(viii) | Frozen helper required for `--mas`; fail closed |
 | Thin wrapper | 4.2 | Lead with native status/evidence/Approve UX |
 | Arbitrary executable | Sandbox | Basename `runspecimen` + version gate; Store prefers bundled helper |
 | Misleading security claims | 2.3 | SECURITY_BOUNDARY.md; honest copy |
-| Background dashboard after quit | 2.4.5(iii) | Kill dashboard child on terminate |
-| Private APIs | 2.5.1 | Public AppKit/SwiftUI/Foundation/Darwin PTY only |
+| Background dashboard after quit | historical 2.4.5(iii) | Kill dashboard child on terminate |
+| Private APIs | historical 2.5.1 | Public AppKit/SwiftUI/Foundation/Darwin PTY only |
 | Telemetry contradiction | 5.1 | Data Not Collected; no analytics SDKs |
-| Installing into shared paths | 2.4.5(ii) | Never `pip install` from the app |
+| Installing into shared paths | historical 2.4.5(ii) | Never `pip install` from the app |
 
 ## Packaging checklist (MAS)
 

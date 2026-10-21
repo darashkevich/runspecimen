@@ -107,8 +107,8 @@ release authorization. Neither local export nor upload submits for review.
 
 ### 4. Current status
 
-ASC: version `0.1.4` / build **9** is **Removed from App Store** (EU trader status missing). Build **14** (0.1.5)
-was uploaded; next candidate is **0.1.6 (16)**; Mac 0.1.5 was withdrawn from review by Yahor on 2026-10-18. Submission remains blocked on final QA closure.
+ASC: version `historical 0.1.4` / build **9** is **Removed from App Store** (EU trader status missing). Build **14** (historical 0.1.5)
+was uploaded; next candidate is **0.1.6 (16)**; Mac historical 0.1.5 was withdrawn from review by Yahor on 2026-10-18. Submission remains blocked on final QA closure.
 
 Optional: `brew install xcodegen` then `./Scripts/generate_xcodeproj.sh` if
 `project.yml` changed (committed `RunSpecimen.xcodeproj` is the default Archive input).

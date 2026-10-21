@@ -58,6 +58,10 @@ def check(root):
                 historical = re.search(r"historical[:\s]*(?:\*\*|`)?$", line[:match.start()], re.I)
                 if match.groups() != (version, build) and not historical:
                     errors.append(f"{name}:{line_number}: unlabelled stale version {match[0]}")
+            for match in re.finditer(r"(?<![\w/.-])(\d+\.\d+\.\d+)(?![\w-]|\.\d)", line):
+                historical = re.search(r"historical[:\s]*(?:\*\*|`)?$", line[:match.start()], re.I)
+                if match[1] != version and not historical:
+                    errors.append(f"{name}:{line_number}: unlabelled stale version {match[0]}")
     if errors:
         raise ValueError("Mac release identity mismatch: " + ", ".join(errors))
     return version, build
