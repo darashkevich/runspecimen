@@ -54,3 +54,27 @@ class MacReleaseIdentityTests(unittest.TestCase):
                 target.write_text(before.replace(version, "9.9.9"))
                 with self.assertRaises(ValueError):
                     identity.check(root)
+
+    def test_stale_integrated_candidate_anywhere_in_status_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in (*identity.FILES, *identity.ACTIVE_DOCS):
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / name, target)
+            status = root / "apps/macos/asc-kit/STATUS.md"
+            status.write_text(status.read_text() + "\n| Unpublished integrated candidate | **0.1.5 (13)** | stale |\n")
+            with self.assertRaisesRegex(ValueError, "STATUS.md"):
+                identity.check(root)
+
+    def test_duplicate_stale_version_and_build_rows_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in (*identity.FILES, *identity.ACTIVE_DOCS):
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / name, target)
+            metadata = root / "apps/macos/asc-kit/metadata.md"
+            metadata.write_text(metadata.read_text() + "\n| Short version | 9.9.9 |\n| Build | 999999 |\n")
+            with self.assertRaisesRegex(ValueError, "metadata.md"):
+                identity.check(root)

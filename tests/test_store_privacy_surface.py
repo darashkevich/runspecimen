@@ -15,4 +15,6 @@ class StorePrivacySurfaceTests(unittest.TestCase):
     def test_cli_discovery_uses_bounded_content_instead_of_file_metadata(self):
         source=(ROOT/'apps/macos/Sources/RunSpecimenApp/Services/CLIService.swift').read_text()
         self.assertNotIn('attributesOfItem',source)
-        self.assertIn('read(upToCount: 64)',source)
+        self.assertIn('candidatePrefix(at: url)', source)
+        self.assertIn('.isRegularFileKey', source)
+        self.assertIn('O_NONBLOCK', source)

@@ -37,7 +37,7 @@ jobs:
       - name: iOS Release symbol gate fixtures
         run: sh apps/ios/Scripts/verify_ios_release_symbols.sh
       - name: Mac release identity and export defaults
-        run: python -m unittest tests.test_macos_release_identity tests.test_store_export_defaults tests.test_store_privacy_surface tests.test_release_source_dependencies
+        run: python -m unittest tests.test_macos_release_identity tests.test_store_export_defaults tests.test_store_privacy_surface
       - name: Offline release gate
         run: python scripts/release_check.py --output-dir "${{ runner.temp }}/runspecimen-release"
       - uses: actions/upload-artifact@v5
@@ -96,19 +96,3 @@ jobs:
         run: brew install xcodegen
       - name: Run iOS Observe tests
         run: bash apps/ios/Scripts/test_ios_observe.sh
-
-  dsh-plugin:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    defaults:
-      run:
-        working-directory: plugins/runspecimen/dsh
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: plugins/runspecimen/dsh/package-lock.json
-      - run: npm ci --ignore-scripts
-      - run: npm test

@@ -282,7 +282,7 @@ def normalized_sdist_mode(member: tarfile.TarInfo) -> int:
 
 def stage_source(destination: Path) -> None:
     destination.mkdir()
-    ignore = shutil.ignore_patterns(".runspecimen", "__pycache__", "*.py[cod]", "*.egg-info", ".DS_Store", "node_modules")
+    ignore = shutil.ignore_patterns(".runspecimen", "__pycache__", "*.py[cod]", "*.egg-info", ".DS_Store")
     for name in SOURCE_COMPONENTS:
         source = ROOT / name
         if source.is_dir():

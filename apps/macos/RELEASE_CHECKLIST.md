@@ -50,7 +50,7 @@ python3 -m pip install --user 'pyinstaller>=6'
 ./Scripts/test_security_boundary.sh
 ./Scripts/build_app.sh --mas
 # Expect:
-build/RunSpecimen.app/Contents/Helpers/runspecimen --version   # → 0.2.0rc15 on a freeze of this branch; Store 0.1.4 (9) is published rc14
+build/RunSpecimen.app/Contents/Helpers/runspecimen --version   # → 0.2.0rc15 on a freeze of this branch; Store historical 0.1.4 (9) is published rc14
 test ! -d build/RunSpecimen.app/Contents/Helpers/lib
 /usr/libexec/PlistBuddy -c 'Print :RSDistributionChannel' \
   build/RunSpecimen.app/Contents/Info.plist   # → mas

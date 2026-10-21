@@ -41,14 +41,23 @@ def check(root):
                 errors.append(name + ": " + setting)
     for name in FILES[4:]:
         text = (root / name).read_text()
-        short = re.search(r"^\| Short version \| `?([0-9.]+)`? \|", text, re.M)
-        number = re.search(r"^\| Build \| `?([0-9]+)`?", text, re.M)
-        if not short or short[1] != version or not number or number[1] != build:
+        short = re.findall(r"^\| Short version \| `?([0-9.]+)`? \|", text, re.M)
+        number = re.findall(r"^\| Build \| `?([0-9]+)`?", text, re.M)
+        if not short or any(value != version for value in short) or not number or any(value != build for value in number):
             errors.append(name)
     for name, pattern in ACTIVE_DOCS.items():
-        match = re.search(pattern, (root / name).read_text())
-        if not match or match.groups() != (version, build):
+        matches = list(re.finditer(pattern, (root / name).read_text()))
+        if not matches or any(match.groups() != (version, build) for match in matches):
             errors.append(name)
+    # Inspect every version/build pair, not just the first matching sentence.
+    # Old artifact identities must be explicitly labelled historical immediately
+    # before the pair; an old current-candidate row cannot hide in a history section.
+    for name in (*FILES[4:], *ACTIVE_DOCS):
+        for line_number, line in enumerate((root / name).read_text().splitlines(), 1):
+            for match in re.finditer(r"\b(\d+\.\d+\.\d+)\s*\((\d+)\)", line):
+                historical = re.search(r"historical[:\s]*(?:\*\*|`)?$", line[:match.start()], re.I)
+                if match.groups() != (version, build) and not historical:
+                    errors.append(f"{name}:{line_number}: unlabelled stale version {match[0]}")
     if errors:
         raise ValueError("Mac release identity mismatch: " + ", ".join(errors))
     return version, build
