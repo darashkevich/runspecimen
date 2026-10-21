@@ -55,8 +55,12 @@ final class RefreshUITests: XCTestCase {
         XCTAssertTrue(url.waitForExistence(timeout: 5))
         XCTAssertEqual(url.value as? String, "http://localhost")
         url.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         url.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "http://localhost".count) + "https://candidate.invalid")
-        XCTAssertNotEqual(url.value as? String, "http://localhost")
+        // Text entry and the SwiftUI binding can settle on separate UI cycles.
+        // Require the actual candidate value before testing navigation rollback.
+        let edited = expectation(for: NSPredicate(format: "value == %@", "https://candidate.invalid"), evaluatedWith: url)
+        wait(for: [edited], timeout: 10)
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(entry.waitForExistence(timeout: 5), app.debugDescription)
         entry.tap()
