@@ -6,6 +6,8 @@ enum PairingOutcome: Equatable {
     case inProgress
     case success
     case failure
+
+    static var successMessage: String { "Connected successfully. The previous Mac session key and holder pin were cleared. Re-enter them in Advanced settings to use phone-peer enrollment." }
 }
 
 struct PairingView: View {
@@ -228,7 +230,7 @@ struct PairingView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(RSTheme.signal)
-                        Text("Connected successfully")
+                        Text(PairingOutcome.successMessage)
                             .font(.subheadline)
                             .foregroundStyle(RSTheme.ink)
                     }

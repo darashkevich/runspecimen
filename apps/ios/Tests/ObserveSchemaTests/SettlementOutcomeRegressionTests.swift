@@ -544,3 +544,12 @@ extension SettlementOutcomeRegressionTests {
         XCTAssertFalse(CompanionSession.storageDefaults === UserDefaults.standard)
     }
 }
+
+extension SettlementOutcomeRegressionTests {
+    func testVerifiedPairingSuccessExplainsClearedTrustAndNextStep() {
+        let message = PairingOutcome.successMessage
+        XCTAssertTrue(message.contains("Mac session key and holder pin were cleared"))
+        XCTAssertTrue(message.contains("Re-enter them"))
+        XCTAssertTrue(message.contains("Advanced settings"))
+    }
+}
