@@ -18,6 +18,8 @@ final class RecoveryUITests: XCTestCase {
         reopen.tap()
         XCTAssertTrue(banner.waitForExistence(timeout: 5))
         app.buttons["Export recovery diagnostics"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["Copy"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        // The cold system share service populates its remote actions asynchronously.
+        // Wait for the real Copy action rather than imposing a five-second startup deadline.
+        XCTAssertTrue(app.descendants(matching: .any)["Copy"].firstMatch.waitForExistence(timeout: 30), app.debugDescription)
     }
 }
