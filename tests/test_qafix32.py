@@ -36,6 +36,8 @@ def _rewrite_home(venv: Path, home: Path) -> None:
 def _alias_stdlib(lib: Path, stdlib: Path, *, skip_os_py: bool) -> None:
     lib.mkdir(parents=True, exist_ok=True)
     for entry in stdlib.iterdir():
+        if entry.name in {"sitecustomize.py", "usercustomize.py"}:
+            continue
         if skip_os_py and entry.name == "os.py":
             continue
         dest = lib / entry.name
@@ -56,11 +58,14 @@ class Qafix32LayoutTests(unittest.TestCase):
 
     def _plant_startup(self, lib: Path, marker: Path) -> None:
         lib.mkdir(parents=True, exist_ok=True)
-        (lib / "sitecustomize.py").write_text(
-            "from pathlib import Path\n"
-            f"Path({str(marker)!r}).write_text('fake home startup')\n",
-            encoding="utf-8",
-        )
+        target = lib / "sitecustomize.py"
+        if target.is_symlink() or target.resolve().parent != lib.resolve():
+            raise ValueError("startup fixture must remain inside fake stdlib")
+        with target.open("x", encoding="utf-8") as stream:
+            stream.write(
+                "from pathlib import Path\n"
+                f"Path({str(marker)!r}).write_text('fake home startup')\n",
+            )
 
     def test_parent_directory_home_is_refused_before_startup(self) -> None:
         raw, venv = self._fresh()
@@ -142,3 +147,32 @@ class Qafix32LayoutTests(unittest.TestCase):
             # This host is not the framework layout the report reproduced.
             self.assertNotIn("loader canary", report["message"])
         self.assertFalse(marker.exists())
+
+
+class StartupFixtureContainmentTests(unittest.TestCase):
+    def test_startup_hooks_are_not_aliased(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            source = root / "stdlib"
+            source.mkdir()
+            for name in ("sitecustomize.py", "usercustomize.py", "os.py"):
+                (source / name).write_text("original")
+            target = root / "fake"
+            _alias_stdlib(target, source, skip_os_py=False)
+            self.assertFalse((target / "sitecustomize.py").is_symlink())
+            self.assertFalse((target / "usercustomize.py").is_symlink())
+            self.assertTrue((target / "os.py").is_symlink())
+
+    def test_plant_refuses_symlink_without_mutating_source(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            original = root / "original.py"
+            original.write_text("original")
+            lib = root / "fake"
+            lib.mkdir()
+            (lib / "sitecustomize.py").symlink_to(original)
+            with self.assertRaises(ValueError):
+                Qafix32LayoutTests()._plant_startup(lib, root / "marker")
+            self.assertEqual(original.read_text(), "original")
