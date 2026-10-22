@@ -26,8 +26,17 @@ xcodegen generate --spec project.yml
 
 echo "Building and testing ObserveSchemaTests..."
 
-SCRATCH_DIR="$(mktemp -d)"
-trap 'rm -rf "$SCRATCH_DIR"' EXIT
+# Preserve the failing UI hierarchy/screenshots and Simulator diagnostics in CI.
+# Local runs retain the existing disposable build behavior.
+if [[ "${GITHUB_ACTIONS:-}" == "true" && -n "${RUNNER_TEMP:-}" ]]; then
+  SCRATCH_DIR="$RUNNER_TEMP/ios-observe-results"
+  mkdir -p "$SCRATCH_DIR"
+else
+  SCRATCH_DIR="$(mktemp -d)"
+  trap 'rm -rf "$SCRATCH_DIR"' EXIT
+fi
+xcodebuild -version > "$SCRATCH_DIR/environment.txt"
+xcrun simctl list devices available >> "$SCRATCH_DIR/environment.txt"
 
 DESTINATION=$(xcrun simctl list devices available -j 2>/dev/null | \
   python3 -c "import json,sys; d=json.load(sys.stdin); \
@@ -37,6 +46,8 @@ DESTINATION=$(xcrun simctl list devices available -j 2>/dev/null | \
 
 echo "Using destination: $DESTINATION"
 
+# Capture the test exit code before errexit can leave the script.
+set +e
 xcodebuild test \
   -project RunSpecimenObserve.xcodeproj \
   -scheme RunSpecimenObserve \
@@ -49,6 +60,7 @@ xcodebuild test \
   2>&1 | tee "$SCRATCH_DIR/test.log"
 
 TEST_RC=${PIPESTATUS[0]}
+set -e
 
 if [[ "$TEST_RC" -ne 0 ]]; then
   echo "iOS tests FAILED with exit code $TEST_RC"

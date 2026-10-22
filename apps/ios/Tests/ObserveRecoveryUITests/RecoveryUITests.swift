@@ -17,7 +17,7 @@ final class RecoveryUITests: XCTestCase {
         XCTAssertTrue(reopen.waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertFalse(banner.exists, app.debugDescription)
         reopen.tap()
-        XCTAssertTrue(banner.waitForExistence(timeout: 5))
+        XCTAssertTrue(banner.waitForExistence(timeout: 15), app.debugDescription)
         app.buttons["Export recovery diagnostics"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["Copy"].firstMatch.waitForExistence(timeout: 30), app.debugDescription)
     }

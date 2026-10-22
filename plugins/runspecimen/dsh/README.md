@@ -275,3 +275,7 @@ ChildProcess leader still to be unreaped. If it has already exited and the group
 is still present, retry fails closed and retains the unresolved state for manual
 inspection; it does not turn a numeric PID into new authority. Once group death
 is observed, the stale entry can be cleared without signaling anything.
+
+## Tested Cordis compatibility
+
+The Cordis peer range is `^4.0.5` (4.0.5 through 4.x; excludes 5.x). The lockfile resolves 4.0.5, used for this QA round. This replaces the unbounded wildcard because later major host versions have not been qualified. Registration, execution, cancellation and dashboard cleanup tests run with the locked dependency graph; the range does not claim testing of every future 4.x release.

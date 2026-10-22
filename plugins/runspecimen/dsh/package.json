@@ -32,7 +32,7 @@
     "test": "node --test test/*.test.js"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/cordis": "^4.0.5",
     "@deepseek-ai/dsh-tools": "*"
   },
   "peerDependenciesMeta": {
