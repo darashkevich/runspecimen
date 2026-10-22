@@ -15,6 +15,8 @@ import signal
 import sys
 import tempfile
 import unittest
+import select
+from unittest.mock import patch
 
 from runspecimen.holder_protocol import foreign_wait, write_durable_record
 
@@ -37,6 +39,8 @@ from launch_fault_harness import (
     record_child_identity,
     recover,
     run_fault,
+    _write_marker,
+    _sleep_until_killed,
 )
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -508,6 +512,74 @@ class LaunchFaultTests(unittest.TestCase):
         self.assertEqual(replay.returncode, EXIT_SPENT)
         allowed = run_fault(root, "after_intent", "n2")
         self.assertEqual(allowed.returncode, EXIT_STOPPED, allowed.stderr)
+
+    def test_rejected_launch_preserves_a_live_wrappers_pending_record(self) -> None:
+        """Hold the EOF identity rewrite at replace, not at a timing sleep."""
+        root = self._root("live-writer")
+        start_r, start_w = os.pipe()
+        release_r, release_w = os.pipe()
+        ready_r, ready_w = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            os.close(start_w)
+            os.close(release_w)
+            os.close(ready_r)
+            replace = os.replace
+
+            def paused_replace(source, destination):
+                if pathlib.Path(destination).parent == root / "identity":
+                    os.write(ready_w, b"pending\n")
+                    os.read(release_r, 1)
+                return replace(source, destination)
+
+            try:
+                os.read(start_r, 1)
+                os.replace = paused_replace
+                _write_marker(root, "n1", 1, "wrapper", pipe="eof")
+                os.write(ready_w, b"written\n")
+                os.read(start_r, 1)  # Stay live until the owning test cleans up.
+            except Exception:
+                os._exit(2)
+            os._exit(0)
+        os.close(start_r)
+        os.close(release_r)
+        os.close(ready_w)
+
+        def message():
+            self.assertTrue(select.select([ready_r], [], [], 10)[0], "writer readiness deadline")
+            return os.read(ready_r, 64)
+
+        try:
+            identity = record_child_identity(root, pid)
+            write_durable_record(root / "spent.json", {"nonces": ["n1"]})
+            write_durable_record(root / "durable.json", {"phase": "armed", "nonce": "n1", **identity})
+            os.write(start_w, b"x")
+            self.assertEqual(message(), b"pending\n")
+            pending = root / "identity" / f"{pid}.json.tmp"
+            self.assertTrue(pending.is_file())
+            blocked = run_fault(root, "after_intent", "n2")
+            self.assertEqual(blocked.returncode, EXIT_LEASE, blocked.stderr)
+            self.assertTrue(pending.is_file(), "rejected launch must not unlink a live wrapper's atomic write")
+            os.write(release_w, b"x")
+            self.assertEqual(message(), b"written\n", "wrapper must finish its pending record")
+            self.assertTrue(recover(root)["lease"])
+            again = run_fault(root, "after_intent", "n2")
+            self.assertEqual(again.returncode, EXIT_LEASE, again.stderr)
+            self.assertEqual(load_spent(root).nonces, {"n1"})
+        finally:
+            # This is our unreaped direct child, not a PID adopted from a file.
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
+            for fd in (start_w, release_w, ready_r):
+                os.close(fd)
+
+    def test_live_fixture_does_not_exit_successfully_after_a_timer(self) -> None:
+        with patch("launch_fault_harness.time.sleep"), \
+             patch("launch_fault_harness.os._exit", side_effect=AssertionError("live fixture exited on a timer")), \
+             patch("launch_fault_harness.signal.pause", side_effect=[None, StopIteration("test stop")]) as pause:
+            with self.assertRaisesRegex(StopIteration, "test stop"):
+                _sleep_until_killed()
+            self.assertEqual(pause.call_count, 2)
 
     def test_descendant_blocks_a_second_nonce_until_it_is_gone(self) -> None:
         root = self._root("descendant-clear")

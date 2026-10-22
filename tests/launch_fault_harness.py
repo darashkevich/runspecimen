@@ -621,8 +621,10 @@ def _read_line(fd: int, timeout: float = 5) -> str:
 
 
 def _sleep_until_killed() -> None:
-    time.sleep(30)
-    os._exit(0)
+    # The owning test proves termination via reap(); elapsed wall time is not
+    # authorization to turn an armed/live-child fixture into an absent child.
+    while True:
+        signal.pause()
 
 
 def _write_marker(root: Path, nonce: str, start: int, image: str, pipe: str | None = None) -> None:
@@ -731,7 +733,6 @@ def holder_main(root: Path, nonce: str, fault: str) -> None:
     if fault not in FAULTS:
         os._exit(EXIT_ERROR)
     root.mkdir(parents=True, exist_ok=True)
-    _clear_stale_tmp(root)
     history = load_spent(root)
     if history.status == "lost":
         os._exit(EXIT_LOST)
@@ -740,6 +741,10 @@ def holder_main(root: Path, nonce: str, fault: str) -> None:
         os._exit(EXIT_LEASE)
     if nonce in history.nonces:
         os._exit(EXIT_SPENT)
+    # A rejected launch must be read-only. In particular the live wrapper may
+    # be fsyncing its EOF identity/proc record here. Removing its .tmp before
+    # recovery can make its atomic replace fail, kill it, then admit nonce n2.
+    _clear_stale_tmp(root)
 
     def stop(name: str) -> None:
         if fault == name:
