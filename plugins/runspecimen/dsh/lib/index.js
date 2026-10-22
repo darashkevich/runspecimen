@@ -140,7 +140,7 @@ function actionTool(resolved, action, description, parameters) {
         } catch (error) {
           if (!(error instanceof ProcessCaptureError)) throw error;
           return {ok:false,exitCode:-1,truncated:false,cleanupFailed:error.cleanupConfirmed===false,
-            timedOut:error.kind==='timeout',cancelled:error.kind==='cancelled',output:error.message};
+            timedOut:error.triggerKind==='timeout',cancelled:error.triggerKind==='cancelled',output:error.message};
         }
         if (!started.running) {
           return {

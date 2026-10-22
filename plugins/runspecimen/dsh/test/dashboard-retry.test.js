@@ -81,3 +81,18 @@ test('cleanup retry never signals a group once its original leader was reaped',a
     realKill(child.pid,0);
   } finally {process.kill=realKill;realKill(-child.pid,'SIGKILL');await once(child,'close');}
 });
+
+test('startup cleanup failure preserves the originating timeout flag',async()=>{
+  const directory=mkdtempSync(join(tmpdir(),'dsh-start-cleanup-'));
+  const owner=tools({command:fileURLToPath(new URL('./fixtures/silent-dashboard.mjs',import.meta.url)),timeoutMs:1500});
+  const realKill=process.kill;let pid;
+  try {
+    const pending=owner.get('dashboard').execute({workspace:directory,contract:'fixture.json'},{});
+    pid=await ready(directory);
+    process.kill=(target,signal)=>{if(target===-pid && signal!==0){const e=new Error('fixture denied');e.code='EPERM';throw e;}return realKill(target,signal);};
+    const result=await pending;
+    assert.equal(result.cleanupFailed,true);
+    assert.equal(result.timedOut,true);
+    assert.equal(result.cancelled,false);
+  } finally {process.kill=realKill;await owner.dispose();if(pid){try{realKill(-pid,'SIGKILL');}catch{}}rmSync(directory,{recursive:true,force:true});}
+});

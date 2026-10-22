@@ -14,6 +14,7 @@ export class ProcessCaptureError extends Error {
     super(message, {cause});
     this.name = 'ProcessCaptureError';
     this.kind = kind;
+    this.triggerKind = cause instanceof ProcessCaptureError ? cause.triggerKind : kind;
     this.cleanupConfirmed = cleanupConfirmed;
   }
 }
@@ -92,7 +93,7 @@ export function captureProcess({command, argv, cwd, signal, timeoutMs, onData, o
       cleanupDeadline = setTimeout(() => {
         kill('SIGKILL');
         child.stdout?.destroy(); child.stderr?.destroy();
-        finish(new ProcessCaptureError(`${reason.message}; process-group cleanup could not be confirmed`, 'cleanup', false));
+        finish(new ProcessCaptureError(`${reason.message}; process-group cleanup could not be confirmed`, 'cleanup', false, reason));
       }, graceMs + 5000);
       check();
     };
