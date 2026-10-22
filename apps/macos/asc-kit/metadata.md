@@ -53,8 +53,8 @@ runspecimen,evidence,approval,local,cli,developer,receipt,preflight,control
 
 | Key | Value |
 | --- | --- |
-| Short version | 0.1.5 (15) |
-| Build | 15 |
+| Short version | 0.1.6 |
+| Build | 16 |
 | Bundled engine | 0.2.0rc15 source; verify exact frozen build before upload |
 | Min macOS | 14.0 |
 
