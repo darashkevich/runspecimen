@@ -138,3 +138,20 @@ New UX defect: LocalAuthentication/Keychain errors surfaced as Unexpected error.
 - Privileged-holder/native enrollment integration limitations remain those documented in SCOPE_MATRIX and BIOMETRIC_APPROVAL. Diagnostic carried signing does not qualify that execution boundary. No merge, upload, publication, release, trust changes or human approval by an agent.
 
 Validation accounting: remaining-fixes-serial.log completes 143 schema/regression tests, 26 cancellation tests and 6 UI tests, including backing out of edited pairing fields. A subsequent full schema/cancellation run in pairing-context-final.log covers the final successful-pair request-context reset. Mac native suite: 117 tests, 1 skipped, no failures (remaining-fixes-macos.log). Overlapping intermediate simulator runs were stopped and preserved; they are not claimed as complete passes.
+
+## Exact-head QA follow-up — 22 October 2026 (QA-03)
+
+Added the iPhone production privacy manifest declaring app-only UserDefaults
+with CA92.1. Both project.yml and the committed Xcode project explicitly package
+it. The existing Darwin Release symbol gate now also asserts the manifest in
+the actual built app and audits every bundled Mach-O's undefined symbols and
+known Objective-C selectors against required-reason API categories.
+
+Apple's API list was rechecked on 22 October. The unsigned arm64 iPhone Release
+bundle builds and passes the bundle audit and test-hook symbol gate. Its linked
+API audit finds UserDefaults and no additional listed timestamp, boot-time,
+disk-space or active-keyboard APIs; no speculative FileTimestamp reason was
+added. Four new tests cover missing manifest, missing timestamp declaration,
+valid app-only defaults and project wiring; the initial manifest test failed.
+This symbol/selector audit does not prove absence of indirect API use or replace
+final processed-archive review. No device install, release, trust or key action.
