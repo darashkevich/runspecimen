@@ -259,3 +259,19 @@ output 1–4194304 bytes, grace 1–10000 ms. Tests exercise source, not mocked 
 of the cleanup/path/output logic. Preserve the separate limits below when
 reporting verification; automated fixtures are not a human-approved run or a
 physical companion test.
+
+## Unpublished QA continuation — 22 October 2026
+
+Dashboard startup timeout is a distinct `timedOut` outcome; caller abort is
+`cancelled`. Both paths wait for cleanup before returning through the registered
+tool. Successful starts report both flags as false.
+
+If cleanup cannot be confirmed, the dashboard remains registered with an
+unresolved cleanup error. A later `runspecimen_dashboard_stop` performs a fresh
+TERM/KILL and death-check attempt, rather than awaiting the failed attempt again.
+An entry is removed only after death is confirmed. Concurrent retries share one
+attempt. To avoid signaling a reused PID, retries require the original
+ChildProcess leader still to be unreaped. If it has already exited and the group
+is still present, retry fails closed and retains the unresolved state for manual
+inspection; it does not turn a numeric PID into new authority. Once group death
+is observed, the stale entry can be cleared without signaling anything.

@@ -21,7 +21,7 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 
 import { ALLOWED_ACTIONS, buildArgv, READ_ONLY_ACTIONS, runCli } from "./cli.js";
 import {DashboardManager} from "./dashboard.js";
-import {validateLimits,MAX_TIMEOUT_MS,MAX_OUTPUT_BYTES} from "./process.js";
+import {validateLimits,MAX_TIMEOUT_MS,MAX_OUTPUT_BYTES,ProcessCaptureError} from "./process.js";
 import { REFUSED_ACTIONS, refusalMessage } from "./refusal.js";
 
 /** Cordis plugin name. */
@@ -138,14 +138,18 @@ function actionTool(resolved, action, description, parameters) {
         try {
           started = await resolved.dashboardManager.start({...common,argv,timeoutMs:resolved.timeoutMs});
         } catch (error) {
-          if (error.cleanupConfirmed !== false) throw error;
-          return {ok:false,exitCode:-1,truncated:false,cleanupFailed:true,output:error.message};
+          if (!(error instanceof ProcessCaptureError)) throw error;
+          return {ok:false,exitCode:-1,truncated:false,cleanupFailed:error.cleanupConfirmed===false,
+            timedOut:error.kind==='timeout',cancelled:error.kind==='cancelled',output:error.message};
         }
         if (!started.running) {
           return {
             ok: false,
             exitCode: -1,
             truncated: false,
+            timedOut: started.timedOut,
+            cancelled: started.cancelled,
+            cleanupFailed: started.cleanupFailed,
             output: `dashboard exited before serving:\n${started.text}`,
           };
         }
@@ -153,6 +157,9 @@ function actionTool(resolved, action, description, parameters) {
           ok: true,
           exitCode: 0,
           truncated: false,
+          timedOut: false,
+          cancelled: false,
+          cleanupFailed: false,
           output: `dashboard started (pid ${started.pid}) at ${started.url ?? "(URL not observed; see output)"}\n${started.text}\nMaximum lifetime: ${started.lifetimeMs} ms from launch (timeoutMs). Stop earlier with runspecimen_dashboard_stop.`,
         };
       }

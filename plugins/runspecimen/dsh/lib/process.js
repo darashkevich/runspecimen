@@ -18,6 +18,32 @@ export class ProcessCaptureError extends Error {
   }
 }
 
+/** Retry only while the original ChildProcess still pins its leader PID.
+ * Once reaped, a numeric PGID alone cannot prove identity; never signal it.
+ */
+export async function retryOwnedGroup(child, graceMs=250) {
+  const exists=()=>{
+    try {process.kill(-child.pid,0);return true;}
+    catch(e){if(e.code==='ESRCH')return false;if(e.code==='EPERM')return true;throw new ProcessCaptureError(`Cleanup retry inspection failed: ${e.message}`,'cleanup',false,e);}
+  };
+  const signal=sig=>{
+    if(child.exitCode!==null || child.signalCode!==null)
+      throw new ProcessCaptureError('Cleanup unresolved: original leader exited; refusing a possibly reused process-group ID','cleanup',false);
+    try {process.kill(-child.pid,sig);} catch(e) {if(e.code!=='ESRCH')throw new ProcessCaptureError(`Cleanup retry ${sig} failed: ${e.message}`,'cleanup',false,e);}
+  };
+  if(!exists())return;
+  signal('SIGTERM');
+  await new Promise((resolve,reject)=>{
+    let poll,grace,deadline;
+    const finish=error=>{clearInterval(poll);clearTimeout(grace);clearTimeout(deadline);error?reject(error):resolve();};
+    const check=()=>{try{if(!exists())finish();}catch(e){finish(new ProcessCaptureError(e.message,'cleanup',false,e));}};
+    poll=setInterval(check,10);
+    grace=setTimeout(()=>{try{if(!exists()){finish();return;}signal('SIGKILL');check();}catch(e){finish(e);}},graceMs);
+    deadline=setTimeout(()=>finish(new ProcessCaptureError('Cleanup retry could not confirm process-group death','cleanup',false)),graceMs+5000);
+    check();
+  });
+}
+
 /** Own a POSIX process group; do not finish cancellation before cleanup. */
 export function captureProcess({command, argv, cwd, signal, timeoutMs, onData, onSpawn, graceMs=250}) {
   if (process.platform === 'win32') throw new Error('This plugin requires macOS or Linux process-group cleanup; Windows is not supported.');
@@ -70,7 +96,8 @@ export function captureProcess({command, argv, cwd, signal, timeoutMs, onData, o
       }, graceMs + 5000);
       check();
     };
-    const abort = () => stop(new ProcessCaptureError('RunSpecimen call cancelled by the caller', 'cancelled'));
+    const abort = () => stop(signal?.reason instanceof ProcessCaptureError
+      ? signal.reason : new ProcessCaptureError('RunSpecimen call cancelled by the caller', 'cancelled'));
     onSpawn?.(child);
     child.stdout.on('data',chunk=>onData(chunk,'stdout')); child.stderr.on('data',chunk=>onData(chunk,'stderr'));
     child.on('error', e => {
