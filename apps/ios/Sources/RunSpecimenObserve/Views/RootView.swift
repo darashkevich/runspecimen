@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import os
 
 #if DEBUG
@@ -8,6 +9,11 @@ private let launchLogger = Logger(subsystem: "com.darashkevich.runspecimen.obser
 struct RootView: View {
     @EnvironmentObject private var session: CompanionSession
     @Environment(\.scenePhase) private var scenePhase
+
+    @State private var recoveryDiagnosticsCopied = false
+    #if RUNSPECIMEN_TEST_HOOKS
+    @State private var copiedRecoveryDiagnostics = ""
+    #endif
 
     var body: some View {
         #if DEBUG
@@ -24,6 +30,12 @@ struct RootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(RSTheme.bg.ignoresSafeArea())
             .toolbar {
+                if session.isPaired {
+                    ToolbarItem(placement: .topBarLeading) {
+                        NavigationLink("Pair iPhone") { PairingView() }
+                            .accessibilityIdentifier("pairIPhone")
+                    }
+                }
                 if session.rotationRecoveryError != nil && session.rotationRecoveryDismissed {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Key recovery") { session.showRotationRecoveryNotice() }
@@ -53,7 +65,22 @@ struct RootView: View {
                             Task { await session.recoverHardwareRotation() }
                         }
                         .disabled(session.rotationRecoveryInProgress)
+                        Button("Copy recovery diagnostics") {
+                            UIPasteboard.general.string = session.rotationRecoveryDiagnostics
+                            recoveryDiagnosticsCopied = true
+                        }
+                        if recoveryDiagnosticsCopied {
+                            Text("Recovery diagnostics copied.").font(.footnote)
+                        }
                         ShareLink("Export recovery diagnostics", item: session.rotationRecoveryDiagnostics)
+                        #if RUNSPECIMEN_TEST_HOOKS
+                        if ProcessInfo.processInfo.environment["RUNSPECIMEN_UI_RECOVERY_TEST"] == "1" {
+                            Button("Inspect copied diagnostics") {
+                                copiedRecoveryDiagnostics = UIPasteboard.general.string ?? "<empty>"
+                            }
+                            Text(copiedRecoveryDiagnostics).accessibilityIdentifier("copiedRecoveryDiagnostics")
+                        }
+                        #endif
                         Button("Dismiss notice") { session.dismissRotationRecoveryNotice() }
                     }
                     .padding()

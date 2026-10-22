@@ -25,6 +25,10 @@ targets:
       - path: Sources/RunSpecimenObserve
       - path: ../macos/Sources/RunSpecimenCore/RSBA2Package.swift
       - path: Resources
+        excludes:
+          - PrivacyInfo.xcprivacy
+        buildPhase: resources
+      - path: Resources/PrivacyInfo.xcprivacy
         buildPhase: resources
     settings:
       base:

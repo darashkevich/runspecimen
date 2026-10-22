@@ -2,6 +2,12 @@ import XCTest
 @testable import RunSpecimenCore
 
 final class CLIVersionGateTests: XCTestCase {
+    func testGrokRejectsEarlierPrereleaseKinds() {
+        for version in ["0.2.0a99", "0.2.0alpha99", "0.2.0b99", "0.2.0beta99", "0.2.0.dev99", "0.2.0rc15.dev1"] {
+            if case .ok = CLIVersionGate.evaluate(versionOutput: version) { XCTFail("must reject \(version)") }
+        }
+    }
+
     func testParseFinal() {
         let v = CLIVersionGate.parse(from: "runspecimen 0.2.0")
         XCTAssertEqual(v, CLIVersionGate.ParsedVersion(major: 0, minor: 2, patch: 0, preKind: 1, preNum: 0))
@@ -18,9 +24,17 @@ final class CLIVersionGateTests: XCTestCase {
     }
 
     func testMinimumAccepted() {
-        switch CLIVersionGate.evaluate(versionOutput: "runspecimen 0.2.0rc9") {
-        case .ok: break
-        default: XCTFail("0.2.0rc9 should be accepted")
+        for version in ["0.2.0rc15", "0.2.0-rc.15", "0.2.0"] {
+            guard case .ok = CLIVersionGate.evaluate(versionOutput: version) else {
+                XCTFail("\(version) should be accepted")
+                continue
+            }
+        }
+        for version in ["0.2.0rc9", "0.2.0rc14"] {
+            guard case .tooOld = CLIVersionGate.evaluate(versionOutput: version) else {
+                XCTFail("\(version) must not satisfy the rc15 floor")
+                continue
+            }
         }
     }
 
@@ -38,7 +52,7 @@ final class CLIVersionGateTests: XCTestCase {
         switch CLIVersionGate.evaluate(versionOutput: "runspecimen 0.2.0rc8") {
         case .tooOld(let found, let required, _):
             XCTAssertEqual(found.preNum, 8)
-            XCTAssertEqual(required.displayMinimum, "0.2.0rc9")
+            XCTAssertEqual(required.displayMinimum, "0.2.0rc15")
         default:
             XCTFail("expected tooOld")
         }
@@ -77,18 +91,18 @@ final class CLIVersionGateTests: XCTestCase {
     func testVersionProbeRejectsACaptureFailureThatPrintedAVersion() throws {
         let clean = BoundedProcessCapture.Output(
             exitCode: 0,
-            stdout: Data("runspecimen 0.2.0rc14\n".utf8),
+            stdout: Data("runspecimen 0.2.0rc15\n".utf8),
             stderr: Data(),
             stdoutTruncated: false,
             stderrTruncated: false,
             timedOut: false,
             cancelled: false
         )
-        XCTAssertEqual(try CLIVersionGate.acceptedVersion(from: clean), "runspecimen 0.2.0rc14")
+        XCTAssertEqual(try CLIVersionGate.acceptedVersion(from: clean), "runspecimen 0.2.0rc15")
 
         let failed = BoundedProcessCapture.Output(
             exitCode: 0,
-            stdout: Data("runspecimen 0.2.0rc14\n".utf8),
+            stdout: Data("runspecimen 0.2.0rc15\n".utf8),
             stderr: Data("child said hi".utf8),
             stdoutTruncated: false,
             stderrTruncated: false,
@@ -100,7 +114,7 @@ final class CLIVersionGateTests: XCTestCase {
             let message = (error as? EngineReportError)?.message ?? ""
             XCTAssertTrue(message.contains("could not be read"))
             XCTAssertTrue(message.contains("child said hi"))
-            XCTAssertFalse(message == "runspecimen 0.2.0rc14")
+            XCTAssertFalse(message == "runspecimen 0.2.0rc15")
         }
     }
 
