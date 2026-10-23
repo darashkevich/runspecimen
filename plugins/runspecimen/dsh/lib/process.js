@@ -20,27 +20,37 @@ export class ProcessCaptureError extends Error {
   }
 }
 
-/** Retry only while the original ChildProcess still pins its leader PID.
- * Once reaped, a numeric PGID alone cannot prove identity; never signal it.
- */
+/** Cleanup authority stays inside the supervisor, including retries. */
+let cleanupRequestId=0;
+function requestCleanup(child, graceMs) {
+  return new Promise((resolve,reject)=>{
+    if(!child.connected || typeof child.send!=='function') {
+      reject(new ProcessCaptureError('Cleanup unresolved: supervisor IPC unavailable; refusing a possibly reused process-group ID','cleanup',false));
+      return;
+    }
+    const requestId=++cleanupRequestId;
+    let deadline;
+    const finish=error=>{clearTimeout(deadline);child.removeListener('message',ack);error?reject(error):resolve();};
+    const ack=message=>{if(message?.type==='cleanup-ack' && message.requestId===requestId)finish();};
+    child.on('message',ack);
+    deadline=setTimeout(()=>finish(new ProcessCaptureError('Supervisor cleanup acknowledgement missing','cleanup',false)),1000);
+    const sent=error=>{if(error)finish(new ProcessCaptureError(`Supervisor cleanup request failed: ${error.message}`,'cleanup',false,error));};
+    try {child.send({type:'cleanup',graceMs,requestId},sent);}
+    catch(error){sent(error);}
+  });
+}
 export async function retryOwnedGroup(child, graceMs=250) {
   const exists=()=>{
     try {process.kill(-child.pid,0);return true;}
     catch(e){if(e.code==='ESRCH')return false;if(e.code==='EPERM')return true;throw new ProcessCaptureError(`Cleanup retry inspection failed: ${e.message}`,'cleanup',false,e);}
   };
-  const signal=sig=>{
-    if(child.exitCode!==null || child.signalCode!==null)
-      throw new ProcessCaptureError('Cleanup unresolved: original leader exited; refusing a possibly reused process-group ID','cleanup',false);
-    try {process.kill(-child.pid,sig);} catch(e) {if(e.code!=='ESRCH')throw new ProcessCaptureError(`Cleanup retry ${sig} failed: ${e.message}`,'cleanup',false,e);}
-  };
   if(!exists())return;
-  signal('SIGTERM');
+  await requestCleanup(child,graceMs);
   await new Promise((resolve,reject)=>{
-    let poll,grace,deadline;
-    const finish=error=>{clearInterval(poll);clearTimeout(grace);clearTimeout(deadline);error?reject(error):resolve();};
-    const check=()=>{try{if(!exists())finish();}catch(e){finish(new ProcessCaptureError(e.message,'cleanup',false,e));}};
+    let poll,deadline;
+    const finish=error=>{clearInterval(poll);clearTimeout(deadline);error?reject(error):resolve();};
+    const check=()=>{try{if(!exists())finish();}catch(e){finish(e);}};
     poll=setInterval(check,10);
-    grace=setTimeout(()=>{try{if(!exists()){finish();return;}signal('SIGKILL');check();}catch(e){finish(e);}},graceMs);
     deadline=setTimeout(()=>finish(new ProcessCaptureError('Cleanup retry could not confirm process-group death','cleanup',false)),graceMs+5000);
     check();
   });
@@ -51,8 +61,8 @@ export function captureProcess({command, argv, cwd, signal, timeoutMs, onData, o
   if (process.platform === 'win32') throw new Error('This plugin requires macOS or Linux process-group cleanup; Windows is not supported.');
   if (signal?.aborted) return Promise.reject(new Error('RunSpecimen call cancelled by the caller; nothing was started'));
   return new Promise((resolve, reject) => {
-    let settled = false, closed = false, exitCode, stopReason, failure, ownershipLost = false, normalCompletion = false, terminalSignalSent = false, receivedCommandResult = false;
-    let timer, grace, poll, cleanupDeadline;
+    let settled = false, closed = false, exitCode, stopReason, failure, normalCompletion = false, receivedCommandResult = false;
+    let timer, poll, cleanupDeadline, cleanupAcknowledged=false;
     const child = spawn(process.execPath, [fileURLToPath(new URL('./group-supervisor.js',import.meta.url)),JSON.stringify([command,...argv])], {cwd, detached:true, stdio:['ignore','pipe','pipe','ipc'],
       env:{...process.env, NO_COLOR:'1', PYTHONUNBUFFERED:'1'}});
     const groupExists = () => {
@@ -64,28 +74,15 @@ export function captureProcess({command, argv, cwd, signal, timeoutMs, onData, o
         throw new ProcessCaptureError(`Process-group inspection failed: ${e.message}`, 'cleanup', false, e);
       }
     };
-    const kill = (sig) => {
-      if (!child.pid || settled || terminalSignalSent) return;
-      // Never recover signal authority from a numeric PGID after leader reaping.
-      ownershipLost ||= child.exitCode !== null || child.signalCode !== null;
-      if (ownershipLost) {
-        failure = new ProcessCaptureError('Process-group ownership lost; cleanup could not be confirmed; descendants may still be running', 'cleanup', false, stopReason);
-        child.stdout?.destroy(); child.stderr?.destroy();
-        finish(failure);
-        return;
-      }
-      try { process.kill(-child.pid, sig); if(sig==='SIGKILL')terminalSignalSent=true; }
-      catch (e) { if (e.code !== 'ESRCH') failure = new ProcessCaptureError(`Process-group signal ${sig} failed: ${e.message}`, 'cleanup', false, e); }
-    };
     const finish = (error) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer); clearTimeout(grace); clearTimeout(cleanupDeadline); clearInterval(poll);
+      clearTimeout(timer); clearTimeout(cleanupDeadline); clearInterval(poll);
       signal?.removeEventListener('abort', abort);
       if (error) reject(error); else resolve(exitCode ?? -1);
     };
     const check = () => {
-      if (!closed) return;
+      if (!closed || (stopReason && !cleanupAcknowledged)) return;
       let exists;
       try { exists = groupExists(); } catch(e) { finish(e); return; }
       if (!exists) finish(failure ?? (normalCompletion ? undefined : stopReason));
@@ -94,13 +91,12 @@ export function captureProcess({command, argv, cwd, signal, timeoutMs, onData, o
       if (stopReason || settled) return;
       stopReason = reason;
       clearTimeout(timer);
-      kill('SIGTERM');
-      if (settled) return;
-      // Every escalation must revalidate original-leader ownership.
-      grace = setTimeout(() => {kill('SIGKILL'); check();}, graceMs);
+      requestCleanup(child,graceMs).then(()=>{cleanupAcknowledged=true;check();}).catch(error=>{
+        child.stdout?.destroy(); child.stderr?.destroy();
+        finish(new ProcessCaptureError(error.message,'cleanup',false,reason));
+      });
       poll = setInterval(check, 10);
       cleanupDeadline = setTimeout(() => {
-        kill('SIGKILL');
         child.stdout?.destroy(); child.stderr?.destroy();
         finish(new ProcessCaptureError(`${reason.message}; process-group cleanup could not be confirmed`, 'cleanup', false, reason));
       }, graceMs + 5000);

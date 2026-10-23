@@ -270,9 +270,8 @@ If cleanup cannot be confirmed, the dashboard remains registered with an
 unresolved cleanup error. A later `runspecimen_dashboard_stop` performs a fresh
 TERM/KILL and death-check attempt, rather than awaiting the failed attempt again.
 An entry is removed only after death is confirmed. Concurrent retries share one
-attempt. To avoid signaling a reused PID, retries require the original
-ChildProcess leader still to be unreaped. If it has already exited and the group
-is still present, retry fails closed and retains the unresolved state for manual
+attempt. Retries request cleanup over the original supervisor IPC connection. If it is
+unavailable and the group is still present, retry fails closed and retains the unresolved state for manual
 inspection; it does not turn a numeric PID into new authority. Once group death
 is observed, the stale entry can be cleared without signaling anything.
 
@@ -288,9 +287,11 @@ private IPC channel; the supervisor keeps the group identity pinned through
 TERM/grace/KILL cleanup. The owned dashboard PID therefore identifies the
 supervisor, not necessarily the CLI process. A process-list snapshot only
 classifies leftover children; it never grants signal authority. Group KILL is
-sent at most once. Every signal path refuses a reaped leader; unexpected loss of
+sent only by the executing supervisor to its own group. The parent never sends
+a destructive group signal, including initial cleanup, escalation or retries.
+A cleanup acknowledgement and group-death observation are required. Unexpected loss of
 the supervisor returns `cleanupFailed`/unconfirmed cleanup and keeps a dashboard
 entry unresolved, rather than signaling the same numeric group again. The
 supervisor kills its own still-owned group if its parent IPC connection closes.
-This relies on Node's child exit state reflecting leader reaping. Escaped
+Node child exit fields and numeric PID probes never confer signal authority. Escaped
 sessions/process groups are still outside this process-group cleanup boundary.
