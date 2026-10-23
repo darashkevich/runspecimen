@@ -19,6 +19,9 @@ final class RecoveryUITests: XCTestCase {
         reopen.tap()
         XCTAssertTrue(banner.waitForExistence(timeout: 15), app.debugDescription)
         app.buttons["Export recovery diagnostics"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["Copy"].firstMatch.waitForExistence(timeout: 30), app.debugDescription)
+        // Cold CI SharingUIService took 55 seconds to publish Copy after the
+        // app supplied its diagnostics. Keep a bounded positive readiness wait;
+        // a missing action still fails, with no relaunch or assertion retry.
+        XCTAssertTrue(app.descendants(matching: .any)["Copy"].firstMatch.waitForExistence(timeout: 90), app.debugDescription)
     }
 }
