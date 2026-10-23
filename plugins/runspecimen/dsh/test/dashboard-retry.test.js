@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {apply} from '../lib/index.js';
 import {retryOwnedGroup} from '../lib/process.js';
-import {spawn,execFileSync} from 'node:child_process';
+import {spawn,ChildProcess} from 'node:child_process';
 import {once} from 'node:events';
 import {mkdtempSync,readFileSync,rmSync,watch} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -28,25 +28,42 @@ function tools(config={}) {
   return {get:name=>all.find(t=>t.name===`runspecimen_${name}`),dispose:async()=>{for(const f of disposers)await f();}};
 }
 
-test('EPERM cleanup retains ownership and registered Stop really retries after restore',async()=>{
-  const owner=tools();const realKill=process.kill;let pid;
+function ipcFault() {
+  const original=ChildProcess.prototype.emit,children=[];
+  let denied=false;
+  ChildProcess.prototype.emit=function(event,...args){
+    if(event==='spawn' && this.send){
+      const child=this,send=child.send;
+      children.push(()=>{child.send=send;});
+      child.send=function(message,...rest){
+        if(denied && message?.type==='cleanup'){
+          queueMicrotask(()=>rest.at(-1)(Object.assign(new Error('fixture IPC denied'),{code:'EPERM'})));
+          return false;
+        }
+        return send.call(this,message,...rest);
+      };
+    }
+    return original.call(this,event,...args);
+  };
+  return {deny:value=>{denied=value;},restore(){denied=false;ChildProcess.prototype.emit=original;for(const restore of children)restore();}};
+}
+
+test('IPC delivery failure retains ownership and registered Stop really retries after restore',async()=>{
+  const owner=tools();const realKill=process.kill,fault=ipcFault();let pid;
   try {
     const started=await owner.get('dashboard').execute({workspace:'/tmp',contract:'fixture.json'},{});
     pid=Number(started.output.match(/pid (\d+)/)[1]);
-    process.kill=(target,signal)=>{
-      if(target===-pid && signal!==0){const e=new Error('fixture denied');e.code='EPERM';throw e;}
-      return realKill(target,signal);
-    };
+    fault.deny(true);
     const failed=await owner.get('dashboard_stop').execute({pid},{});
     assert.equal(failed.cleanupFailed,true);
     realKill(pid,0);
-    process.kill=realKill;
+    fault.restore();
     const retried=await owner.get('dashboard_stop').execute({pid},{});
     assert.equal(retried.ok,true,'owned live dashboard must remain retryable');
     assert.throws(()=>realKill(pid,0),{code:'ESRCH'});
     const again=await owner.get('dashboard_stop').execute({pid},{});
     assert.equal(again.ok,false,'confirmed-dead entry must be removed');
-  } finally {process.kill=realKill;if(pid){try{realKill(-pid,'SIGKILL');}catch{}}await owner.dispose();}
+  } finally {fault.restore();process.kill=realKill;if(pid){try{realKill(-pid,'SIGKILL');}catch{}}await owner.dispose();}
 });
 
 for(const mode of ['timeout','cancel']) {
@@ -85,15 +102,14 @@ test('cleanup retry never signals a group once its original leader was reaped',a
 test('startup cleanup failure preserves the originating timeout flag',async()=>{
   const directory=mkdtempSync(join(tmpdir(),'dsh-start-cleanup-'));
   const owner=tools({command:fileURLToPath(new URL('./fixtures/silent-dashboard.mjs',import.meta.url)),timeoutMs:1500});
-  const realKill=process.kill;let pid;
+  const realKill=process.kill,fault=ipcFault();let pid;
   try {
     const pending=owner.get('dashboard').execute({workspace:directory,contract:'fixture.json'},{});
     pid=await ready(directory);
-    const group=Number(execFileSync("/bin/ps",["-o","pgid=","-p",String(pid)],{encoding:"utf8"}).trim());
-    process.kill=(target,signal)=>{if(target===-group && signal!==0){const e=new Error('fixture denied');e.code='EPERM';throw e;}return realKill(target,signal);};
+    fault.deny(true);
     const result=await pending;
     assert.equal(result.cleanupFailed,true);
     assert.equal(result.timedOut,true);
     assert.equal(result.cancelled,false);
-  } finally {process.kill=realKill;await owner.dispose();if(pid){try{realKill(-pid,'SIGKILL');}catch{}}rmSync(directory,{recursive:true,force:true});}
+  } finally {fault.restore();process.kill=realKill;await owner.dispose();if(pid){try{realKill(-pid,'SIGKILL');}catch{}}rmSync(directory,{recursive:true,force:true});}
 });

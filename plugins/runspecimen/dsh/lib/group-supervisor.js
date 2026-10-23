@@ -4,6 +4,20 @@
 import {spawn,spawnSync} from 'node:child_process';
 const [command,...argv]=JSON.parse(process.argv[2]);
 process.on('SIGTERM',()=>{});
+// Only this executing process may signal its own group. No numeric target is
+// accepted over IPC; parent-side exit fields never grant signal authority.
+let cleaning=false;
+function cleanup(graceMs) {
+  if(cleaning)return;
+  cleaning=true;
+  process.kill(-process.pid,'SIGTERM');
+  setTimeout(()=>process.kill(-process.pid,'SIGKILL'),graceMs);
+}
+process.on('message',message=>{
+  if(message?.type==='cleanup' && Number.isSafeInteger(message.graceMs) && message.graceMs>=0 && message.graceMs<=3_600_000)
+    process.send?.({type:'cleanup-ack',requestId:message.requestId},error=>{if(!error)cleanup(message.graceMs);});
+});
+// Parent loss cannot leave a cleanup escalation or descendants abandoned.
 process.on('disconnect',()=>{process.kill(-process.pid,'SIGKILL');});
 const child=spawn(command,argv,{stdio:['ignore','inherit','inherit']});
 let error;
