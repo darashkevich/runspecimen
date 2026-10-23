@@ -124,6 +124,7 @@ fi
 test -x "$APP/Contents/MacOS/RunSpecimen"
 test -f "$APP/Contents/Info.plist"
 test -f "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
+python3 "$ROOT/Scripts/macos_privacy_gate.py" "$APP"
 test -d "$APP/Contents/Helpers"
 test -x "$HELPER"
 if [[ "$HELPER" == *"/Helpers/runspecimen" ]]; then
