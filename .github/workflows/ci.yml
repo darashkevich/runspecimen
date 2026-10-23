@@ -36,6 +36,8 @@ jobs:
       - run: python -m pip install --upgrade pip setuptools wheel
       - name: iOS Release symbol gate fixtures
         run: sh apps/ios/Scripts/verify_ios_release_symbols.sh
+      - name: Mac release identity and export defaults
+        run: python -m unittest tests.test_macos_release_identity tests.test_store_export_defaults tests.test_store_privacy_surface
       - name: Offline release gate
         run: python scripts/release_check.py --output-dir "${{ runner.temp }}/runspecimen-release"
       - uses: actions/upload-artifact@v5
@@ -94,3 +96,14 @@ jobs:
         run: brew install xcodegen
       - name: Run iOS Observe tests
         run: bash apps/ios/Scripts/test_ios_observe.sh
+      - name: Preserve iOS test evidence
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ios-observe-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ios-observe-results/TestResults.xcresult
+            ${{ runner.temp }}/ios-observe-results/test.log
+            ${{ runner.temp }}/ios-observe-results/environment.txt
+          if-no-files-found: warn
+          retention-days: 7

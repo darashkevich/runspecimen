@@ -1,6 +1,6 @@
 # Release candidate checklist
 
-Published engine bytes stay **`0.2.0rc14`**. This tree's engine is unpublished **`0.2.0rc15`**. Approved Mac App Store **0.1.4 (9)** is `Removed from App Store` (EU trader status missing) and freezes rc14. The local successor label here is **0.1.5 (13)** and is not an upload. Earlier local labels **0.1.5 (10)**, **(11)**, and **(12)** are not this candidate. Mac app sandbox versus payload: [apps/macos/docs/SECURITY_BOUNDARY.md](../apps/macos/docs/SECURITY_BOUNDARY.md). There is no `docs/SECURITY_BOUNDARY.md` at the repository root.
+Published engine bytes stay **`0.2.0rc14`**. This tree's engine is unpublished **`0.2.0rc15`**. Approved Mac App Store **historical 0.1.4 (9)** is `Removed from App Store` (EU trader status missing) and freezes rc14. The current local successor label is **0.1.6 (16)** and is not an upload. Earlier local labels **historical 0.1.5 (10)**, **(11)**, and **(12)** are not this candidate. Mac app sandbox versus payload: [apps/macos/docs/SECURITY_BOUNDARY.md](../apps/macos/docs/SECURITY_BOUNDARY.md). There is no `docs/SECURITY_BOUNDARY.md` at the repository root.
 
 - [x] One non-blocking workspace lease covers each lifecycle mutation.
 - [x] Approval requires a real stdin and stdout TTY.
