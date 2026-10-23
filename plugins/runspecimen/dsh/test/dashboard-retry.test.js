@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {apply} from '../lib/index.js';
 import {retryOwnedGroup} from '../lib/process.js';
-import {spawn} from 'node:child_process';
+import {spawn,execFileSync} from 'node:child_process';
 import {once} from 'node:events';
 import {mkdtempSync,readFileSync,rmSync,watch} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -89,7 +89,8 @@ test('startup cleanup failure preserves the originating timeout flag',async()=>{
   try {
     const pending=owner.get('dashboard').execute({workspace:directory,contract:'fixture.json'},{});
     pid=await ready(directory);
-    process.kill=(target,signal)=>{if(target===-pid && signal!==0){const e=new Error('fixture denied');e.code='EPERM';throw e;}return realKill(target,signal);};
+    const group=Number(execFileSync("/bin/ps",["-o","pgid=","-p",String(pid)],{encoding:"utf8"}).trim());
+    process.kill=(target,signal)=>{if(target===-group && signal!==0){const e=new Error('fixture denied');e.code='EPERM';throw e;}return realKill(target,signal);};
     const result=await pending;
     assert.equal(result.cleanupFailed,true);
     assert.equal(result.timedOut,true);

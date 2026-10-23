@@ -15,7 +15,8 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, watch, existsSync, rmSync } from "node:fs";
+import {tmpdir} from "node:os";
 
 import {
   ALLOWED_ACTIONS,
@@ -323,16 +324,24 @@ test("timeout terminates a stubborn child before reporting", async () => {
 
 test("caller cancellation terminates a stubborn child before reporting", async () => {
   const controller = new AbortController();
+  const dir=mkdtempSync(join(tmpdir(),"dsh-cancel-ready-"));
+  const file=join(dir,"ready");
   const pending = runCli({
     command: process.execPath,
-    argv: [FIXTURE, "stubborn"],
+    argv: [FIXTURE, "stubborn", file],
     cwd: HERE,
     signal: controller.signal,
     timeoutMs: 60_000,
     graceMs: 200,
     maxOutputBytes: 64_000,
   });
-  setTimeout(() => controller.abort(), 200);
+  try {
+    await new Promise((resolve,reject)=>{
+      const watcher=watch(dir,()=>{if(existsSync(file)){clearTimeout(timer);watcher.close();resolve();}});
+      const timer=setTimeout(()=>{watcher.close();reject(Error("fixture readiness timeout"));},10000);
+      if(existsSync(file)){clearTimeout(timer);watcher.close();resolve();}
+    });
+  } finally {controller.abort();rmSync(dir,{recursive:true,force:true});}
   const result = await pending;
   const pid = Number(result.text.match(/PID=(\d+)/)?.[1] ?? 0);
   assert.ok(pid > 0);

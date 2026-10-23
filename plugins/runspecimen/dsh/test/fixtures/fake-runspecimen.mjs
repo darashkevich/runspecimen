@@ -17,6 +17,7 @@
  *   dashboard                print a loopback URL, then serve forever
  */
 
+import {writeFileSync} from "node:fs";
 import { spawn } from "node:child_process";
 
 const argv = process.argv.slice(2);
@@ -58,6 +59,7 @@ switch (action) {
     // Ignore the polite kill; only SIGKILL can end this process.
     process.on("SIGTERM", () => {});
     process.stdout.write(`PID=${process.pid}\n`);
+    if(rest[0])writeFileSync(rest[0],String(process.pid));
     setInterval(() => {}, 1_000);
     break;
 

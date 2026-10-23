@@ -279,3 +279,18 @@ is observed, the stale entry can be cleared without signaling anything.
 ## Tested Cordis compatibility
 
 The Cordis peer range is `^4.0.5` (4.0.5 through 4.x; excludes 5.x). The lockfile resolves 4.0.5, used for this QA round. This replaces the unbounded wildcard because later major host versions have not been qualified. Registration, execution, cancellation and dashboard cleanup tests run with the locked dependency graph; the range does not claim testing of every future 4.x release.
+
+### Process-group signal ownership (ICQA-02)
+
+Each command runs under a small Node supervisor that stays alive as the POSIX
+process-group leader after the command exits. Command exit status travels over a
+private IPC channel; the supervisor keeps the group identity pinned through
+TERM/grace/KILL cleanup. The owned dashboard PID therefore identifies the
+supervisor, not necessarily the CLI process. A process-list snapshot only
+classifies leftover children; it never grants signal authority. Group KILL is
+sent at most once. Every signal path refuses a reaped leader; unexpected loss of
+the supervisor returns `cleanupFailed`/unconfirmed cleanup and keeps a dashboard
+entry unresolved, rather than signaling the same numeric group again. The
+supervisor kills its own still-owned group if its parent IPC connection closes.
+This relies on Node's child exit state reflecting leader reaping. Escaped
+sessions/process groups are still outside this process-group cleanup boundary.

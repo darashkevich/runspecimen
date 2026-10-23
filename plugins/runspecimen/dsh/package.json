@@ -23,7 +23,8 @@
     "cordis.patch.yml",
     "README.md",
     "lib/process.js",
-    "lib/dashboard.js"
+    "lib/dashboard.js",
+    "lib/group-supervisor.js"
   ],
   "engines": {
     "node": ">=22"
