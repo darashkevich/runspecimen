@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 
 export const MAX_TIMEOUT_MS = 3_600_000;
 export const MAX_OUTPUT_BYTES = 4_194_304;
@@ -50,9 +51,9 @@ export function captureProcess({command, argv, cwd, signal, timeoutMs, onData, o
   if (process.platform === 'win32') throw new Error('This plugin requires macOS or Linux process-group cleanup; Windows is not supported.');
   if (signal?.aborted) return Promise.reject(new Error('RunSpecimen call cancelled by the caller; nothing was started'));
   return new Promise((resolve, reject) => {
-    let settled = false, closed = false, exitCode, stopReason, failure;
+    let settled = false, closed = false, exitCode, stopReason, failure, ownershipLost = false, normalCompletion = false, terminalSignalSent = false, receivedCommandResult = false;
     let timer, grace, poll, cleanupDeadline;
-    const child = spawn(command, argv, {cwd, detached:true, stdio:['ignore','pipe','pipe'],
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./group-supervisor.js',import.meta.url)),JSON.stringify([command,...argv])], {cwd, detached:true, stdio:['ignore','pipe','pipe','ipc'],
       env:{...process.env, NO_COLOR:'1', PYTHONUNBUFFERED:'1'}});
     const groupExists = () => {
       if (!child.pid) return false;
@@ -64,8 +65,16 @@ export function captureProcess({command, argv, cwd, signal, timeoutMs, onData, o
       }
     };
     const kill = (sig) => {
-      if (!child.pid) return;
-      try { process.kill(-child.pid, sig); }
+      if (!child.pid || settled || terminalSignalSent) return;
+      // Never recover signal authority from a numeric PGID after leader reaping.
+      ownershipLost ||= child.exitCode !== null || child.signalCode !== null;
+      if (ownershipLost) {
+        failure = new ProcessCaptureError('Process-group ownership lost; cleanup could not be confirmed; descendants may still be running', 'cleanup', false, stopReason);
+        child.stdout?.destroy(); child.stderr?.destroy();
+        finish(failure);
+        return;
+      }
+      try { process.kill(-child.pid, sig); if(sig==='SIGKILL')terminalSignalSent=true; }
       catch (e) { if (e.code !== 'ESRCH') failure = new ProcessCaptureError(`Process-group signal ${sig} failed: ${e.message}`, 'cleanup', false, e); }
     };
     const finish = (error) => {
@@ -79,15 +88,15 @@ export function captureProcess({command, argv, cwd, signal, timeoutMs, onData, o
       if (!closed) return;
       let exists;
       try { exists = groupExists(); } catch(e) { finish(e); return; }
-      if (!exists) finish(failure ?? stopReason);
+      if (!exists) finish(failure ?? (normalCompletion ? undefined : stopReason));
     };
     const stop = (reason) => {
       if (stopReason || settled) return;
       stopReason = reason;
       clearTimeout(timer);
       kill('SIGTERM');
-      // Always retain ownership through escalation, even if the direct child
-      // exits first and leaves a descendant whose stdio is already closed.
+      if (settled) return;
+      // Every escalation must revalidate original-leader ownership.
       grace = setTimeout(() => {kill('SIGKILL'); check();}, graceMs);
       poll = setInterval(check, 10);
       cleanupDeadline = setTimeout(() => {
@@ -106,10 +115,23 @@ export function captureProcess({command, argv, cwd, signal, timeoutMs, onData, o
         ? new Error(`RunSpecimen CLI not found ('${command}'). Install it or set the plugin command config to its path.`) : e;
       if (!child.pid) finish(failure); else stop(failure);
     });
+    child.on('message', message => {
+      if(message?.type!=='command-exit' || settled || stopReason)return;
+      receivedCommandResult=true;
+      exitCode=message.code;
+      normalCompletion=!message.others;
+      if(message.error)failure=message.error.code==='ENOENT'
+        ? new Error(`RunSpecimen CLI not found ('${command}'). Install it or set the plugin command config to its path.`)
+        : new Error(message.error.message);
+      stop(new ProcessCaptureError(message.others
+        ? 'RunSpecimen CLI exited leaving child processes; cleaned up its process group'
+        : 'Command completed; cleaning up its supervisor', 'cleanup'));
+    });
     child.on('close', code => {
-      closed = true; exitCode = code;
+      closed = true;
       if (settled) return;
       if (stopReason) {check(); return;}
+      if(!receivedCommandResult)failure=new ProcessCaptureError("Supervisor exited without a command outcome acknowledgement", "cleanup", false);
       let exists;
       try {exists=groupExists();} catch(e) {finish(e);return;}
       if (exists) stop(new ProcessCaptureError('RunSpecimen CLI exited leaving child processes; cleaned up its process group', 'cleanup'));
