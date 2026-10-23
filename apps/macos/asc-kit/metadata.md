@@ -1,11 +1,11 @@
 # ASC metadata (paste into App Store Connect)
 
-**Status:** copy is ready; ASC app record / localization fields in Connect are **pending** Yahor.
+**Status:** paste copy is ready. The App Store Connect app record already exists: app `6813492506`, SKU `runspecimen-mac`, bundle `com.darashkevich.runspecimen`. On the 2026-09-28 query in [STATUS.md](STATUS.md), macOS **0.1.4 (9)** was `READY_FOR_SALE`. That query was not repeated for this note. Rows marked pending below were not re-checked in Connect.
 
 | Field | Value | Status |
 | --- | --- | --- |
 | Bundle ID | `com.darashkevich.runspecimen` | Fixed in Xcode / Info |
-| SKU | `runspecimen-macos` (suggestion) | **Pending** — set in Connect |
+| SKU | `runspecimen-mac` | Recorded on the existing app (`6813492506`). Do not create a second app with the earlier suggestion `runspecimen-macos`. |
 | Name | RunSpecimen | Ready |
 | Subtitle (≤30) | Local evidence control surface | Ready |
 | Category | Developer Tools | Ready |

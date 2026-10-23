@@ -11,6 +11,7 @@
 		0AF3AF26058BC97FE02C04E9 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAE24715CE6EF0998517617 /* RootView.swift */; };
 		0FCC3AB58D3C1531D7B3BA7D /* RSTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD27DE1469C9CD6E323B5794 /* RSTheme.swift */; };
 		159547C49C64CDD870A65691 /* apple-touch-icon.png in Resources */ = {isa = PBXBuildFile; fileRef = DF9E43D9D8F6D4D4D18CFD30 /* apple-touch-icon.png */; };
+		1A7C4E90B2D34F5689012AB1 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7C4E91A0B2D34F5689012ABC /* PrivacyInfo.xcprivacy */; };
 		18F349163051F1EFB143F9DF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6F77D7734FC627143F9C6B11 /* Assets.xcassets */; };
 		1C7F9C572958D86AC31DB49F /* CompanionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F92FB5B28E2DE08D564DC17 /* CompanionClient.swift */; };
 		1E42961958644EBE992094B8 /* CompanionApprovalPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB049071AC18F6157EDDF2F4 /* CompanionApprovalPreviewView.swift */; };
@@ -43,6 +44,7 @@
 		ED854B65D03A6C25EE793C09 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB60909EFBE4E0006990A08 /* PairingView.swift */; };
 		EE03F06ED87D88CAE9E0E0C9 /* CompanionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E77BCF1F7A993119E9CE6A /* CompanionModels.swift */; };
 		EEF616E5284574EC408670FD /* apple-touch-icon.png in Resources */ = {isa = PBXBuildFile; fileRef = DF9E43D9D8F6D4D4D18CFD30 /* apple-touch-icon.png */; };
+		F0B8C3D24E5162738495A6B7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7C4E91A0B2D34F5689012ABC /* PrivacyInfo.xcprivacy */; };
 		F30AD0656468857451B7C895 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAE24715CE6EF0998517617 /* RootView.swift */; };
 		F4C213BEA38C9EAC15097250 /* CompanionSecureEnclaveEnrollment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 303DAB53830A36E39215494A /* CompanionSecureEnclaveEnrollment.swift */; };
 		F4F232C1BC278A0522FC9374 /* CompanionSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E6180F0A8F12A57871A31B /* CompanionSession.swift */; };
@@ -69,6 +71,7 @@
 		579CD1E4F1A9F5A13673BF67 /* DevelopmentCompanionSignView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopmentCompanionSignView.swift; sourceTree = "<group>"; };
 		5F92FB5B28E2DE08D564DC17 /* CompanionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionClient.swift; sourceTree = "<group>"; };
 		6F77D7734FC627143F9C6B11 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		7C4E91A0B2D34F5689012ABC /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		704BB881AA608E64C1544791 /* RunSpecimenObserveDev.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = RunSpecimenObserveDev.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7205FFEDAD45C5DD7E763965 /* ObserveSchemaTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ObserveSchemaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		737DB085CE33C4BA6B8B1C69 /* DevelopmentCompanionSigner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopmentCompanionSigner.swift; sourceTree = "<group>"; };
@@ -166,6 +169,7 @@
 				DF9E43D9D8F6D4D4D18CFD30 /* apple-touch-icon.png */,
 				6F77D7734FC627143F9C6B11 /* Assets.xcassets */,
 				4B646DFB9E62C7B92D5E9457 /* mark.svg */,
+				7C4E91A0B2D34F5689012ABC /* PrivacyInfo.xcprivacy */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -346,6 +350,7 @@
 				2019ECEF8A95672E458A0397 /* Assets.xcassets in Resources */,
 				EEF616E5284574EC408670FD /* apple-touch-icon.png in Resources */,
 				D0EAEB3EED93B9CF4A101476 /* mark.svg in Resources */,
+				F0B8C3D24E5162738495A6B7 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -356,6 +361,7 @@
 				18F349163051F1EFB143F9DF /* Assets.xcassets in Resources */,
 				159547C49C64CDD870A65691 /* apple-touch-icon.png in Resources */,
 				873FC47E8AA4CE31E4E2B99F /* mark.svg in Resources */,
+				1A7C4E90B2D34F5689012AB1 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

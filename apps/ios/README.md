@@ -5,6 +5,8 @@ SwiftUI companion for **remote observation** and optional **Mac-armed remote hum
 **Bundle ID:** `com.darashkevich.runspecimen.observe`  
 **Shipping channel:** TestFlight / later (no App Store submit in this change set)
 
+Privacy manifest: `Resources/PrivacyInfo.xcprivacy` (no tracking, no collected data types, UserDefaults reason `CA92.1`). The 2026-09-22 IPA does not contain it. See `ASC_STATUS.md`.
+
 ## Safety boundary
 
 - `can_approve` stays **false**. Plugins/agents cannot approve through this app.
