@@ -71,6 +71,7 @@ xcodebuild \
 
 python3 - "$root" "$scan_root" <<'PY'
 import hashlib
+import subprocess
 import sys
 from pathlib import Path
 
@@ -110,4 +111,5 @@ release = next(path for path in release_bins if path.suffix == "")
 digest = hashlib.sha256(release.read_bytes()).hexdigest()
 print(f"ios shipping Observe scan passed {release}")
 print(f"unsigned release executable sha256 {digest}")
+subprocess.run([sys.executable, str(Path(sys.argv[1]) / 'apps/ios/Scripts/ios_privacy_gate.py'), str(release.parent)], check=True)
 PY

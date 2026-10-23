@@ -1,10 +1,10 @@
 import Foundation
 
-/// Minimum CLI the native app expects (PyPI 0.2.0rc9+ / matching repo tree).
+/// Minimum CLI the native app expects (PyPI 0.2.0rc15+ / matching repo tree).
 public enum CLIVersionGate {
     /// Comparable tuple: (major, minor, patch, preKind, preNum)
     /// preKind: 0 = rc/a/b, 1 = final (no pre-release). Higher is newer.
-    public static let minimum = ParsedVersion(major: 0, minor: 2, patch: 0, preKind: 0, preNum: 9)
+    public static let minimum = ParsedVersion(major: 0, minor: 2, patch: 0, preKind: 0, preNum: 15)
 
     public struct ParsedVersion: Comparable, Equatable, Sendable {
         public var major: Int
@@ -28,7 +28,7 @@ public enum CLIVersionGate {
             return l.lexicographicallyPrecedes(r)
         }
 
-        public var displayMinimum: String { "0.2.0rc9" }
+        public var displayMinimum: String { "0.2.0rc15" }
 
         public var display: String {
             if preKind == 0 {
@@ -45,9 +45,9 @@ public enum CLIVersionGate {
     }
 
     public static func parse(from versionOutput: String) -> ParsedVersion? {
-        // Accept "runspecimen 0.2.0rc9", "0.2.0rc9", "0.2.0-rc.9", "0.2.0"
+        // Accept "runspecimen 0.2.0rc15", "0.2.0rc15", "0.2.0-rc.9", "0.2.0"
         let lowered = versionOutput.lowercased()
-        let pattern = #"(\d+)\.(\d+)\.(\d+)(?:[-.]?(?:rc|a|b|alpha|beta)\.?(\d+))?"#
+        let pattern = #"(?<![\w.])(\d+)\.(\d+)\.(\d+)(?:[-.]?rc\.?(\d+))?(?![\w.\-])"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(lowered.startIndex..<lowered.endIndex, in: lowered)
         guard let match = regex.firstMatch(in: lowered, range: range) else { return nil }

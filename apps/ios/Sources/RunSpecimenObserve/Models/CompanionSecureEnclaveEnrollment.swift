@@ -9,6 +9,7 @@ private let enrollmentLogger = Logger(subsystem: "com.darashkevich.runspecimen.o
 public enum CompanionHardwareRefusal: Error, Equatable {
     case automationRefused
     case missing
+    case orphanedKey
     case malformed(String)
     case staleRequest
     case alreadyEnrolled
@@ -31,6 +32,8 @@ public extension CompanionHardwareRefusal {
             return "Cancelled by user or system."
         case .missing:
             return "No enrollment found for this key."
+        case .orphanedKey:
+            return "A key survived reinstall, but its enrollment record is missing. Choose a new key ID and enroll it, then import its public key on the Mac. The old key is preserved."
         case .malformed(let detail):
             return "Invalid state: \(detail)."
         case .staleRequest:
@@ -40,7 +43,7 @@ public extension CompanionHardwareRefusal {
         case .keyIDRevoked:
             return "This key ID was revoked. Use a different key ID to enroll a new key."
         case .duplicateKeychainItem:
-            return "A keychain item already exists. Delete it manually or use a different key ID."
+            return "A key with this ID remains in Keychain. Choose a new key ID; the existing key will be preserved."
         case .keychainError(let status):
             return "Keychain operation failed (code \(status))."
         case .biometryUnavailable:
@@ -199,6 +202,7 @@ public enum CompanionSecureEnclaveEnrollment {
                 }
                 throw CompanionHardwareRefusal.malformed("enrollment")
             } catch CompanionHardwareRefusal.missing {
+                if try retainedKeyExists(keyID: keyID) { throw CompanionHardwareRefusal.orphanedKey }
                 let publicKey = try createKey()
                 let record = CompanionPairingRecord(
                     keyID: keyID,
@@ -427,7 +431,29 @@ public enum CompanionSecureEnclaveEnrollment {
 
     public static func inspect(keyID: String, directory: URL) throws -> CompanionPairingRecord {
         try validateKeyID(keyID)
-        return try load(keyID: keyID, directory: directory)
+        do {
+            return try load(keyID: keyID, directory: directory)
+        } catch CompanionHardwareRefusal.missing {
+            if try retainedKeyExists(keyID: keyID) { throw CompanionHardwareRefusal.orphanedKey }
+            throw CompanionHardwareRefusal.missing
+        }
+    }
+
+    private static func retainedKeyExists(keyID: String) throws -> Bool {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let keys = testInMemoryKeychain { return keys[keyID] != nil }
+        #endif
+        // Query existence only; do not reconstruct trust or read private key material.
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keyID,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        if status == errSecItemNotFound { return false }
+        guard status == errSecSuccess else { throw CompanionHardwareRefusal.keychainError(status) }
+        return true
     }
 
     public static func listKeys(directory: URL) throws -> [CompanionPairingRecord] {
@@ -695,13 +721,13 @@ public enum CompanionSecureEnclaveEnrollment {
                     enrollmentLogger.info("Face ID result: code=\(error.code.rawValue, privacy: .public)")
                     switch error.code {
                     case .userCancel, .appCancel, .systemCancel:
-                        continuation.resume(throwing: CompanionHardwareRefusal.automationRefused)
+                        continuation.resume(throwing: error)
                     case .biometryLockout:
                         continuation.resume(throwing: CompanionHardwareRefusal.biometryLockout)
                     case .biometryNotEnrolled, .biometryNotAvailable:
                         continuation.resume(throwing: CompanionHardwareRefusal.biometryUnavailable)
                     default:
-                        continuation.resume(throwing: CompanionHardwareRefusal.malformed("biometric-\(error.code.rawValue)"))
+                        continuation.resume(throwing: error)
                     }
                 } else if let error {
                     enrollmentLogger.error("Face ID failed: \(error.localizedDescription, privacy: .public)")
@@ -1002,5 +1028,70 @@ public enum CompanionSecureEnclaveEnrollment {
                 return "\(prefix)-\(startN)-overflow"
             }
         }
+    }
+}
+
+
+/// Shared presentation for hardware approval failures, including errors returned by CryptoKit.
+enum CompanionHardwareErrorPresentation {
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let refusal = error as? CompanionHardwareRefusal {
+            if refusal == .automationRefused { return true }
+            if case .keychainError(let status) = refusal { return status == errSecUserCanceled }
+            if case .malformed(let detail) = refusal, detail.hasPrefix("biometric-"),
+               let code = Int(detail.dropFirst("biometric-".count)) {
+                return isCancellation(NSError(domain: LAError.errorDomain, code: code))
+            }
+        }
+        var current = error as NSError
+        for _ in 0..<8 {
+            if current.domain == LAError.errorDomain,
+               [LAError.userCancel.rawValue, LAError.appCancel.rawValue, LAError.systemCancel.rawValue].contains(current.code) { return true }
+            if current.domain == NSOSStatusErrorDomain, current.code == Int(errSecUserCanceled) { return true }
+            guard let underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError else { break }
+            current = underlying
+        }
+        return false
+    }
+
+    static func describe(_ error: Error) -> (message: String, detail: String?) {
+        if error is CancellationError { return ("Authentication cancelled.", nil) }
+        if let refusal = error as? CompanionHardwareRefusal {
+            if refusal == .automationRefused { return ("Authentication cancelled.", nil) }
+            if case .malformed(let detail) = refusal,
+               detail.hasPrefix("biometric-"),
+               let code = Int(detail.dropFirst("biometric-".count)) {
+                return describe(NSError(domain: LAError.errorDomain, code: code))
+            }
+            if case .keychainError(let status) = refusal, status == errSecUserCanceled {
+                return ("Authentication cancelled.", nil)
+            }
+            return (refusal.userMessage, refusal.technicalDetail)
+        }
+        // CryptoKit can wrap LocalAuthentication or Security errors. Inspect only
+        // known domains/codes, never classify by localized text.
+        var current = error as NSError
+        for _ in 0..<8 {
+            if current.domain == LAError.errorDomain {
+                switch current.code {
+                case LAError.userCancel.rawValue, LAError.appCancel.rawValue, LAError.systemCancel.rawValue:
+                    return ("Authentication cancelled.", nil)
+                case LAError.biometryNotAvailable.rawValue, LAError.biometryNotEnrolled.rawValue:
+                    return ("Face ID or Touch ID is unavailable. Check biometric access for this app in Settings.", current.localizedDescription)
+                case LAError.biometryLockout.rawValue:
+                    return ("Biometric authentication is locked. Unlock your iPhone, then try again.", nil)
+                case LAError.authenticationFailed.rawValue:
+                    return ("Authentication did not succeed. Try again when you are ready.", nil)
+                default: break
+                }
+            }
+            if current.domain == NSOSStatusErrorDomain, current.code == Int(errSecUserCanceled) {
+                return ("Authentication cancelled.", nil)
+            }
+            guard let underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError else { break }
+            current = underlying
+        }
+        return ("Could not complete this action.", error.localizedDescription)
     }
 }

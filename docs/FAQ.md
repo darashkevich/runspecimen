@@ -29,7 +29,7 @@ the workspace evidence with matching host runtime expectations.
 <details>
 <summary>Mac App Store details</summary>
 
-The Mac App Store package recorded in Connect on 2026-09-28 as **0.1.4 (9)** `Removed from App Store` (EU trader status missing) freezes engine **0.2.0rc14**. The Store app is guarantee (1) only and does not include the Developer ID holder. This branch's local label is **0.1.5 (13)** and is not an upload.
+The Mac App Store package recorded in Connect on 2026-09-28 as **0.1.4 (9)** `Removed from App Store` (EU trader status missing) freezes engine **0.2.0rc14**. The Store app is guarantee (1) only and does not include the Developer ID holder. This branch's local label is **0.1.6 (16)** and is not an upload.
 </details>
 
 ## Does the Mac App Store app include the protected holder?

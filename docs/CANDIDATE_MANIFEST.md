@@ -13,7 +13,7 @@ This pass is qafix32: `artifacts/0.2.0rc15-2026-10-12-qafix32/`. It binds a `pyv
 | NEW-01 package tree | `5f35cfcf401107648d61b84e29da5a2e8b45f708` (packaged-suite discovery). Engine `src/` tree unchanged from qafix24/25/26 (dashboard.py wording in qafix24). The verifier script in `scripts/` changes in qafix26 (symlink-to-directory check, coding cookie check, byte-level whitespace parsing). qafix15 through qafix25 are prior packs and were not overwritten. Last change to plugin payload: qafix (`plugins/runspecimen/README.md` Codex listing text) |
 | Engine / package | unpublished `0.2.0rc15` |
 | Plugin | unpublished `0.2.0-rc.15` |
-| App marketing version in the project | **0.1.5 (13)**. That label also appears on a different tree: source `ea21a7fa17140dc15dab74493d384b2a8b7a150c`, engine rc14, package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa`, report `runspecimen-candidates/0.1.5-13/QA-2026-09-29.md`. That report is not this candidate |
+| App marketing version in the project | **0.1.6 (16)**. Historical **0.1.5 (13)** belongs to a different tree: source `ea21a7fa17140dc15dab74493d384b2a8b7a150c`, engine rc14, package `e47ead2dee298d8f86dd191a5032b114608f954c150479719562e4319a9988fa`, report `runspecimen-candidates/0.1.5-13/QA-2026-09-29.md`. That report is not this candidate |
 | Approved Mac app, unchanged | **0.1.4 (9)**, `Removed from App Store` (EU trader status missing), build `51a18894-02e3-4846-86f5-29cc345567f0` |
 | Submission record for that package | SHA-256 `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` |
 | Published engine, unchanged | `0.2.0rc14` / tag peel `25f4013c5c84b89b24024182f7c308dcffe084b4` |

@@ -90,11 +90,11 @@ if [[ -n "$PROFILE_UUID" ]]; then
   /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:com.darashkevich.runspecimen string $PROFILE_UUID" "$EXPORT_PLIST"
 fi
 
-# RS_EXPORT_DESTINATION=export writes a Store pkg locally and does not upload.
-if [[ "${RS_EXPORT_DESTINATION:-}" == "export" ]]; then
-  /usr/libexec/PlistBuddy -c "Set :destination export" "$EXPORT_PLIST"
-  echo "Local-only export (destination=export) — will not upload to App Store Connect"
-fi
+# Preparation defaults to local export. Upload must be selected explicitly.
+case "${RS_EXPORT_DESTINATION:-export}" in
+  export|upload) /usr/libexec/PlistBuddy -c "Set :destination ${RS_EXPORT_DESTINATION:-export}" "$EXPORT_PLIST" ;;
+  *) echo "ERROR: RS_EXPORT_DESTINATION must be export or upload" >&2; exit 1 ;;
+esac
 
 rm -rf "$EXPORT_DIR"
 mkdir -p "$EXPORT_DIR"

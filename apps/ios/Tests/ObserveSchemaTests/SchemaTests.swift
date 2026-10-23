@@ -1,10 +1,11 @@
 import CryptoKit
+import LocalAuthentication
 import XCTest
 import Security
 import Darwin
 @testable import RunSpecimenObserve
 
-final class ObserveSchemaTests: XCTestCase {
+final class ObserveSchemaTests: IsolatedCompanionSessionTests {
     override func setUp() {
         super.setUp()
         executionTimeAllowance = 60
@@ -1595,34 +1596,40 @@ final class ObserveSchemaTests: XCTestCase {
         XCTAssertFalse(client1 === client3, "After invalidation, a new instance should be returned")
     }
 
+    @MainActor
     func testFailedRefreshShowsStaleWithoutAdvancingTimestamp() async throws {
-        let session = await CompanionSession()
-
-        let statusBefore = await MainActor.run { session.status }
-        let isPairedBefore = await MainActor.run { session.isPaired }
-
-        await MainActor.run {
-            session.baseURLString = "http://localhost:9999"
-            session.pairingToken = "test-token"
-            session.tlsFingerprint = ""
-            session.isPaired = true
-        }
-
-        await MainActor.run {
-            XCTAssertNil(session.status, "Status should be nil before refresh")
-            XCTAssertNil(session.lastError, "lastError should be nil before refresh")
-        }
-
+        let session = CompanionSession(deferPhoneKeyState: true)
+        session.baseURLString = "http://localhost"
+        session.pairingToken = "fixture-token"
+        session.isPaired = true
+        let previous = Date(timeIntervalSince1970: 100)
+        session.lastSuccessfulRefresh = previous
+        let client = try XCTUnwrap(session.testMakeClient())
+        client.testRequest = { _ in throw CompanionClientError.transport("fixture unavailable") }
         await session.refresh()
+        XCTAssertEqual(session.lastSuccessfulRefresh, previous)
+        XCTAssertEqual(session.refreshOutcome, .failure("fixture unavailable"))
+        XCTAssertEqual(session.connectionState, .stale)
+        XCTAssertTrue(session.isPaired)
+    }
 
-        await MainActor.run {
-            XCTAssertNotNil(session.lastError, "Failed refresh should set lastError")
-            XCTAssertNil(session.status, "Status should remain nil after failed refresh (Offline)")
-            XCTAssertTrue(session.isPaired, "isPaired should remain true after failed refresh")
-        }
+    func testGrokEnrollmentCommitSurvivesCancellation() async throws {
+        try await verifyEnrollmentCommit(cancelDuringCommit: true)
+    }
+
+    func testGrokExplicitCancelAfterCommitReconcilesEnrolledKey() async throws {
+        try await verifyEnrollmentCommit(cancelDuringCommit: false, cancelChallengeAfterCommit: true)
     }
 
     func testPhonePeerKeyStateRefreshesAfterHolderVerifiedCommit() async throws {
+        try await verifyEnrollmentCommit(cancelDuringCommit: false)
+    }
+
+    func testP3PhonePeerEnrollmentBiometricCancelIsNeutral() async throws {
+        try await verifyEnrollmentCommit(cancelDuringCommit: false, biometricCancellation: true)
+    }
+
+    private func verifyEnrollmentCommit(cancelDuringCommit: Bool, cancelChallengeAfterCommit: Bool = false, biometricCancellation: Bool = false) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-commit-refresh-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -1668,7 +1675,17 @@ final class ObserveSchemaTests: XCTestCase {
             session.isPaired = true
         }
 
-        await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
+        signer.cancelAfterCommit = cancelDuringCommit
+        if cancelChallengeAfterCommit { signer.afterCommit = { await session.cancelPhonePeerChallenge() } }
+        if biometricCancellation { CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in throw CompanionHardwareRefusal.automationRefused } }
+        let outcome = await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
+        if biometricCancellation {
+            XCTAssertEqual(outcome, .cancelled)
+            XCTAssertEqual(signer.commits, 0)
+            await MainActor.run { XCTAssertNil(session.lastError); XCTAssertEqual(session.phoneEnrollmentFeedback, .cancelled) }
+            return
+        }
+        XCTAssertEqual(outcome, .enrolled)
 
         await MainActor.run {
             XCTAssertEqual(signer.commits, 1, "signer.commitEnrollment should be called once")
@@ -1679,6 +1696,12 @@ final class ObserveSchemaTests: XCTestCase {
 
         let generation = try signer.stage.committedGeneration()
         XCTAssertEqual(generation, 1, "Signer's stage should have generation 1 after commit")
+        await MainActor.run { XCTAssertEqual(session.phoneEnrollmentFeedback, .enrolled) }
+        try await session.revokePhonePeerKey()
+        await MainActor.run {
+            XCTAssertEqual(session.phonePeerKeyState, .noKey)
+            XCTAssertNil(session.phoneEnrollmentFeedback, "enrollment success must disappear after revocation")
+        }
     }
 
     private func package() throws -> [String: String] {
@@ -1704,6 +1727,8 @@ final class TempDirectoryTestSigner: PhoneChallengeSigning {
     let publicKey: Data
     let publicKeyBase64: String
     var commits = 0
+    var cancelAfterCommit = false
+    var afterCommit: (() async -> Void)?
 
     init(directory: URL) {
         self.stage = PhoneKeyStage.fixture(directory: directory)
@@ -1725,6 +1750,11 @@ final class TempDirectoryTestSigner: PhoneChallengeSigning {
         try stage.bindOwner(challengeId: challengeId, publicKey: key)
     }
 
+    func commitEnrollmentAsync(ownedBy challengeId: String, publicKey: String) async throws {
+        try await CryptoWorker.shared.performCommit { try self.commitEnrollment(ownedBy: challengeId, publicKey: publicKey) }
+        await afterCommit?()
+    }
+
     func commitEnrollment(ownedBy challengeId: String, publicKey: String) throws {
         guard let key = Data(base64Encoded: publicKey) else {
             throw CompanionClientError.transport("invalid key")
@@ -1732,6 +1762,7 @@ final class TempDirectoryTestSigner: PhoneChallengeSigning {
         try stage.stage(handle: Data("test-handle".utf8), publicKey: key, challengeId: challengeId)
         try stage.commit(ownedBy: challengeId, publicKey: key)
         commits += 1
+        if cancelAfterCommit { withUnsafeCurrentTask { $0?.cancel() } }
     }
 
     func discardStagedEnrollment() {
@@ -1930,7 +1961,7 @@ extension ObserveSchemaTests {
         let session = await CompanionSession()
         
         await MainActor.run {
-            let defaults = UserDefaults.standard
+            let defaults = CompanionSession.storageDefaults
             let oldKey = "rs.observe.pairing"
             
             if let existingConfig = defaults.dictionary(forKey: oldKey),
@@ -2106,7 +2137,7 @@ extension ObserveSchemaTests {
 
     @MainActor
     func testIOSQA702MigrationRetainsTokenUntilKeychainWriteSucceeds() throws {
-        let defaults = UserDefaults.standard
+        let defaults = CompanionSession.storageDefaults
         let key = "rs.observe.pairing"
         let previous = defaults.object(forKey: key)
         defer {
@@ -2274,7 +2305,7 @@ extension ObserveSchemaTests {
 
 extension ObserveSchemaTests {
     @MainActor
-    func testIOSQA612CancellationAfterTransportStartedCannotReturnSuccess() async throws {
+    func testIOSQA612CancellationAfterTransportStartedPreservesAcknowledgement() async throws {
         for refuse in [false, true] {
             let session = CompanionSession(deferPhoneKeyState: true)
             session.baseURLString = "http://localhost"
@@ -2290,6 +2321,7 @@ extension ObserveSchemaTests {
             var resume: CheckedContinuation<Data, Error>?
             let client = try XCTUnwrap(session.testMakeClient())
             client.testRequest = { request in
+                if request.url?.path == "/v1/status" { throw CancellationError() }
                 XCTAssertEqual(request.url?.path, refuse ? "/v1/remote-confirm-refuse" : "/v1/remote-confirm")
                 return try await withCheckedThrowingContinuation { continuation in
                     resume = continuation
@@ -2305,9 +2337,9 @@ extension ObserveSchemaTests {
             let continuation = try XCTUnwrap(resume)
             continuation.resume(returning: Data((refuse ? "{\"ok\":true,\"refused\":true}" : "{\"ok\":true,\"settled\":true}").utf8))
             let result = await task.value
-            XCTAssertEqual(result, .cancelled)
-            XCTAssertNil(session.lastRemoteConfirmNote)
-            XCTAssertEqual(session.challengeInput, "challenge")
+            XCTAssertEqual(result, refuse ? .refused : .confirmed)
+            XCTAssertNotNil(session.lastRemoteConfirmNote)
+            XCTAssertEqual(session.challengeInput, "")
         }
     }
 }
@@ -2759,7 +2791,7 @@ extension ObserveSchemaTests {
     @MainActor
     func testIOSQA702PairingWriteFailureKeepsPreviousConfigurationAndToken() throws {
         let key = "rs.observe.pairing"
-        let defaults = UserDefaults.standard
+        let defaults = CompanionSession.storageDefaults
         let previous = defaults.object(forKey: key)
         defer {
             defaults.set(previous, forKey: key)
@@ -2939,7 +2971,7 @@ extension ObserveSchemaTests {
 extension ObserveSchemaTests {
     @MainActor
     func testIOSQA8C1RejectedCandidateIsNeverPersistedOrRestored() async throws {
-        let defaults = UserDefaults.standard
+        let defaults = CompanionSession.storageDefaults
         let previous = defaults.object(forKey: "rs.observe.pairing")
         defer { defaults.set(previous, forKey: "rs.observe.pairing"); CompanionSession.testTokenRead = nil; CompanionSession.testTokenWrite = nil }
         defaults.removeObject(forKey: "rs.observe.pairing")
@@ -3085,7 +3117,7 @@ extension ObserveSchemaTests {
 extension ObserveSchemaTests {
     @MainActor
     func testIOSQA8C1FailedOrCancelledReplacementKeepsPreviouslySavedPairing() async throws {
-        let defaults = UserDefaults.standard
+        let defaults = CompanionSession.storageDefaults
         let previous = defaults.object(forKey: "rs.observe.pairing")
         defer { defaults.set(previous, forKey: "rs.observe.pairing"); CompanionSession.testTokenRead = nil; CompanionSession.testTokenWrite = nil }
         var token = "old-token"
@@ -3126,5 +3158,122 @@ extension ObserveSchemaTests {
         XCTAssertEqual(token, "old-token")
         XCTAssertEqual(defaults.data(forKey: "rs.observe.pairing"), oldBytes)
         XCTAssertFalse(session.isPaired)
+    }
+}
+
+
+extension ObserveSchemaTests {
+    @MainActor
+    func testIOSQAUXEnrollmentWithoutSignedChallengeExplainsNextStep() async throws {
+        let session = qaPairedSession()
+        let client = try XCTUnwrap(session.testMakeClient())
+        client.testRequest = { _ in
+            XCTFail("Enrollment without a signed challenge must not contact the holder")
+            throw CompanionClientError.http(500, "unexpected request")
+        }
+        let expected = "Sign a phone peer challenge first, then verify it on the Mac before enrolling."
+        let outcome = await session.commitPhoneKeyAfterHolderVerification()
+        XCTAssertEqual(outcome, .refused(expected))
+        XCTAssertEqual(session.lastError, expected)
+        XCTAssertEqual(session.phonePeerNote, expected)
+    }
+}
+
+
+extension ObserveSchemaTests {
+    func testDeviceReinstallDoesNotReportSurvivingKeyAsMissing() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        CompanionSecureEnclaveEnrollment.testInMemoryKeychain = ["yd-phone-2": Data([1, 2, 3])]
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.inspect(keyID: "yd-phone-2", directory: directory)) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .orphanedKey)
+        }
+        XCTAssertEqual(CompanionSecureEnclaveEnrollment.testInMemoryKeychain?["yd-phone-2"], Data([1, 2, 3]))
+    }
+}
+
+
+extension ObserveSchemaTests {
+    func testDeviceReinstallEnrollmentPreservesExistingKey() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        CompanionSecureEnclaveEnrollment.testInMemoryKeychain = ["yd-phone-2": Data([1, 2, 3])]
+        var created = false
+        XCTAssertThrowsError(try CompanionSecureEnclaveEnrollment.enrollReplacingMissingFile(keyID: "yd-phone-2", directory: directory, createKey: {
+            created = true
+            return Data(repeating: 1, count: 65)
+        }, cleanup: {})) { error in
+            XCTAssertEqual(error as? CompanionHardwareRefusal, .orphanedKey)
+        }
+        XCTAssertFalse(created)
+        XCTAssertEqual(CompanionSecureEnclaveEnrollment.testInMemoryKeychain?["yd-phone-2"], Data([1, 2, 3]))
+    }
+}
+
+
+extension ObserveSchemaTests {
+    func testDeviceFaceIDCancellationHasExpectedFeedback() {
+        let error = NSError(domain: LAError.errorDomain, code: LAError.userCancel.rawValue)
+        XCTAssertEqual(CompanionHardwareErrorPresentation.describe(error).message, "Authentication cancelled.")
+    }
+    func testDeviceFaceIDPermissionDeniedGivesSettingsGuidance() {
+        let error = NSError(domain: LAError.errorDomain, code: LAError.biometryNotAvailable.rawValue)
+        XCTAssertTrue(CompanionHardwareErrorPresentation.describe(error).message.contains("Settings"))
+    }
+    func testDeviceWrappedKeychainCancellationHasExpectedFeedback() {
+        let error = NSError(domain: NSOSStatusErrorDomain, code: Int(errSecUserCanceled))
+        let wrapper = NSError(domain: "CryptoKit", code: 1, userInfo: [NSUnderlyingErrorKey: error])
+        XCTAssertEqual(CompanionHardwareErrorPresentation.describe(wrapper).message, "Authentication cancelled.")
+    }
+}
+
+extension ObserveSchemaTests {
+    @MainActor
+    func testICQA03LateAcknowledgementPreservesSuccessorDrafts() async throws {
+        for refuse in [false, true] {
+            let session = CompanionSession(deferPhoneKeyState: true)
+            session.baseURLString = "http://localhost"
+            session.pairingToken = "test-token"
+            session.isPaired = true
+            session.status = CompanionStatus(phase: "active")
+            session.capabilities = CompanionCapabilities(product: "test", mode: "observe", canApprove: false,
+                canExecute: false, canMutateLifecycle: false, canRemoteConfirm: true, boundary: "test")
+            session.challengeInput = "challenge"
+            session.approvePhraseInput = "APPROVE"
+            session.refuseReasonInput = "test refusal"
+            let entered = expectation(description: "Production settlement request entered transport")
+            var resume: CheckedContinuation<Data, Error>?
+            let client = try XCTUnwrap(session.testMakeClient())
+            client.testRequest = { request in
+                if request.url?.path == "/v1/status" { throw CancellationError() }
+                XCTAssertEqual(request.url?.path, refuse ? "/v1/remote-confirm-refuse" : "/v1/remote-confirm")
+                return try await withCheckedThrowingContinuation { continuation in
+                    resume = continuation
+                    entered.fulfill()
+                }
+            }
+            let task = Task { @MainActor in
+                if refuse { return await session.submitRemoteRefuse() }
+                return await session.submitRemoteConfirm()
+            }
+            await fulfillment(of: [entered], timeout: 3)
+            guard let continuation = resume else {
+                task.cancel()
+                _ = await task.value
+                XCTFail("Settlement transport did not enter")
+                continue
+            }
+            session.cancelAllTasks()
+            session.challengeInput = "successor challenge"
+            session.approvePhraseInput = "successor phrase"
+            session.refuseReasonInput = "successor reason"
+            session.lastRemoteConfirmNote = "successor note"
+            continuation.resume(returning: Data((refuse ? "{\"ok\":true,\"refused\":true}" : "{\"ok\":true,\"settled\":true}").utf8))
+            let result = await task.value
+            XCTAssertEqual(result, refuse ? .refused : .confirmed)
+            XCTAssertEqual(session.lastRemoteConfirmNote, "successor note")
+            XCTAssertEqual(session.challengeInput, "successor challenge")
+            XCTAssertEqual(session.approvePhraseInput, "successor phrase")
+            XCTAssertEqual(session.refuseReasonInput, "successor reason")
+        }
     }
 }

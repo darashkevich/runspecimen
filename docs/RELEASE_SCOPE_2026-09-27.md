@@ -1,4 +1,10 @@
-# Release scope — 2026-09-27
+# Release scope — historical plan of 2026-09-27
+
+## Current preparation decision — 2026-10-18
+
+The preparation identity is **0.1.6 (16)**, matching merged PR #75 (`4514bdc`). Yahor authorized that merge and confirmed Mac 0.1.5 withdrawn from review. This supersedes the proposed 0.1.6 (1) label below. Independent final QA is DO-NOT-SHIP; all findings must be closed and reviewed on the resulting heads before any upload, submission or publication. This is not authorization to ship.
+
+## Historical proposal (superseded)
 
 This candidate is not a production release. Packaging still uses public `0.2.0rc14` identifiers. Do not replace those artifacts or retag them. Independent QA of `cd8b860` passed its claimed fixes and is not production sign-off. Nothing here is merged to `main` or submitted to Apple.
 

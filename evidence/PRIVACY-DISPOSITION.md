@@ -1,0 +1,7 @@
+# Mac Release privacy decision — Yahor, 23 October 2026
+
+Declared exactly: UserDefaults CA92.1; SystemBootTime 35F9.1 for monotonic elapsed-time/deadline measurements; FileTimestamp C617.1 and 3B52.1 for stat-family access in embedded Python, OpenSSL and frozen helper (container files and explicitly user-authorized workspace files).
+
+DiskSpace is deliberately not declared. Embedded Python imports statvfs/fstatvfs, but these symbols are unused by RunSpecimen: no call sites in src/ or native Mac sources were found. This records the release owner's accepted unused-symbol disposition, not proof that no possible third-party path can invoke them. Per Yahor's decision, E174.1 will be added only if Apple asks; any future declaration must accurately describe actual approved use, rather than an invented low-space feature.
+
+A symbol scan distinguishes imported capability from observed execution. Archive evidence lists every Mach-O file, hashes, imported symbols, manifest association and undeclared categories. Only DiskSpace imports are allowed by this documented exception; no ActiveKeyboards use was found. The exact-category gate rejects missing, extra, duplicate or wrong-reason entries. Shipping/Store acceptance, signing, upload and approval remain held. The rebuilt local unsigned Release archive is a candidate built from shipping sources, not an uploaded or distribution-signed Store artifact.
