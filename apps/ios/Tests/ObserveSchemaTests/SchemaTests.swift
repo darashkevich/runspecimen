@@ -3231,3 +3231,55 @@ extension ObserveSchemaTests {
         XCTAssertEqual(CompanionHardwareErrorPresentation.describe(wrapper).message, "Authentication cancelled.")
     }
 }
+
+extension ObserveSchemaTests {
+    @MainActor
+    func testICQA03LateAcknowledgementPreservesSuccessorDrafts() async throws {
+        for refuse in [false, true] {
+            let session = CompanionSession(deferPhoneKeyState: true)
+            session.baseURLString = "http://localhost"
+            session.pairingToken = "test-token"
+            session.isPaired = true
+            session.status = CompanionStatus(phase: "active")
+            session.capabilities = CompanionCapabilities(product: "test", mode: "observe", canApprove: false,
+                canExecute: false, canMutateLifecycle: false, canRemoteConfirm: true, boundary: "test")
+            session.challengeInput = "challenge"
+            session.approvePhraseInput = "APPROVE"
+            session.refuseReasonInput = "test refusal"
+            let entered = expectation(description: "Production settlement request entered transport")
+            var resume: CheckedContinuation<Data, Error>?
+            let client = try XCTUnwrap(session.testMakeClient())
+            client.testRequest = { request in
+                if request.url?.path == "/v1/status" { throw CancellationError() }
+                XCTAssertEqual(request.url?.path, refuse ? "/v1/remote-confirm-refuse" : "/v1/remote-confirm")
+                return try await withCheckedThrowingContinuation { continuation in
+                    resume = continuation
+                    entered.fulfill()
+                }
+            }
+            let task = Task { @MainActor in
+                if refuse { return await session.submitRemoteRefuse() }
+                return await session.submitRemoteConfirm()
+            }
+            await fulfillment(of: [entered], timeout: 3)
+            guard let continuation = resume else {
+                task.cancel()
+                _ = await task.value
+                XCTFail("Settlement transport did not enter")
+                continue
+            }
+            session.cancelAllTasks()
+            session.challengeInput = "successor challenge"
+            session.approvePhraseInput = "successor phrase"
+            session.refuseReasonInput = "successor reason"
+            session.lastRemoteConfirmNote = "successor note"
+            continuation.resume(returning: Data((refuse ? "{\"ok\":true,\"refused\":true}" : "{\"ok\":true,\"settled\":true}").utf8))
+            let result = await task.value
+            XCTAssertEqual(result, refuse ? .refused : .confirmed)
+            XCTAssertEqual(session.lastRemoteConfirmNote, "successor note")
+            XCTAssertEqual(session.challengeInput, "successor challenge")
+            XCTAssertEqual(session.approvePhraseInput, "successor phrase")
+            XCTAssertEqual(session.refuseReasonInput, "successor reason")
+        }
+    }
+}

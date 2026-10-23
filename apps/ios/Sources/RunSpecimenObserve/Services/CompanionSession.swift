@@ -1268,6 +1268,10 @@ final class CompanionSession: ObservableObject {
         do {
             guard !Task.isCancelled else { return .cancelled }
             let result = try await client.submitRemoteConfirm(challenge: challenge, phrase: phrase)
+            // Preserve the originating acknowledgement without publishing into a successor session.
+            guard generation == remoteConfirmTaskGeneration else {
+                return result.confirmedSuccessfully ? .confirmed : .cancelled
+            }
             if Task.isCancelled && !result.confirmedSuccessfully { return settlementUnknown(generation: generation) }
             if result.isAmbiguous {
                 return settlementFailure("Server returned ambiguous confirm response. Refresh status to check state.")
@@ -1285,7 +1289,7 @@ final class CompanionSession: ObservableObject {
         } catch is CancellationError {
             return settlementUnknown(generation: generation)
         } catch {
-            if Task.isCancelled { return settlementUnknown(generation: generation) }
+            if Task.isCancelled || generation != remoteConfirmTaskGeneration { return settlementUnknown(generation: generation) }
             return settlementFailure(error.localizedDescription)
         }
     }
@@ -1346,6 +1350,10 @@ final class CompanionSession: ObservableObject {
         do {
             guard !Task.isCancelled else { return .cancelled }
             let result = try await client.submitRemoteRefuse(challenge: challenge, reason: reason)
+            // Preserve the originating acknowledgement without publishing into a successor session.
+            guard generation == remoteConfirmTaskGeneration else {
+                return result.refusedSuccessfully ? .refused : .cancelled
+            }
             if Task.isCancelled && !result.refusedSuccessfully { return settlementUnknown(generation: generation) }
             if result.isAmbiguous {
                 return settlementFailure("Server returned ambiguous refuse response. Refresh status to check state.")
@@ -1364,7 +1372,7 @@ final class CompanionSession: ObservableObject {
         } catch is CancellationError {
             return settlementUnknown(generation: generation)
         } catch {
-            if Task.isCancelled { return settlementUnknown(generation: generation) }
+            if Task.isCancelled || generation != remoteConfirmTaskGeneration { return settlementUnknown(generation: generation) }
             return settlementFailure(error.localizedDescription)
         }
     }
