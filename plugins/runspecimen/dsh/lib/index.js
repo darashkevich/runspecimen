@@ -88,6 +88,8 @@ const RESULT_SCHEMA = {
     cancelled: { type: "boolean", description: "The caller cancelled this call." },
     timedOut: { type: "boolean", description: "The execution time budget expired." },
     cleanupFailed: { type: "boolean", description: "Process-group cleanup could not be confirmed." },
+    terminationKind: { type: "string", description: "The final failure kind, including cleanup when process-group cleanup is unresolved." },
+    triggerKind: { type: "string", description: "The initiating cause, such as timeout or cancelled, retained separately from cleanup failure." },
   },
 };
 
