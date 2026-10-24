@@ -1,0 +1,53 @@
+{
+  "name": "runspecimen-dsh-plugin",
+  "version": "0.2.3",
+  "private": true,
+  "description": "RunSpecimen tools for DeepSeek Harness: observe, bound, run and verify consequential local commands \u2014 with the human approval gate kept human.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/darashkevich/runspecimen",
+    "directory": "plugins/runspecimen/dsh"
+  },
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/cli.js",
+    "lib/refusal.js",
+    "cordis.patch.yml",
+    "README.md",
+    "lib/process.js",
+    "lib/dashboard.js",
+    "lib/group-supervisor.js"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.5",
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.0.1-rc.1",
+    "@deepseek-ai/schemastery": "3.18.5"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
