@@ -207,7 +207,7 @@ export async function runCli({command,argv,cwd,signal,timeoutMs,maxOutputBytes,g
   const stderrLimit=Math.min(maxOutputBytes,Math.max(1,Math.floor(maxOutputBytes/8)));
   const stdoutLimit=maxOutputBytes-stderrLimit;
   const stdout=[];let stdoutSize=0,stderr=Buffer.alloc(0),stderrTotal=0,truncated=false;
-  let code,termination,terminationKind,cleanupFailed=false;
+  let code,termination,terminationKind,triggerKind,cleanupFailed=false;
   try {
     code=await captureProcess({command,argv,cwd,signal,timeoutMs,graceMs,onData(chunk,stream) {
       if(stream==='stderr') {
@@ -223,7 +223,11 @@ export async function runCli({command,argv,cwd,signal,timeoutMs,maxOutputBytes,g
     }});
   } catch(error) {
     if (!(error instanceof ProcessCaptureError)) throw error;
-    code=-1;termination=error.message;terminationKind=error.kind;cleanupFailed=!error.cleanupConfirmed;
+    code=-1;terminationKind=error.kind;triggerKind=error.triggerKind;cleanupFailed=!error.cleanupConfirmed;
+    // Cleanup failure is the final outcome, not a replacement for its trigger.
+    const messages=[];
+    for(let cause=error;cause instanceof ProcessCaptureError;cause=cause.cause)messages.unshift(cause.message);
+    termination=messages.filter((message,index)=>!messages.slice(index+1).some(later=>later.includes(message))).join('; ');
   }
   const head=new StringDecoder('utf8').write(Buffer.concat(stdout,stdoutSize));
   // A tail can begin inside a UTF-8 codepoint. Discard leading continuation bytes.
@@ -231,5 +235,5 @@ export async function runCli({command,argv,cwd,signal,timeoutMs,maxOutputBytes,g
   const tail=stderr.subarray(start).toString('utf8');
   const body=head+tail;
   const text=(body.trim()?body:`exit_code=${code}`)+(truncated?truncationNotice(maxOutputBytes):'')+(termination?`\n[${termination}]`:'');
-  return {exitCode:code,text,truncated,cancelled:terminationKind==='cancelled',timedOut:terminationKind==='timeout',cleanupFailed,...termination?{termination,terminationKind}:{}};
+  return {exitCode:code,text,truncated,cancelled:triggerKind==='cancelled',timedOut:triggerKind==='timeout',cleanupFailed,...termination?{termination,terminationKind,triggerKind}:{}};
 }
