@@ -41,10 +41,13 @@ for(const mode of ['timeout','cancel'])test(`ordinary registered status retains 
   try {
     apply({tools:{register:t=>all.push(t)},systemPrompt:{section(){},getSectionOrder(){return 1;}},effect:f=>disposers.push(f())},
       {command:fixture,timeoutMs:mode==='timeout'?3000:10000,graceMs:20});
-    const pending=all.find(t=>t.name==='runspecimen_status').execute({workspace:directory,campaign_id:"fixture-campaign",run_id:"fixture-run"},{signal:controller.signal});
+    const tool=all.find(t=>t.name==='runspecimen_status');
+    const pending=tool.execute({workspace:directory,campaign_id:"fixture-campaign",run_id:"fixture-run"},{signal:controller.signal});
     await ready(directory);
     if(mode==='cancel')controller.abort();
     const result=await pending;
+    assert.equal(tool.output.schema.additionalProperties,false);
+    assert.deepEqual(Object.keys(result).filter(key=>!(key in tool.output.schema.properties)),[], 'registered result must match its closed output schema');
     assert.equal(result.ok,false);assert.equal(result.exitCode,-1);assert.equal(result.cleanupFailed,true);
     assert.equal(result.timedOut,mode==='timeout');assert.equal(result.cancelled,mode==='cancel');
     assert.equal(result.terminationKind,'cleanup');
