@@ -178,6 +178,7 @@ function actionTool(resolved, action, description, parameters) {
         cancelled: result.cancelled,
         timedOut: result.timedOut ?? false,
         cleanupFailed: result.cleanupFailed ?? false,
+        ...(result.terminationKind ? {terminationKind:result.terminationKind,triggerKind:result.triggerKind} : {}),
       };
     },
   });
