@@ -779,7 +779,7 @@ struct CompanionHardwareApprovalView: View {
         do {
             let selection = try HardwareKeySelection(persistedKeyID: persistedKeyID, directory: directory)
             keyID = selection.keyID
-            if selection.isUnavailable && UserDefaults.standard.object(forKey: "rs.observe.selectedKeyID") != nil {
+            if selection.isUnavailable && CompanionSession.storageDefaults.object(forKey: "rs.observe.selectedKeyID") != nil {
                 unavailableSelectionID = selection.keyID
             }
             allKeys = selection.records
