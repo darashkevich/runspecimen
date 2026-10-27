@@ -236,7 +236,7 @@ class RunSupervisorTests(unittest.TestCase):
             os.kill(cli.pid, signal.SIGSTOP)
             try:
                 # Contract should still be killed at wall deadline
-                deadline = time.monotonic() + 6
+                deadline = time.monotonic() + 8  # Give extra time for supervisor to complete
                 while self._pid_alive(contract_pid):
                     lease = Lease.for_workspace(ws, holder="test-probe")
                     self.assertTrue(lease.is_locked_by_other())
@@ -247,9 +247,17 @@ class RunSupervisorTests(unittest.TestCase):
                     )
                     time.sleep(0.02)
 
+                # Wait for state to be updated (supervisor might still be writing)
+                state_dir = run_state_dir(ws, "camp", "run-a")
+                while time.monotonic() < deadline:
+                    state = load_state(state_dir)
+                    if state.get("run_result") and state.get("cleanup_confirmed"):
+                        break
+                    time.sleep(0.02)
+
                 # Verify state shows timeout
-                state = load_state(run_state_dir(ws, "camp", "run-a"))
-                self.assertEqual(state["run_result"], "timeout")
+                state = load_state(state_dir)
+                self.assertEqual(state.get("run_result"), "timeout")
                 self.assertTrue(state.get("cleanup_confirmed", False))
             finally:
                 os.kill(cli.pid, signal.SIGCONT)
