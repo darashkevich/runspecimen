@@ -11,14 +11,19 @@ Design rationale:
 - No workload inherits the control channel
 
 What the supervisor guarantees:
-- The contract will be killed at wall_timeout_sec, regardless of CLI state
-- Lease is held until cleanup is confirmed
-- State accurately reports cleanup_confirmed status
+- The contract process group is killed at wall_timeout_sec, regardless of CLI state
+- The lease stays held until process-group cleanup is confirmed, or until
+  every holder of the lease fd (supervisor and the bind watchdog) has died
+- ``cleanup_confirmed`` means the contract process group had no live members
 
 What it cannot guarantee:
-- SIGKILL of BOTH the CLI AND supervisor still orphans the contract
-- In that case, status will show phase=running or cleanup_pending, which is
-  correct (cleanup was not confirmed)
+- A descendant that called ``setsid()`` is a new session and is outside
+  ``cleanup_confirmed``
+- SIGKILL of the supervisor and of the bind watchdog / payload still
+  orphans any remaining work
+- A permanently unwritable state directory either keeps the lease (retry)
+  or, if the group was already stopped, leaves a stale ``phase=running``
+  record plus an error that says state could not be persisted
 """
 from __future__ import annotations
 
@@ -141,7 +146,7 @@ def guarded_run(
     stop_sent = False
 
     try:
-        with execution._termination_signals():
+        with execution._termination_signals(restore=False):
             # Poll for result, forwarding termination signals
             while not result_reader.poll(0.1):
                 pending = execution._pending_signal.get()

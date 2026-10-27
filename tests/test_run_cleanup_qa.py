@@ -1,0 +1,424 @@
+"""Real-process coverage for PR80 independent-QA findings.
+
+These tests drive the CLI (or the membership helpers) against disposable
+fixture-approved contracts. They must fail on 3a3c5fe and pass after the
+cleanup/supervisor fixes.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from tests.helpers import SRC, approve, base_contract, seed_workspace, write_contract
+from runspecimen.lease import Lease
+from runspecimen.paths import run_state_dir
+from runspecimen.state import load_state
+
+
+BG_JOB = (
+    "import os\n"
+    "from pathlib import Path\n"
+    "os.system('sleep 30 >/dev/null 2>&1 & echo $! > outputs/bg.pid')\n"
+    "Path('outputs/out.json').write_text('{\"status\": \"ok\", \"n\": 1}\\n')\n"
+    "print('done')\n"
+)
+
+LONG_JOB = (
+    "import os, signal, time\n"
+    "from pathlib import Path\n"
+    "for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):\n"
+    "    signal.signal(sig, signal.SIG_IGN)\n"
+    "Path('outputs/pid').write_text(str(os.getpid()))\n"
+    "while True:\n"
+    "    time.sleep(0.02)\n"
+)
+
+FAST_JOB = (
+    "from pathlib import Path\n"
+    "Path('outputs/out.json').write_text('{\"status\": \"ok\", \"n\": 1}\\n')\n"
+    "print('done')\n"
+)
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
+def _kill_group(pid: int) -> None:
+    if pid <= 0:
+        return
+    try:
+        os.killpg(os.getpgid(pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+def _eperm_driver(ws: Path, marker: Path) -> list[str]:
+    driver = ws / "eperm_driver.py"
+    driver.write_text(
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "from runspecimen.cli import main\n"
+        "real_killpg = os.killpg\n"
+        "marker = Path(sys.argv.pop(1))\n"
+        "def patched_killpg(pgid, sig):\n"
+        "    if marker.exists():\n"
+        "        raise PermissionError('fixture: group kill denied')\n"
+        "    return real_killpg(pgid, sig)\n"
+        "os.killpg = patched_killpg\n"
+        "raise SystemExit(main())\n"
+    )
+    return [sys.executable, str(driver), str(marker)]
+
+
+def _late_term_driver(ws: Path) -> list[str]:
+    """Widen the post-result window so a late SIGTERM is delivered before JSON."""
+    driver = ws / "late_term_driver.py"
+    driver.write_text(
+        "import time\n"
+        "from runspecimen import cli\n"
+        "real_emit = cli._emit\n"
+        "def slow_emit(*args, **kwargs):\n"
+        "    time.sleep(0.3)\n"
+        "    return real_emit(*args, **kwargs)\n"
+        "cli._emit = slow_emit\n"
+        "raise SystemExit(cli.main())\n"
+    )
+    return [sys.executable, str(driver)]
+
+
+class RunCleanupQATests(unittest.TestCase):
+    def _approve_contract(self, ws: Path, job: str, *, wall_sec: int) -> Path:
+        (ws / "work" / "job.py").write_text(job)
+        contract = write_contract(
+            ws,
+            "contract.json",
+            base_contract(
+                caps={
+                    "wall_timeout_sec": wall_sec,
+                    "stdout_max_bytes": 1024,
+                    "stderr_max_bytes": 1024,
+                }
+            ),
+        )
+        approve(ws, contract)
+        return contract
+
+    def _start_cli(
+        self,
+        ws: Path,
+        contract: Path,
+        *,
+        extra_argv: list[str] | None = None,
+    ) -> subprocess.Popen:
+        argv = extra_argv or [sys.executable, "-m", "runspecimen"]
+        return subprocess.Popen(
+            argv + ["run", "--workspace", str(ws), "--contract", str(contract)],
+            env=dict(os.environ, PYTHONPATH=str(SRC)),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+
+    def _wait_file(self, path: Path, cli: subprocess.Popen, timeout: float = 5.0) -> str:
+        deadline = time.monotonic() + timeout
+        while not path.exists():
+            self.assertIsNone(cli.poll(), f"CLI exited before {path.name}")
+            self.assertLess(time.monotonic(), deadline, f"{path.name} startup timeout")
+            time.sleep(0.01)
+        return path.read_text().strip()
+
+    def test_redirected_background_member_is_stopped_on_normal_exit(self):
+        """P1-01: sh -c 'sleep >/dev/null 2>&1 &' must not survive completed."""
+        td = seed_workspace(BG_JOB)
+        ws = Path(td.name)
+        cli = None
+        bg_pid = 0
+        try:
+            contract = self._approve_contract(ws, BG_JOB, wall_sec=8)
+            cli = self._start_cli(ws, contract)
+            bg_pid = int(self._wait_file(ws / "outputs" / "bg.pid", cli))
+            stdout, stderr = cli.communicate(timeout=8)
+            self.assertEqual(cli.returncode, 0, (stdout, stderr))
+            state = load_state(run_state_dir(ws, "camp", "run-a"))
+            self.assertEqual(state["phase"], "completed")
+            self.assertEqual(state["run_result"], "completed")
+            self.assertTrue(state.get("cleanup_confirmed"))
+            self.assertFalse(
+                Lease.for_workspace(ws, holder="probe").is_locked_by_other()
+            )
+            self.assertFalse(
+                _pid_alive(bg_pid),
+                "background process-group member survived a completed run",
+            )
+            self.assertEqual(state.get("cleanup_scope"), "process_group")
+        finally:
+            if cli is not None and cli.poll() is None:
+                cli.kill()
+                cli.communicate(timeout=5)
+            _kill_group(bg_pid)
+            td.cleanup()
+
+    def test_eperm_on_completed_leader_reports_pending_and_keeps_lease(self):
+        """P3-06 / P1-01 EPERM: leader already gone, group kill denied."""
+        td = seed_workspace(BG_JOB)
+        ws = Path(td.name)
+        cli = None
+        bg_pid = 0
+        deny = ws / "outputs" / "deny_cleanup"
+        try:
+            contract = self._approve_contract(ws, BG_JOB, wall_sec=8)
+            deny.touch()
+            cli = self._start_cli(ws, contract, extra_argv=_eperm_driver(ws, deny))
+            bg_pid = int(self._wait_file(ws / "outputs" / "bg.pid", cli))
+            stdout, stderr = cli.communicate(timeout=8)
+            self.assertNotEqual(cli.returncode, 0, (stdout, stderr))
+            state = load_state(run_state_dir(ws, "camp", "run-a"))
+            self.assertEqual(state["phase"], "cleanup_pending")
+            self.assertFalse(state.get("cleanup_confirmed", True))
+            self.assertTrue(_pid_alive(bg_pid), "denied cleanup must leave the member")
+            lease = Lease.for_workspace(ws, holder="probe")
+            self.assertTrue(lease.is_locked_by_other(), "lease must stay held")
+            self.assertIn(b"lease retained", stderr.lower())
+
+            deny.unlink()
+            deadline = time.monotonic() + 8
+            while _pid_alive(bg_pid) or lease.is_locked_by_other():
+                self.assertLess(
+                    time.monotonic(),
+                    deadline,
+                    "deferred cleanup did not finish after EPERM was cleared",
+                )
+                time.sleep(0.02)
+            state = load_state(run_state_dir(ws, "camp", "run-a"))
+            self.assertTrue(state.get("cleanup_confirmed"))
+            self.assertIn(state["phase"], ("failed", "completed"))
+        finally:
+            deny.unlink(missing_ok=True)
+            if cli is not None and cli.poll() is None:
+                cli.kill()
+                cli.communicate(timeout=5)
+            _kill_group(bg_pid)
+            td.cleanup()
+
+    def test_supervisor_only_kill_does_not_orphan_or_free_lease_while_alive(self):
+        """P2-01: SIGKILL of the supervisor alone must not orphan the contract."""
+        td = seed_workspace(LONG_JOB)
+        ws = Path(td.name)
+        cli = None
+        contract_pid = 0
+        try:
+            contract = self._approve_contract(ws, LONG_JOB, wall_sec=4)
+            cli = self._start_cli(ws, contract)
+            contract_pid = int(self._wait_file(ws / "outputs" / "pid", cli))
+            lease = Lease.for_workspace(ws, holder="probe")
+            meta = lease.read_meta()
+            self.assertIsNotNone(meta)
+            supervisor_pid = int(meta.pid)
+            self.assertTrue(_pid_alive(supervisor_pid))
+            self.assertNotEqual(supervisor_pid, cli.pid)
+            self.assertNotEqual(supervisor_pid, contract_pid)
+
+            os.kill(supervisor_pid, signal.SIGKILL)
+            deadline = time.monotonic() + 6
+            while _pid_alive(contract_pid):
+                self.assertTrue(
+                    lease.is_locked_by_other(),
+                    "lease must remain held while the contract is alive",
+                )
+                self.assertLess(
+                    time.monotonic(),
+                    deadline,
+                    "contract survived supervisor death past the wall budget",
+                )
+                time.sleep(0.02)
+            while lease.is_locked_by_other():
+                self.assertLess(
+                    time.monotonic(),
+                    deadline,
+                    "lease stuck after supervisor and contract died",
+                )
+                time.sleep(0.02)
+            if cli.poll() is None:
+                cli.communicate(timeout=5)
+            else:
+                cli.communicate(timeout=1)
+        finally:
+            if cli is not None and cli.poll() is None:
+                cli.kill()
+                cli.communicate(timeout=5)
+            _kill_group(contract_pid)
+            td.cleanup()
+
+    def test_eperm_plus_unwritable_state_retains_lease_while_contract_alive(self):
+        """P2-02: capture/state write failure must not drop cleanup_pending."""
+        td = seed_workspace(LONG_JOB)
+        ws = Path(td.name)
+        cli = None
+        contract_pid = 0
+        state_dir = None
+        deny = ws / "outputs" / "deny_cleanup"
+        try:
+            contract = self._approve_contract(ws, LONG_JOB, wall_sec=8)
+            deny.touch()
+            cli = self._start_cli(ws, contract, extra_argv=_eperm_driver(ws, deny))
+            contract_pid = int(self._wait_file(ws / "outputs" / "pid", cli))
+            state_dir = run_state_dir(ws, "camp", "run-a")
+            os.chmod(state_dir, 0o555)
+            os.kill(cli.pid, signal.SIGTERM)
+            stdout, stderr = cli.communicate(timeout=8)
+            self.assertNotEqual(cli.returncode, 0, (stdout, stderr))
+            self.assertTrue(_pid_alive(contract_pid), "contract must still be alive")
+            self.assertTrue(
+                Lease.for_workspace(ws, holder="probe").is_locked_by_other(),
+                "lease was released while cleanup was unconfirmed",
+            )
+            self.assertNotIn(
+                b".stdout.capture.",
+                stderr,
+                "capture-write failure must not replace the retain path",
+            )
+        finally:
+            if state_dir is not None and state_dir.exists():
+                os.chmod(state_dir, 0o755)
+            deny.unlink(missing_ok=True)
+            if cli is not None and cli.poll() is None:
+                cli.kill()
+                cli.communicate(timeout=5)
+            _kill_group(contract_pid)
+            td.cleanup()
+
+    def test_failed_ps_probe_is_not_treated_as_no_members(self):
+        """P2-03: a failing membership probe must not confirm an empty group."""
+        from runspecimen.run import (
+            _GroupMembershipUnknown,
+            _live_group_members,
+            _stop_process,
+        )
+        from runspecimen.errors import RunError
+
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            with patch("runspecimen.run._proc_available", return_value=False), patch(
+                "runspecimen.run._PS_ARGV", ["/bin/false"]
+            ):
+                with self.assertRaises(_GroupMembershipUnknown):
+                    _live_group_members(proc.pid, 1.0)
+                self.assertTrue(_pid_alive(proc.pid))
+                with patch("runspecimen.run.os.killpg"):
+                    with self.assertRaises(RunError) as ctx:
+                        _stop_process(proc)
+                    self.assertIn("unconfirmed", str(ctx.exception).lower())
+                self.assertTrue(
+                    _pid_alive(proc.pid),
+                    "fail-closed probe must not confirm death",
+                )
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=5)
+
+    def test_interrupt_after_leader_exit_stops_background_member(self):
+        """P1-01: SIGTERM after the leader has exited still stops the group."""
+        td = seed_workspace(BG_JOB)
+        ws = Path(td.name)
+        cli = None
+        bg_pid = 0
+        try:
+            contract = self._approve_contract(ws, BG_JOB, wall_sec=8)
+            cli = self._start_cli(ws, contract)
+            bg_pid = int(self._wait_file(ws / "outputs" / "bg.pid", cli))
+            os.kill(cli.pid, signal.SIGTERM)
+            stdout, stderr = cli.communicate(timeout=8)
+            self.assertFalse(
+                _pid_alive(bg_pid),
+                f"background member survived interrupt after leader exit: {stdout!r} {stderr!r}",
+            )
+        finally:
+            if cli is not None and cli.poll() is None:
+                cli.kill()
+                cli.communicate(timeout=5)
+            _kill_group(bg_pid)
+            td.cleanup()
+
+    def test_late_sigterm_after_completed_still_emits_json(self):
+        """P3-02: a late SIGTERM must not replace completed JSON with rc -15."""
+        td = seed_workspace(FAST_JOB)
+        ws = Path(td.name)
+        cli = None
+        try:
+            contract = self._approve_contract(ws, FAST_JOB, wall_sec=8)
+            cli = self._start_cli(ws, contract, extra_argv=_late_term_driver(ws))
+            state_dir = run_state_dir(ws, "camp", "run-a")
+            deadline = time.monotonic() + 5
+            while load_state(state_dir).get("phase") != "completed":
+                self.assertIsNone(cli.poll(), "CLI exited before completed was recorded")
+                self.assertLess(time.monotonic(), deadline, "completed state not written")
+                time.sleep(0.01)
+            if cli.poll() is None:
+                os.kill(cli.pid, signal.SIGTERM)
+            stdout, stderr = cli.communicate(timeout=5)
+            self.assertEqual(cli.returncode, 0, (stdout, stderr))
+            payload = json.loads(stdout.decode())
+            self.assertEqual(payload.get("run_result"), "completed")
+        finally:
+            if cli is not None and cli.poll() is None:
+                cli.kill()
+                cli.communicate(timeout=5)
+            td.cleanup()
+
+    def test_unwritable_state_after_stop_names_persist_failure(self):
+        """P3-03: after a confirmed stop, the error must name state persistence."""
+        td = seed_workspace(LONG_JOB)
+        ws = Path(td.name)
+        cli = None
+        contract_pid = 0
+        state_dir = None
+        try:
+            contract = self._approve_contract(ws, LONG_JOB, wall_sec=8)
+            cli = self._start_cli(ws, contract)
+            contract_pid = int(self._wait_file(ws / "outputs" / "pid", cli))
+            state_dir = run_state_dir(ws, "camp", "run-a")
+            os.chmod(state_dir, 0o555)
+            os.kill(cli.pid, signal.SIGTERM)
+            stdout, stderr = cli.communicate(timeout=8)
+            self.assertNotEqual(cli.returncode, 0, (stdout, stderr))
+            self.assertFalse(_pid_alive(contract_pid), "contract must be stopped")
+            self.assertFalse(
+                Lease.for_workspace(ws, holder="probe").is_locked_by_other()
+            )
+            err = stderr.lower()
+            self.assertIn(b"state", err)
+            self.assertNotIn(b".stdout.capture.", stderr)
+        finally:
+            if state_dir is not None and state_dir.exists():
+                os.chmod(state_dir, 0o755)
+            if cli is not None and cli.poll() is None:
+                cli.kill()
+                cli.communicate(timeout=5)
+            _kill_group(contract_pid)
+            td.cleanup()
+
+
+if __name__ == "__main__":
+    unittest.main()

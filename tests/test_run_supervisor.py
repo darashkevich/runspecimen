@@ -105,9 +105,12 @@ class RunSupervisorTests(unittest.TestCase):
                 deny_marker.unlink(missing_ok=True)
                 if contract_pid is not None:
                     try:
-                        os.killpg(contract_pid, signal.SIGKILL)
-                    except (ProcessLookupError, PermissionError):
-                        pass
+                        os.killpg(os.getpgid(contract_pid), signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError, OSError):
+                        try:
+                            os.kill(contract_pid, signal.SIGKILL)
+                        except (ProcessLookupError, PermissionError):
+                            pass
                 if cli.poll() is None:
                     cli.kill()
                 cli.communicate(timeout=5)

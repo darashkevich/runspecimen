@@ -65,9 +65,12 @@ class RunSignalTests(unittest.TestCase):
             # Only the fixture-owned session is ever cleaned here.
             if pid is not None:
                 try:
-                    os.killpg(pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+                    os.killpg(os.getpgid(pid), signal.SIGKILL)
+                except (ProcessLookupError, OSError):
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
             td.cleanup()
 
     def test_sigterm_stops_contract_and_records_interruption(self) -> None:

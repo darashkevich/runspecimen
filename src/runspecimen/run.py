@@ -50,6 +50,10 @@ class _CleanupUnconfirmed(RunError):
         self.interrupted = False
 
 
+class _GroupMembershipUnknown(OSError):
+    """Raised when process-group membership cannot be probed."""
+
+
 class _RunInterrupted(KeyboardInterrupt):
     """An ordinary run received a termination request while holding its lease."""
 
@@ -64,7 +68,7 @@ _pending_signal: contextvars.ContextVar[list[int] | None] = contextvars.ContextV
 
 
 @contextlib.contextmanager
-def _termination_signals():
+def _termination_signals(*, restore: bool = True):
     # Python only permits installing handlers in the main thread. Library calls
     # from worker threads retain their existing exception-based cancellation.
     pending: list[int] = []
@@ -84,8 +88,14 @@ def _termination_signals():
                 signal.signal(signum, request_stop)
         yield
     finally:
-        for signum, handler in previous.items():
-            signal.signal(signum, handler)
+        if restore:
+            for signum, handler in previous.items():
+                signal.signal(signum, handler)
+        elif previous:
+            # A late SIGTERM after the run is recorded must not replace JSON
+            # with rc -15. Leave stop signals ignored until process exit.
+            for signum in previous:
+                signal.signal(signum, signal.SIG_IGN)
         _pending_signal.reset(token)
 
 
@@ -127,6 +137,35 @@ class _Capture:
         self.truncated = self.truncated or len(chunk) > remaining
 
 
+def _leader_exited_unreaped(proc: subprocess.Popen) -> bool:
+    """True if the leader has exited, without reaping it when possible.
+
+    Reaping the session leader before the group is stopped lets a redirected
+    background member survive, and it can drop the PGID pin. Prefer waitid
+    with WNOWAIT. Fall back to kill(pid, 0), which still sees a zombie.
+    """
+    if proc.returncode is not None:
+        return True
+    if proc.pid is None:
+        return True
+    waitid = getattr(os, "waitid", None)
+    wnowait = getattr(os, "WNOWAIT", None)
+    if waitid is not None and wnowait is not None:
+        try:
+            info = waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | wnowait)
+        except (ChildProcessError, ProcessLookupError):
+            return True
+        except OSError:
+            pass
+        else:
+            return info is not None
+    try:
+        os.kill(proc.pid, 0)
+    except ProcessLookupError:
+        return True
+    return False
+
+
 def _supervise_process(proc, stdout: _Capture, stderr: _Capture, deadline: float) -> bool:
     """Drain both pipes without allowing inherited descriptors to block cleanup."""
     assert proc.stdout is not None and proc.stderr is not None
@@ -136,11 +175,13 @@ def _supervise_process(proc, stdout: _Capture, stderr: _Capture, deadline: float
             os.set_blocking(stream.fileno(), False)
             selector.register(stream, selectors.EVENT_READ, capture)
         group_cleaned = False
-        while selector.get_map() or proc.poll() is None:
+        while True:
             _check_termination_signal()
-            if proc.poll() is not None and not group_cleaned:
+            exited = _leader_exited_unreaped(proc)
+            if exited and not group_cleaned:
                 # A successful launcher can leave workers holding the pipes
-                # open. End its process group before releasing the lease.
+                # open, or a redirected background job that does not. End the
+                # process group before reaping the leader or releasing the lease.
                 _kill_process_group(proc)
                 group_cleaned = True
             remaining = deadline - time.monotonic()
@@ -156,53 +197,69 @@ def _supervise_process(proc, stdout: _Capture, stderr: _Capture, deadline: float
                         key.data.append(chunk)
                     else:
                         selector.unregister(key.fileobj)
+            elif not exited:
+                time.sleep(min(0.1, remaining))
             else:
-                try:
-                    proc.wait(timeout=min(0.1, remaining))
-                except subprocess.TimeoutExpired:
-                    pass
+                break
         _check_termination_signal()
         return False
     finally:
         selector.close()
 
 
+_PS_ARGV = ["/bin/ps", "-axo", "pid=,pgid=,stat="]
+
+
+def _proc_available() -> bool:
+    return Path("/proc/self/stat").exists()
+
+
 def _live_group_members(pgid: int, timeout: float) -> list[int]:
     """Return PIDs of non-zombie processes in the given process group.
 
-    Uses /proc on Linux, /bin/ps on other systems.
+    Uses /proc on Linux, /bin/ps on other systems. A failed probe raises
+    ``_GroupMembershipUnknown``; it must not be treated as "no members".
     """
-    if Path("/proc/self/stat").exists():
-        # Linux: read /proc directly
-        members = []
-        try:
-            for entry in Path("/proc").iterdir():
-                if not entry.name.isdigit():
-                    continue
-                try:
-                    stat_content = (entry / "stat").read_text()
-                    # Format: pid (comm) state ppid pgrp ...
-                    # comm can contain spaces/parens, so split from the right
-                    tail = stat_content.rsplit(")", 1)[1].split()
-                    state = tail[0]
-                    pgrp = int(tail[2])
-                    if pgrp == pgid and state != "Z":
-                        members.append(int(entry.name))
-                except (FileNotFoundError, ProcessLookupError, IndexError, ValueError):
-                    continue
-        except (FileNotFoundError, PermissionError):
-            pass
-        return members
+    if _proc_available():
+        return _proc_group_members(pgid)
+    return _ps_group_members(pgid, timeout)
 
-    # Fallback: use /bin/ps
-    result = subprocess.run(
-        ["/bin/ps", "-axo", "pid=,pgid=,stat="],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+
+def _proc_group_members(pgid: int) -> list[int]:
+    members = []
+    try:
+        entries = list(Path("/proc").iterdir())
+    except OSError as exc:
+        raise _GroupMembershipUnknown(f"cannot list /proc: {exc}") from exc
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            stat_content = (entry / "stat").read_text()
+            # Format: pid (comm) state ppid pgrp ...
+            # comm can contain spaces/parens, so split from the right
+            tail = stat_content.rsplit(")", 1)[1].split()
+            state = tail[0]
+            pgrp = int(tail[2])
+            if pgrp == pgid and state != "Z":
+                members.append(int(entry.name))
+        except (FileNotFoundError, ProcessLookupError, IndexError, ValueError, OSError):
+            continue
+    return members
+
+
+def _ps_group_members(pgid: int, timeout: float) -> list[int]:
+    try:
+        result = subprocess.run(
+            list(_PS_ARGV),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise _GroupMembershipUnknown(f"ps failed: {exc}") from exc
     if result.returncode != 0:
-        return []
+        raise _GroupMembershipUnknown(f"ps exited {result.returncode}")
     members = []
     for line in result.stdout.splitlines():
         parts = line.split()
@@ -219,23 +276,31 @@ def _live_group_members(pgid: int, timeout: float) -> list[int]:
 
 
 def _stop_process(proc: subprocess.Popen) -> None:
-    """Kill process group and confirm all members are dead.
+    """Kill the process group and confirm all members are dead.
 
     Raises _CleanupUnconfirmed if:
     - os.killpg fails with EPERM
     - Group members remain alive after the cleanup budget
+    - Membership cannot be probed
 
-    Never re-signals a reaped PID.
+    A reaped leader is not treated as cleanup. Remaining group members
+    must still be stopped and verified.
     """
-    if proc.returncode is not None:
-        return  # Already reaped, idempotent
+    if proc.pid is None:
+        return
 
     deadline = time.monotonic() + 5  # Existing cleanup budget
 
-    _kill_process_group(proc)
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except OSError as exc:
+        raise _CleanupUnconfirmed(
+            proc, f"process-group stop denied/unconfirmed: {exc}"
+        ) from exc
 
     try:
-        # Wait for all group members to exit
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -245,12 +310,35 @@ def _stop_process(proc: subprocess.Popen) -> None:
                 break
             time.sleep(min(0.02, remaining))
 
-        # Reap the leader
-        proc.wait(timeout=max(0.01, deadline - time.monotonic()))
+        if proc.returncode is None:
+            proc.wait(timeout=max(0.01, deadline - time.monotonic()))
 
+    except _GroupMembershipUnknown as exc:
+        raise _CleanupUnconfirmed(
+            proc, f"process-group death unconfirmed: {exc}"
+        ) from exc
     except (OSError, subprocess.SubprocessError, ValueError, TimeoutError) as exc:
         raise _CleanupUnconfirmed(
-            proc, f"process-group death could not be confirmed: {exc}"
+            proc, f"process-group death unconfirmed: {exc}"
+        ) from exc
+
+
+def _best_effort_write_captures(
+    state_dir: Path, stdout_data: bytes, stderr_data: bytes
+) -> None:
+    for name, data in ((STDOUT_FILENAME, stdout_data), (STDERR_FILENAME, stderr_data)):
+        try:
+            atomic_write_bytes(state_dir / name, bytes(data))
+        except OSError:
+            continue
+
+
+def _write_terminal_state(state_dir: Path, **fields: Any) -> None:
+    try:
+        update_state(state_dir, **fields)
+    except OSError as exc:
+        raise RunError(
+            f"process group was stopped; run state could not be persisted: {exc}"
         ) from exc
 
 
@@ -259,47 +347,64 @@ def _retain_cleanup(exc: _CleanupUnconfirmed, state_dir: Path) -> None:
 
     This function blocks until cleanup succeeds, keeping the lease held.
     It never returns normally - after cleanup succeeds, it raises RunError.
+    An unwritable state directory does not release the lease.
     """
     result = "interrupted" if exc.interrupted else "failed"
     message = f"Cleanup unresolved; supervisor pid={os.getpid()}; lease retained. {exc}"
 
-    update_state(
-        state_dir,
-        phase="cleanup_pending",
-        run_result=result,
-        cleanup_confirmed=False,
-        supervisor_pid=os.getpid(),
-        process_group=exc.proc.pid,
-        error=message,
-    )
-
-    log = EventLog.for_state_dir(state_dir)
-    log.append("cleanup_pending", {"error": message})
-
-    # Notify the CLI (in supervisor mode)
     if _cleanup_notification is not None:
         _cleanup_notification(message)
 
-    # Retry cleanup until it succeeds. The original child stays unreaped,
-    # so its PID cannot be reused as signal authority during retry.
+    recorded_pending = False
+    log: EventLog | None = None
     while True:
+        if not recorded_pending:
+            try:
+                update_state(
+                    state_dir,
+                    phase="cleanup_pending",
+                    run_result=result,
+                    cleanup_confirmed=False,
+                    cleanup_scope="process_group",
+                    supervisor_pid=os.getpid(),
+                    process_group=exc.proc.pid,
+                    error=message,
+                )
+                recorded_pending = True
+            except OSError:
+                pass
+        if recorded_pending and log is None:
+            try:
+                log = EventLog.for_state_dir(state_dir)
+                log.append("cleanup_pending", {"error": message})
+            except OSError:
+                log = None
         try:
             _stop_process(exc.proc)
         except _CleanupUnconfirmed:
             time.sleep(0.1)
-        else:
-            break
+            continue
+        break
 
-    # Cleanup confirmed
-    update_state(
-        state_dir,
-        phase="failed",
-        run_result=result,
-        cleanup_confirmed=True,
-        run_finished_at=utc_now_iso(),
-        error="Cleanup confirmed after unresolved stop",
-    )
-    log.append("cleanup_confirmed", {"exit_code": exc.proc.returncode})
+    while True:
+        try:
+            update_state(
+                state_dir,
+                phase="failed",
+                run_result=result,
+                cleanup_confirmed=True,
+                cleanup_scope="process_group",
+                run_finished_at=utc_now_iso(),
+                error="Cleanup confirmed after unresolved stop",
+            )
+            break
+        except OSError:
+            time.sleep(0.1)
+    if log is not None:
+        try:
+            log.append("cleanup_confirmed", {"exit_code": exc.proc.returncode})
+        except OSError:
+            pass
     raise RunError("Run failed; deferred cleanup is now confirmed")
 
 
@@ -329,7 +434,7 @@ def run_contract(
     ensure_dir(state_dir)
     signals = _termination_signals() if contract.execution_approval is None else contextlib.nullcontext()
     try:
-        with signals, hold_workspace_lease(workspace, holder="run"):
+        with signals, hold_workspace_lease(workspace, holder="run") as lease:
             try:
                 return _run_under_lease(
                     contract=contract,
@@ -337,6 +442,7 @@ def run_contract(
                     state_dir=state_dir,
                     now=now,
                     holder=holder,
+                    lease=lease,
                 )
             except _CleanupUnconfirmed as exc:
                 _retain_cleanup(exc, state_dir)
@@ -387,7 +493,15 @@ def _is_socket(path: Path) -> bool:
         return False
 
 
-def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float | None, holder: Any) -> dict:
+def _run_under_lease(
+    *,
+    contract,
+    workspace: Path,
+    state_dir: Path,
+    now: float | None,
+    holder: Any,
+    lease: Any = None,
+) -> dict:
     # Check phase first - terminal phases must be rejected immediately
     state = load_state(state_dir)
     phase = state.get("phase")
@@ -604,6 +718,15 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
         except RunError as exc:
             raise PreflightError(str(exc)) from exc
         _check_termination_signal()
+        from runspecimen.run_bind_exec import bind_argv
+
+        lease_fd = lease.fileno() if lease is not None else None
+        launch_argv = bind_argv(
+            launch_argv, parent_pid=os.getpid(), lease_fd=lease_fd
+        )
+        popen_kwargs: dict[str, Any] = {}
+        if lease_fd is not None:
+            popen_kwargs["pass_fds"] = (lease_fd,)
         proc = subprocess.Popen(  # noqa: S603
             launch_argv,
             cwd=str(cwd),
@@ -613,6 +736,7 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
             bufsize=0,
             shell=False,
             start_new_session=True,
+            **popen_kwargs,
         )
     except _RunInterrupted as exc:
         update_state(
@@ -651,26 +775,28 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
         try:
             _stop_process(proc)
         except _CleanupUnconfirmed as pending:
-            # Mark interrupted status and save outputs before re-raising
+            # Capture writes must not replace the retain path.
             pending.interrupted = isinstance(exc, (KeyboardInterrupt, SystemExit, _RunInterrupted))
-            atomic_write_bytes(state_dir / STDOUT_FILENAME, bytes(stdout.data))
-            atomic_write_bytes(state_dir / STDERR_FILENAME, bytes(stderr.data))
+            _best_effort_write_captures(state_dir, bytes(stdout.data), bytes(stderr.data))
             raise pending from exc
         result = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit, _RunInterrupted)) else "failed"
-        atomic_write_bytes(state_dir / STDOUT_FILENAME, bytes(stdout.data))
-        atomic_write_bytes(state_dir / STDERR_FILENAME, bytes(stderr.data))
-        update_state(
+        _write_terminal_state(
             state_dir,
             phase="failed",
             run_result=result,
             cleanup_confirmed=True,
+            cleanup_scope="process_group",
             exit_code=proc.returncode,
             error=f"run {result}: {type(exc).__name__}",
             run_finished_at=utc_now_iso(),
             stdout_truncated=stdout.truncated,
             stderr_truncated=stderr.truncated,
         )
-        log.append(f"run_{result}", {"exit_code": proc.returncode, "error": type(exc).__name__})
+        _best_effort_write_captures(state_dir, bytes(stdout.data), bytes(stderr.data))
+        try:
+            log.append(f"run_{result}", {"exit_code": proc.returncode, "error": type(exc).__name__})
+        except OSError:
+            pass
         raise
     finally:
         proc.stdout.close()
@@ -678,9 +804,6 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
 
     stdout_data, stdout_trunc = bytes(stdout.data), stdout.truncated
     stderr_data, stderr_trunc = bytes(stderr.data), stderr.truncated
-    atomic_write_bytes(state_dir / STDOUT_FILENAME, stdout_data)
-    atomic_write_bytes(state_dir / STDERR_FILENAME, stderr_data)
-
     exit_code = proc.returncode
     finished = utc_now_iso()
     if timed_out:
@@ -693,18 +816,23 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
             "stdout_truncated": stdout_trunc,
             "stderr_truncated": stderr_trunc,
         }
-        update_state(
+        _write_terminal_state(
             state_dir,
             phase="failed",
             run_result="timeout",
             cleanup_confirmed=True,
+            cleanup_scope="process_group",
             exit_code=exit_code,
             timed_out=True,
             run_finished_at=finished,
             stdout_truncated=stdout_trunc,
             stderr_truncated=stderr_trunc,
         )
-        log.append("run_timeout", result)
+        _best_effort_write_captures(state_dir, stdout_data, stderr_data)
+        try:
+            log.append("run_timeout", result)
+        except OSError:
+            pass
         raise RunError(
             f"wall timeout after {contract.caps.wall_timeout_sec}s; process group killed"
         )
@@ -718,18 +846,23 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
         "stdout_truncated": stdout_trunc,
         "stderr_truncated": stderr_trunc,
     }
-    update_state(
+    _write_terminal_state(
         state_dir,
         phase="completed",
         run_result="completed",
         cleanup_confirmed=True,
+        cleanup_scope="process_group",
         exit_code=exit_code,
         timed_out=False,
         run_finished_at=finished,
         stdout_truncated=stdout_trunc,
         stderr_truncated=stderr_trunc,
     )
-    log.append("run_completed", result)
+    _best_effort_write_captures(state_dir, stdout_data, stderr_data)
+    try:
+        log.append("run_completed", result)
+    except OSError:
+        pass
     return {
         "campaign_id": contract.campaign_id,
         "run_id": contract.run_id,
