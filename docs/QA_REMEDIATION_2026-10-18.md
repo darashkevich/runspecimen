@@ -1,3 +1,5 @@
+> QA2 correction (27 October 2026): earlier incident summaries are incomplete. See [the full CI census and superseding diagnosis](QA2_CI_CENSUS_2026-10-27.md): 17 iOS failures, three multi-attempt runs; no proven cold-share latency root cause.
+
 # Independent QA remediation — 2026-10-18
 
 Release state: **DO-NOT-SHIP pending independent recheck and remaining evidence**.

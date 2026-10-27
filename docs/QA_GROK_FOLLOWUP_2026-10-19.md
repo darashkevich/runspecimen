@@ -1,3 +1,5 @@
+> QA2 correction (27 October 2026): earlier incident summaries are incomplete. See [the full CI census and superseding diagnosis](QA2_CI_CENSUS_2026-10-27.md): 17 iOS failures, three multi-attempt runs; no proven cold-share latency root cause.
+
 # Grok PR 76 follow-up
 
 Base: d5db4d39819bfa27c16653d398981cc67ed703f8.

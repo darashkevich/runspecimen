@@ -1,4 +1,4 @@
-name: Launch fault regression stress
+name: Launch fault deterministic regression and smoke load
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
@@ -22,7 +22,7 @@ jobs:
           baseline_rc=$?
           set -e
           echo "Diagnostic pre-fix load exit: $baseline_rc (all failures remain in baseline-load.json)"
-      - name: Real-pipe boundary and original-test load gates
+      - name: Deterministic real-pipe regression and non-discriminating smoke load
         shell: bash
         run: |
           PYTHONPATH=src python -m unittest tests.test_launch_faults -v 2>&1 | tee "$RUNNER_TEMP/lease-evidence/launch-faults.log"
