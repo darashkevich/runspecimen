@@ -38,11 +38,10 @@ fi
 xcodebuild -version > "$SCRATCH_DIR/environment.txt"
 xcrun simctl list devices available >> "$SCRATCH_DIR/environment.txt"
 
-DESTINATION=$(xcrun simctl list devices available -j 2>/dev/null | \
-  python3 -c "import json,sys; d=json.load(sys.stdin); \
-  devs=[(r,n) for r,ds in d.get('devices',{}).items() for n in ds if 'iPhone' in n.get('name','') and n.get('isAvailable',False)]; \
-  print(f\"platform=iOS Simulator,id={devs[0][1]['udid']}\") if devs else print('platform=iOS Simulator,name=Any iOS Simulator Device')" 2>/dev/null \
-  || echo "platform=iOS Simulator,name=Any iOS Simulator Device")
+SDK_VERSION=$(xcrun --sdk iphonesimulator --show-sdk-version)
+SIMULATOR_ID=$(xcrun simctl list devices available -j | python3 "$SCRIPT_DIR/select_ios_simulator.py" "$SDK_VERSION")
+xcrun simctl bootstatus "$SIMULATOR_ID" -b
+DESTINATION="platform=iOS Simulator,id=$SIMULATOR_ID"
 
 echo "Using destination: $DESTINATION"
 

@@ -1,4 +1,4 @@
-"""Loop isolated real-process launch tests concurrently; never retry failures away."""
+"""Smoke-only concurrent load: baseline also passes; deterministic barrier tests prove the fix. Never retry failures away."""
 from __future__ import annotations
 import argparse
 import concurrent.futures
