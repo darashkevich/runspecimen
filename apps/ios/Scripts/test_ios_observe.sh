@@ -24,6 +24,23 @@ cd "$IOS_ROOT"
 echo "Regenerating Xcode project from project.yml..."
 xcodegen generate --spec project.yml
 
+if [[ "${RS_DIAG_VARIANT:-baseline}" == "instrumentation-off" ]]; then
+  python3 - <<'SCHEME'
+from pathlib import Path
+import xml.etree.ElementTree as ET
+for path in Path('RunSpecimenObserve.xcodeproj/xcshareddata/xcschemes').glob('RunSpecimenObserve.xcscheme'):
+ tree=ET.parse(path);action=tree.getroot().find('TestAction')
+ action.set('selectedDebuggerIdentifier','')
+ action.set('selectedLauncherIdentifier','Xcode.IDEFoundation.Launcher.PosixSpawn')
+ action.set('enableMainThreadChecker','NO')
+ action.set('enableThreadPerformanceChecker','NO')
+ env=action.find('EnvironmentVariables')
+ if env is None:env=ET.SubElement(action,'EnvironmentVariables')
+ ET.SubElement(env,'EnvironmentVariable',key='OS_ACTIVITY_DT_MODE',value='NO',isEnabled='YES')
+ tree.write(path,encoding='utf-8',xml_declaration=True)
+SCHEME
+fi
+
 echo "Building and testing ObserveSchemaTests..."
 
 # Preserve the failing UI hierarchy/screenshots and Simulator diagnostics in CI.
@@ -57,7 +74,15 @@ xcodebuild test \
   CODE_SIGN_IDENTITY="" \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGNING_ALLOWED=NO \
-  2>&1 | tee "$SCRATCH_DIR/test.log"
+  2>&1 | tee "$SCRATCH_DIR/test.log" | while IFS= read -r line; do
+    printf '%s\n' "$line"
+    if [[ "$line" == *"error:"* || "$line" == *"failed"* || "$line" == *"Failed"* ]]; then
+      if [[ ! -e "$SCRATCH_DIR/failure-capture-started" ]]; then
+        touch "$SCRATCH_DIR/failure-capture-started"
+        "$SCRIPT_DIR/qa2_failure_diagnostics.sh" "$SCRATCH_DIR/live-failure" &
+      fi
+    fi
+  done
 
 TEST_RC=${PIPESTATUS[0]}
 set -e
