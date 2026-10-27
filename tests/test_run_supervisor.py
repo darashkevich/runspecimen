@@ -230,16 +230,32 @@ class RunSupervisorTests(unittest.TestCase):
             self.assertIn("unconfirmed", str(ctx.exception).lower())
 
     def test_wall_deadline_is_enforced_when_cli_is_stopped(self):
-        """Wall deadline must be enforced even when CLI process is stopped."""
+        """Wall deadline must be enforced even when CLI process is stopped.
+
+        Timeline budget (why 6s is sufficient):
+        - wall_timeout_sec = 2s: supervisor enforces deadline
+        - SIGKILL kills contract nearly instantly (~1ms)
+        - State update and lease release: ~10ms
+        - Total expected: ~2.01s
+        - 6s deadline gives 4s margin (200% of expected time)
+
+        The 5s cleanup budget in _stop_process is for worst-case stubborn
+        processes; SIGKILL is instant for this simple Python script.
+        """
         with self.fixture(wall_sec=2) as (ws, cli, contract_pid, _):
             # SIGSTOP the CLI - it cannot make progress
             os.kill(cli.pid, signal.SIGSTOP)
             try:
                 # Contract should still be killed at wall deadline
-                deadline = time.monotonic() + 8  # Give extra time for supervisor to complete
+                deadline = time.monotonic() + 6
+                lease = Lease.for_workspace(ws, holder="test-probe")
+
+                # Wait for contract death while asserting lease is held
                 while self._pid_alive(contract_pid):
-                    lease = Lease.for_workspace(ws, holder="test-probe")
-                    self.assertTrue(lease.is_locked_by_other())
+                    self.assertTrue(
+                        lease.is_locked_by_other(),
+                        "lease must remain held while contract is alive",
+                    )
                     self.assertLess(
                         time.monotonic(),
                         deadline,
@@ -247,18 +263,20 @@ class RunSupervisorTests(unittest.TestCase):
                     )
                     time.sleep(0.02)
 
-                # Wait for state to be updated (supervisor might still be writing)
-                state_dir = run_state_dir(ws, "camp", "run-a")
-                while time.monotonic() < deadline:
-                    state = load_state(state_dir)
-                    if state.get("run_result") and state.get("cleanup_confirmed"):
-                        break
+                # Product guarantee: state is written before lease is released.
+                # Wait for lease release to prove supervisor has finished.
+                while lease.is_locked_by_other():
+                    self.assertLess(
+                        time.monotonic(),
+                        deadline,
+                        "supervisor did not release lease after contract death",
+                    )
                     time.sleep(0.02)
 
-                # Verify state shows timeout
-                state = load_state(state_dir)
-                self.assertEqual(state.get("run_result"), "timeout")
-                self.assertTrue(state.get("cleanup_confirmed", False))
+                # Now state must be final and accurate
+                state = load_state(run_state_dir(ws, "camp", "run-a"))
+                self.assertEqual(state["run_result"], "timeout")
+                self.assertTrue(state["cleanup_confirmed"])
             finally:
                 os.kill(cli.pid, signal.SIGCONT)
                 cli.communicate(timeout=5)
