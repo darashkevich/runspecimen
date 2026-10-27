@@ -8,6 +8,7 @@ import contextvars
 import selectors
 import signal
 import subprocess
+import sys
 import time
 import threading
 from dataclasses import dataclass, field
@@ -141,29 +142,33 @@ def _leader_exited_unreaped(proc: subprocess.Popen) -> bool:
     """True if the leader has exited, without reaping it when possible.
 
     Reaping the session leader before the group is stopped lets a redirected
-    background member survive, and it can drop the PGID pin. Prefer waitid
-    with WNOWAIT. Fall back to kill(pid, 0), which still sees a zombie.
+    background member survive, and it can drop the PGID pin. On Linux, waitid
+    with WNOWAIT keeps the zombie. On macOS, waitid(WNOHANG|WNOWAIT) can
+    block, which would hang the supervise loop past the wall deadline — so
+    that path is Linux-only. Elsewhere, a zombie/reaped leader is simply
+    absent from the live membership list.
     """
     if proc.returncode is not None:
         return True
     if proc.pid is None:
         return True
-    waitid = getattr(os, "waitid", None)
-    wnowait = getattr(os, "WNOWAIT", None)
-    if waitid is not None and wnowait is not None:
-        try:
-            info = waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | wnowait)
-        except (ChildProcessError, ProcessLookupError):
-            return True
-        except OSError:
-            pass
-        else:
-            return info is not None
+    if sys.platform == "linux":
+        waitid = getattr(os, "waitid", None)
+        wnowait = getattr(os, "WNOWAIT", None)
+        if waitid is not None and wnowait is not None:
+            try:
+                info = waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | wnowait)
+            except (ChildProcessError, ProcessLookupError):
+                return True
+            except OSError:
+                pass
+            else:
+                return info is not None
     try:
-        os.kill(proc.pid, 0)
-    except ProcessLookupError:
-        return True
-    return False
+        members = _live_group_members(proc.pid, 0.2)
+    except _GroupMembershipUnknown:
+        return False
+    return proc.pid not in members
 
 
 def _supervise_process(proc, stdout: _Capture, stderr: _Capture, deadline: float) -> bool:

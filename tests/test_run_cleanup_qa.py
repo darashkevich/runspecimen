@@ -303,6 +303,34 @@ class RunCleanupQATests(unittest.TestCase):
             _kill_group(contract_pid)
             td.cleanup()
 
+    def test_leader_exit_probe_does_not_call_waitid_off_linux(self):
+        """macOS waitid(WNOHANG|WNOWAIT) can block; do not call it there."""
+        from runspecimen.run import _leader_exited_unreaped
+
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "pass"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        try:
+            deadline = time.monotonic() + 2
+            with patch("runspecimen.run.sys.platform", "darwin"), patch(
+                "runspecimen.run.os.waitid",
+                side_effect=AssertionError("waitid must not run off linux"),
+            ):
+                while not _leader_exited_unreaped(proc):
+                    self.assertLess(
+                        time.monotonic(),
+                        deadline,
+                        "darwin exit probe did not see the unreaped leader",
+                    )
+                    time.sleep(0.01)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=2)
+
     def test_leftover_member_is_killed_when_killpg_returns_esrch(self):
         """macOS: killpg can be ESRCH after the leader exits; members must still die."""
         from runspecimen.run import _stop_process
