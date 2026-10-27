@@ -5,8 +5,10 @@ The supervisor has a control-pipe thread, so it cannot use ``preexec_fn``.
 This helper is a single-threaded exec wrapper:
 
 - Linux ``PR_SET_PDEATHSIG`` so the payload dies if the supervisor dies
-- A same-group watchdog that ``killpg``s if the supervisor pid vanishes
-  (portable, including macOS)
+- A watchdog in its own session that ``killpg``s the payload group if the
+  supervisor pid vanishes (portable, including macOS). It is not a
+  process-group member, so a macOS ``killpg`` ESRCH after the leader
+  exits cannot leave cleanup unconfirmed.
 - The watchdog holds an inherited workspace-lease fd so SIGKILL of the
   supervisor cannot free the lease while the payload is still alive
 - ``exec`` of the payload in the same pid (the ``Popen(start_new_session)``
@@ -82,13 +84,18 @@ def _detach_stdio() -> None:
             os.close(null)
 
 
-def _run_watchdog(parent: int) -> None:
+def _run_watchdog(parent: int, payload_pgid: int) -> None:
+    for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, signal.SIG_IGN)
+    try:
+        os.setsid()
+    except OSError:
+        pass
     _detach_stdio()
-    _set_pdeathsig()
     while True:
         if not _pid_alive(parent):
             try:
-                os.killpg(os.getpgrp(), signal.SIGKILL)
+                os.killpg(payload_pgid, signal.SIGKILL)
             except (ProcessLookupError, PermissionError):
                 pass
             os._exit(1)
@@ -117,9 +124,10 @@ def main(argv: list[str] | None = None) -> int:
     if not _pid_alive(parent) or os.getppid() == 1:
         return 1
 
+    payload_pgid = os.getpgrp()
     watch = os.fork()
     if watch == 0:
-        _run_watchdog(parent)
+        _run_watchdog(parent, payload_pgid)
         os._exit(1)
 
     if lease_fd is not None:

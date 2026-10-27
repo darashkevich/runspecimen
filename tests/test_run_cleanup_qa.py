@@ -303,6 +303,67 @@ class RunCleanupQATests(unittest.TestCase):
             _kill_group(contract_pid)
             td.cleanup()
 
+    def test_leftover_member_is_killed_when_killpg_returns_esrch(self):
+        """macOS: killpg can be ESRCH after the leader exits; members must still die."""
+        from runspecimen.run import _stop_process
+
+        td = seed_workspace()
+        pid_dir = Path(td.name)
+        leader = None
+        member_pid = 0
+        try:
+            leader = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    "import os, subprocess, sys, time\n"
+                    "from pathlib import Path\n"
+                    "Path(sys.argv[1]).write_text(str(os.getpid()))\n"
+                    "child = subprocess.Popen("
+                    "[sys.executable, '-c', 'import time; time.sleep(30)']"
+                    ")\n"
+                    "Path(sys.argv[2]).write_text(str(child.pid))\n"
+                    "time.sleep(30)\n",
+                    str(pid_dir / "leader.pid"),
+                    str(pid_dir / "member.pid"),
+                ],
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            deadline = time.monotonic() + 5
+            while not (pid_dir / "member.pid").exists():
+                self.assertIsNone(leader.poll(), "leader exited before spawning member")
+                self.assertLess(time.monotonic(), deadline, "member pid not written")
+                time.sleep(0.01)
+            member_pid = int((pid_dir / "member.pid").read_text())
+            os.kill(leader.pid, signal.SIGKILL)
+            leader.wait(timeout=2)
+            self.assertTrue(_pid_alive(member_pid), "member must survive leader reap")
+
+            class _Reaped:
+                pid = leader.pid
+                returncode = -9
+
+                def wait(self, timeout=None):
+                    return self.returncode
+
+            with patch(
+                "runspecimen.run.os.killpg",
+                side_effect=ProcessLookupError("ESRCH"),
+            ):
+                _stop_process(_Reaped())
+            self.assertFalse(
+                _pid_alive(member_pid),
+                "member must be killed by pid when killpg is ESRCH",
+            )
+        finally:
+            if leader is not None and leader.poll() is None:
+                leader.kill()
+                leader.wait(timeout=2)
+            _kill_group(member_pid)
+            td.cleanup()
+
     def test_failed_ps_probe_is_not_treated_as_no_members(self):
         """P2-03: a failing membership probe must not confirm an empty group."""
         from runspecimen.run import (

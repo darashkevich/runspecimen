@@ -294,6 +294,8 @@ def _stop_process(proc: subprocess.Popen) -> None:
     try:
         os.killpg(proc.pid, signal.SIGKILL)
     except ProcessLookupError:
+        # macOS can return ESRCH once the session leader is gone even when
+        # other members are still alive. Fall through to per-pid SIGKILL.
         pass
     except OSError as exc:
         raise _CleanupUnconfirmed(
@@ -308,6 +310,15 @@ def _stop_process(proc: subprocess.Popen) -> None:
             members = _live_group_members(proc.pid, remaining)
             if not members:
                 break
+            for pid in members:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    continue
+                except OSError as exc:
+                    raise _CleanupUnconfirmed(
+                        proc, f"process-group stop denied/unconfirmed: {exc}"
+                    ) from exc
             time.sleep(min(0.02, remaining))
 
         if proc.returncode is None:
