@@ -41,6 +41,7 @@
 		CDDD5F23A7567FFC11A2B9BE /* RSBA2Package.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBDC04B8157799B111AEDF06 /* RSBA2Package.swift */; };
 		D0EAEB3EED93B9CF4A101476 /* mark.svg in Resources */ = {isa = PBXBuildFile; fileRef = 4B646DFB9E62C7B92D5E9457 /* mark.svg */; };
 		DF67B86604016910AC073C16 /* CompanionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F92FB5B28E2DE08D564DC17 /* CompanionClient.swift */; };
+		E4C05E35CE9C988AB140F07E /* SessionTestIsolation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 168715D9E89F24EE34F51643 /* SessionTestIsolation.swift */; };
 		E8CF3266A74B11B03F21067D /* CompanionHardwareApprovalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E18B40D2B7A6AD44110C637 /* CompanionHardwareApprovalView.swift */; };
 		E9364715807F203BDBC6F1D8 /* AdaptiveLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2D26500C594DF12DA6B3A42 /* AdaptiveLayout.swift */; };
 		ED854B65D03A6C25EE793C09 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB60909EFBE4E0006990A08 /* PairingView.swift */; };
@@ -474,6 +475,7 @@
 			files = (
 				603F610FCABA9BC3ED152C60 /* PhonePeerCancellationTestHelpers.swift in Sources */,
 				453385FD567540CACBAC5BB7 /* PhonePeerCancellationXCTests.swift in Sources */,
+				E4C05E35CE9C988AB140F07E /* SessionTestIsolation.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
