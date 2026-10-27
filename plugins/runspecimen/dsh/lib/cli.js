@@ -9,8 +9,9 @@
  *      is usually the last thing a tool wrote.
  *   2. **Proven termination.** Cancellation and timeout run the child in its own
  *      process group, send SIGTERM, wait a bounded grace period, escalate to
- *      SIGKILL, and only then report. Descendants die with the group. A call
- *      never reports "terminated" while the process is still alive.
+ *      SIGKILL, and only then report. This covers that owned group, not a new
+ *      session created by the CLI or workload. The registered run tool reports
+ *      unconfirmed contract cleanup separately after cancellation or timeout.
  *
  * It deliberately contains no approval path — see `lib/refusal.js`.
  *
@@ -203,13 +204,19 @@ export async function runCli({command,argv,cwd,signal,timeoutMs,maxOutputBytes,g
   if(!Number.isSafeInteger(maxOutputBytes)||maxOutputBytes<1||maxOutputBytes>4194304)throw new Error('maxOutputBytes must be a positive finite number and integer no greater than 4194304');
   validateLimits(timeoutMs,maxOutputBytes);
   if(!Number.isSafeInteger(graceMs)||graceMs<1||graceMs>10000)throw new Error('graceMs must be an integer from 1 to 10000');
-  if(signal?.aborted)return {exitCode:-1,text:'Call cancelled; nothing was started',truncated:false,cancelled:true,termination:'cancelled before start'};
+  if(signal?.aborted)return {exitCode:-1,text:'Call cancelled; nothing was started',truncated:false,cancelled:true,timedOut:false,cleanupFailed:false,termination:'cancelled before start',terminationKind:'cancelled',triggerKind:'cancelled',cliExitCode:null,cliSignal:null,cliOutcomeObserved:false,cleanupClassification:'not-started'};
   const stderrLimit=Math.min(maxOutputBytes,Math.max(1,Math.floor(maxOutputBytes/8)));
   const stdoutLimit=maxOutputBytes-stderrLimit;
   const stdout=[];let stdoutSize=0,stderr=Buffer.alloc(0),stderrTotal=0,truncated=false;
   let code,termination,terminationKind,triggerKind,cleanupFailed=false;
+  let cliExitCode=null,cliSignal=null,cliOutcomeObserved=false,cleanupClassification='unavailable';
   try {
-    code=await captureProcess({command,argv,cwd,signal,timeoutMs,graceMs,onData(chunk,stream) {
+    code=await captureProcess({command,argv,cwd,signal,timeoutMs,graceMs,onCommandResult(outcome){
+      cliOutcomeObserved=!outcome.error;
+      cliExitCode=cliOutcomeObserved && Number.isInteger(outcome.code)?outcome.code:null;
+      cliSignal=outcome.signal ?? null;
+      cleanupClassification=outcome.classification ?? 'unavailable';
+    },onData(chunk,stream) {
       if(stream==='stderr') {
         stderrTotal+=chunk.length;
         if(chunk.length>=stderrLimit)stderr=Buffer.from(chunk.subarray(chunk.length-stderrLimit));
@@ -222,12 +229,20 @@ export async function runCli({command,argv,cwd,signal,timeoutMs,maxOutputBytes,g
       }
     }});
   } catch(error) {
-    if (!(error instanceof ProcessCaptureError)) throw error;
-    code=-1;terminationKind=error.kind;triggerKind=error.triggerKind;cleanupFailed=!error.cleanupConfirmed;
-    // Cleanup failure is the final outcome, not a replacement for its trigger.
-    const messages=[];
-    for(let cause=error;cause instanceof ProcessCaptureError;cause=cause.cause)messages.unshift(cause.message);
-    termination=messages.filter((message,index)=>!messages.slice(index+1).some(later=>later.includes(message))).join('; ');
+    code=-1;
+    if(error instanceof ProcessCaptureError){
+      terminationKind=error.kind;triggerKind=error.triggerKind;cleanupFailed=!error.cleanupConfirmed;
+      // Cleanup failure is the final outcome, not a replacement for its trigger.
+      const messages=[];
+      for(let cause=error;cause instanceof ProcessCaptureError;cause=cause.cause)messages.unshift(cause.message);
+      termination=messages.filter((message,index)=>!messages.slice(index+1).some(later=>later.includes(message))).join('; ');
+    }else{
+      terminationKind=triggerKind='spawn';termination=error.message;
+    }
+  }
+  if(cliSignal){
+    termination=[termination,`CLI terminated by ${cliSignal}`].filter(Boolean).join('; ');
+    terminationKind ??= 'signal';triggerKind ??= 'signal';
   }
   const head=new StringDecoder('utf8').write(Buffer.concat(stdout,stdoutSize));
   // A tail can begin inside a UTF-8 codepoint. Discard leading continuation bytes.
@@ -235,5 +250,5 @@ export async function runCli({command,argv,cwd,signal,timeoutMs,maxOutputBytes,g
   const tail=stderr.subarray(start).toString('utf8');
   const body=head+tail;
   const text=(body.trim()?body:`exit_code=${code}`)+(truncated?truncationNotice(maxOutputBytes):'')+(termination?`\n[${termination}]`:'');
-  return {exitCode:code,text,truncated,cancelled:triggerKind==='cancelled',timedOut:triggerKind==='timeout',cleanupFailed,...termination?{termination,terminationKind,triggerKind}:{}};
+  return {exitCode:code,text,truncated,cancelled:triggerKind==='cancelled',timedOut:triggerKind==='timeout',cleanupFailed,cliExitCode,cliSignal,cliOutcomeObserved,cleanupClassification,...termination?{termination,terminationKind,triggerKind}:{}};
 }

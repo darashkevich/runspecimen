@@ -29,8 +29,17 @@ which are registered but always refuse.
 Each drivable tool runs exactly one `runspecimen` CLI invocation and returns:
 
 ```json
-{ "ok": true, "exitCode": 0, "truncated": false, "output": "<combined stdout+stderr>" }
+{ "ok": true, "exitCode": 0, "truncated": false, "output": "<combined stdout+stderr>", "cancelled": false, "timedOut": false, "cleanupFailed": false, "cliExitCode": 0, "cliSignal": null, "cliOutcomeObserved": true, "cleanupClassification": "none" }
 ```
+
+The four common fields `ok`, `exitCode`, `truncated` and `output` are required.
+Ordinary calls also report cause flags and the acknowledged CLI outcome separately
+from cleanup: `cliExitCode`, `cliSignal`, `cliOutcomeObserved` and
+`cleanupClassification`. An unavailable membership probe is reported as
+`unavailable`, never invented leftovers. A signal outcome has its real signal name and null CLI exit code;
+an unobserved outcome is explicitly marked false, with null CLI code and signal.
+A known-empty group exits after cleanup acknowledgement without the grace delay.
+Refusal and dashboard-control results may omit ordinary CLI outcome metadata.
 
 Read-only actions are declared concurrency-safe, so several can run in one
 batch: `about`, `doctor`, `validate`, `status`, `decisions_search`,
@@ -126,8 +135,16 @@ process and returns its URL and pid. It serves until stopped or until the config
 Stop it earlier with `runspecimen_dashboard_stop` (`pid` optional; omitting it stops
 every dashboard this plugin started).
 
-Every call inherits the caller's cancellation signal, so aborting a turn kills a
-running child instead of leaving a `run` executing behind the user's back.
+Every call inherits the caller's cancellation signal. Cleanup confirmation is
+limited to the plugin's owned process group. `runspecimen run` launches the
+approved contract in another session; killing the CLI group does not prove that
+contract stopped. An interrupted `runspecimen_run` therefore returns
+`cleanupFailed: true`, preserves `cancelled`/`timedOut` and `triggerKind`, and
+reports `terminationKind: "cleanup"`. Inspect that run with `runspecimen status`
+before continuing; do not treat this result as permission to retry or release a
+lease. Older CLIs without TERM/HUP handling can leave the contract running.
+This conservative result also applies when a newer CLI handled the signal,
+because this plugin has no independent contract-session death acknowledgement.
 
 ## Layout
 
@@ -146,7 +163,7 @@ test/             behavior tests, run with `node --test test/`
 
 ### Executed
 
-- `node --test test/` — **37 tests, all passing** (see the table below). They
+- `node --test test/` — **the test suite, all passing** (see the table below). They
   cover argv mapping for every action, workspace-relative path resolution,
   refusal of the three human-gate actions, byte-accurate truncation, bounded
   memory under a 32 MiB stream, a retained stderr tail after stdout overflow,
@@ -237,7 +254,7 @@ This version retains the 16-tool 0.2.0 surface, including background dashboards.
 It additionally verifies that the entire owned POSIX group disappears before
 returning cancellation; a cooperative parent cannot cancel escalation for a
 stubborn descendant. Cleanup escalates after `graceMs` and has an additional
-five-second confirmation deadline. A failure to confirm cleanup throws an error
+five-second confirmation deadline. A failure to confirm cleanup returns a typed failure with `cleanupFailed: true`
 rather than reporting successful termination. A pre-aborted request starts no
 process. Windows execution fails before spawning; no Windows cleanup is claimed.
 Processes that deliberately create another session/group are not confined.
