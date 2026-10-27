@@ -36,7 +36,8 @@ export class DashboardManager {
         controller.abort();const result=await done;
         if(!result.cleaned)throw result.error;
         return {url:null,pid:null,text:[observed,result.error?.message].filter(Boolean).join('\n') || "Dashboard exited before serving",running:false,
-          timedOut:result.error?.triggerKind==='timeout',cancelled:result.error?.triggerKind==='cancelled',cleanupFailed:false};
+          timedOut:result.error?.triggerKind==='timeout',cancelled:result.error?.triggerKind==='cancelled',cleanupFailed:false,
+          terminationKind:result.error?.kind ?? 'command-exit',triggerKind:result.error?.triggerKind ?? 'command-exit'};
       }
       return {url,pid:entry.pid,text:observed,running:true,lifetimeMs:timeoutMs,timedOut:false,cancelled:false,cleanupFailed:false};
     } finally {clearTimeout(startup);signal?.removeEventListener('abort',onAbort);}

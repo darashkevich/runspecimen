@@ -73,23 +73,27 @@ function jsonOutput(schema) {
  * Output schema, declared in the harness value-schema DSL.
  *
  * `additionalProperties` must be explicit, and a sibling `required` list is not
- * part of the DSL: object field presence comes from each property's own
- * declaration. Every RunSpecimen result is a fixed record, so all four fields
- * are always present.
+ * part of the DSL: object field presence comes from each property's required
+ * declaration. The four common fields are required; operation-specific cause
+ * and CLI-observation metadata are optional for refusals and dashboard control.
  */
 const RESULT_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
-    ok: { type: "boolean", description: "True when the CLI exited 0." },
-    exitCode: { type: "integer", description: "The CLI exit status; -1 when the call never ran." },
-    truncated: { type: "boolean", description: "True when output hit the configured byte budget." },
-    output: { type: "string", description: "Combined stdout and stderr from runspecimen." },
+    ok: { type: "boolean", required:true, description: "True when the CLI exited 0 without unresolved cleanup." },
+    exitCode: { type: "integer", required:true, description: "The execution result; -1 when no successful result was obtained." },
+    truncated: { type: "boolean", required:true, description: "True when output hit the configured byte budget." },
+    output: { type: "string", required:true, description: "Combined stdout and stderr from runspecimen." },
     cancelled: { type: "boolean", description: "The caller cancelled this call." },
     timedOut: { type: "boolean", description: "The execution time budget expired." },
     cleanupFailed: { type: "boolean", description: "Process-group cleanup could not be confirmed." },
     terminationKind: { type: "string", description: "The final failure kind, including cleanup when process-group cleanup is unresolved." },
     triggerKind: { type: "string", description: "The initiating cause, such as timeout or cancelled, retained separately from cleanup failure." },
+    cliExitCode:{oneOf:[{type:'integer'},{type:'null'}],description:'Actual observed CLI exit code; null for a signal exit or an unobserved outcome.'},
+    cliSignal:{oneOf:[{type:'string'},{type:'null'}],description:'Actual observed CLI signal, or null; cliOutcomeObserved distinguishes a clean exit from no observation.'},
+    cliOutcomeObserved:{type:'boolean',description:'A real CLI exit outcome was acknowledged; false when launch failed or no outcome arrived.'},
+    cleanupClassification:{type:'string',description:'Group membership classification: none, leftovers, unavailable, or not-started. Unavailable does not mean leftovers.'},
   },
 };
 
@@ -124,6 +128,7 @@ function actionTool(resolved, action, description, parameters) {
     output: jsonOutput(RESULT_SCHEMA),
     isConcurrencySafe: () => READ_ONLY_ACTIONS.includes(action) && !isDashboard,
     async execute(args, exec) {
+      const cancelledBeforeStart = exec?.signal?.aborted === true;
       const base = sessionBase(resolved, exec);
       const argv = buildArgv(action, args ?? {}, { base });
       const common = {
@@ -142,7 +147,7 @@ function actionTool(resolved, action, description, parameters) {
         } catch (error) {
           if (!(error instanceof ProcessCaptureError)) throw error;
           return {ok:false,exitCode:-1,truncated:false,cleanupFailed:error.cleanupConfirmed===false,
-            timedOut:error.triggerKind==='timeout',cancelled:error.triggerKind==='cancelled',output:error.message};
+            timedOut:error.triggerKind==='timeout',cancelled:error.triggerKind==='cancelled',terminationKind:error.kind,triggerKind:error.triggerKind,output:error.message};
         }
         if (!started.running) {
           return {
@@ -152,6 +157,8 @@ function actionTool(resolved, action, description, parameters) {
             timedOut: started.timedOut,
             cancelled: started.cancelled,
             cleanupFailed: started.cleanupFailed,
+            terminationKind:started.terminationKind,
+            triggerKind:started.triggerKind,
             output: `dashboard exited before serving:\n${started.text}`,
           };
         }
@@ -172,14 +179,29 @@ function actionTool(resolved, action, description, parameters) {
         timeoutMs: resolved.timeoutMs,
         maxOutputBytes: resolved.maxOutputBytes,
       });
+      if (action === 'run' && !cancelledBeforeStart && (result.cancelled || result.timedOut)) {
+        // The CLI launches the approved contract in a separate session. Death
+        // of our owned supervisor group is not proof of that session's death,
+        // including when an older CLI does not handle TERM/HUP. Fail closed:
+        // retain the initiating cause, but do not certify contract cleanup.
+        result.cleanupFailed = true;
+        result.terminationKind = 'cleanup';
+        result.text += '\n[Approved contract cleanup is not independently confirmed. '
+          + 'The run may still be active; inspect runspecimen status before continuing. '
+          + 'Do not retry or start another lifecycle operation on this result.]';
+      }
       return {
-        ok: result.exitCode === 0 && !result.cancelled,
+        ok: result.exitCode === 0 && !result.cancelled && !result.timedOut && !result.cleanupFailed,
         exitCode: result.exitCode,
         truncated: result.truncated,
         output: result.text,
         cancelled: result.cancelled,
         timedOut: result.timedOut ?? false,
         cleanupFailed: result.cleanupFailed ?? false,
+        cliExitCode:result.cliExitCode,
+        cliSignal:result.cliSignal,
+        cliOutcomeObserved:result.cliOutcomeObserved,
+        cleanupClassification:result.cleanupClassification,
         ...(result.terminationKind ? {terminationKind:result.terminationKind,triggerKind:result.triggerKind} : {}),
       };
     },

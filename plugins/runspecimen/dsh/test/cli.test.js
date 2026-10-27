@@ -291,17 +291,12 @@ test("a late stderr error survives stdout consuming the budget", async () => {
   assert.match(result.text, /IMPORTANT ERROR TAIL/, "stderr tail is retained after stdout overflow");
 });
 
-test("runCli names the fix when the CLI is absent", async () => {
-  await assert.rejects(
-    runCli({
-      command: "runspecimen-does-not-exist-xyz",
-      argv: ["about"],
-      cwd: HERE,
-      timeoutMs: 20_000,
-      maxOutputBytes: 64_000,
-    }),
-    /RunSpecimen CLI not found/,
-  );
+test("runCli names the fix in a typed result when the CLI is absent", async () => {
+  const result = await runCli({command: "runspecimen-does-not-exist-xyz", argv: ["about"], cwd: HERE,
+    timeoutMs: 20_000, maxOutputBytes: 64_000});
+  assert.equal(result.exitCode, -1);
+  assert.equal(result.terminationKind, "spawn");
+  assert.match(result.text, /RunSpecimen CLI not found/);
 });
 
 test("timeout terminates a stubborn child before reporting", async () => {

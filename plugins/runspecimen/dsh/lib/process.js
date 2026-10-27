@@ -57,7 +57,7 @@ export async function retryOwnedGroup(child, graceMs=250) {
 }
 
 /** Own a POSIX process group; do not finish cancellation before cleanup. */
-export function captureProcess({command, argv, cwd, signal, timeoutMs, onData, onSpawn, graceMs=250}) {
+export function captureProcess({command, argv, cwd, signal, timeoutMs, onData, onSpawn, onCommandResult, graceMs=250}) {
   if (process.platform === 'win32') throw new Error('This plugin requires macOS or Linux process-group cleanup; Windows is not supported.');
   if (signal?.aborted) return Promise.reject(new Error('RunSpecimen call cancelled by the caller; nothing was started'));
   return new Promise((resolve, reject) => {
@@ -112,10 +112,12 @@ export function captureProcess({command, argv, cwd, signal, timeoutMs, onData, o
       if (!child.pid) finish(failure); else stop(failure);
     });
     child.on('message', message => {
-      if(message?.type!=='command-exit' || settled || stopReason)return;
+      if(message?.type!=='command-exit' || settled || receivedCommandResult)return;
       receivedCommandResult=true;
       exitCode=message.code;
-      normalCompletion=!message.others;
+      onCommandResult?.(message);
+      if(stopReason)return;
+      normalCompletion=message.classification!=='leftovers';
       if(message.error)failure=message.error.code==='ENOENT'
         ? new Error(`RunSpecimen CLI not found ('${command}'). Install it or set the plugin command config to its path.`)
         : new Error(message.error.message);
