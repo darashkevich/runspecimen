@@ -36,6 +36,20 @@ from runspecimen.state import load_state, update_state
 from runspecimen.runtime import job_environment, runtime_matches, runtime_provenance
 
 
+# Hooks for supervisor mode - set only in the detached supervisor process
+_external_interrupt: threading.Event | None = None
+_cleanup_notification: Any = None
+
+
+class _CleanupUnconfirmed(RunError):
+    """Raised when process group cleanup cannot be confirmed."""
+
+    def __init__(self, proc: subprocess.Popen, reason: str) -> None:
+        super().__init__(reason)
+        self.proc = proc
+        self.interrupted = False
+
+
 class _RunInterrupted(KeyboardInterrupt):
     """An ordinary run received a termination request while holding its lease."""
 
@@ -76,23 +90,29 @@ def _termination_signals():
 
 
 def _check_termination_signal() -> None:
+    # Check external interrupt (supervisor mode: CLI death or stop request)
+    if _external_interrupt is not None and _external_interrupt.is_set():
+        raise _RunInterrupted(signal.SIGTERM)
+    # Check signal-based termination (normal CLI mode)
     pending = _pending_signal.get()
     if pending:
         raise _RunInterrupted(pending[0])
 
 
 def _kill_process_group(proc: subprocess.Popen[bytes]) -> None:
+    """Send SIGKILL to the process group. Raises _CleanupUnconfirmed on EPERM."""
     if proc.pid is None:
         return
     try:
         os.killpg(proc.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
-    except PermissionError:
-        try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
+    except OSError as exc:
+        # EPERM: we cannot confirm the group is stopped. Never fall back to
+        # killing only the leader, as that leaves descendants alive.
+        raise _CleanupUnconfirmed(
+            proc, f"process-group stop denied/unconfirmed: {exc}"
+        ) from exc
 
 
 @dataclass
@@ -147,9 +167,140 @@ def _supervise_process(proc, stdout: _Capture, stderr: _Capture, deadline: float
         selector.close()
 
 
-def _stop_process(proc) -> None:
+def _live_group_members(pgid: int, timeout: float) -> list[int]:
+    """Return PIDs of non-zombie processes in the given process group.
+
+    Uses /proc on Linux, /bin/ps on other systems.
+    """
+    if Path("/proc/self/stat").exists():
+        # Linux: read /proc directly
+        members = []
+        try:
+            for entry in Path("/proc").iterdir():
+                if not entry.name.isdigit():
+                    continue
+                try:
+                    stat_content = (entry / "stat").read_text()
+                    # Format: pid (comm) state ppid pgrp ...
+                    # comm can contain spaces/parens, so split from the right
+                    tail = stat_content.rsplit(")", 1)[1].split()
+                    state = tail[0]
+                    pgrp = int(tail[2])
+                    if pgrp == pgid and state != "Z":
+                        members.append(int(entry.name))
+                except (FileNotFoundError, ProcessLookupError, IndexError, ValueError):
+                    continue
+        except (FileNotFoundError, PermissionError):
+            pass
+        return members
+
+    # Fallback: use /bin/ps
+    result = subprocess.run(
+        ["/bin/ps", "-axo", "pid=,pgid=,stat="],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        return []
+    members = []
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 3:
+            try:
+                pid = int(parts[0])
+                group = int(parts[1])
+                state = parts[2]
+                if group == pgid and not state.startswith("Z"):
+                    members.append(pid)
+            except (ValueError, IndexError):
+                continue
+    return members
+
+
+def _stop_process(proc: subprocess.Popen) -> None:
+    """Kill process group and confirm all members are dead.
+
+    Raises _CleanupUnconfirmed if:
+    - os.killpg fails with EPERM
+    - Group members remain alive after the cleanup budget
+
+    Never re-signals a reaped PID.
+    """
+    if proc.returncode is not None:
+        return  # Already reaped, idempotent
+
+    deadline = time.monotonic() + 5  # Existing cleanup budget
+
     _kill_process_group(proc)
-    proc.wait(timeout=5)
+
+    try:
+        # Wait for all group members to exit
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("live group members remain after cleanup budget")
+            members = _live_group_members(proc.pid, remaining)
+            if not members:
+                break
+            time.sleep(min(0.02, remaining))
+
+        # Reap the leader
+        proc.wait(timeout=max(0.01, deadline - time.monotonic()))
+
+    except (OSError, subprocess.SubprocessError, ValueError, TimeoutError) as exc:
+        raise _CleanupUnconfirmed(
+            proc, f"process-group death could not be confirmed: {exc}"
+        ) from exc
+
+
+def _retain_cleanup(exc: _CleanupUnconfirmed, state_dir: Path) -> None:
+    """Handle cleanup_pending: retain lease and retry cleanup until confirmed.
+
+    This function blocks until cleanup succeeds, keeping the lease held.
+    It never returns normally - after cleanup succeeds, it raises RunError.
+    """
+    result = "interrupted" if exc.interrupted else "failed"
+    message = f"Cleanup unresolved; supervisor pid={os.getpid()}; lease retained. {exc}"
+
+    update_state(
+        state_dir,
+        phase="cleanup_pending",
+        run_result=result,
+        cleanup_confirmed=False,
+        supervisor_pid=os.getpid(),
+        process_group=exc.proc.pid,
+        error=message,
+    )
+
+    log = EventLog.for_state_dir(state_dir)
+    log.append("cleanup_pending", {"error": message})
+
+    # Notify the CLI (in supervisor mode)
+    if _cleanup_notification is not None:
+        _cleanup_notification(message)
+
+    # Retry cleanup until it succeeds. The original child stays unreaped,
+    # so its PID cannot be reused as signal authority during retry.
+    while True:
+        try:
+            _stop_process(exc.proc)
+        except _CleanupUnconfirmed:
+            time.sleep(0.1)
+        else:
+            break
+
+    # Cleanup confirmed
+    update_state(
+        state_dir,
+        phase="failed",
+        run_result=result,
+        cleanup_confirmed=True,
+        run_finished_at=utc_now_iso(),
+        error="Cleanup confirmed after unresolved stop",
+    )
+    log.append("cleanup_confirmed", {"exit_code": exc.proc.returncode})
+    raise RunError("Run failed; deferred cleanup is now confirmed")
 
 
 def run_contract(
@@ -158,11 +309,18 @@ def run_contract(
     workspace: Path,
     now: float | None = None,
     holder: Any = None,
+    guard_parent: bool = False,
 ) -> dict:
     workspace = resolve_workspace(workspace)
     contract = load_contract(contract_path)
     check_contract_paths(contract, workspace)
     validate_caps(contract.caps)
+
+    # For phrase-approved contracts (no execution_approval), use the supervisor
+    # when guard_parent=True. This survives SIGKILL of the CLI.
+    if guard_parent and contract.execution_approval is None:
+        from runspecimen.run_supervisor import guarded_run
+        return guarded_run(contract_path=contract_path, workspace=workspace, now=now)
 
     if holder is None and contract.execution_approval is not None:
         holder = _resolve_installed_holder(str(contract.execution_approval))
@@ -172,13 +330,16 @@ def run_contract(
     signals = _termination_signals() if contract.execution_approval is None else contextlib.nullcontext()
     try:
         with signals, hold_workspace_lease(workspace, holder="run"):
-            return _run_under_lease(
-                contract=contract,
-                workspace=workspace,
-                state_dir=state_dir,
-                now=now,
-                holder=holder,
-            )
+            try:
+                return _run_under_lease(
+                    contract=contract,
+                    workspace=workspace,
+                    state_dir=state_dir,
+                    now=now,
+                    holder=holder,
+                )
+            except _CleanupUnconfirmed as exc:
+                _retain_cleanup(exc, state_dir)
     except LeaseError as exc:
         raise RunError(str(exc)) from exc
 
@@ -230,7 +391,7 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
     # Check phase first - terminal phases must be rejected immediately
     state = load_state(state_dir)
     phase = state.get("phase")
-    if phase in {"running", "completed", "failed", "postflighted", "abandoned"}:
+    if phase in {"running", "cleanup_pending", "completed", "failed", "postflighted", "abandoned"}:
         raise PreflightError(f"run already in phase={phase!r}; refuse re-entry")
 
     approval = load_approval(state_dir)
@@ -487,14 +648,22 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
         timed_out = _supervise_process(proc, stdout, stderr, deadline)
         _stop_process(proc)
     except BaseException as exc:
-        _stop_process(proc)
-        result = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "failed"
+        try:
+            _stop_process(proc)
+        except _CleanupUnconfirmed as pending:
+            # Mark interrupted status and save outputs before re-raising
+            pending.interrupted = isinstance(exc, (KeyboardInterrupt, SystemExit, _RunInterrupted))
+            atomic_write_bytes(state_dir / STDOUT_FILENAME, bytes(stdout.data))
+            atomic_write_bytes(state_dir / STDERR_FILENAME, bytes(stderr.data))
+            raise pending from exc
+        result = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit, _RunInterrupted)) else "failed"
         atomic_write_bytes(state_dir / STDOUT_FILENAME, bytes(stdout.data))
         atomic_write_bytes(state_dir / STDERR_FILENAME, bytes(stderr.data))
         update_state(
             state_dir,
             phase="failed",
             run_result=result,
+            cleanup_confirmed=True,
             exit_code=proc.returncode,
             error=f"run {result}: {type(exc).__name__}",
             run_finished_at=utc_now_iso(),
@@ -528,6 +697,7 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
             state_dir,
             phase="failed",
             run_result="timeout",
+            cleanup_confirmed=True,
             exit_code=exit_code,
             timed_out=True,
             run_finished_at=finished,
@@ -552,6 +722,7 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
         state_dir,
         phase="completed",
         run_result="completed",
+        cleanup_confirmed=True,
         exit_code=exit_code,
         timed_out=False,
         run_finished_at=finished,
