@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import os
+import contextlib
+import contextvars
 import selectors
 import signal
 import subprocess
 import time
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -31,6 +34,51 @@ from runspecimen.paths import (
 from runspecimen.preflight import check_outputs_absent, check_predecessor
 from runspecimen.state import load_state, update_state
 from runspecimen.runtime import job_environment, runtime_matches, runtime_provenance
+
+
+class _RunInterrupted(KeyboardInterrupt):
+    """An ordinary run received a termination request while holding its lease."""
+
+    def __init__(self, signum: int) -> None:
+        super().__init__(signal.Signals(signum).name)
+        self.signum = signum
+
+
+_pending_signal: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar(
+    "runspecimen_run_pending_signal", default=None
+)
+
+
+@contextlib.contextmanager
+def _termination_signals():
+    # Python only permits installing handlers in the main thread. Library calls
+    # from worker threads retain their existing exception-based cancellation.
+    pending: list[int] = []
+    token = _pending_signal.set(pending)
+    previous = {}
+
+    def request_stop(signum, _frame):
+        # Never raise asynchronously in Popen, state persistence or cleanup.
+        # A second signal cannot unwind the lease while cleanup is in progress.
+        if not pending:
+            pending.append(signum)
+
+    try:
+        if threading.current_thread() is threading.main_thread():
+            for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                previous[signum] = signal.getsignal(signum)
+                signal.signal(signum, request_stop)
+        yield
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+        _pending_signal.reset(token)
+
+
+def _check_termination_signal() -> None:
+    pending = _pending_signal.get()
+    if pending:
+        raise _RunInterrupted(pending[0])
 
 
 def _kill_process_group(proc: subprocess.Popen[bytes]) -> None:
@@ -69,6 +117,7 @@ def _supervise_process(proc, stdout: _Capture, stderr: _Capture, deadline: float
             selector.register(stream, selectors.EVENT_READ, capture)
         group_cleaned = False
         while selector.get_map() or proc.poll() is None:
+            _check_termination_signal()
             if proc.poll() is not None and not group_cleaned:
                 # A successful launcher can leave workers holding the pipes
                 # open. End its process group before releasing the lease.
@@ -92,6 +141,7 @@ def _supervise_process(proc, stdout: _Capture, stderr: _Capture, deadline: float
                     proc.wait(timeout=min(0.1, remaining))
                 except subprocess.TimeoutExpired:
                     pass
+        _check_termination_signal()
         return False
     finally:
         selector.close()
@@ -119,8 +169,9 @@ def run_contract(
 
     state_dir = run_state_dir(workspace, contract.campaign_id, contract.run_id)
     ensure_dir(state_dir)
+    signals = _termination_signals() if contract.execution_approval is None else contextlib.nullcontext()
     try:
-        with hold_workspace_lease(workspace, holder="run"):
+        with signals, hold_workspace_lease(workspace, holder="run"):
             return _run_under_lease(
                 contract=contract,
                 workspace=workspace,
@@ -248,6 +299,7 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
     elif holder_receipt.get("holder_id") == source_hash:
         raise PreflightError("holder identity is not distinct from the payload")
 
+    _check_termination_signal()
     log = EventLog.for_state_dir(state_dir)
     log.append(
         "run_start",
@@ -390,6 +442,7 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
             )
         except RunError as exc:
             raise PreflightError(str(exc)) from exc
+        _check_termination_signal()
         proc = subprocess.Popen(  # noqa: S603
             launch_argv,
             cwd=str(cwd),
@@ -400,6 +453,13 @@ def _run_under_lease(*, contract, workspace: Path, state_dir: Path, now: float |
             shell=False,
             start_new_session=True,
         )
+    except _RunInterrupted as exc:
+        update_state(
+            state_dir, phase="failed", run_result="interrupted",
+            error=f"run interrupted: {exc}", run_finished_at=utc_now_iso(),
+        )
+        log.append("run_interrupted", {"signal": exc.signum, "error": str(exc)})
+        raise
     except PreflightError as exc:
         update_state(
             state_dir,
