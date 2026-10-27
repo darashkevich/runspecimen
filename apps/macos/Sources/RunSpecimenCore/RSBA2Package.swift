@@ -577,29 +577,38 @@ public enum RSBA2Package {
         return out
     }
 
+    /// Render even programmatically constructed fields without invisible/control text.
+    public static func displayText(_ text: String) -> String {
+        text.unicodeScalars.map { scalar in
+            if scalar.value == 92 { return "\\\\" }
+            if (32...126).contains(scalar.value) { return String(scalar) }
+            return String(format: "\\u{%X}", scalar.value)
+        }.joined()
+    }
+
     public static func lines(for fields: Fields) -> [String] {
         var lines = [
             "Version: \(version)",
             "Policy: \(fields.policy)",
-            "Mac: \(fields.macID)",
-            "Workspace: \(fields.workspaceID)",
-            "Run: \(fields.runID)",
+            "Mac: \(displayText(fields.macID))",
+            "Workspace: \(displayText(fields.workspaceID))",
+            "Run: \(displayText(fields.runID))",
             "Contract: \(fields.contractSHA256)",
             "Inputs: \(fields.inputsSHA256)",
-            "Bounds: \(fields.bounds)",
-            "Nonce: \(fields.nonce)",
+            "Bounds: \(displayText(fields.bounds))",
+            "Nonce: \(displayText(fields.nonce))",
             "Expiry unix: \(fields.expiryUnix)",
         ]
         switch fields.policy {
         case "local":
-            lines.append("Local key: \(fields.localKeyID) generation \(fields.localGeneration)")
+            lines.append("Local key: \(displayText(fields.localKeyID)) generation \(fields.localGeneration)")
             lines.append("This Mac biometric signature does not show that a phone approved, and it does not show that the person understood the command.")
         case "companion":
-            lines.append("Companion key: \(fields.companionKeyID) generation \(fields.companionGeneration)")
+            lines.append("Companion key: \(displayText(fields.companionKeyID)) generation \(fields.companionGeneration)")
             lines.append("This phone signature is not physical presence at the Mac.")
         case "dual":
-            lines.append("Local key: \(fields.localKeyID) generation \(fields.localGeneration)")
-            lines.append("Companion key: \(fields.companionKeyID) generation \(fields.companionGeneration)")
+            lines.append("Local key: \(displayText(fields.localKeyID)) generation \(fields.localGeneration)")
+            lines.append("Companion key: \(displayText(fields.companionKeyID)) generation \(fields.companionGeneration)")
             lines.append("Dual policy needs both signatures over this same request. The phone signature is not physical presence at the Mac.")
         default:
             break
@@ -671,7 +680,7 @@ public enum RSBA2Package {
 
     private static func text(_ object: [String: String], _ key: String, minimum: Int, maximum: Int) throws -> String {
         guard let value = object[key] else { throw ParseFailure.malformed(key) }
-        guard (minimum...maximum).contains(value.count), !value.contains("\0"), !value.isEmpty else {
+        guard (minimum...maximum).contains(value.count), !value.unicodeScalars.contains(where: { [.control, .format, .lineSeparator, .paragraphSeparator].contains($0.properties.generalCategory) }), !value.isEmpty else {
             throw ParseFailure.malformed(key)
         }
         return value
