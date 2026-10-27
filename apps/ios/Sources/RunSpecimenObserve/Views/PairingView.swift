@@ -10,6 +10,20 @@ enum PairingOutcome: Equatable {
     static var successMessage: String { "Connected successfully. The previous Mac session key and holder pin were cleared. Re-enter them in Advanced settings to use phone-peer enrollment." }
 }
 
+struct PairingTrustDraft {
+    var macKey = ""
+    var holderID = ""
+    private(set) var initialMacKey = ""
+    private(set) var initialHolderID = ""
+
+    mutating func synchronize(macKey: String, holderID: String) {
+        self.macKey = macKey
+        self.holderID = holderID
+        initialMacKey = macKey
+        initialHolderID = holderID
+    }
+}
+
 struct PairingView: View {
     @EnvironmentObject private var session: CompanionSession
     @State private var busy = false
@@ -17,11 +31,8 @@ struct PairingView: View {
     @State private var draftURL = ""
     @State private var draftToken = ""
     @State private var draftFingerprint = ""
-    @State private var draftMacKey = ""
-    @State private var draftHolderID = ""
+    @State private var trustDraft = PairingTrustDraft()
     @State private var didLoadDraft = false
-    @State private var initialMacKey = ""
-    @State private var initialHolderID = ""
     @State private var pairingOutcome: PairingOutcome = .none
     @State private var showAdvanced = false
     private let feedbackGenerator = UINotificationFeedbackGenerator()
@@ -151,7 +162,7 @@ struct PairingView: View {
                 DisclosureGroup("Advanced settings", isExpanded: $showAdvanced) {
                     VStack(alignment: .leading, spacing: 10) {
                         fieldLabel("Mac session public key")
-                        TextField("For holder verification", text: $draftMacKey)
+                        TextField("For holder verification", text: $trustDraft.macKey)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .padding(12)
@@ -168,7 +179,7 @@ struct PairingView: View {
                         .foregroundStyle(RSTheme.muted)
 
                         fieldLabel("Pinned holder ID")
-                        TextField("Holder identity to trust", text: $draftHolderID)
+                        TextField("Holder identity to trust", text: $trustDraft.holderID)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .padding(12)
@@ -194,8 +205,8 @@ struct PairingView: View {
                     guard let url = URL(string: draftURL.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
                     let candidate = PairingConfig(baseURL: url, pairingToken: draftToken,
                         tlsFingerprint: draftFingerprint.isEmpty ? nil : draftFingerprint)
-                    let macKey = draftMacKey
-                    let holderID = draftHolderID
+                    let macKey = trustDraft.macKey
+                    let holderID = trustDraft.holderID
                     feedbackGenerator.prepare()
                     busy = true
                     pairingOutcome = .inProgress
@@ -204,7 +215,8 @@ struct PairingView: View {
                         let paired = await session.saveAndPair(candidate: candidate)
                         busy = false
                         if paired {
-                            session.applyVerifiedPairingTrustEdits(previousMacKey: initialMacKey, previousHolderID: initialHolderID, macKey: macKey, holderID: holderID)
+                            session.applyVerifiedPairingTrustEdits(previousMacKey: trustDraft.initialMacKey, previousHolderID: trustDraft.initialHolderID, macKey: macKey, holderID: holderID)
+                            trustDraft.synchronize(macKey: session.macSessionPublicKey, holderID: session.pinnedHolderId)
                             feedbackGenerator.notificationOccurred(.success)
                             pairingOutcome = .success
                         } else {
@@ -341,10 +353,7 @@ struct PairingView: View {
             draftURL = session.baseURLString
             draftToken = session.pairingToken
             draftFingerprint = session.tlsFingerprint
-            initialMacKey = session.macSessionPublicKey
-            initialHolderID = session.pinnedHolderId
-            draftMacKey = session.macSessionPublicKey
-            draftHolderID = session.pinnedHolderId
+            trustDraft.synchronize(macKey: session.macSessionPublicKey, holderID: session.pinnedHolderId)
             didLoadDraft = true
         }
     }
