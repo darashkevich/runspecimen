@@ -1,9 +1,17 @@
 import XCTest
 
 final class RecoveryUITests: XCTestCase {
+    private let app = XCUIApplication()
+
+    override func tearDown() {
+        // Close any presented activity sheet before ending the owned app.
+        if app.state == .runningForeground { app.swipeDown() }
+        app.terminate()
+        super.tearDown()
+    }
+
     func testRecoveryNoticeCanBeDismissedReopenedAndExported() {
         continueAfterFailure = false
-        let app = XCUIApplication()
         app.launchEnvironment["RUNSPECIMEN_UI_RECOVERY_TEST"] = "1"
         app.launch()
         let banner = app.descendants(matching: .any)["rotationRecoveryFailure"].firstMatch
@@ -19,9 +27,8 @@ final class RecoveryUITests: XCTestCase {
         reopen.tap()
         XCTAssertTrue(banner.waitForExistence(timeout: 15), app.debugDescription)
         app.buttons["Export recovery diagnostics"].tap()
-        // Cold CI SharingUIService took 55 seconds to publish Copy after the
-        // app supplied its diagnostics. Keep a bounded positive readiness wait;
-        // a missing action still fails, with no relaunch or assertion retry.
-        XCTAssertTrue(app.descendants(matching: .any)["Copy"].firstMatch.waitForExistence(timeout: 90), app.debugDescription)
+        // Query the activity's actionable button, not every accessibility node.
+        // Keep the existing bound; snapshot failures must fail the gate.
+        XCTAssertTrue(app.buttons["Copy"].firstMatch.waitForExistence(timeout: 90), app.debugDescription)
     }
 }
