@@ -42,3 +42,14 @@ class IOSPrivacyGateTests(unittest.TestCase):
             app=Path(directory)
             (app/'PrivacyInfo.xcprivacy').write_bytes(plistlib.dumps({'NSPrivacyAccessedAPITypes':[{'NSPrivacyAccessedAPIType':'NSPrivacyAccessedAPICategoryUserDefaults','NSPrivacyAccessedAPITypeReasons':['CA92.1']}]}))
             self.assertEqual(self.gate().audit(app,{'Observe':' U _objc_msgSend\n'})['binaries'],['Observe'])
+
+    def test_qa2_objc_imports_and_unknown_reason_are_rejected(self):
+        for symbol,category in [('_NSFileModificationDate','FileTimestamp'),('_NSURLContentModificationDateKey','FileTimestamp'),('_NSURLCreationDateKey','FileTimestamp'),('_NSURLVolumeAvailableCapacityForImportantUsageKey','DiskSpace')]:
+            with self.subTest(symbol=symbol), tempfile.TemporaryDirectory() as directory:
+                app=Path(directory)
+                declarations=[{'NSPrivacyAccessedAPIType':'NSPrivacyAccessedAPICategoryUserDefaults','NSPrivacyAccessedAPITypeReasons':['CA92.1']}]
+                (app/'PrivacyInfo.xcprivacy').write_bytes(plistlib.dumps({'NSPrivacyAccessedAPITypes':declarations}))
+                with self.assertRaisesRegex(ValueError,category): self.gate().audit(app,{'Observe':' U '+symbol})
+                declarations.append({'NSPrivacyAccessedAPIType':'NSPrivacyAccessedAPICategory'+category,'NSPrivacyAccessedAPITypeReasons':['BOGUS.1']})
+                (app/'PrivacyInfo.xcprivacy').write_bytes(plistlib.dumps({'NSPrivacyAccessedAPITypes':declarations}))
+                with self.assertRaisesRegex(ValueError,'reason'): self.gate().audit(app,{'Observe':' U '+symbol})

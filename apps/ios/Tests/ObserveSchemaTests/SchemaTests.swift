@@ -31,6 +31,17 @@ final class ObserveSchemaTests: IsolatedCompanionSessionTests {
         CompanionSecureEnclaveEnrollment.clock = { Int(Date().timeIntervalSince1970) }
         super.tearDown()
     }
+    func testQA2SharedParserRejectsApprovalTextSpoofing() throws {
+        for field in ["mac_id", "workspace_id", "run_id", "bounds"] {
+            for hostile in ["line\nPolicy: local", "bidi\u{202e}", "hidden\u{200b}"] {
+                var object = try package()
+                object[field] = hostile
+                XCTAssertThrowsError(try RSBA2Package.parse(JSONSerialization.data(withJSONObject: object)))
+            }
+        }
+        XCTAssertFalse(RSBA2Package.displayText("nonce\n\u{202e}\u{200b}").contains("\n"))
+    }
+
     func testSharedParserRejectsIncompletePackages() throws {
         let original = try package()
         func expect(_ mutate: (inout [String: String]) -> Void, _ field: String) throws {
@@ -1613,6 +1624,10 @@ final class ObserveSchemaTests: IsolatedCompanionSessionTests {
         XCTAssertTrue(session.isPaired)
     }
 
+    func testQA2LateEnrollmentDoesNotPublishIntoSuccessorPairing() async throws {
+        try await verifyEnrollmentCommit(cancelDuringCommit: false, successorPairing: true)
+    }
+
     func testGrokEnrollmentCommitSurvivesCancellation() async throws {
         try await verifyEnrollmentCommit(cancelDuringCommit: true)
     }
@@ -1629,7 +1644,7 @@ final class ObserveSchemaTests: IsolatedCompanionSessionTests {
         try await verifyEnrollmentCommit(cancelDuringCommit: false, biometricCancellation: true)
     }
 
-    private func verifyEnrollmentCommit(cancelDuringCommit: Bool, cancelChallengeAfterCommit: Bool = false, biometricCancellation: Bool = false) async throws {
+    private func verifyEnrollmentCommit(cancelDuringCommit: Bool, cancelChallengeAfterCommit: Bool = false, biometricCancellation: Bool = false, successorPairing: Bool = false) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("observe-commit-refresh-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -1677,6 +1692,16 @@ final class ObserveSchemaTests: IsolatedCompanionSessionTests {
 
         signer.cancelAfterCommit = cancelDuringCommit
         if cancelChallengeAfterCommit { signer.afterCommit = { await session.cancelPhonePeerChallenge() } }
+        if successorPairing {
+            signer.afterCommit = {
+                await MainActor.run {
+                    session.disconnect()
+                    session.isPaired = true
+                    session.baseURLString = "http://successor.invalid"
+                    session.phonePeerNote = "successor sentinel"
+                }
+            }
+        }
         if biometricCancellation { CompanionSecureEnclaveEnrollment.testAuthenticator = { _ in throw CompanionHardwareRefusal.automationRefused } }
         let outcome = await session.commitPhoneKeyAfterHolderVerification(signer: signer, peer: peer)
         if biometricCancellation {
@@ -1686,6 +1711,13 @@ final class ObserveSchemaTests: IsolatedCompanionSessionTests {
             return
         }
         XCTAssertEqual(outcome, .enrolled)
+        if successorPairing {
+            await MainActor.run {
+                XCTAssertNil(session.phoneEnrollmentFeedback)
+                XCTAssertEqual(session.phonePeerNote, "successor sentinel")
+            }
+            return
+        }
 
         await MainActor.run {
             XCTAssertEqual(signer.commits, 1, "signer.commitEnrollment should be called once")

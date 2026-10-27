@@ -553,3 +553,50 @@ extension SettlementOutcomeRegressionTests {
         XCTAssertTrue(message.contains("Advanced settings"))
     }
 }
+
+
+extension SettlementOutcomeRegressionTests {
+    @MainActor
+    func testQA2PostSendErrorsHaveUnknownSettlementAndClearInputs() async throws {
+        let errors: [Error] = [URLError(.timedOut), URLError(.networkConnectionLost), CompanionClientError.http(502, "gateway")]
+        for refuse in [false, true] {
+            for index in 0...errors.count {
+                let session = qaSession()
+                session.challengeInput = "challenge"
+                session.approvePhraseInput = "APPROVE"
+                session.refuseReasonInput = "fixture refusal"
+                let client = try XCTUnwrap(session.testMakeClient())
+                client.testRequest = { _ in
+                    if index < errors.count { throw errors[index] }
+                    return Data("garbage 200 body".utf8)
+                }
+                let outcome = refuse ? await session.submitRemoteRefuse() : await session.submitRemoteConfirm()
+                XCTAssertEqual(outcome, .failure(CompanionSession.unknownSettlementMessage))
+                XCTAssertEqual(session.challengeInput, "")
+                XCTAssertEqual(session.approvePhraseInput, "")
+                XCTAssertEqual(session.refuseReasonInput, "")
+            }
+        }
+    }
+}
+
+
+extension SettlementOutcomeRegressionTests {
+    @MainActor
+    func testQA2ReenteringSamePinsAfterRePairIsADeliberateEdit() {
+        var draft = PairingTrustDraft()
+        draft.synchronize(macKey: "old-key", holderID: "old-holder")
+        let session = qaSession()
+        session.macSessionPublicKey = ""
+        session.pinnedHolderId = ""
+        draft.synchronize(macKey: session.macSessionPublicKey, holderID: session.pinnedHolderId)
+        XCTAssertEqual(draft.macKey, "")
+        XCTAssertEqual(draft.holderID, "")
+        draft.macKey = "old-key"
+        draft.holderID = "old-holder"
+        session.applyVerifiedPairingTrustEdits(previousMacKey: draft.initialMacKey, previousHolderID: draft.initialHolderID,
+            macKey: draft.macKey, holderID: draft.holderID)
+        XCTAssertEqual(session.macSessionPublicKey, "old-key")
+        XCTAssertEqual(session.pinnedHolderId, "old-holder")
+    }
+}

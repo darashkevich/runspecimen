@@ -49,6 +49,7 @@ final class CompanionSession: ObservableObject {
     }
     var phoneChallenge: PhonePeerChallengeMessage?
     var signedPhonePublicKey: String?
+    private var pairingRevision = 0
     private var phoneSignGeneration = 0
     private var explicitlyCancelledSignGeneration: Int?
     private var postingSignGeneration: Int?
@@ -478,6 +479,7 @@ final class CompanionSession: ObservableObject {
             guard generation == refreshTaskGeneration else { throw CancellationError() }
             // A rejected candidate must never replace the saved pairing.
             try persist(config)
+            pairingRevision += 1
             // The newly verified connection must not inherit requests from the old Mac.
             cancelAllTasks()
             phoneEnrollmentFeedback = nil
@@ -746,6 +748,7 @@ final class CompanionSession: ObservableObject {
         activePhonePeerTask?.cancel()
         phonePeerTaskGeneration += 1
         let myGeneration = phonePeerTaskGeneration
+        let originatingPairing = pairingRevision
         var outcome: PhoneEnrollmentOutcome = .cancelled
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -761,7 +764,7 @@ final class CompanionSession: ObservableObject {
             task.cancel()
         }
         if outcome == .enrolled {
-            if myGeneration == phonePeerTaskGeneration || (isPaired && phoneChallenge == nil) { phoneEnrollmentFeedback = outcome }
+            if originatingPairing == pairingRevision { phoneEnrollmentFeedback = outcome }
             return outcome
         }
         guard !task.isCancelled, myGeneration == phonePeerTaskGeneration else { return .cancelled }
@@ -799,6 +802,7 @@ final class CompanionSession: ObservableObject {
             lastError = reason
             return .refused(reason)
         }
+        let originatingPairing = pairingRevision
         let generation = phoneSignGeneration
         let challengeId = message.challengeId
         do {
@@ -836,8 +840,9 @@ final class CompanionSession: ObservableObject {
             // arrived during the final write. Never leave its receipt reusable.
             acceptedReceiptSignatures.insert(signature)
             if phoneChallenge?.challengeId == challengeId { phoneChallenge = nil; signedPhonePublicKey = nil }
-            if generation == phoneSignGeneration || (isPaired && phoneChallenge == nil) {
+            if originatingPairing == pairingRevision {
                 await Task { @MainActor in await self.refreshPhonePeerKeyStateAsync() }.value
+                guard originatingPairing == pairingRevision else { return .enrolled }
                 phonePeerNote = "Holder receipt verified for challenge \(challengeId). The phone key is enrolled."
                 lastError = nil
             }
@@ -1274,7 +1279,7 @@ final class CompanionSession: ObservableObject {
             }
             if Task.isCancelled && !result.confirmedSuccessfully { return settlementUnknown(generation: generation) }
             if result.isAmbiguous {
-                return settlementFailure("Server returned ambiguous confirm response. Refresh status to check state.")
+                return settlementUnknown(generation: generation)
             }
             guard result.confirmedSuccessfully else {
                 return settlementFailure(result.note ?? "Confirm was not accepted by the server.")
@@ -1290,7 +1295,12 @@ final class CompanionSession: ObservableObject {
             return settlementUnknown(generation: generation)
         } catch {
             if Task.isCancelled || generation != remoteConfirmTaskGeneration { return settlementUnknown(generation: generation) }
-            return settlementFailure(error.localizedDescription)
+            // Only a definite client rejection is safe to report as refused.
+            // A POST may have settled before transport/server/decoding failed.
+            if case CompanionClientError.http(let code, _) = error, (400..<500).contains(code) {
+                return settlementFailure(error.localizedDescription)
+            }
+            return settlementUnknown(generation: generation)
         }
     }
 
@@ -1356,7 +1366,7 @@ final class CompanionSession: ObservableObject {
             }
             if Task.isCancelled && !result.refusedSuccessfully { return settlementUnknown(generation: generation) }
             if result.isAmbiguous {
-                return settlementFailure("Server returned ambiguous refuse response. Refresh status to check state.")
+                return settlementUnknown(generation: generation)
             }
             guard result.refusedSuccessfully else {
                 return settlementFailure(result.note ?? "Refuse was not accepted by the server.")
@@ -1373,7 +1383,12 @@ final class CompanionSession: ObservableObject {
             return settlementUnknown(generation: generation)
         } catch {
             if Task.isCancelled || generation != remoteConfirmTaskGeneration { return settlementUnknown(generation: generation) }
-            return settlementFailure(error.localizedDescription)
+            // Only a definite client rejection is safe to report as refused.
+            // A POST may have settled before transport/server/decoding failed.
+            if case CompanionClientError.http(let code, _) = error, (400..<500).contains(code) {
+                return settlementFailure(error.localizedDescription)
+            }
+            return settlementUnknown(generation: generation)
         }
     }
 
@@ -1394,6 +1409,7 @@ final class CompanionSession: ObservableObject {
     }
 
     func disconnect() {
+        pairingRevision += 1
         phoneEnrollmentFeedback = nil
         cancelAllTasks()
         invalidateCachedClient()
@@ -1825,8 +1841,8 @@ func parseExactRun(fetched: FetchedExactRun, now: Int, pinnedHolderId: String) t
     }
     let lines = [
         "policy \(policy)",
-        "nonce \(nonce)",
-        "holder \(holderId)",
+        "nonce \(RSBA2Package.displayText(nonce))",
+        "holder \(RSBA2Package.displayText(holderId))",
         "payload \(digest)",
         "generation \(generation)",
         "key generation \(keyGeneration)",

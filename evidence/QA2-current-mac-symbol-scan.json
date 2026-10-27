@@ -1,0 +1,410 @@
+{
+  "input": "/private/tmp/qa2-live-pr76/apps/macos/build/RunSpecimen.app",
+  "scope": "All actual Mach-O files in shipped app bundles; archive dSYMs excluded.",
+  "manifests": {
+    "Contents/Resources/PrivacyInfo.xcprivacy": {
+      "sha256": "445f62c6a2ec1cea99c3f2346855fb47b103f88e2af7ac63febed2c71e91e9c1",
+      "declarations": {
+        "UserDefaults": [
+          "CA92.1"
+        ],
+        "SystemBootTime": [
+          "35F9.1"
+        ],
+        "FileTimestamp": [
+          "C617.1",
+          "3B52.1"
+        ]
+      }
+    }
+  },
+  "binaries": [
+    {
+      "binary": "Contents/MacOS/RunSpecimen",
+      "sha256": "97824a1a62eb211387956abd4fce0feca6576756198281fb41e7a4d520430980",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {
+        "FileTimestamp": [
+          "_fstat",
+          "_fstatat",
+          "_lstat"
+        ],
+        "UserDefaults": [
+          "_OBJC_CLASS_$_NSUserDefaults"
+        ]
+      },
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/Python",
+      "sha256": "f1949da583a9a908e89a79600a5ea5e387590e335ed888ffe0d0789ddf40bd54",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {
+        "FileTimestamp": [
+          "_fstat",
+          "_fstatat",
+          "_lstat",
+          "_stat"
+        ],
+        "DiskSpace": [
+          "_fstatvfs",
+          "_statvfs"
+        ],
+        "SystemBootTime": [
+          "_mach_absolute_time"
+        ]
+      },
+      "undeclared_categories": [
+        "DiskSpace"
+      ]
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/libcrypto.3.dylib",
+      "sha256": "e8afe1212d5f942772d9cf0c2986486c3c7a52c8265def05bc0305b7a939c0bb",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {
+        "FileTimestamp": [
+          "_fstat",
+          "_lstat",
+          "_stat"
+        ]
+      },
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/libmpdec.4.dylib",
+      "sha256": "122bfe411697e16a9e631c722ace4b8062204d8dcc2abfe373cae9db6b1828d9",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/libssl.3.dylib",
+      "sha256": "d9554dcb2107f4fa4d2a8963ab0240b376b4d82fb09432524bbeeb6b1c0ea04c",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {
+        "FileTimestamp": [
+          "_stat"
+        ]
+      },
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_bisect.cpython-312-darwin.so",
+      "sha256": "dbd037341b7648c05a3e8d8a1616f30cb06d5aa59650bc276ba9c79efe6866fa",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_blake2.cpython-312-darwin.so",
+      "sha256": "f2fa0ffa3975d1a4e0d85add0a0943966b0c23ee089a889f03083ed840c2bfcd",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_bz2.cpython-312-darwin.so",
+      "sha256": "dc79091cc3da454f205cf08afc4173540bc23685cea8f5b51954c9dd9e186287",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_cn.cpython-312-darwin.so",
+      "sha256": "f5ae91e58abc3cfa316fd9dd1bc85ef42450c766bfb903e9ae772def6ff6f14e",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_hk.cpython-312-darwin.so",
+      "sha256": "64b7d1a85ac28c2d43514b7a7c5ebfe776806fbe2d47c1ad76705641e2b74799",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_iso2022.cpython-312-darwin.so",
+      "sha256": "2991d63b27dddff17377b1ac7a87e0b11516d18c3ac1d70e15d6cde878c3fb2d",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_jp.cpython-312-darwin.so",
+      "sha256": "f81464d3e38faaf836bdbe765c6da2d3bc2c8008e0fb64c204d4d87269a52d6d",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_kr.cpython-312-darwin.so",
+      "sha256": "72a67fc9fa4b3800e2b33fbea85e8e17f2f4b99b4ff4156b89f33e20cbaee331",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_tw.cpython-312-darwin.so",
+      "sha256": "1c391cf58d6f19bccb1ff086df4e991faab6fb69927ef935f5ad216565d9c5e0",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_contextvars.cpython-312-darwin.so",
+      "sha256": "21294b874898e60670c886ecaaf6e8c3f01b6ac24fbf5098d0c4b96a98d75248",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_csv.cpython-312-darwin.so",
+      "sha256": "a1af70908e2b3ff983282c0fbc837043b6571eaa3eeb516dcb95b45ab3cf43e0",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_ctypes.cpython-312-darwin.so",
+      "sha256": "45b54bfefd656364e5e61aa9d069afcd84b000cacc3b97e1a68b66619d84ba02",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_datetime.cpython-312-darwin.so",
+      "sha256": "7d3426004d46df86a97ddef3f9ff164137db84ef59d1fe7f9589c343cf30781a",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_decimal.cpython-312-darwin.so",
+      "sha256": "0456ff00e270288c9ee3dd38e04bae0c03e5b265f761d5805fbeb8aa10df5417",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_elementtree.cpython-312-darwin.so",
+      "sha256": "a46a0d6e58eacd444d5dc1188e40283d1d48ae397613d19a78c49e415d93438c",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_hashlib.cpython-312-darwin.so",
+      "sha256": "34f97ac0074614fdae368abcc2bfd46f368123a83a980b7d4ae61870ea92fc3d",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_heapq.cpython-312-darwin.so",
+      "sha256": "00c880a71c07741afb25c461b7e51f79b968f1adc94ed63b0c40cd50db570f8f",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_json.cpython-312-darwin.so",
+      "sha256": "d3e2d0338544c522d4dbbe381cfc09c2ac078e0b46745d81b7a7f593ff17a56a",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_md5.cpython-312-darwin.so",
+      "sha256": "134340256012210b1254714ccc30ec4b35e728af398b95426992a8ae6fe2d881",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_multibytecodec.cpython-312-darwin.so",
+      "sha256": "d76237da90997e8a578883a9a45f22691ae7f799e7b98e66ab40ac087e9da517",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_opcode.cpython-312-darwin.so",
+      "sha256": "dd0b174aa73cc0dd991e8ba67b9815a1c18dfd5bdadc32a332363f43255a7a2a",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_pickle.cpython-312-darwin.so",
+      "sha256": "90f709a72c66387e4e63016820946ff9c3f55e3cbe828a04fd1c825b003df206",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_posixsubprocess.cpython-312-darwin.so",
+      "sha256": "b31c5a9950ca9fb4498bbd42469f036bfa387c51cd18bd786e3ef6631d8c6bd4",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_random.cpython-312-darwin.so",
+      "sha256": "2c7f5f23aff45f83b8a49d4b2f37551140f20bbc00918fa639e5cc8a42135ad6",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_scproxy.cpython-312-darwin.so",
+      "sha256": "207b961cb7696719c13a64a5aa1fb9a43023060a1fd1a306c2e68061b0774326",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_sha1.cpython-312-darwin.so",
+      "sha256": "8857542d2ed0eefd4af3e183d0c20fe7f8e745aa074e2b78beb3c3f7a865af7c",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_sha2.cpython-312-darwin.so",
+      "sha256": "2523c2cd02145c5de7238a14578eafb42bb75028452fb2f6ce3b086a59b32eca",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_sha3.cpython-312-darwin.so",
+      "sha256": "3a57bced6351efb4ab244a27fc0aeca3240fe251fb6e889963b7345582b8798a",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_socket.cpython-312-darwin.so",
+      "sha256": "7791c6ae987dbb149c16119a51e6ef036d0921486f734d8d0ecf0b771f351efa",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_ssl.cpython-312-darwin.so",
+      "sha256": "77ebe53a059a096b3a13a4d41fa9fdcf1f42b904e3015bb68091e2b840b0fa47",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_statistics.cpython-312-darwin.so",
+      "sha256": "ee3de59a4bf7cb3682291b7617c62c4707e988be188ebf3d740daf9971cb9db9",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_struct.cpython-312-darwin.so",
+      "sha256": "1e6c81a25a528d945c685895b0084dc77d53e1283d6fbcc87cf00c4f137b841b",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/array.cpython-312-darwin.so",
+      "sha256": "b566ca4aa4057b141616a7ba2b30cb26d47bc85ad0283a5ebd080fad980db8e3",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/binascii.cpython-312-darwin.so",
+      "sha256": "f77acec1e6084c63b0a2cf82dad6283cb5921697840b736e35ed23db42e089e5",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/fcntl.cpython-312-darwin.so",
+      "sha256": "cf5560f6f562b7e8b800bff926be3836046d1312907caaa8934c3644bf3f0126",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/grp.cpython-312-darwin.so",
+      "sha256": "58fab21a13e96047916580d305acd4b00cd078668d5e39e30a7ce7c8b0c29be6",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/math.cpython-312-darwin.so",
+      "sha256": "fdb594de65b7b92ce20a639b24d158768b01df5620992f48d3b87e0b3233fa63",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/pyexpat.cpython-312-darwin.so",
+      "sha256": "6bd956799ba963acd3a208d870be0002acfa9d4a6ee8e799becc5da597f64143",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/resource.cpython-312-darwin.so",
+      "sha256": "bfea4ce92bb7dbb796ed6df43da8df4962abe09b36f0b2427a3f91bf58694671",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/select.cpython-312-darwin.so",
+      "sha256": "ca55a6f2c6e3fa60bbdcc2daae7b1929dd76e8efac303f7e12a2141a8dc6c86b",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/termios.cpython-312-darwin.so",
+      "sha256": "93b65ca2bc8ea841f52245fe55b23818e901fdca62d7c53f40b80db19053779d",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/unicodedata.cpython-312-darwin.so",
+      "sha256": "abb1c864053e4dd6108217b157dc4d88e69727e681fb3deaa2120c1b58cadad8",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/zlib.cpython-312-darwin.so",
+      "sha256": "ac6442fc26b057656a459082bf32ff988858df72c6db37040d4d4801de895b43",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {},
+      "undeclared_categories": []
+    },
+    {
+      "binary": "Contents/Resources/RunSpecimenEngine/runspecimen",
+      "sha256": "8676e1bb74a6faa1a9cfbf6e1aada5740af96a8ee56e64e0acd3213432a429b3",
+      "manifest": "Contents/Resources/PrivacyInfo.xcprivacy",
+      "imported_categories": {
+        "FileTimestamp": [
+          "_lstat",
+          "_stat"
+        ]
+      },
+      "undeclared_categories": []
+    }
+  ],
+  "undeclared_categories": [
+    "DiskSpace"
+  ],
+  "limits": "Imported capability is not proof of execution, valid reason applicability or Apple acceptance. Dynamic selector use and catalog changes require review. No accepted declaration is changed."
+}

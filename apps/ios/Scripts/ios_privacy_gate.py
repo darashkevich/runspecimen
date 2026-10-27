@@ -14,9 +14,9 @@ from pathlib import Path
 
 CATEGORIES={
     'UserDefaults':r'UserDefaults',
-    'FileTimestamp':r'(?m)\b_(?:stat|stat64|fstat|fstat64|fstatat|lstat|lstat64|getattrlist|getattrlistbulk|fgetattrlist|getattrlistat)\b|contentModificationDateKey|creationDateKey|fileModificationDate|^(?:creationDate|modificationDate)$',
+    'FileTimestamp':r'_NSFileModificationDate|_NSFileCreationDate|_NSURLContentModificationDateKey|_NSURLCreationDateKey|(?m)\b_(?:stat|stat64|fstat|fstat64|fstatat|lstat|lstat64|getattrlist|getattrlistbulk|fgetattrlist|getattrlistat)\b|contentModificationDateKey|creationDateKey|fileModificationDate|^(?:creationDate|modificationDate)$',
     'SystemBootTime':r'\b_mach_absolute_time\b|systemUptime',
-    'DiskSpace':r'\b_(?:statfs|statfs64|fstatfs|fstatfs64|statvfs|fstatvfs)\b|volumeAvailableCapacity|volumeTotalCapacity|systemFreeSize|systemSize',
+    'DiskSpace':r'_NSURLVolume(?:AvailableCapacity(?:ForImportantUsage|ForOpportunisticUsage)?|TotalCapacity)Key|_NSFileSystem(?:FreeSize|Size)|\b_(?:statfs|statfs64|fstatfs|fstatfs64|statvfs|fstatvfs)\b|volumeAvailableCapacity|volumeTotalCapacity|systemFreeSize|systemSize',
     'ActiveKeyboards':r'activeInputModes',
 }
 
@@ -29,6 +29,14 @@ def audit(app, symbols):
              for entry in data.get('NSPrivacyAccessedAPITypes',[])}
     if 'CA92.1' not in entries.get('NSPrivacyAccessedAPICategoryUserDefaults',[]):
         raise ValueError('Release manifest must declare app-only UserDefaults CA92.1')
+    # Codes audited for the categories this app supports. A new category/reason
+    # requires an explicit applicability review, rather than any nonempty value.
+    allowed = {'UserDefaults': {'CA92.1'}, 'FileTimestamp': {'C617.1'},
+               'DiskSpace': {'E174.1'}, 'SystemBootTime': {'35F9.1'}, 'ActiveKeyboards': {'3EC4.1'}}
+    for name,reasons in entries.items():
+        category=name.removeprefix('NSPrivacyAccessedAPICategory')
+        if not reasons or not set(reasons).issubset(allowed.get(category,set())):
+            raise ValueError(f'{category}: unreviewed required-reason code')
     found={}
     for binary,text in symbols.items():
         for category,pattern in CATEGORIES.items():
