@@ -838,6 +838,7 @@ final class CompanionSession: ObservableObject {
             try await signer.commitEnrollmentAsync(ownedBy: challengeId, publicKey: phonePublicKey)
             // A successful durable commit is the outcome, even if cancellation
             // arrived during the final write. Never leave its receipt reusable.
+            guard originatingPairing == pairingRevision else { return .enrolled }
             acceptedReceiptSignatures.insert(signature)
             if phoneChallenge?.challengeId == challengeId { phoneChallenge = nil; signedPhonePublicKey = nil }
             if originatingPairing == pairingRevision {
