@@ -4,7 +4,7 @@ import Security
 import Darwin
 @testable import RunSpecimenObserve
 
-final class ObserveSchemaTests: XCTestCase {
+final class ObserveSchemaTests: IsolatedCompanionSessionTests {
     override func setUp() {
         super.setUp()
         executionTimeAllowance = 60
