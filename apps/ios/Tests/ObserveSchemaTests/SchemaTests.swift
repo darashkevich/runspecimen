@@ -1699,6 +1699,8 @@ final class ObserveSchemaTests: IsolatedCompanionSessionTests {
                     session.isPaired = true
                     session.baseURLString = "http://successor.invalid"
                     session.phonePeerNote = "successor sentinel"
+                    session.phoneChallenge = challenge
+                    session.signedPhonePublicKey = "successor-public-key"
                 }
             }
         }
@@ -1715,6 +1717,8 @@ final class ObserveSchemaTests: IsolatedCompanionSessionTests {
             await MainActor.run {
                 XCTAssertNil(session.phoneEnrollmentFeedback)
                 XCTAssertEqual(session.phonePeerNote, "successor sentinel")
+                XCTAssertEqual(session.phoneChallenge?.challengeId, challenge.challengeId)
+                XCTAssertEqual(session.signedPhonePublicKey, "successor-public-key")
             }
             return
         }
