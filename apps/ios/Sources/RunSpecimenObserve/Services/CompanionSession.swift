@@ -1694,8 +1694,8 @@ func parseExactRun(fetched: FetchedExactRun, now: Int, pinnedHolderId: String) t
     }
     let lines = [
         "policy \(policy)",
-        "nonce \(nonce)",
-        "holder \(holderId)",
+        "nonce \(RSBA2Package.displayText(nonce))",
+        "holder \(RSBA2Package.displayText(holderId))",
         "payload \(digest)",
         "generation \(generation)",
         "key generation \(keyGeneration)",
