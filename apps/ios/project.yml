@@ -89,6 +89,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests/PhonePeerCancellationTests
+      - path: Tests/ObserveSchemaTests/SessionTestIsolation.swift
     dependencies:
       - target: RunSpecimenObserve
     settings:

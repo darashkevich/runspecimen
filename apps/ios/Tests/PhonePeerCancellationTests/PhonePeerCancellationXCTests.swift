@@ -1,7 +1,13 @@
 import XCTest
 @testable import RunSpecimenObserve
 
-final class PhonePeerCancellationXCTests: XCTestCase {
+final class PhonePeerCancellationXCTests: IsolatedCompanionSessionTests {
+
+    @MainActor
+    func testQA2CancellationTargetUsesIsolatedStorage() {
+        XCTAssertFalse(CompanionSession.storageDefaults === UserDefaults.standard)
+        XCTAssertTrue(CompanionSession.testIsolatedKeychain)
+    }
 
     override func setUp() {
         super.setUp()
