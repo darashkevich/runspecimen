@@ -73,10 +73,20 @@ final class CompanionSession: ObservableObject {
     #if RUNSPECIMEN_TEST_HOOKS
     var testHardwareRecoveryDirectory: URL?
     var testPhoneKeyStateRead: (() async -> PhonePeerKeyState)?
+    static var testDefaults: UserDefaults?
+    static var testIsolatedKeychain = false
+    static var testPairingToken: String?
     static var testTokenDelete: (() -> Void)?
     static var testTokenRead: (() -> String?)?
     static var testTokenWrite: ((String) -> OSStatus)?
     #endif
+
+    static var storageDefaults: UserDefaults {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let defaults = testDefaults { return defaults }
+        #endif
+        return .standard
+    }
 
     private let phoneKeyStage: PhoneKeyStage
 
@@ -162,7 +172,7 @@ final class CompanionSession: ObservableObject {
         #endif
 
         load()
-        pinnedHolderId = UserDefaults.standard.string(forKey: holderPinKey) ?? ""
+        pinnedHolderId = Self.storageDefaults.string(forKey: holderPinKey) ?? ""
 
         if !deferPhoneKeyState {
             refreshPhonePeerKeyState()
@@ -354,7 +364,7 @@ final class CompanionSession: ObservableObject {
     }
 
     func rememberPinnedHolderId() {
-        UserDefaults.standard.set(pinnedHolderId, forKey: holderPinKey)
+        Self.storageDefaults.set(pinnedHolderId, forKey: holderPinKey)
     }
 
     enum ConnectionState: Equatable {
@@ -1283,7 +1293,7 @@ final class CompanionSession: ObservableObject {
         lastRemoteConfirmNote = nil
         phonePeerNote = "No phone-peer signature has been returned. Signing uses the published challenge. It does not approve a run."
         exactRunNote = "No exact run is waiting for review. Phone approval is not physical presence at the Mac."
-        UserDefaults.standard.removeObject(forKey: defaultsKey)
+        Self.storageDefaults.removeObject(forKey: defaultsKey)
         deletePairingTokenFromKeychain()
     }
 
@@ -1345,7 +1355,7 @@ final class CompanionSession: ObservableObject {
         guard status == errSecSuccess else {
             throw CompanionClientError.transport("Could not save pairing token (Keychain status \(status)). Previous pairing retained.")
         }
-        UserDefaults.standard.set(publicData, forKey: defaultsKey)
+        Self.storageDefaults.set(publicData, forKey: defaultsKey)
         baseURLString = config.baseURL.absoluteString
         pairingToken = config.pairingToken
         tlsFingerprint = config.tlsFingerprint ?? ""
@@ -1353,7 +1363,7 @@ final class CompanionSession: ObservableObject {
 
     private func load() {
         if let keychainToken = loadPairingTokenFromKeychain(), !keychainToken.isEmpty {
-            if let data = UserDefaults.standard.data(forKey: defaultsKey),
+            if let data = Self.storageDefaults.data(forKey: defaultsKey),
                let config = try? JSONDecoder().decode(PairingConfig.self, from: data) {
                 baseURLString = config.baseURL.absoluteString
                 pairingToken = keychainToken
@@ -1363,7 +1373,7 @@ final class CompanionSession: ObservableObject {
             }
         }
 
-        if let data = UserDefaults.standard.data(forKey: defaultsKey),
+        if let data = Self.storageDefaults.data(forKey: defaultsKey),
            let config = try? JSONDecoder().decode(PairingConfig.self, from: data),
            !config.pairingToken.isEmpty {
             baseURLString = config.baseURL.absoluteString
@@ -1378,7 +1388,7 @@ final class CompanionSession: ObservableObject {
             var sanitized = config
             sanitized.pairingToken = ""
             if let sanitizedData = try? JSONEncoder().encode(sanitized) {
-                UserDefaults.standard.set(sanitizedData, forKey: defaultsKey)
+                Self.storageDefaults.set(sanitizedData, forKey: defaultsKey)
             }
         }
     }
@@ -1387,6 +1397,7 @@ final class CompanionSession: ObservableObject {
     private func savePairingTokenToKeychain(_ token: String) -> OSStatus {
         #if RUNSPECIMEN_TEST_HOOKS
         if let write = Self.testTokenWrite { return write(token) }
+        if Self.testIsolatedKeychain { Self.testPairingToken = token; return errSecSuccess }
         #endif
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -1409,6 +1420,7 @@ final class CompanionSession: ObservableObject {
     private func loadPairingTokenFromKeychain() -> String? {
         #if RUNSPECIMEN_TEST_HOOKS
         if let read = Self.testTokenRead { return read() }
+        if Self.testIsolatedKeychain { return Self.testPairingToken }
         #endif
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -1426,6 +1438,7 @@ final class CompanionSession: ObservableObject {
     private func deletePairingTokenFromKeychain() {
         #if RUNSPECIMEN_TEST_HOOKS
         if let delete = Self.testTokenDelete { delete(); return }
+        if Self.testIsolatedKeychain { Self.testPairingToken = nil; return }
         #endif
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
