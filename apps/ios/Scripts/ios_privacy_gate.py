@@ -14,7 +14,7 @@ from pathlib import Path
 
 CATEGORIES={
     'UserDefaults':r'UserDefaults',
-    'FileTimestamp':r'_NSFileModificationDate|_NSFileCreationDate|_NSURLContentModificationDateKey|_NSURLCreationDateKey|(?m)\b_(?:stat|stat64|fstat|fstat64|fstatat|lstat|lstat64|getattrlist|getattrlistbulk|fgetattrlist|getattrlistat)\b|contentModificationDateKey|creationDateKey|fileModificationDate|^(?:creationDate|modificationDate)$',
+    'FileTimestamp':r'(?m)_NSFileModificationDate|_NSFileCreationDate|_NSURLContentModificationDateKey|_NSURLCreationDateKey|\b_(?:stat|stat64|fstat|fstat64|fstatat|lstat|lstat64|getattrlist|getattrlistbulk|fgetattrlist|getattrlistat)\b|contentModificationDateKey|creationDateKey|fileModificationDate|^(?:creationDate|modificationDate)$',
     'SystemBootTime':r'\b_mach_absolute_time\b|systemUptime',
     'DiskSpace':r'_NSURLVolume(?:AvailableCapacity(?:ForImportantUsage|ForOpportunisticUsage)?|TotalCapacity)Key|_NSFileSystem(?:FreeSize|Size)|\b_(?:statfs|statfs64|fstatfs|fstatfs64|statvfs|fstatvfs)\b|volumeAvailableCapacity|volumeTotalCapacity|systemFreeSize|systemSize',
     'ActiveKeyboards':r'activeInputModes',
