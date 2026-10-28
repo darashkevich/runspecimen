@@ -265,11 +265,14 @@ class RunCleanupQATests(unittest.TestCase):
 
     def _wait_file(self, path: Path, cli: subprocess.Popen, timeout: float = 5.0) -> str:
         deadline = time.monotonic() + timeout
-        while not path.exists():
+        while True:
+            if path.exists():
+                text = path.read_text().strip()
+                if text:
+                    return text
             self.assertIsNone(cli.poll(), f"CLI exited before {path.name}")
             self.assertLess(time.monotonic(), deadline, f"{path.name} startup timeout")
             time.sleep(0.01)
-        return path.read_text().strip()
 
     def test_redirected_background_member_is_stopped_on_normal_exit(self):
         """P1-01: sh -c 'sleep >/dev/null 2>&1 &' must not survive completed."""
