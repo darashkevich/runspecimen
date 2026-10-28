@@ -410,7 +410,7 @@ class RunCleanupQATests(unittest.TestCase):
         try:
             with patch("runspecimen.run._proc_available", return_value=False), patch(
                 "runspecimen.run._PS_ARGV", ["/bin/false"]
-            ):
+            ), patch("runspecimen.run.sys.platform", "linux"):
                 with self.assertRaises(_GroupMembershipUnknown):
                     _live_group_members(proc.pid, 1.0)
                 self.assertTrue(_pid_alive(proc.pid))
@@ -426,6 +426,152 @@ class RunCleanupQATests(unittest.TestCase):
             if proc.poll() is None:
                 proc.kill()
             proc.wait(timeout=5)
+
+    def test_darwin_empty_group_confirms_when_ps_fails(self):
+        """macOS must not enter unbounded retain when libproc sees no live members."""
+        from runspecimen.run import _stop_process
+
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "pass"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            proc.wait(timeout=2)
+
+            class _Reaped:
+                pid = proc.pid
+                returncode = 0
+
+                def wait(self, timeout=None):
+                    return self.returncode
+
+            with patch("runspecimen.run.sys.platform", "darwin"), patch(
+                "runspecimen.run._proc_available", return_value=False
+            ), patch("runspecimen.run._PS_ARGV", ["/bin/false"]), patch(
+                "runspecimen.run._darwin_group_members",
+                return_value=[],
+                create=True,
+            ), patch(
+                "runspecimen.run.os.killpg",
+                side_effect=ProcessLookupError("ESRCH"),
+            ):
+                try:
+                    _stop_process(_Reaped())
+                except Exception as exc:
+                    self.fail(
+                        "empty Darwin group must confirm without retain, "
+                        f"got {type(exc).__name__}: {exc}"
+                    )
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=2)
+
+    def test_darwin_lists_leftover_member_when_ps_fails(self):
+        """macOS libproc must still find leftover members if /bin/ps fails."""
+        from runspecimen.run import _stop_process
+
+        td = seed_workspace()
+        pid_dir = Path(td.name)
+        leader = None
+        member_pid = 0
+        try:
+            leader = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    "import os, subprocess, sys, time\n"
+                    "from pathlib import Path\n"
+                    "Path(sys.argv[1]).write_text(str(os.getpid()))\n"
+                    "child = subprocess.Popen("
+                    "[sys.executable, '-c', 'import time; time.sleep(30)']"
+                    ")\n"
+                    "Path(sys.argv[2]).write_text(str(child.pid))\n"
+                    "time.sleep(30)\n",
+                    str(pid_dir / "leader.pid"),
+                    str(pid_dir / "member.pid"),
+                ],
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            deadline = time.monotonic() + 5
+            while not (pid_dir / "member.pid").exists():
+                self.assertIsNone(leader.poll(), "leader exited before spawning member")
+                self.assertLess(time.monotonic(), deadline, "member pid not written")
+                time.sleep(0.01)
+            member_pid = int((pid_dir / "member.pid").read_text())
+            os.kill(leader.pid, signal.SIGKILL)
+            leader.wait(timeout=2)
+            self.assertTrue(_pid_alive(member_pid), "member must survive leader reap")
+
+            class _Reaped:
+                pid = leader.pid
+                returncode = -9
+
+                def wait(self, timeout=None):
+                    return self.returncode
+
+            with patch("runspecimen.run.sys.platform", "darwin"), patch(
+                "runspecimen.run._proc_available", return_value=False
+            ), patch("runspecimen.run._PS_ARGV", ["/bin/false"]), patch(
+                "runspecimen.run._darwin_group_members",
+                side_effect=lambda pgid: [member_pid] if _pid_alive(member_pid) else [],
+                create=True,
+            ), patch(
+                "runspecimen.run.os.killpg",
+                side_effect=ProcessLookupError("ESRCH"),
+            ):
+                _stop_process(_Reaped())
+            self.assertFalse(
+                _pid_alive(member_pid),
+                "Darwin membership must still kill leftovers when ps fails",
+            )
+        finally:
+            if leader is not None and leader.poll() is None:
+                leader.kill()
+                leader.wait(timeout=2)
+            _kill_group(member_pid)
+            td.cleanup()
+
+    def test_retain_records_pending_before_notifying_cli(self):
+        """CLI must not learn cleanup_pending before that phase is on disk."""
+        from runspecimen import run as run_mod
+        from runspecimen.errors import RunError
+
+        order: list[str] = []
+
+        def fake_update(_state_dir, **fields):
+            order.append(str(fields.get("phase") or "update"))
+
+        def fake_notify(_message: str) -> None:
+            order.append("notify")
+
+        class _Proc:
+            pid = 1
+            returncode = -9
+
+        exc = run_mod._CleanupUnconfirmed(_Proc(), "denied")
+        td = seed_workspace()
+        try:
+            with patch.object(run_mod, "_cleanup_notification", fake_notify), patch.object(
+                run_mod, "update_state", fake_update
+            ), patch.object(run_mod, "_stop_process"), patch.object(
+                run_mod.EventLog, "for_state_dir", side_effect=OSError("no log")
+            ):
+                with self.assertRaises(RunError):
+                    run_mod._retain_cleanup(exc, Path(td.name))
+            self.assertIn("cleanup_pending", order)
+            self.assertIn("notify", order)
+            self.assertLess(
+                order.index("cleanup_pending"),
+                order.index("notify"),
+                f"persist must precede notify: {order}",
+            )
+        finally:
+            td.cleanup()
 
     def test_interrupt_after_leader_exit_stops_background_member(self):
         """P1-01: SIGTERM after the leader has exited still stops the group."""

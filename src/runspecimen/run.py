@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import contextlib
 import contextvars
+import ctypes
+import errno
 import selectors
 import signal
 import subprocess
@@ -212,7 +214,16 @@ def _supervise_process(proc, stdout: _Capture, stderr: _Capture, deadline: float
         selector.close()
 
 
-_PS_ARGV = ["/bin/ps", "-axo", "pid=,pgid=,stat="]
+def _default_ps_argv() -> list[str]:
+    # Darwin's keyword is ``state``; Linux procps accepts ``stat``.
+    column = "state=" if sys.platform == "darwin" else "stat="
+    return ["/bin/ps", "-axo", f"pid=,pgid=,{column}"]
+
+
+_PS_ARGV = _default_ps_argv()
+_DARWIN_PROC_PGRP_ONLY = 2
+_DARWIN_PROC_PIDTBSDINFO = 3
+_DARWIN_SZOMB = 5
 
 
 def _proc_available() -> bool:
@@ -222,11 +233,17 @@ def _proc_available() -> bool:
 def _live_group_members(pgid: int, timeout: float) -> list[int]:
     """Return PIDs of non-zombie processes in the given process group.
 
-    Uses /proc on Linux, /bin/ps on other systems. A failed probe raises
-    ``_GroupMembershipUnknown``; it must not be treated as "no members".
+    Uses /proc on Linux, libproc on Darwin, and /bin/ps as a last resort.
+    A failed probe raises ``_GroupMembershipUnknown``; it must not be
+    treated as "no members".
     """
     if _proc_available():
         return _proc_group_members(pgid)
+    if sys.platform == "darwin":
+        try:
+            return _darwin_group_members(pgid)
+        except _GroupMembershipUnknown:
+            pass
     return _ps_group_members(pgid, timeout)
 
 
@@ -250,6 +267,111 @@ def _proc_group_members(pgid: int) -> list[int]:
                 members.append(int(entry.name))
         except (FileNotFoundError, ProcessLookupError, IndexError, ValueError, OSError):
             continue
+    return members
+
+
+class _DarwinProcBsdInfo(ctypes.Structure):
+    """Prefix of ``struct proc_bsdinfo`` used by ``proc_pidinfo``.
+
+    Layout matches ``tests/launch_fault_harness.py``; Darwin CI already
+    exercises that size against libproc.
+    """
+
+    _fields_ = [
+        ("pbi_flags", ctypes.c_uint32),
+        ("pbi_status", ctypes.c_uint32),
+        ("pbi_xstatus", ctypes.c_uint32),
+        ("pbi_pid", ctypes.c_uint32),
+        ("pbi_ppid", ctypes.c_uint32),
+        ("pbi_uid", ctypes.c_uint32),
+        ("pbi_gid", ctypes.c_uint32),
+        ("pbi_ruid", ctypes.c_uint32),
+        ("pbi_rgid", ctypes.c_uint32),
+        ("pbi_svuid", ctypes.c_uint32),
+        ("pbi_svgid", ctypes.c_uint32),
+        ("rfu_1", ctypes.c_uint32),
+        ("pbi_comm", ctypes.c_char * 16),
+        ("pbi_name", ctypes.c_char * 32),
+        ("pbi_nfiles", ctypes.c_uint32),
+        ("pbi_pgid", ctypes.c_uint32),
+        ("pbi_pjobc", ctypes.c_uint32),
+        ("e_tdev", ctypes.c_uint32),
+        ("e_tpgid", ctypes.c_uint32),
+        ("pbi_nice", ctypes.c_int32),
+        ("pbi_start_tvsec", ctypes.c_uint64),
+        ("pbi_start_tvusec", ctypes.c_uint64),
+    ]
+
+
+def _darwin_libproc():
+    try:
+        lib = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+    except OSError as exc:
+        raise _GroupMembershipUnknown(f"libproc unavailable: {exc}") from exc
+    try:
+        lib.proc_listpids.argtypes = [
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_void_p,
+            ctypes.c_int,
+        ]
+        lib.proc_listpids.restype = ctypes.c_int
+        lib.proc_pidinfo.argtypes = [
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_uint64,
+            ctypes.c_void_p,
+            ctypes.c_int,
+        ]
+        lib.proc_pidinfo.restype = ctypes.c_int
+    except AttributeError as exc:
+        raise _GroupMembershipUnknown(f"libproc missing symbols: {exc}") from exc
+    return lib
+
+
+def _darwin_pid_is_live(lib, pid: int) -> bool:
+    info = _DarwinProcBsdInfo()
+    size = ctypes.sizeof(info)
+    ctypes.set_errno(0)
+    ret = lib.proc_pidinfo(pid, _DARWIN_PROC_PIDTBSDINFO, 0, ctypes.byref(info), size)
+    err = ctypes.get_errno()
+    if ret <= 0:
+        if err in {0, errno.ESRCH, errno.ENOENT}:
+            return False
+        raise _GroupMembershipUnknown(f"proc_pidinfo({pid}) failed: errno={err}")
+    if ret < size or int(info.pbi_pid) != pid:
+        raise _GroupMembershipUnknown("proc_bsdinfo is not this pid")
+    return int(info.pbi_status) != _DARWIN_SZOMB
+
+
+def _darwin_group_members(pgid: int) -> list[int]:
+    """Live (non-zombie) members of *pgid* via Darwin libproc."""
+    lib = _darwin_libproc()
+    ctypes.set_errno(0)
+    needed = lib.proc_listpids(_DARWIN_PROC_PGRP_ONLY, pgid, None, 0)
+    if needed < 0:
+        raise _GroupMembershipUnknown(
+            f"proc_listpids failed: errno={ctypes.get_errno()}"
+        )
+    if needed == 0:
+        return []
+    # Extra slots: the group can grow between the size probe and the read.
+    buf_bytes = int(needed) + 16 * ctypes.sizeof(ctypes.c_uint32)
+    count = buf_bytes // ctypes.sizeof(ctypes.c_uint32)
+    buf = (ctypes.c_uint32 * count)()
+    ctypes.set_errno(0)
+    got = lib.proc_listpids(_DARWIN_PROC_PGRP_ONLY, pgid, buf, buf_bytes)
+    if got < 0:
+        raise _GroupMembershipUnknown(
+            f"proc_listpids failed: errno={ctypes.get_errno()}"
+        )
+    members = []
+    for index in range(got // ctypes.sizeof(ctypes.c_uint32)):
+        pid = int(buf[index])
+        if pid <= 0:
+            continue
+        if _darwin_pid_is_live(lib, pid):
+            members.append(pid)
     return members
 
 
@@ -368,12 +490,11 @@ def _retain_cleanup(exc: _CleanupUnconfirmed, state_dir: Path) -> None:
     result = "interrupted" if exc.interrupted else "failed"
     message = f"Cleanup unresolved; supervisor pid={os.getpid()}; lease retained. {exc}"
 
-    if _cleanup_notification is not None:
-        _cleanup_notification(message)
-
     recorded_pending = False
     log: EventLog | None = None
-    while True:
+
+    def record_pending() -> None:
+        nonlocal recorded_pending, log
         if not recorded_pending:
             try:
                 update_state(
@@ -395,6 +516,16 @@ def _retain_cleanup(exc: _CleanupUnconfirmed, state_dir: Path) -> None:
                 log.append("cleanup_pending", {"error": message})
             except OSError:
                 log = None
+
+    # Persist first so the CLI cannot observe phase=running after a retain
+    # notification. If the directory is unwritable, still notify so the CLI
+    # can return while the lease stays held (P2-02).
+    record_pending()
+    if _cleanup_notification is not None:
+        _cleanup_notification(message)
+
+    while True:
+        record_pending()
         try:
             _stop_process(exc.proc)
         except _CleanupUnconfirmed:
