@@ -319,6 +319,7 @@ class RunCleanupQATests(unittest.TestCase):
             with patch("runspecimen.run.sys.platform", "darwin"), patch(
                 "runspecimen.run.os.waitid",
                 side_effect=AssertionError("waitid must not run off linux"),
+                create=True,
             ):
                 while not _leader_exited_unreaped(proc):
                     self.assertLess(
