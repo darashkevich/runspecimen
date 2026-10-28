@@ -619,7 +619,10 @@ class HolderSocketAdmissionTests(unittest.TestCase):
 
         t = threading.Thread(target=stall)
         t.start()
-        time.sleep(0.05)
+        self.assertTrue(
+            server.wait_for_admission_slot(2.0),
+            "stall thread did not take the admission slot",
+        )
         # While stalled connection holds admission, second client is refused.
         sock2 = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock2.connect(str(server.socket_path))
