@@ -21,8 +21,10 @@ outside ``cleanup_confirmed``.
 from __future__ import annotations
 
 import argparse
+import errno
 import os
 import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -44,14 +46,114 @@ def bind_argv(
     return argv
 
 
-def _pid_alive(pid: int) -> bool:
+def _read_pid_state(pid: int) -> str | None:
+    """Return the kernel state letter, or None when it cannot be read."""
+    proc_stat = Path(f"/proc/{pid}/stat")
+    try:
+        content = proc_stat.read_text()
+    except FileNotFoundError:
+        if Path("/proc/self/stat").exists():
+            return None
+    except OSError:
+        return None
+    else:
+        try:
+            return content.rsplit(")", 1)[1].split()[0]
+        except (IndexError, ValueError):
+            return None
+    try:
+        result = subprocess.run(
+            ["/bin/ps", "-p", str(pid), "-o", "state="],
+            capture_output=True,
+            text=True,
+            timeout=0.2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    state = result.stdout.strip()
+    return state or None
+
+
+def _pid_status(pid: int) -> str:
+    """Return gone, zombie, live, or unknown."""
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
-        return False
+        return "gone"
     except PermissionError:
-        return True
-    return True
+        pass
+    state = _read_pid_state(pid)
+    if state is None:
+        return "unknown"
+    if state.startswith("Z"):
+        return "zombie"
+    return "live"
+
+
+def _pid_alive(pid: int) -> bool:
+    """True only for a process that is not gone and not a zombie.
+
+    ``kill(pid, 0)`` succeeds on an unreaped zombie. The watchdog must not
+    treat that as a live supervisor (PR80-P2-04).
+    """
+    return _pid_status(pid) in {"live", "unknown"}
+
+
+def _payload_group_live_members(pgid: int) -> list[int] | None:
+    """Non-zombie members of *pgid*, or None when membership is unknown."""
+    if Path("/proc/self/stat").exists():
+        try:
+            entries = list(Path("/proc").iterdir())
+        except OSError:
+            return None
+        members: list[int] = []
+        for entry in entries:
+            if not entry.name.isdigit():
+                continue
+            try:
+                stat_content = (entry / "stat").read_text()
+                tail = stat_content.rsplit(")", 1)[1].split()
+                state = tail[0]
+                pgrp = int(tail[2])
+            except FileNotFoundError:
+                continue
+            except (IndexError, ValueError, ProcessLookupError):
+                continue
+            except OSError as exc:
+                if getattr(exc, "errno", None) in {errno.ENOENT, errno.ESRCH}:
+                    continue
+                return None
+            else:
+                if pgrp == pgid and state != "Z":
+                    members.append(int(entry.name))
+        return members
+    try:
+        result = subprocess.run(
+            ["/bin/ps", "-axo", "pid=,pgid=,state="],
+            capture_output=True,
+            text=True,
+            timeout=0.2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    members = []
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        try:
+            pid = int(parts[0])
+            group = int(parts[1])
+            state = parts[2]
+        except ValueError:
+            continue
+        if group == pgid and not state.startswith("Z"):
+            members.append(pid)
+    return members
 
 
 def _set_pdeathsig(sig: int = signal.SIGKILL) -> bool:
@@ -93,14 +195,21 @@ def _run_watchdog(parent: int, payload_pgid: int) -> None:
         pass
     _detach_stdio()
     while True:
-        if not _pid_alive(parent):
-            try:
-                os.killpg(payload_pgid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
-            os._exit(1)
-        if os.getppid() == 1:
+        status = _pid_status(parent)
+        reparented = os.getppid() == 1
+        if status == "live" and reparented:
+            # Payload already exited; the supervisor still holds the lease.
             os._exit(0)
+        if status in {"live", "unknown"} and not reparented:
+            time.sleep(0.02)
+            continue
+        try:
+            os.killpg(payload_pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        members = _payload_group_live_members(payload_pgid)
+        if members == []:
+            os._exit(1)
         time.sleep(0.02)
 
 

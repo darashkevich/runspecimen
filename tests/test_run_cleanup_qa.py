@@ -7,6 +7,7 @@ cleanup/supervisor fixes.
 
 from __future__ import annotations
 
+import ctypes
 import errno
 import json
 import os
@@ -48,6 +49,95 @@ FAST_JOB = (
     "print('done')\n"
 )
 
+# Same-group child that drops PDEATHSIG so SIGKILL of the supervisor does not
+# take it with the payload. The bind watchdog must still stop it.
+CHILD_SURVIVES_JOB = (
+    "import ctypes, os, signal, time\n"
+    "from pathlib import Path\n"
+    "for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):\n"
+    "    signal.signal(sig, signal.SIG_IGN)\n"
+    "child = os.fork()\n"
+    "if child == 0:\n"
+    "    try:\n"
+    "        ctypes.CDLL(None, use_errno=True).prctl(1, 0, 0, 0, 0)\n"
+    "    except Exception:\n"
+    "        pass\n"
+    "    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):\n"
+    "        signal.signal(sig, signal.SIG_IGN)\n"
+    "    Path('outputs/child.pid').write_text(str(os.getpid()))\n"
+    "    while True:\n"
+    "        time.sleep(0.02)\n"
+    "Path('outputs/pid').write_text(str(os.getpid()))\n"
+    "while True:\n"
+    "    time.sleep(0.02)\n"
+)
+
+
+class _FakeDarwinLib:
+    """libproc stand-in. Tests must call _darwin_group_members, not stub it."""
+
+    def __init__(
+        self,
+        *,
+        needed: int | None = None,
+        needed_errno: int = 0,
+        got: int | None = None,
+        got_errno: int = 0,
+        pids: list[int] | None = None,
+        info_ret: int | None = None,
+        info_errno: int = 0,
+        pgid: int | None = None,
+        zombie_pids: frozenset[int] | None = None,
+        pids_fn=None,
+    ) -> None:
+        self.needed = needed
+        self.needed_errno = needed_errno
+        self.got = got
+        self.got_errno = got_errno
+        self.pids = list(pids or [])
+        self.info_ret = info_ret
+        self.info_errno = info_errno
+        self.pgid = pgid
+        self.zombie_pids = zombie_pids or frozenset()
+        self.pids_fn = pids_fn
+
+    def _live_pids(self) -> list[int]:
+        if self.pids_fn is not None:
+            return list(self.pids_fn())
+        return list(self.pids)
+
+    def proc_listpids(self, _flavor, _pgid, buf, size):
+        pids = self._live_pids()
+        unit = ctypes.sizeof(ctypes.c_uint32)
+        if buf is None or size == 0:
+            ctypes.set_errno(self.needed_errno)
+            if self.needed is not None:
+                return self.needed
+            return len(pids) * unit
+        ctypes.set_errno(self.got_errno)
+        if self.got is not None:
+            if self.got > 0:
+                for i, pid in enumerate(pids[: size // unit]):
+                    buf[i] = pid
+            return self.got
+        n = min(len(pids), size // unit)
+        for i in range(n):
+            buf[i] = pids[i]
+        return n * unit
+
+    def proc_pidinfo(self, pid, _flavor, _extra, dest, size):
+        ctypes.set_errno(self.info_errno)
+        if self.info_ret is not None:
+            return self.info_ret
+        from runspecimen.run import _DARWIN_SZOMB, _DarwinProcBsdInfo
+
+        info = _DarwinProcBsdInfo()
+        info.pbi_pid = int(pid)
+        info.pbi_pgid = int(self.pgid if self.pgid is not None else pid)
+        info.pbi_status = _DARWIN_SZOMB if int(pid) in self.zombie_pids else 0
+        ctypes.memmove(dest, ctypes.byref(info), min(int(size), ctypes.sizeof(info)))
+        return ctypes.sizeof(info)
+
 
 def _pid_alive(pid: int) -> bool:
     try:
@@ -55,6 +145,23 @@ def _pid_alive(pid: int) -> bool:
         return True
     except ProcessLookupError:
         return False
+
+
+def _pid_live(pid: int) -> bool:
+    """True for a non-zombie process. ``kill(pid, 0)`` succeeds on zombies."""
+    if pid <= 0:
+        return False
+    try:
+        content = Path(f"/proc/{pid}/stat").read_text()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return _pid_alive(pid)
+    try:
+        state = content.rsplit(")", 1)[1].split()[0]
+    except (IndexError, ValueError):
+        return _pid_alive(pid)
+    return not state.startswith("Z")
 
 
 def _kill_group(pid: int) -> None:
@@ -431,7 +538,7 @@ class RunCleanupQATests(unittest.TestCase):
 
     def test_darwin_empty_group_confirms_when_ps_fails(self):
         """macOS must not enter unbounded retain when libproc sees no live members."""
-        from runspecimen.run import _stop_process
+        from runspecimen.run import _darwin_group_members, _stop_process
 
         proc = subprocess.Popen(
             [sys.executable, "-c", "pass"],
@@ -449,23 +556,25 @@ class RunCleanupQATests(unittest.TestCase):
                 def wait(self, timeout=None):
                     return self.returncode
 
+            empty = _FakeDarwinLib(needed=0, needed_errno=0, pids=[])
             with patch("runspecimen.run.sys.platform", "darwin"), patch(
                 "runspecimen.run._proc_available", return_value=False
             ), patch("runspecimen.run._PS_ARGV", ["/bin/false"]), patch(
-                "runspecimen.run._darwin_group_members",
-                return_value=[],
-                create=True,
-            ), patch(
-                "runspecimen.run.os.killpg",
-                side_effect=ProcessLookupError("ESRCH"),
+                "runspecimen.run._darwin_libproc",
+                return_value=empty,
             ):
-                try:
-                    _stop_process(_Reaped())
-                except Exception as exc:
-                    self.fail(
-                        "empty Darwin group must confirm without retain, "
-                        f"got {type(exc).__name__}: {exc}"
-                    )
+                self.assertEqual(_darwin_group_members(proc.pid), [])
+                with patch(
+                    "runspecimen.run.os.killpg",
+                    side_effect=ProcessLookupError("ESRCH"),
+                ):
+                    try:
+                        _stop_process(_Reaped())
+                    except Exception as exc:
+                        self.fail(
+                            "empty Darwin group must confirm without retain, "
+                            f"got {type(exc).__name__}: {exc}"
+                        )
         finally:
             if proc.poll() is None:
                 proc.kill()
@@ -516,12 +625,15 @@ class RunCleanupQATests(unittest.TestCase):
                 def wait(self, timeout=None):
                     return self.returncode
 
+            lib = _FakeDarwinLib(
+                pgid=leader.pid,
+                pids_fn=lambda: [member_pid] if _pid_alive(member_pid) else [],
+            )
             with patch("runspecimen.run.sys.platform", "darwin"), patch(
                 "runspecimen.run._proc_available", return_value=False
             ), patch("runspecimen.run._PS_ARGV", ["/bin/false"]), patch(
-                "runspecimen.run._darwin_group_members",
-                side_effect=lambda pgid: [member_pid] if _pid_alive(member_pid) else [],
-                create=True,
+                "runspecimen.run._darwin_libproc",
+                return_value=lib,
             ), patch(
                 "runspecimen.run.os.killpg",
                 side_effect=ProcessLookupError("ESRCH"),
@@ -794,6 +906,193 @@ class RunCleanupQATests(unittest.TestCase):
                 self.assertIn("unconfirmed", str(ctx.exception).lower())
             self.assertTrue(_pid_alive(proc.pid))
             self.assertIsNone(proc.returncode)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=5)
+
+    def test_unreaped_zombie_is_not_alive_to_the_watchdog(self):
+        """P2-04: kill(pid, 0) succeeds on a zombie; the watchdog must not."""
+        from runspecimen.run_bind_exec import _pid_alive as watchdog_alive
+
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "pass"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        try:
+            deadline = time.monotonic() + 2
+            state = None
+            while time.monotonic() < deadline:
+                try:
+                    state = (
+                        Path(f"/proc/{proc.pid}/stat")
+                        .read_text()
+                        .rsplit(")", 1)[1]
+                        .split()[0]
+                    )
+                except (FileNotFoundError, IndexError, OSError):
+                    state = None
+                if state == "Z":
+                    break
+                time.sleep(0.01)
+            self.assertEqual(state, "Z", "need an unreaped zombie")
+            os.kill(proc.pid, 0)
+            self.assertFalse(
+                watchdog_alive(proc.pid),
+                "watchdog must not treat an unreaped zombie as alive",
+            )
+        finally:
+            proc.wait(timeout=2)
+
+    def test_zombie_supervisor_does_not_free_lease_while_group_member_lives(self):
+        """P2-04: SIGSTOP CLI then SIGKILL supervisor must not drop the lease."""
+        td = seed_workspace(CHILD_SURVIVES_JOB)
+        ws = Path(td.name)
+        cli = None
+        contract_pid = 0
+        child_pid = 0
+        try:
+            contract = self._approve_contract(ws, CHILD_SURVIVES_JOB, wall_sec=8)
+            cli = self._start_cli(ws, contract)
+            contract_pid = int(self._wait_file(ws / "outputs" / "pid", cli))
+            child_pid = int(self._wait_file(ws / "outputs" / "child.pid", cli))
+            lease = Lease.for_workspace(ws, holder="probe")
+            meta = lease.read_meta()
+            self.assertIsNotNone(meta)
+            supervisor_pid = int(meta.pid)
+            self.assertNotEqual(supervisor_pid, cli.pid)
+            self.assertNotEqual(supervisor_pid, contract_pid)
+            os.kill(cli.pid, signal.SIGSTOP)
+            os.kill(supervisor_pid, signal.SIGKILL)
+            deadline = time.monotonic() + 8
+            while _pid_live(child_pid):
+                self.assertTrue(
+                    lease.is_locked_by_other(),
+                    "watchdog released the lease while a live group member remained",
+                )
+                self.assertLess(
+                    time.monotonic(),
+                    deadline,
+                    "same-group child survived supervisor death past the cleanup window",
+                )
+                time.sleep(0.02)
+            self.assertFalse(
+                _pid_live(child_pid),
+                "watchdog must SIGKILL the payload group, not only drop the lease",
+            )
+        finally:
+            if cli is not None and cli.poll() is None:
+                try:
+                    os.kill(cli.pid, signal.SIGCONT)
+                except ProcessLookupError:
+                    pass
+                cli.kill()
+                cli.communicate(timeout=5)
+            _kill_group(contract_pid)
+            _kill_group(child_pid)
+            td.cleanup()
+
+    def test_darwin_listpids_zero_with_errno_is_unknown(self):
+        """P2-05: Apple libproc returns 0 on error; that is not an empty group."""
+        from runspecimen.run import (
+            _CleanupUnconfirmed,
+            _GroupMembershipUnknown,
+            _darwin_group_members,
+            _stop_process,
+        )
+
+        err_lib = _FakeDarwinLib(needed=0, needed_errno=errno.EPERM, pids=[])
+        with patch("runspecimen.run._darwin_libproc", return_value=err_lib):
+            with self.assertRaises(_GroupMembershipUnknown):
+                _darwin_group_members(1)
+
+        size_then_fail = _FakeDarwinLib(
+            needed=16,
+            needed_errno=0,
+            got=0,
+            got_errno=errno.EIO,
+            pids=[1],
+        )
+        with patch("runspecimen.run._darwin_libproc", return_value=size_then_fail):
+            with self.assertRaises(_GroupMembershipUnknown):
+                _darwin_group_members(1)
+
+        drop_pid = _FakeDarwinLib(
+            pids=[os.getpid()],
+            pgid=os.getpid(),
+            info_ret=0,
+            info_errno=0,
+        )
+        with patch("runspecimen.run._darwin_libproc", return_value=drop_pid):
+            with self.assertRaises(_GroupMembershipUnknown):
+                _darwin_group_members(os.getpid())
+
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            with patch("runspecimen.run.sys.platform", "darwin"), patch(
+                "runspecimen.run._proc_available", return_value=False
+            ), patch("runspecimen.run._PS_ARGV", ["/bin/false"]), patch(
+                "runspecimen.run._darwin_libproc",
+                return_value=_FakeDarwinLib(
+                    needed=0, needed_errno=errno.EPERM, pids=[]
+                ),
+            ), patch(
+                "runspecimen.run.os.killpg",
+                side_effect=PermissionError(errno.EPERM, "Operation not permitted"),
+            ):
+                with self.assertRaises(_CleanupUnconfirmed):
+                    _stop_process(proc)
+            self.assertTrue(_pid_alive(proc.pid), "failed libproc must not confirm death")
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=5)
+
+    def test_unreadable_proc_stat_is_unknown_not_empty(self):
+        """P2-06: EACCES on /proc/<pid>/stat is unknown membership, not absent."""
+        from runspecimen.run import (
+            _CleanupUnconfirmed,
+            _GroupMembershipUnknown,
+            _proc_group_members,
+            _stop_process,
+        )
+
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        real_read = Path.read_text
+
+        def hidden_stat(self: Path, *args, **kwargs):
+            if self.name == "stat" and self.parent.name == str(proc.pid):
+                raise PermissionError(errno.EACCES, "hidepid")
+            return real_read(self, *args, **kwargs)
+
+        try:
+            with patch.object(Path, "read_text", hidden_stat):
+                with self.assertRaises(_GroupMembershipUnknown):
+                    _proc_group_members(proc.pid)
+                with patch(
+                    "runspecimen.run.os.killpg",
+                    side_effect=PermissionError(
+                        errno.EPERM, "Operation not permitted"
+                    ),
+                ):
+                    with self.assertRaises(_CleanupUnconfirmed):
+                        _stop_process(proc)
+            self.assertTrue(
+                _pid_alive(proc.pid),
+                "unreadable stat must not confirm an empty group",
+            )
         finally:
             if proc.poll() is None:
                 proc.kill()

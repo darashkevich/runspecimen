@@ -290,8 +290,16 @@ def _proc_group_members(pgid: int) -> list[int]:
             pgrp = int(tail[2])
             if pgrp == pgid and state != "Z":
                 members.append(int(entry.name))
-        except (FileNotFoundError, ProcessLookupError, IndexError, ValueError, OSError):
+        except (FileNotFoundError, ProcessLookupError):
             continue
+        except (IndexError, ValueError):
+            continue
+        except OSError as exc:
+            if getattr(exc, "errno", None) in {errno.ENOENT, errno.ESRCH}:
+                continue
+            raise _GroupMembershipUnknown(
+                f"cannot read {entry}/stat: {exc}"
+            ) from exc
     return members
 
 
@@ -357,7 +365,7 @@ def _darwin_pid_info(lib, pid: int):
     ret = lib.proc_pidinfo(pid, _DARWIN_PROC_PIDTBSDINFO, 0, ctypes.byref(info), size)
     err = ctypes.get_errno()
     if ret <= 0:
-        if err in {0, errno.ESRCH, errno.ENOENT}:
+        if err in {errno.ESRCH, errno.ENOENT}:
             return None
         raise _GroupMembershipUnknown(f"proc_pidinfo({pid}) failed: errno={err}")
     if ret < size or int(info.pbi_pid) != pid:
@@ -375,20 +383,28 @@ def _darwin_group_members(pgid: int) -> list[int]:
     lib = _darwin_libproc()
     ctypes.set_errno(0)
     needed = lib.proc_listpids(_DARWIN_PROC_PGRP_ONLY, pgid, None, 0)
+    needed_err = ctypes.get_errno()
     if needed < 0:
         raise _GroupMembershipUnknown(
-            f"proc_listpids failed: errno={ctypes.get_errno()}"
+            f"proc_listpids failed: errno={needed_err}"
         )
     if needed == 0:
+        # Apple's libproc returns 0 on __proc_info failure as well as on an
+        # empty listing. errno 0 (after set_errno) is a verified-empty set.
+        if needed_err not in {0, errno.ESRCH, errno.ENOENT}:
+            raise _GroupMembershipUnknown(
+                f"proc_listpids failed: errno={needed_err}"
+            )
         return []
     buf_bytes = int(needed) + 16 * ctypes.sizeof(ctypes.c_uint32)
     count = buf_bytes // ctypes.sizeof(ctypes.c_uint32)
     buf = (ctypes.c_uint32 * count)()
     ctypes.set_errno(0)
     got = lib.proc_listpids(_DARWIN_PROC_PGRP_ONLY, pgid, buf, buf_bytes)
-    if got < 0:
+    got_err = ctypes.get_errno()
+    if got < 0 or got == 0:
         raise _GroupMembershipUnknown(
-            f"proc_listpids failed: errno={ctypes.get_errno()}"
+            f"proc_listpids failed: errno={got_err}"
         )
     members = []
     for index in range(got // ctypes.sizeof(ctypes.c_uint32)):
