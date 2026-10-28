@@ -233,17 +233,18 @@ def _proc_available() -> bool:
 def _live_group_members(pgid: int, timeout: float) -> list[int]:
     """Return PIDs of non-zombie processes in the given process group.
 
-    Uses /proc on Linux, libproc on Darwin, and /bin/ps as a last resort.
-    A failed probe raises ``_GroupMembershipUnknown``; it must not be
-    treated as "no members".
+    Uses /proc on Linux. On Darwin, ``ps`` with the BSD ``state`` column
+    is first; libproc is only a fallback, and every pid it returns is
+    re-checked against ``pbi_pgid``. A failed probe raises
+    ``_GroupMembershipUnknown``; it must not be treated as "no members".
     """
     if _proc_available():
         return _proc_group_members(pgid)
     if sys.platform == "darwin":
         try:
-            return _darwin_group_members(pgid)
+            return _ps_group_members(pgid, timeout)
         except _GroupMembershipUnknown:
-            pass
+            return _darwin_group_members(pgid)
     return _ps_group_members(pgid, timeout)
 
 
@@ -271,11 +272,7 @@ def _proc_group_members(pgid: int) -> list[int]:
 
 
 class _DarwinProcBsdInfo(ctypes.Structure):
-    """Prefix of ``struct proc_bsdinfo`` used by ``proc_pidinfo``.
-
-    Layout matches ``tests/launch_fault_harness.py``; Darwin CI already
-    exercises that size against libproc.
-    """
+    """Prefix of Darwin ``struct proc_bsdinfo`` used by ``proc_pidinfo``."""
 
     _fields_ = [
         ("pbi_flags", ctypes.c_uint32),
@@ -329,7 +326,7 @@ def _darwin_libproc():
     return lib
 
 
-def _darwin_pid_is_live(lib, pid: int) -> bool:
+def _darwin_pid_info(lib, pid: int):
     info = _DarwinProcBsdInfo()
     size = ctypes.sizeof(info)
     ctypes.set_errno(0)
@@ -337,15 +334,20 @@ def _darwin_pid_is_live(lib, pid: int) -> bool:
     err = ctypes.get_errno()
     if ret <= 0:
         if err in {0, errno.ESRCH, errno.ENOENT}:
-            return False
+            return None
         raise _GroupMembershipUnknown(f"proc_pidinfo({pid}) failed: errno={err}")
     if ret < size or int(info.pbi_pid) != pid:
         raise _GroupMembershipUnknown("proc_bsdinfo is not this pid")
-    return int(info.pbi_status) != _DARWIN_SZOMB
+    return info
 
 
 def _darwin_group_members(pgid: int) -> list[int]:
-    """Live (non-zombie) members of *pgid* via Darwin libproc."""
+    """Live (non-zombie) members of *pgid* via Darwin libproc.
+
+    ``proc_listpids`` can over-report. Keep a pid only when
+    ``pbi_pgid`` matches, so a broad listing cannot become a
+    system-wide SIGKILL / EPERM retain loop.
+    """
     lib = _darwin_libproc()
     ctypes.set_errno(0)
     needed = lib.proc_listpids(_DARWIN_PROC_PGRP_ONLY, pgid, None, 0)
@@ -355,7 +357,6 @@ def _darwin_group_members(pgid: int) -> list[int]:
         )
     if needed == 0:
         return []
-    # Extra slots: the group can grow between the size probe and the read.
     buf_bytes = int(needed) + 16 * ctypes.sizeof(ctypes.c_uint32)
     count = buf_bytes // ctypes.sizeof(ctypes.c_uint32)
     buf = (ctypes.c_uint32 * count)()
@@ -370,8 +371,14 @@ def _darwin_group_members(pgid: int) -> list[int]:
         pid = int(buf[index])
         if pid <= 0:
             continue
-        if _darwin_pid_is_live(lib, pid):
-            members.append(pid)
+        info = _darwin_pid_info(lib, pid)
+        if info is None:
+            continue
+        if int(info.pbi_status) == _DARWIN_SZOMB:
+            continue
+        if int(info.pbi_pgid) != pgid:
+            continue
+        members.append(pid)
     return members
 
 
