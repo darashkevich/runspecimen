@@ -7,6 +7,7 @@ cleanup/supervisor fixes.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import signal
@@ -621,6 +622,181 @@ class RunCleanupQATests(unittest.TestCase):
                 cli.kill()
                 cli.communicate(timeout=5)
             td.cleanup()
+
+    def test_eperm_on_zombie_only_group_proceeds_to_reap(self):
+        """Zombie-only EPERM is not a live deny; verified-empty may reap.
+
+        Darwin: killpg on an unreaped zombie-only group returns EPERM, not
+        ESRCH (XNU skips SZOMB, POSIX EPERM). Linux killpg on that group is
+        ESRCH, so PermissionError is injected. Membership is the real Linux
+        /proc probe, which already excludes zombies. Simulated: the EPERM.
+        """
+        from runspecimen.run import (
+            _kill_process_group,
+            _leader_exited_unreaped,
+            _stop_process,
+        )
+
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "pass"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            deadline = time.monotonic() + 2
+            while not _leader_exited_unreaped(proc):
+                self.assertLess(
+                    time.monotonic(),
+                    deadline,
+                    "leader did not become an unreaped zombie",
+                )
+                time.sleep(0.01)
+            self.assertIsNone(proc.returncode, "leader must stay unreaped until stop")
+
+            eperm = PermissionError(errno.EPERM, "Operation not permitted")
+            with patch("runspecimen.run.os.killpg", side_effect=eperm):
+                try:
+                    _kill_process_group(proc)
+                except Exception as exc:
+                    self.fail(
+                        "zombie-only EPERM must not stay unconfirmed on "
+                        f"_kill_process_group: {type(exc).__name__}: {exc}"
+                    )
+                try:
+                    _stop_process(proc)
+                except Exception as exc:
+                    self.fail(
+                        "zombie-only EPERM must not stay unconfirmed on "
+                        f"_stop_process: {type(exc).__name__}: {exc}"
+                    )
+            self.assertIsNotNone(proc.returncode, "verified-empty EPERM must reap")
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=2)
+
+    def test_eperm_with_live_members_stays_unconfirmed(self):
+        """EPERM plus a live descendant must retain, not reap or ignore.
+
+        Simulated: PermissionError from killpg. Membership is a real leftover
+        member still in the leader's group after the leader was reaped.
+        """
+        from runspecimen.run import _CleanupUnconfirmed, _kill_process_group, _stop_process
+
+        td = seed_workspace()
+        pid_dir = Path(td.name)
+        leader = None
+        member_pid = 0
+        try:
+            leader = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    "import os, subprocess, sys, time\n"
+                    "from pathlib import Path\n"
+                    "Path(sys.argv[1]).write_text(str(os.getpid()))\n"
+                    "child = subprocess.Popen("
+                    "[sys.executable, '-c', 'import time; time.sleep(30)']"
+                    ")\n"
+                    "Path(sys.argv[2]).write_text(str(child.pid))\n"
+                    "time.sleep(30)\n",
+                    str(pid_dir / "leader.pid"),
+                    str(pid_dir / "member.pid"),
+                ],
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            deadline = time.monotonic() + 5
+            while not (pid_dir / "member.pid").exists():
+                self.assertIsNone(leader.poll(), "leader exited before spawning member")
+                self.assertLess(time.monotonic(), deadline, "member pid not written")
+                time.sleep(0.01)
+            member_pid = int((pid_dir / "member.pid").read_text())
+            os.kill(leader.pid, signal.SIGKILL)
+            leader.wait(timeout=2)
+            self.assertTrue(_pid_alive(member_pid), "member must survive leader reap")
+
+            class _Reaped:
+                pid = leader.pid
+                returncode = -9
+
+                def kill(self):
+                    raise AssertionError(
+                        "must not substitute leader kill for denied group stop"
+                    )
+
+                def wait(self, timeout=None):
+                    raise AssertionError("must not reap while live members remain")
+
+            eperm = PermissionError(errno.EPERM, "Operation not permitted")
+            with patch("runspecimen.run.os.killpg", side_effect=eperm):
+                with self.assertRaises(_CleanupUnconfirmed) as ctx:
+                    _kill_process_group(_Reaped())
+                self.assertIn("unconfirmed", str(ctx.exception).lower())
+                with self.assertRaises(_CleanupUnconfirmed) as ctx:
+                    _stop_process(_Reaped())
+                self.assertIn("unconfirmed", str(ctx.exception).lower())
+            self.assertTrue(
+                _pid_alive(member_pid),
+                "EPERM with live members must not confirm or kill leftovers",
+            )
+        finally:
+            if leader is not None and leader.poll() is None:
+                leader.kill()
+                leader.wait(timeout=2)
+            _kill_group(member_pid)
+            td.cleanup()
+
+    def test_eperm_with_unknown_membership_stays_unconfirmed(self):
+        """EPERM plus an unknown probe must retain; do not reap on guess.
+
+        Simulated: PermissionError from killpg, and ``/bin/false`` as ps with
+        /proc disabled so membership cannot be proven empty. The payload is a
+        real live process. Darwin libproc is not invoked (platform=linux).
+        """
+        from runspecimen.run import _CleanupUnconfirmed, _kill_process_group, _stop_process
+
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            eperm = PermissionError(errno.EPERM, "Operation not permitted")
+
+            class _Guarded:
+                pid = proc.pid
+                returncode = None
+
+                def kill(self):
+                    raise AssertionError(
+                        "must not substitute leader kill when membership is unknown"
+                    )
+
+                def wait(self, timeout=None):
+                    raise AssertionError("must not reap when membership is unknown")
+
+            with patch("runspecimen.run._proc_available", return_value=False), patch(
+                "runspecimen.run._PS_ARGV", ["/bin/false"]
+            ), patch("runspecimen.run.sys.platform", "linux"), patch(
+                "runspecimen.run.os.killpg",
+                side_effect=eperm,
+            ):
+                with self.assertRaises(_CleanupUnconfirmed) as ctx:
+                    _kill_process_group(_Guarded())
+                self.assertIn("unconfirmed", str(ctx.exception).lower())
+                with self.assertRaises(_CleanupUnconfirmed) as ctx:
+                    _stop_process(_Guarded())
+                self.assertIn("unconfirmed", str(ctx.exception).lower())
+            self.assertTrue(_pid_alive(proc.pid))
+            self.assertIsNone(proc.returncode)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=5)
 
     def test_unwritable_state_after_stop_names_persist_failure(self):
         """P3-03: after a confirmed stop, the error must name state persistence."""

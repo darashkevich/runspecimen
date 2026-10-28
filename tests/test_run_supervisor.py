@@ -213,24 +213,40 @@ class RunSupervisorTests(unittest.TestCase):
             self._wait_for_cleanup(ws, contract_pid, timeout=10)
 
     def test_denied_group_stop_is_not_leader_only_success(self):
-        """EPERM on group kill must not fall back to killing only the leader."""
-        from runspecimen.run import _stop_process
-        from runspecimen.errors import RunError
+        """EPERM with live members must not fall back to killing only the leader."""
+        from runspecimen.run import _CleanupUnconfirmed, _stop_process
 
-        class FakeProc:
-            pid = 999999999
-            returncode = None
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            class Guarded:
+                pid = proc.pid
+                returncode = None
 
-            def kill(self):
-                raise AssertionError("must not substitute leader kill for denied group stop")
+                def kill(self):
+                    raise AssertionError(
+                        "must not substitute leader kill for denied group stop"
+                    )
 
-            def wait(self, timeout):
-                raise AssertionError("must not wait after denied group stop")
+                def wait(self, timeout=None):
+                    raise AssertionError("must not wait after denied group stop")
 
-        with patch("runspecimen.run.os.killpg", side_effect=PermissionError("test EPERM")):
-            with self.assertRaises(RunError) as ctx:
-                _stop_process(FakeProc())
-            self.assertIn("unconfirmed", str(ctx.exception).lower())
+            with patch(
+                "runspecimen.run.os.killpg",
+                side_effect=PermissionError("test EPERM"),
+            ):
+                with self.assertRaises(_CleanupUnconfirmed) as ctx:
+                    _stop_process(Guarded())
+                self.assertIn("unconfirmed", str(ctx.exception).lower())
+            self.assertIsNone(proc.poll(), "live leader must remain after denied stop")
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=2)
 
     def test_wall_deadline_is_enforced_when_cli_is_stopped(self):
         """Wall deadline must be enforced even when CLI process is stopped.

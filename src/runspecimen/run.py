@@ -112,8 +112,21 @@ def _check_termination_signal() -> None:
         raise _RunInterrupted(pending[0])
 
 
-def _kill_process_group(proc: subprocess.Popen[bytes]) -> None:
-    """Send SIGKILL to the process group. Raises _CleanupUnconfirmed on EPERM."""
+def _is_eperm(exc: BaseException) -> bool:
+    return isinstance(exc, PermissionError) or getattr(exc, "errno", None) == errno.EPERM
+
+
+def _kill_process_group(proc: subprocess.Popen[bytes], *, timeout: float = 0.2) -> None:
+    """Send SIGKILL to the process group.
+
+    ``ESRCH`` is accepted. ``EPERM`` is not treated as proof of life or
+    death: probe live membership. Only a verified-empty set may proceed
+    to later reaping. Live members or an unknown probe stay unconfirmed
+    with the lease held. The leader is left unreaped here so a leftover
+    descendant cannot drop the PGID pin (P1-01). Darwin returns EPERM,
+    not ESRCH, for an unreaped zombie-only group; Linux may succeed or
+    return ESRCH for the same state.
+    """
     if proc.pid is None:
         return
     try:
@@ -121,11 +134,22 @@ def _kill_process_group(proc: subprocess.Popen[bytes]) -> None:
     except ProcessLookupError:
         pass
     except OSError as exc:
-        # EPERM: we cannot confirm the group is stopped. Never fall back to
-        # killing only the leader, as that leaves descendants alive.
-        raise _CleanupUnconfirmed(
-            proc, f"process-group stop denied/unconfirmed: {exc}"
-        ) from exc
+        if not _is_eperm(exc):
+            raise _CleanupUnconfirmed(
+                proc, f"process-group stop denied/unconfirmed: {exc}"
+            ) from exc
+        try:
+            members = _live_group_members(proc.pid, timeout)
+        except _GroupMembershipUnknown as probe_error:
+            raise _CleanupUnconfirmed(
+                proc, f"process-group death unconfirmed: {probe_error}"
+            ) from probe_error
+        if members:
+            raise _CleanupUnconfirmed(
+                proc, f"live group stop denied/unconfirmed: {exc}"
+            ) from exc
+        # Verified no live members. Leave the leader unreaped until
+        # _stop_process so a redirected descendant cannot drop the PGID pin.
 
 
 @dataclass
@@ -413,28 +437,24 @@ def _stop_process(proc: subprocess.Popen) -> None:
     """Kill the process group and confirm all members are dead.
 
     Raises _CleanupUnconfirmed if:
-    - os.killpg fails with EPERM
+    - os.killpg fails with EPERM and live members remain or membership
+      cannot be probed
     - Group members remain alive after the cleanup budget
     - Membership cannot be probed
 
     A reaped leader is not treated as cleanup. Remaining group members
-    must still be stopped and verified.
+    must still be stopped and verified. The leader stays unreaped until
+    this function confirms the group is empty, which is what keeps the
+    PGID pin for P1-01.
     """
     if proc.pid is None:
         return
 
     deadline = time.monotonic() + 5  # Existing cleanup budget
 
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        # macOS can return ESRCH once the session leader is gone even when
-        # other members are still alive. Fall through to per-pid SIGKILL.
-        pass
-    except OSError as exc:
-        raise _CleanupUnconfirmed(
-            proc, f"process-group stop denied/unconfirmed: {exc}"
-        ) from exc
+    # Same verified-empty EPERM policy as the supervise path. ESRCH after
+    # the leader exits still falls through to the per-pid SIGKILL loop.
+    _kill_process_group(proc, timeout=max(0.01, deadline - time.monotonic()))
 
     try:
         while True:
