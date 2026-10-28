@@ -147,21 +147,41 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _process_state(pid: int) -> str | None:
+    """Kernel state letter. ``/proc`` on Linux, ``ps`` elsewhere. None if gone."""
+    proc_stat = Path(f"/proc/{pid}/stat")
+    try:
+        content = proc_stat.read_text()
+    except FileNotFoundError:
+        if Path("/proc/self/stat").exists():
+            return None
+    except OSError:
+        return None
+    else:
+        try:
+            return content.rsplit(")", 1)[1].split()[0]
+        except (IndexError, ValueError):
+            return None
+    try:
+        result = subprocess.run(
+            ["/bin/ps", "-p", str(pid), "-o", "state="],
+            capture_output=True,
+            text=True,
+            timeout=0.2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
 def _pid_live(pid: int) -> bool:
     """True for a non-zombie process. ``kill(pid, 0)`` succeeds on zombies."""
     if pid <= 0:
         return False
-    try:
-        content = Path(f"/proc/{pid}/stat").read_text()
-    except FileNotFoundError:
-        return False
-    except OSError:
-        return _pid_alive(pid)
-    try:
-        state = content.rsplit(")", 1)[1].split()[0]
-    except (IndexError, ValueError):
-        return _pid_alive(pid)
-    return not state.startswith("Z")
+    state = _process_state(pid)
+    return bool(state) and not state.startswith("Z")
 
 
 def _kill_group(pid: int) -> None:
@@ -925,19 +945,15 @@ class RunCleanupQATests(unittest.TestCase):
             deadline = time.monotonic() + 2
             state = None
             while time.monotonic() < deadline:
-                try:
-                    state = (
-                        Path(f"/proc/{proc.pid}/stat")
-                        .read_text()
-                        .rsplit(")", 1)[1]
-                        .split()[0]
-                    )
-                except (FileNotFoundError, IndexError, OSError):
-                    state = None
-                if state == "Z":
+                state = _process_state(proc.pid)
+                if state is not None and state.startswith("Z"):
                     break
                 time.sleep(0.01)
-            self.assertEqual(state, "Z", "need an unreaped zombie")
+            self.assertIsNotNone(state, "need an unreaped zombie")
+            self.assertTrue(
+                state.startswith("Z"),
+                f"need an unreaped zombie, got state={state!r}",
+            )
             os.kill(proc.pid, 0)
             self.assertFalse(
                 watchdog_alive(proc.pid),
