@@ -33,8 +33,10 @@ final class RecoveryUITests: XCTestCase {
         reopen.tap()
         XCTAssertTrue(banner.waitForExistence(timeout: 15), app.debugDescription)
         app.buttons["Export recovery diagnostics"].tap()
-        // Scope to the share sheet's activity list. Keep the existing bound.
-        let copy = app.otherElements["ActivityListView"].buttons["Copy"].firstMatch
-        XCTAssertTrue(copy.waitForExistence(timeout: 90), app.debugDescription)
+        // Assert the app presented the share sheet. Do not wait for
+        // SharingUIService's remote Copy action: CI snapshots show
+        // UIActivityView with an empty activity list (QA2-P2-01).
+        let sheet = app.navigationBars["UIActivityView"]
+        XCTAssertTrue(sheet.waitForExistence(timeout: 90), app.debugDescription)
     }
 }
