@@ -6,11 +6,10 @@ display escaping, and the committed CI census. They do not raise any wait.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 import unittest
-
-import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,19 +20,13 @@ def _read(relative: str) -> str:
 
 class QA2PR79OpeningsTests(unittest.TestCase):
     def test_test_action_does_not_wait_for_debugger(self) -> None:
-        spec = yaml.safe_load(_read("apps/ios/project.yml"))
-        test = spec["schemes"]["RunSpecimenObserve"]["test"]
-        self.assertIs(test.get("debugEnabled"), False)
+        source = _read("apps/ios/project.yml")
+        self.assertRegex(source, r"(?m)^\s*debugEnabled:\s*false\s*$")
 
     def test_test_action_disables_main_thread_checker_and_activity_mode(self) -> None:
-        spec = yaml.safe_load(_read("apps/ios/project.yml"))
-        test = spec["schemes"]["RunSpecimenObserve"]["test"]
-        self.assertIs(test.get("disableMainThreadChecker"), True)
-        env = test.get("environmentVariables") or {}
-        mode = env.get("OS_ACTIVITY_DT_MODE")
-        if isinstance(mode, dict):
-            mode = mode.get("value")
-        self.assertIn(str(mode).upper(), {"NO", "0", "FALSE"})
+        source = _read("apps/ios/project.yml")
+        self.assertRegex(source, r"(?m)^\s*disableMainThreadChecker:\s*true\s*$")
+        self.assertRegex(source, r"(?m)^\s*OS_ACTIVITY_DT_MODE:\s*NO\s*$")
 
     def test_recovery_copy_query_is_scoped_to_activity_list(self) -> None:
         source = _read("apps/ios/Tests/ObserveRecoveryUITests/RecoveryUITests.swift")
@@ -80,9 +73,13 @@ class QA2PR79OpeningsTests(unittest.TestCase):
         self.assertIn(".format", package)
         self.assertIn(".control", package)
 
+    def test_openings_module_does_not_import_third_party_yaml(self) -> None:
+        source = _read("tests/test_qa2_pr79_openings.py")
+        self.assertNotRegex(source, r"(?m)^\s*(import yaml|from yaml\b)")
+
     def test_qa_census_discloses_seventeen_ios_failures(self) -> None:
         census = _read("docs/QA2_CI_CENSUS_2026-10-27.md")
-        summary = yaml.safe_load(_read("evidence/QA2-ci-census-summary.json"))
+        summary = json.loads(_read("evidence/QA2-ci-census-summary.json"))
         rows = _read("evidence/QA2-ios-observe-tests-all-attempts.tsv").splitlines()[1:]
         failures = [row for row in rows if "\tfailure\t" in row]
         self.assertIn("17 failures", census)
