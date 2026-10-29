@@ -34,10 +34,32 @@ class QA2PR79OpeningsTests(unittest.TestCase):
         self.assertNotIn('buttons["Copy"]', source)
         self.assertIn('navigationBars["UIActivityView"]', source)
         self.assertIn('buttons["Export recovery diagnostics"].tap()', source)
-        waits = [int(match) for match in re.findall(r"waitForExistence\(timeout:\s*(\d+)", source)]
+        existence = [
+            int(match)
+            for match in re.findall(r"waitForExistence\(timeout:\s*(\d+)", source)
+        ]
+        waits = [
+            int(match)
+            for match in re.findall(r"wait\(for:[^\n]*timeout:\s*(\d+)", source)
+        ]
+        # main 769a0a0: first banner 15s; hidden/reopen/banner-again/export 5s.
+        self.assertEqual(existence[0], 15)
+        self.assertTrue(existence[1:])
+        self.assertTrue(all(value <= 5 for value in existence[1:]))
         self.assertTrue(waits)
-        self.assertLessEqual(max(waits), 90)
-        self.assertIn("timeout: 90", source)
+        self.assertTrue(all(value <= 5 for value in waits))
+        self.assertNotIn("timeout: 90", source)
+        self.assertLessEqual(max(existence + waits), 15)
+
+    def test_recovery_ui_waits_do_not_exceed_main(self) -> None:
+        source = _read("apps/ios/Tests/ObserveRecoveryUITests/RecoveryUITests.swift")
+        timeouts = [int(match) for match in re.findall(r"timeout:\s*(\d+)", source)]
+        # main 769a0a0: first banner 15s; hide/reopen/banner-again/export 5s.
+        self.assertGreaterEqual(len(timeouts), 5)
+        self.assertLessEqual(timeouts[0], 15)
+        self.assertTrue(all(value <= 5 for value in timeouts[1:]))
+        self.assertLessEqual(max(timeouts), 15)
+        self.assertNotIn("timeout: 90", source)
 
     def test_recovery_teardown_dismisses_sheet_and_terminates(self) -> None:
         source = _read("apps/ios/Tests/ObserveRecoveryUITests/RecoveryUITests.swift")
@@ -61,6 +83,10 @@ class QA2PR79OpeningsTests(unittest.TestCase):
         self.assertNotRegex(
             workflow,
             r"python -m unittest tests\.test_launch_faults.*\|\|\s*true",
+        )
+        self.assertRegex(
+            workflow,
+            r"set -o pipefail[\s\S]*python -m unittest tests\.test_launch_faults[^\n]*\|\s*tee",
         )
 
     def test_approval_review_text_is_escaped_not_raw(self) -> None:
