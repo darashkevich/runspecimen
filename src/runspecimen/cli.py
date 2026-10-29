@@ -638,7 +638,7 @@ def main(argv: list[str] | None = None) -> int:
             _emit(result, args, kind="preflight")
             return 0
         if args.command == "run":
-            result = run_contract(contract_path=args.contract, workspace=workspace)
+            result = run_contract(contract_path=args.contract, workspace=workspace, guard_parent=True)
             _emit(result, args, kind="run")
             return 0
         if args.command == "postflight":

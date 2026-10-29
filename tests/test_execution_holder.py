@@ -619,22 +619,32 @@ class HolderSocketAdmissionTests(unittest.TestCase):
 
         t = threading.Thread(target=stall)
         t.start()
-        time.sleep(0.05)
-        # While stalled connection holds admission, second client is refused.
+        self.assertTrue(
+            server.wait_for_admission_slot(2.0),
+            "stall thread did not take the admission slot",
+        )
+        # While stalled connection holds admission, second client is refused
+        # at accept. The adapter writes the refusal and closes; do not send
+        # a frame (macOS EPIPE if the peer already closed).
         sock2 = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock2.connect(str(server.socket_path))
-        sock2.sendall(b'{"ok":false}\n')
-        raw = sock2.recv(4096).decode("utf-8")
-        sock2.close()
+        sock2.settimeout(2.0)
+        try:
+            sock2.connect(str(server.socket_path))
+            raw = sock2.recv(4096).decode("utf-8")
+        finally:
+            sock2.close()
         t.join(timeout=2)
         self.assertIn("admission limit reached", raw)
 
         # Oversize frame
         sock3 = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock3.connect(str(server.socket_path))
-        sock3.sendall(b"y" * 5000 + b"\n")
-        raw3 = sock3.recv(4096).decode("utf-8")
-        sock3.close()
+        sock3.settimeout(2.0)
+        try:
+            sock3.connect(str(server.socket_path))
+            sock3.sendall(b"y" * 5000 + b"\n")
+            raw3 = sock3.recv(4096).decode("utf-8")
+        finally:
+            sock3.close()
         self.assertIn("frame limit", raw3)
         self.assertLess(4096, MAX_FRAME_BYTES)
 
