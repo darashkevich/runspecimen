@@ -30,11 +30,23 @@ class AdmissionGate:
         if limit < 1:
             raise ValueError("admission limit must be at least 1")
         self._sem = threading.BoundedSemaphore(limit)
+        self._in_flight = 0
+        self._lock = threading.Lock()
+        self.entered = threading.Event()
 
     def try_enter(self) -> bool:
-        return self._sem.acquire(blocking=False)
+        if not self._sem.acquire(blocking=False):
+            return False
+        with self._lock:
+            self._in_flight += 1
+            self.entered.set()
+        return True
 
     def leave(self) -> None:
+        with self._lock:
+            self._in_flight = max(0, self._in_flight - 1)
+            if self._in_flight == 0:
+                self.entered.clear()
         self._sem.release()
 
 
