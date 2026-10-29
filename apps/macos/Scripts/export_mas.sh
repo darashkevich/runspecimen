@@ -74,6 +74,12 @@ fi
 TEAM="$(printf '%s\n' "$READY_OUT" | awk -F= '/^READY_TEAM=/{print $2; exit}')"
 PROFILE_UUID="$(printf '%s\n' "$READY_OUT" | awk -F= '/^READY_PROFILE_UUID=/{print $2; exit}')"
 
+# The gate must yield a real team before we bind the temporary export options.
+[[ "$TEAM" =~ ^[A-Z0-9]{10}$ && "$TEAM" != "TEAMID" ]] || {
+  echo "ERROR: export requires a resolved 10-character Apple Team ID; TEAMID is a template" >&2
+  exit 1
+}
+
 # Never mutate the committed ExportOptions plist (teamID placeholder stays TEAMID).
 WORK_PLIST="$(mktemp -t rs-export-options)"
 trap 'rm -f "$WORK_PLIST"' EXIT
@@ -90,11 +96,11 @@ if [[ -n "$PROFILE_UUID" ]]; then
   /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:com.darashkevich.runspecimen string $PROFILE_UUID" "$EXPORT_PLIST"
 fi
 
-# RS_EXPORT_DESTINATION=export writes a Store pkg locally and does not upload.
-if [[ "${RS_EXPORT_DESTINATION:-}" == "export" ]]; then
-  /usr/libexec/PlistBuddy -c "Set :destination export" "$EXPORT_PLIST"
-  echo "Local-only export (destination=export) — will not upload to App Store Connect"
-fi
+# Preparation defaults to local export. Upload must be selected explicitly.
+case "${RS_EXPORT_DESTINATION:-export}" in
+  export|upload) /usr/libexec/PlistBuddy -c "Set :destination ${RS_EXPORT_DESTINATION:-export}" "$EXPORT_PLIST" ;;
+  *) echo "ERROR: RS_EXPORT_DESTINATION must be export or upload" >&2; exit 1 ;;
+esac
 
 rm -rf "$EXPORT_DIR"
 mkdir -p "$EXPORT_DIR"

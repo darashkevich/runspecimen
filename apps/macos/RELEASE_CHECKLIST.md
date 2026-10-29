@@ -50,7 +50,7 @@ python3 -m pip install --user 'pyinstaller>=6'
 ./Scripts/test_security_boundary.sh
 ./Scripts/build_app.sh --mas
 # Expect:
-build/RunSpecimen.app/Contents/Helpers/runspecimen --version   # → 0.2.0rc15 on a freeze of this branch; Store 0.1.4 (9) is published rc14
+build/RunSpecimen.app/Contents/Helpers/runspecimen --version   # → 0.2.0rc15 on a freeze of this branch; Store historical 0.1.4 (9) is published rc14
 test ! -d build/RunSpecimen.app/Contents/Helpers/lib
 /usr/libexec/PlistBuddy -c 'Print :RSDistributionChannel' \
   build/RunSpecimen.app/Contents/Info.plist   # → mas
@@ -87,32 +87,28 @@ xcodebuild -project RunSpecimen.xcodeproj \
   archive
 ```
 
-### 3. Export with manual signing (destination upload)
+### 3. Export locally with manual signing
 
-Export uses **Apple Distribution** certificate, **3rd Party Mac Developer Installer**
-certificate, and the existing **RunSpecimen MAS** provisioning profile:
+Use the script, which validates the archive and rewrites a temporary copy of
+`Config/ExportOptions.mas.plist` with the real team ID and provisioning UUID.
+The committed plist is a template (`TEAMID`); never pass it directly to Xcode.
 
 ```bash
-xcodebuild -exportArchive \
-  -archivePath build/RunSpecimen.xcarchive \
-  -exportOptionsPlist Config/ExportOptions.mas.plist \
-  -exportPath build/export
+RS_ARCHIVE_PATH="$PWD/build/RunSpecimen.xcarchive" \
+RS_EXPORT_DIR="$PWD/build/export" \
+RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh
 ```
 
-The `ExportOptions.mas.plist` must specify:
-- `method`: app-store
-- `signingStyle`: manual
-- `teamID`: UN6KF8636A
-- `provisioningProfiles`: UUID of the RunSpecimen MAS profile
-- `installerSigningCertificate`: 3rd Party Mac Developer Installer
-- `destination`: upload
+The export method is `app-store-connect` with manual signing. The default is
+local export; an upload requires explicit `RS_EXPORT_DESTINATION=upload` after
+release authorization. Neither local export nor upload submits for review.
 
 **Never use `-allowProvisioningUpdates`.** Manual signing only.
 
 ### 4. Current status
 
-ASC: version `0.1.4` / build **9** is **Removed from App Store** (EU trader status missing). Build **14** (0.1.5)
-was uploaded; next upload is build **15**.
+ASC: version `historical 0.1.4` / build **9** is **Removed from App Store** (EU trader status missing). Build **14** (historical 0.1.5)
+was uploaded; next candidate is **0.1.6 (16)**; Mac historical 0.1.5 was withdrawn from review by Yahor on 2026-10-18. Submission remains blocked on final QA closure.
 
 Optional: `brew install xcodegen` then `./Scripts/generate_xcodeproj.sh` if
 `project.yml` changed (committed `RunSpecimen.xcodeproj` is the default Archive input).

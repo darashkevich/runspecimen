@@ -5,6 +5,12 @@ import Darwin
 @testable import RunSpecimenObserve
 
 final class ObserveSchemaTests: IsolatedCompanionSessionTests {
+    @MainActor
+    func testSchemaStorageIsNotStandardDefaults() {
+        XCTAssertFalse(CompanionSession.storageDefaults === UserDefaults.standard)
+        XCTAssertNil(CompanionSession.testPairingToken)
+    }
+
     override func setUp() {
         super.setUp()
         executionTimeAllowance = 60

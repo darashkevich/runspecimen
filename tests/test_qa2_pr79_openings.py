@@ -170,7 +170,24 @@ class QA2PR79OpeningsTests(unittest.TestCase):
         self.assertNotIn("let defaults = UserDefaults.standard", source)
         self.assertIn("let defaults = CompanionSession.storageDefaults", source)
 
+    def test_companion_session_declares_storage_defaults_once(self) -> None:
+        source = _read("apps/ios/Sources/RunSpecimenObserve/Services/CompanionSession.swift")
+        declarations = re.findall(r"static var storageDefaults:", source)
+        self.assertEqual(len(declarations), 1)
+
     def test_recovery_export_content_is_unit_tested(self) -> None:
         tests = _read("apps/ios/Tests/ObserveSchemaTests/SchemaTests.swift")
         self.assertIn("rotationRecoveryDiagnostics.contains", tests)
         self.assertIn("Recovery evidence is retained", tests)
+
+    def test_cancellation_target_uses_isolated_session_storage(self) -> None:
+        source = _read("apps/ios/Tests/PhonePeerCancellationTests/PhonePeerCancellationXCTests.swift")
+        self.assertIn("IsolatedCompanionSessionTests", source)
+        self.assertNotRegex(source, r"class PhonePeerCancellationXCTests:\s*XCTestCase")
+        for path in (ROOT / "apps/ios/Sources").rglob("*.swift"):
+            text = path.read_text(encoding="utf-8")
+            self.assertNotIn(
+                "UserDefaults.standard",
+                text,
+                f"{path} must not read the shared defaults suite",
+            )

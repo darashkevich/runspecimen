@@ -1,52 +1,57 @@
 # ASC kit status (honest)
 
-## Current: 0.1.4 (9) READY_FOR_SALE
+## Current candidate: 0.1.6 (16), not submitted
 
-**0.1.4 (9)** is now **Removed from App Store** (EU trader status missing) on the Mac App Store.
+PR #75 merged as `4514bdc` on 2026-10-18. Yahor confirmed Mac historical 0.1.5 withdrawn from review. The candidate remains blocked by independent QA findings; no upload or submission is authorized by this file.
+
+## Historical Store record: historical 0.1.4 (9)
+
+**historical 0.1.4 (9)** is now **Removed from App Store** (EU trader status missing) on the Mac App Store.
 
 Built from **origin/main** `0f50a2c` (engine **0.2.0rc14**) plus macOS rejection fixes.
 
 | Connect field | Value |
 | --- | --- |
-| Version | **0.1.4** `Removed from App Store` (EU trader status missing) (id `6cfe298b-92c1-460d-b83b-5687a67f2cff`) |
+| Version | **historical 0.1.4** `Removed from App Store` (EU trader status missing) (id `6cfe298b-92c1-460d-b83b-5687a67f2cff`) |
 | Build | **9** id `51a18894-02e3-4846-86f5-29cc345567f0` `VALID` |
 | Package SHA-256 | `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` |
 
 ## Historical: 0.1.3 (8) rejection (2026-09-23)
 
-Rejection of **0.1.3 (8)** (submission `9c19e1cd-…`, review 2026-09-23):
+Rejection of **historical 0.1.3 (8)** (submission `9c19e1cd-…`, review 2026-09-23):
 **2.5.1** private/deprecated API refs in Apple Python 3.9 (`TrustEvaluationAgent`,
 `_lzma` symbols), **Design 4** missing main-window reopen menu, **2.4.5(i)** unused
 `network.server`. See [REJECTION-2026-09-23.md](REJECTION-2026-09-23.md).
 
-In-flight note: that `/inflight` URL is historical (saved while **0.1.4 (9)** was waiting). The current Connect state in this file is `Removed from App Store` (EU trader status missing) for **0.1.4 (9)** — see the top section. This integrated branch is unpublished **0.1.5 (13)** / engine **0.2.0rc15** and is not that Store package. Do not withdraw, replace, or claim a new Store submission from this note.
+In-flight note: that `/inflight` URL is historical (saved while **historical 0.1.4 (9)** was waiting). The current Connect state in this file is `Removed from App Store` (EU trader status missing) for **historical 0.1.4 (9)** — see the top section. This integrated branch is unpublished **0.1.6 (16)** / engine **0.2.0rc15** and is not that Store package. Do not withdraw, replace, or claim a new Store submission from this note.
 
-These identities are different artifacts. Do not treat them as the same package because an older local build reused the text **0.1.4 (9)**.
+These identities are different artifacts. Do not treat them as the same package because an older local build reused the text **historical 0.1.4 (9)**.
 
 | Artifact | Version | Source | Engine features | Package SHA-256 | Apple build |
 | --- | --- | --- | --- | --- | --- |
-| Submitted, recorded `WAITING_FOR_REVIEW` on 2026-09-24 | **0.1.4 (9)** | `0f50a2c` plus rejection fixes. Excludes evidence expansion | **0.2.0rc14** | `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` | `51a18894-02e3-4846-86f5-29cc345567f0` |
-| Local candidate that reused the same version label | **0.1.4 (9)** | evidence-expansion tip plus local macOS edits | rc14 plus evidence expansion | `758f8d4651ccc4240410d9618a906fdc9cbbb9974c5c53976b9abb646138cf7f` | not submitted |
-| Earlier local signed app | **0.1.5 (10)** | `b467c63` | rc14 plus evidence expansion and read-only native pane | zip `705ced0fa79ca98f951455f68e6fa4a8d08624b686c6579b60678b43e6aac8b0` | not submitted |
-| Local Store package, not uploaded | **0.1.5 (11)** | `3a0f48351b5717fb68168be6c56ac3038f2ea11e` | rc14 plus native workflows. No confirmation-claim or pipe-drain fix | pkg `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309` | not uploaded |
-| Next local candidate | **0.1.5 (12)** | `c400f2d0ca82b21f2663df92f3f0c262a1ba09af` | rc14 plus native workflows, confirmation claim, and concurrent pipe drain. Receipt digest, diff, and retain stay CLI-only | pkg `6b3e9b3e1db219aafd834dd894b4ce04a8269cedb34dc116a4a154c22bb09a38` | not uploaded |
-| Unpublished integrated candidate | **0.1.5 (13)** | `cursor/evidence-expansion-coherence` after #39/`e2a3216`, #47/`329e08b`, #49/`18ef461` (`cursor/integrated-release-candidate` historical at `a0dc233`) | engine **0.2.0rc15**. Packaged CryptoKit P-256 verifier is ad-hoc and hash-pinned, not a Secure Enclave. Development GUI remains the build of `27bb0c7` app sources | not a Store package | not uploaded |
+| Submitted, recorded `WAITING_FOR_REVIEW` on 2026-09-24 | **historical 0.1.4 (9)** | `0f50a2c` plus rejection fixes. Excludes evidence expansion | **0.2.0rc14** | `584f68684deb4700cde59b8fb57701c825ea5445d11c0bd451aacb3d380f4c1d` | `51a18894-02e3-4846-86f5-29cc345567f0` |
+| Local candidate that reused the same version label | **historical 0.1.4 (9)** | evidence-expansion tip plus local macOS edits | rc14 plus evidence expansion | `758f8d4651ccc4240410d9618a906fdc9cbbb9974c5c53976b9abb646138cf7f` | not submitted |
+| Earlier local signed app | **historical 0.1.5 (10)** | `b467c63` | rc14 plus evidence expansion and read-only native pane | zip `705ced0fa79ca98f951455f68e6fa4a8d08624b686c6579b60678b43e6aac8b0` | not submitted |
+| Local Store package, not uploaded | **historical 0.1.5 (11)** | `3a0f48351b5717fb68168be6c56ac3038f2ea11e` | rc14 plus native workflows. No confirmation-claim or pipe-drain fix | pkg `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309` | not uploaded |
+| Historical local candidate | **historical 0.1.5 (12)** | `c400f2d0ca82b21f2663df92f3f0c262a1ba09af` | rc14 plus native workflows, confirmation claim, and concurrent pipe drain. Receipt digest, diff, and retain stay CLI-only | pkg `6b3e9b3e1db219aafd834dd894b4ce04a8269cedb34dc116a4a154c22bb09a38` | not uploaded |
+| Historical integrated candidate | **historical 0.1.5 (13)** | `cursor/evidence-expansion-coherence` after #39/`e2a3216`, #47/`329e08b`, #49/`18ef461` (`cursor/integrated-release-candidate` historical at `a0dc233`) | engine **0.2.0rc15**. Packaged CryptoKit P-256 verifier is ad-hoc and hash-pinned, not a Secure Enclave. Development GUI remains the build of `27bb0c7` app sources | not a Store package | not uploaded |
+| Unpublished integrated candidate | **0.1.6 (16)** | Current PR head (see GitHub) | unpublished engine **0.2.0rc15**; source preparation only, not a newly built Store package | not a Store package | not uploaded |
 
-App Store Connect was not queried on 2026-09-25: the local API key file is present, and the issuer ID is not stored beside it, so no request was sent. Do not upload **0.1.5 (11)** while the recorded submission is still **0.1.4 (9)**.
+App Store Connect was not queried on 2026-09-25: the local API key file is present, and the issuer ID is not stored beside it, so no request was sent. Do not upload **historical 0.1.5 (11)** while the recorded submission is still **historical 0.1.4 (9)**.
 
-The **0.1.5 (11)** installer package is at `/Users/yahor/Documents/Codex/2026-08-24/runspecimen-candidates/0.1.5-11/RunSpecimen.pkg`. The matching archive is `RunSpecimen.xcarchive` in that same directory. Export used `destination=export` and did not upload. It is a Mac App Store package signed by `3rd Party Mac Developer Installer`, not a Developer ID build and not an app ZIP. Acceptance notes: [evidence/0.1.5-11-acceptance.md](evidence/0.1.5-11-acceptance.md).
+The **historical 0.1.5 (11)** installer package is at `/Users/yahor/Documents/Codex/2026-08-24/runspecimen-candidates/0.1.5-11/RunSpecimen.pkg`. The matching archive is `RunSpecimen.xcarchive` in that same directory. Export used `destination=export` and did not upload. It is a Mac App Store package signed by `3rd Party Mac Developer Installer`, not a Developer ID build and not an app ZIP. Acceptance notes: [evidence/0.1.5-11-acceptance.md](evidence/0.1.5-11-acceptance.md).
 
 ## Resubmitted 2026-09-21 (historical snapshot; build 8 was later rejected)
 
 The table below is the Connect state on 2026-09-21. It is not the current submission.
 
 Monday 02:08 CEST email: “There's an issue with your RunSpecimen (macos) submission”
-for `cd198ca0` / **0.1.3 (6)**. Resolution Center text is still not in the public
+for `cd198ca0` / **historical 0.1.3 (6)**. Resolution Center text is still not in the public
 ASC API. Same generic body as the first rejection.
 
 | Connect field | Value |
 | --- | --- |
-| Version | **0.1.3** `WAITING_FOR_REVIEW` |
+| Version | **historical 0.1.3** `WAITING_FOR_REVIEW` |
 | App Info | `WAITING_FOR_REVIEW` |
 | Build | **8** id `c5575ef9-2444-4452-aec8-c9afdc7dd611` `VALID` uploaded 2026-09-20T22:35:19-07:00 |
 | Submission | `9c19e1cd-ebd1-4705-b683-5a5fdc2671f6` submitted 2026-09-21T05:36:49Z |
@@ -63,7 +68,7 @@ EU DSA trader declaration (Business → Compliance). The `/apps` banner is still
 
 | Connect field | Value |
 | --- | --- |
-| Version | **0.1.3** `WAITING_FOR_REVIEW` |
+| Version | **historical 0.1.3** `WAITING_FOR_REVIEW` |
 | App Info | `WAITING_FOR_REVIEW` |
 | Build | **6** id `643b57e5-c679-4dd3-a97b-8d64e23c29e6` `VALID` uploaded 2026-09-19T08:20:03-07:00 |
 | Submission | `cd198ca0-c74c-4cbc-b626-89fd116030b9` submitted 2026-09-19T15:29:40Z |
@@ -73,14 +78,14 @@ Build 6 is the reviewer-demo tree: bundled `Resources/ReviewerDemo`, no MAS pip/
 
 ## Prior rejection (2026-09-19 morning)
 
-Apple rejected macOS **0.1.3 (5)** overnight. Emails at 02:13 CEST:
+Apple rejected macOS **historical 0.1.3 (5)** overnight. Emails at 02:13 CEST:
 “There's an issue with your RunSpecimen (macOS) submission.” and
 “Your App Review Feedback” (Changes needed). The public ASC API does **not**
 return Resolution Center guideline text.
 
 | Connect field | Value |
 | --- | --- |
-| Version | **0.1.3** `REJECTED` / `appVersionState=REJECTED` |
+| Version | **historical 0.1.3** `REJECTED` / `appVersionState=REJECTED` |
 | App Info | **REJECTED** |
 | Review submission | `5a2f17dd-3b82-4730-b0e5-ac1655845074` `UNRESOLVED_ISSUES` (actor APPLE) |
 | Review item | version rejected; **no** review attachments |
@@ -95,7 +100,7 @@ What the rejected binary asked reviewers to do (build 5 / rc10):
 That is a 2.1 completeness / 2.4.5(ii)(viii) fail even without Apple’s paragraph.
 Fix in this tree: bundled `Resources/ReviewerDemo`, MAS empty state **Open Reviewer Demo**,
 no pip/Select-CLI on Store builds, metadata keywords no longer lead with “sandbox”.
-That fix shipped as **0.1.3 (6)** (rejected) and again as **0.1.3 (8)**, which Apple rejected on 2026-09-23. Engine **0.2.0rc12**. The package recorded as waiting is **0.1.4 (9)**.
+That fix shipped as **historical 0.1.3 (6)** (rejected) and again as **historical 0.1.3 (8)**, which Apple rejected on 2026-09-23. Engine **0.2.0rc12**. The package recorded as waiting is **historical 0.1.4 (9)**.
 
 Account Holder still owns the EU DSA trader declaration (Business → Compliance).
 
@@ -106,14 +111,14 @@ records public Connect identifiers, not secrets.
 
 ## Historical: Connect build 5 (2026-09-18)
 
-This section records what Apple had when build 5 was in review. It is **not** the current binary. The package recorded as waiting is **0.1.4 (9)** — see the top of this file.
+This section records what Apple had when build 5 was in review. It is **not** the current binary. The package recorded as waiting is **historical 0.1.4 (9)** — see the top of this file.
 The ASC API does **not** store a git SHA. Identity below is reconstructed from
 Connect timestamps + the git timeline.
 
 | Connect field | Value |
 | --- | --- |
 | App | `6813492506` `RunSpecimen` `com.darashkevich.runspecimen` SKU `runspecimen-mac` |
-| macOS version | **0.1.3** id `6cfe298b-92c1-460d-b83b-5687a67f2cff` `MAC_OS` `releaseType=AFTER_APPROVAL` |
+| macOS version | **historical 0.1.3** id `6cfe298b-92c1-460d-b83b-5687a67f2cff` `MAC_OS` `releaseType=AFTER_APPROVAL` |
 | State | was `WAITING_FOR_REVIEW`, later rejected (not the current submission) |
 | Submission | `appStoreVersionSubmissions` id `6cfe298b-92c1-460d-b83b-5687a67f2cff` |
 | Build | **5** id `17c7d179-78e4-4b93-86ce-753cef186b20` `processingState=VALID` `expired=false` min OS 14.0 |
@@ -151,7 +156,7 @@ Commits that **cannot** be inside Apple’s binary (all after 15:38 CEST):
 
 ### Recommendation (superseded)
 
-Build **9** (`0.1.4`) is now **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded.
+Build **9** (`historical 0.1.4`) is now **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded.
 
 ## Packaging checklist (this operator Mac)
 
@@ -167,15 +172,15 @@ Build **9** (`0.1.4`) is now **Removed from App Store** (EU trader status missin
 | Local e2e / gate evidence | [evidence/](evidence/) |
 | Apple Distribution cert + MAS profile | **Present** (2026-09-18): `Apple Distribution: YAHOR DARASHKEVICH (UN6KF8636A)`; installer `3rd Party Mac Developer Installer: YAHOR DARASHKEVICH (UN6KF8636A)` in the keychain; profile `RunSpecimen MAS` UUID `0c5ef3dc-ebad-429b-8928-fdfcfee98c29` (`OSX`, `UN6KF8636A.com.darashkevich.runspecimen`, **one** Application `DeveloperCertificate`, no `get-task-allow`, no `ProvisionedDevices`). The profile **correctly omits** the installer cert (code-signing EKU vs installer EKU). Do **not** regenerate the app profile “to include” the installer identity. Developer ID Application is **not** a MAS substitute. |
 | Distribution-signed archive | **Done** — `RS_MAS_EXPORT=0 ./Scripts/archive_mas.sh` from `/tmp/rs-clean-checkout` (`44ddfed`). App + helper `TeamIdentifier=UN6KF8636A`, Authority `Apple Distribution`, `codesign --verify --strict`, App Sandbox + helper inherit, `Assets.car` + `AppIcon.icns`. |
-| Local MAS `.pkg` export | **Done** — `RS_EXPORT_DESTINATION=export` + `installerSigningCertificate` + profile **UUID** (display name `RunSpecimen MAS` is not what `exportArchive` resolves). Proof: [evidence/export-mas-local-pkg-ok.txt](evidence/export-mas-local-pkg-ok.txt). SHA-256 `e6ea0a7f12f4094ed430ea1ebc956ad6db2d67ecfa0f52e1eb0ebb66283f1bbf`. Extracted app **0.1.3 (5)** `mas`, both binaries `--verify --strict`, sandbox + inherit. **This local pkg is not what Apple is reviewing** (exported after PR #15 packaging fixes). First attempt without installer cert / UUID: [evidence/export-mas-local-pkg-installer-profile-mismatch.txt](evidence/export-mas-local-pkg-installer-profile-mismatch.txt). |
-| `ExportOptions.mas.plist` committed `teamID` | Still placeholder `TEAMID`; `export_mas.sh` rewrites a temp copy (team ID + profile UUID). Default `destination=upload` — set `RS_EXPORT_DESTINATION=export` for a local pkg. Never `-allowProvisioningUpdates` without Yahor. |
-| Connect upload | **0.1.4 (9)** `Removed from App Store` (EU trader status missing). |
+| Local MAS `.pkg` export | **Done** — `RS_EXPORT_DESTINATION=export` + `installerSigningCertificate` + profile **UUID** (display name `RunSpecimen MAS` is not what `exportArchive` resolves). Proof: [evidence/export-mas-local-pkg-ok.txt](evidence/export-mas-local-pkg-ok.txt). SHA-256 `e6ea0a7f12f4094ed430ea1ebc956ad6db2d67ecfa0f52e1eb0ebb66283f1bbf`. Extracted app **historical 0.1.3 (5)** `mas`, both binaries `--verify --strict`, sandbox + inherit. **This local pkg is not what Apple is reviewing** (exported after PR #15 packaging fixes). First attempt without installer cert / UUID: [evidence/export-mas-local-pkg-installer-profile-mismatch.txt](evidence/export-mas-local-pkg-installer-profile-mismatch.txt). |
+| `ExportOptions.mas.plist` committed `teamID` | Still placeholder `TEAMID`; `export_mas.sh` rewrites a temp copy (team ID + profile UUID). Default `destination=export` produces a local pkg; `RS_EXPORT_DESTINATION=upload` explicitly opts into upload. Never `-allowProvisioningUpdates` without Yahor. |
+| Connect upload | **historical 0.1.4 (9)** `Removed from App Store` (EU trader status missing). |
 
 State ladder (do not collapse these):
 
 1. **Uploaded** — build 8 is in Connect (`c5575ef9-2444-4452-aec8-c9afdc7dd611`).
 2. **Processing** — finished; `VALID`.
-3. **Waiting for review** — recorded state for **0.1.4 (9)** (submission `f0bb3ab1-…`, 2026-09-24). Build 8's earlier waiting state ended in rejection.
+3. **Waiting for review** — recorded state for **historical 0.1.4 (9)** (submission `f0bb3ab1-…`, 2026-09-24). Build 8's earlier waiting state ended in rejection.
 4. **Approved** — not yet.
 5. **Publicly available** — not yet (`AFTER_APPROVAL` will still need Apple to release it).
 
