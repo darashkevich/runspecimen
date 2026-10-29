@@ -4,8 +4,14 @@ final class RecoveryUITests: XCTestCase {
     private let app = XCUIApplication()
 
     override func tearDown() {
-        // Close any presented activity sheet before ending the owned app.
-        if app.state == .runningForeground { app.swipeDown() }
+        if app.state == .runningForeground {
+            let dismiss = app.otherElements["PopoverDismissRegion"]
+            if dismiss.exists {
+                dismiss.tap()
+            } else {
+                app.swipeDown()
+            }
+        }
         app.terminate()
         super.tearDown()
     }
@@ -27,8 +33,8 @@ final class RecoveryUITests: XCTestCase {
         reopen.tap()
         XCTAssertTrue(banner.waitForExistence(timeout: 15), app.debugDescription)
         app.buttons["Export recovery diagnostics"].tap()
-        // Query the activity's actionable button, not every accessibility node.
-        // Keep the existing bound; snapshot failures must fail the gate.
-        XCTAssertTrue(app.buttons["Copy"].firstMatch.waitForExistence(timeout: 90), app.debugDescription)
+        // Scope to the share sheet's activity list. Keep the existing bound.
+        let copy = app.otherElements["ActivityListView"].buttons["Copy"].firstMatch
+        XCTAssertTrue(copy.waitForExistence(timeout: 90), app.debugDescription)
     }
 }
