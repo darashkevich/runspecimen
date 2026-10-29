@@ -90,13 +90,6 @@ final class CompanionSession: ObservableObject {
 
     private let phoneKeyStage: PhoneKeyStage
 
-    static var storageDefaults: UserDefaults {
-        #if RUNSPECIMEN_TEST_HOOKS
-        if let defaults = testDefaults { return defaults }
-        #endif
-        return .standard
-    }
-
     private let defaultsKey = "rs.observe.pairing"
     private let keychainService = "com.darashkevich.runspecimen.observe.pairing"
     private let keychainAccount = "pairingToken"
