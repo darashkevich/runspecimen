@@ -491,12 +491,7 @@ class RunCleanupQATests(unittest.TestCase):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            deadline = time.monotonic() + 5
-            while not (pid_dir / "member.pid").exists():
-                self.assertIsNone(leader.poll(), "leader exited before spawning member")
-                self.assertLess(time.monotonic(), deadline, "member pid not written")
-                time.sleep(0.01)
-            member_pid = int((pid_dir / "member.pid").read_text())
+            member_pid = int(self._wait_file(pid_dir / "member.pid", leader))
             os.kill(leader.pid, signal.SIGKILL)
             leader.wait(timeout=2)
             self.assertTrue(_pid_alive(member_pid), "member must survive leader reap")
@@ -631,12 +626,7 @@ class RunCleanupQATests(unittest.TestCase):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            deadline = time.monotonic() + 5
-            while not (pid_dir / "member.pid").exists():
-                self.assertIsNone(leader.poll(), "leader exited before spawning member")
-                self.assertLess(time.monotonic(), deadline, "member pid not written")
-                time.sleep(0.01)
-            member_pid = int((pid_dir / "member.pid").read_text())
+            member_pid = int(self._wait_file(pid_dir / "member.pid", leader))
             os.kill(leader.pid, signal.SIGKILL)
             leader.wait(timeout=2)
             self.assertTrue(_pid_alive(member_pid), "member must survive leader reap")
@@ -844,12 +834,7 @@ class RunCleanupQATests(unittest.TestCase):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            deadline = time.monotonic() + 5
-            while not (pid_dir / "member.pid").exists():
-                self.assertIsNone(leader.poll(), "leader exited before spawning member")
-                self.assertLess(time.monotonic(), deadline, "member pid not written")
-                time.sleep(0.01)
-            member_pid = int((pid_dir / "member.pid").read_text())
+            member_pid = int(self._wait_file(pid_dir / "member.pid", leader))
             os.kill(leader.pid, signal.SIGKILL)
             leader.wait(timeout=2)
             self.assertTrue(_pid_alive(member_pid), "member must survive leader reap")
