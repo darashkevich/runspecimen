@@ -106,6 +106,7 @@ jobs:
             ${{ runner.temp }}/ios-observe-results/TestResults.xcresult
             ${{ runner.temp }}/ios-observe-results/test.log
             ${{ runner.temp }}/ios-observe-results/environment.txt
+            ${{ runner.temp }}/ios-observe-results/failure-diagnostics
           if-no-files-found: warn
           retention-days: 7
 

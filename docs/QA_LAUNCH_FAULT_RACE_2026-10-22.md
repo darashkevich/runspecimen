@@ -41,10 +41,11 @@ fixture self-exit does not explain that particular CI failure.
 
 scripts/stress_launch_faults.py runs isolated copies of a selected test in
 parallel and records every failed invocation. The dedicated Linux/Python 3.10
-workflow retains diagnostic baseline results, then strictly gates the fixed
-launch suite, 800 runs of the original test (8 workers), and 100 runs of the
-new writer-boundary test (4 workers). Baseline failure is evidence, not a
-passing test result; all fixed-run failures fail the job. Artifact upload runs
+workflow retains diagnostic baseline results, then strictly gates the
+deterministic launch-fault unittests. The 800-run original-test load and the
+writer-boundary load are smoke only: the pre-fix baseline also passed 800/800.
+Baseline failure is evidence, not a passing test result; a failed deterministic
+unittest fails the job. Artifact upload runs
 even on failure. No workflow rerun of the original failed job is required.
 
 Local baseline load on macOS: 400 original-test runs, zero failures. This does
