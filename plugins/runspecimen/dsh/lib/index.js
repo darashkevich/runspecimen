@@ -19,7 +19,9 @@
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 
-import { ALLOWED_ACTIONS, buildArgv, READ_ONLY_ACTIONS, runCli } from "./cli.js";
+import { readFileSync } from "node:fs";
+
+import { ALLOWED_ACTIONS, buildArgv, READ_ONLY_ACTIONS, resolveInsideWorkspace, resolveWorkspace, runCli } from "./cli.js";
 import {DashboardManager} from "./dashboard.js";
 import {validateLimits,MAX_TIMEOUT_MS,MAX_OUTPUT_BYTES,ProcessCaptureError} from "./process.js";
 import { REFUSED_ACTIONS, refusalMessage } from "./refusal.js";
@@ -61,6 +63,54 @@ export const Config = z.object({
  * @param schema - JSON-Schema-style object describing the result value.
  * @returns the `output` declaration accepted by `defineTool`.
  */
+function contractIds(args, base) {
+  try {
+    const workspace = resolveWorkspace(String(args?.workspace ?? ""), base);
+    const contract = resolveInsideWorkspace(String(args?.contract ?? ""), workspace);
+    const doc = JSON.parse(readFileSync(contract, "utf8"));
+    if (typeof doc.campaign_id === "string" && typeof doc.run_id === "string") {
+      return { campaign_id: doc.campaign_id, run_id: doc.run_id };
+    }
+  } catch {
+    // Fail closed: an unreadable contract cannot confirm cleanup.
+  }
+  return null;
+}
+
+function parseStatusPayload(text) {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+async function independentlyConfirmRunStopped(resolved, args, common, base) {
+  const ids = contractIds(args, base);
+  if (!ids) return false;
+  try {
+    const observed = await runCli({
+      ...common,
+      signal: undefined,
+      argv: buildArgv("status", { workspace: args.workspace, contract: args.contract, ...ids }, { base }),
+      timeoutMs: Math.min(resolved.timeoutMs, 5_000),
+      maxOutputBytes: resolved.maxOutputBytes,
+    });
+    if (observed.exitCode !== 0) return false;
+    const status = parseStatusPayload(observed.text);
+    if (!status) return false;
+    if (status.phase === "running") return false;
+    if (status.workspace_lease_held_by_other === true || status.lease_held_by_other === true) return false;
+    if (status.lease_meta) return false;
+    return status.phase === "failed" || status.phase === "completed";
+  } catch {
+    return false;
+  }
+}
+
 function jsonOutput(schema) {
   return {
     schema,
@@ -180,15 +230,18 @@ function actionTool(resolved, action, description, parameters) {
         maxOutputBytes: resolved.maxOutputBytes,
       });
       if (action === 'run' && !cancelledBeforeStart && (result.cancelled || result.timedOut)) {
-        // The CLI launches the approved contract in a separate session. Death
-        // of our owned supervisor group is not proof of that session's death,
-        // including when an older CLI does not handle TERM/HUP. Fail closed:
-        // retain the initiating cause, but do not certify contract cleanup.
-        result.cleanupFailed = true;
-        result.terminationKind = 'cleanup';
-        result.text += '\n[Approved contract cleanup is not independently confirmed. '
-          + 'The run may still be active; inspect runspecimen status before continuing. '
-          + 'Do not retry or start another lifecycle operation on this result.]';
+        // Supervisor-group death is not the contract session. Confirm through
+        // runspecimen status: phase left running, or the lease still held,
+        // stays cleanupFailed. A verified interrupted/failed run with a free
+        // lease may report confirmed cleanup.
+        const confirmed = await independentlyConfirmRunStopped(resolved, args, common, base);
+        result.cleanupFailed = !confirmed;
+        if (!confirmed) {
+          result.terminationKind = 'cleanup';
+          result.text += '\n[Approved contract cleanup is not independently confirmed. '
+            + 'The run may still be active; inspect runspecimen status before continuing. '
+            + 'Do not retry or start another lifecycle operation on this result.]';
+        }
       }
       return {
         ok: result.exitCode === 0 && !result.cancelled && !result.timedOut && !result.cleanupFailed,
