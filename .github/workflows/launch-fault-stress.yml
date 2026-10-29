@@ -1,0 +1,37 @@
+name: Launch fault deterministic regression and smoke load
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  linux-lease:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - name: Retain pre-fix evidence (diagnostic, not a passing gate)
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/lease-evidence" "$RUNNER_TEMP/lease-before"
+          git fetch --depth=1 origin 4514bdc7f2f1718889c21cc50920d7fea6314ece
+          git archive 4514bdc7f2f1718889c21cc50920d7fea6314ece | tar -x -C "$RUNNER_TEMP/lease-before"
+          set +e
+          python scripts/stress_launch_faults.py --repo "$RUNNER_TEMP/lease-before" --output "$RUNNER_TEMP/lease-evidence/baseline-load.json"
+          baseline_rc=$?
+          set -e
+          echo "Diagnostic pre-fix load exit: $baseline_rc (all failures remain in baseline-load.json)"
+      - name: Deterministic real-pipe regression and non-discriminating smoke load
+        shell: bash
+        run: |
+          set -o pipefail
+          PYTHONPATH=src python -m unittest tests.test_launch_faults -v 2>&1 | tee "$RUNNER_TEMP/lease-evidence/launch-faults.log"
+          python scripts/stress_launch_faults.py --output "$RUNNER_TEMP/lease-evidence/fixed-load.json"
+          python scripts/stress_launch_faults.py --test tests.test_launch_faults.LaunchFaultTests.test_rejected_launch_preserves_a_live_wrappers_pending_record --iterations 25 --workers 4 --output "$RUNNER_TEMP/lease-evidence/writer-boundary-load.json"
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: launch-lease-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lease-evidence/
+          if-no-files-found: error

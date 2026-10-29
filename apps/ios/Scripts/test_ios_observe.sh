@@ -26,17 +26,27 @@ xcodegen generate --spec project.yml
 
 echo "Building and testing ObserveSchemaTests..."
 
-SCRATCH_DIR="$(mktemp -d)"
-trap 'rm -rf "$SCRATCH_DIR"' EXIT
+# Preserve the failing UI hierarchy/screenshots and Simulator diagnostics in CI.
+# Local runs retain the existing disposable build behavior.
+if [[ "${GITHUB_ACTIONS:-}" == "true" && -n "${RUNNER_TEMP:-}" ]]; then
+  SCRATCH_DIR="$RUNNER_TEMP/ios-observe-results"
+  mkdir -p "$SCRATCH_DIR"
+else
+  SCRATCH_DIR="$(mktemp -d)"
+  trap 'rm -rf "$SCRATCH_DIR"' EXIT
+fi
+xcodebuild -version > "$SCRATCH_DIR/environment.txt"
+xcrun simctl list devices available >> "$SCRATCH_DIR/environment.txt"
 
-DESTINATION=$(xcrun simctl list devices available -j 2>/dev/null | \
-  python3 -c "import json,sys; d=json.load(sys.stdin); \
-  devs=[(r,n) for r,ds in d.get('devices',{}).items() for n in ds if 'iPhone' in n.get('name','') and n.get('isAvailable',False)]; \
-  print(f\"platform=iOS Simulator,id={devs[0][1]['udid']}\") if devs else print('platform=iOS Simulator,name=Any iOS Simulator Device')" 2>/dev/null \
-  || echo "platform=iOS Simulator,name=Any iOS Simulator Device")
+SDK_VERSION=$(xcrun --sdk iphonesimulator --show-sdk-version)
+SIMULATOR_ID=$(xcrun simctl list devices available -j | python3 "$SCRIPT_DIR/select_ios_simulator.py" "$SDK_VERSION")
+xcrun simctl bootstatus "$SIMULATOR_ID" -b
+DESTINATION="platform=iOS Simulator,id=$SIMULATOR_ID"
 
 echo "Using destination: $DESTINATION"
 
+# Capture the test exit code before errexit can leave the script.
+set +e
 xcodebuild test \
   -project RunSpecimenObserve.xcodeproj \
   -scheme RunSpecimenObserve \
@@ -46,12 +56,39 @@ xcodebuild test \
   CODE_SIGN_IDENTITY="" \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGNING_ALLOWED=NO \
+  ENABLE_MAIN_THREAD_CHECKER=NO \
   2>&1 | tee "$SCRATCH_DIR/test.log"
 
 TEST_RC=${PIPESTATUS[0]}
+set -e
 
 if [[ "$TEST_RC" -ne 0 ]]; then
   echo "iOS tests FAILED with exit code $TEST_RC"
+  DIAG_DIR="$SCRATCH_DIR/failure-diagnostics"
+  mkdir -p "$DIAG_DIR"
+  {
+    date -u +%Y-%m-%dT%H:%M:%SZ
+    uptime || true
+    vm_stat || true
+  } > "$DIAG_DIR/host-load.txt" 2>&1 || true
+  if [[ -n "${SIMULATOR_ID:-}" ]]; then
+    xcrun simctl spawn "$SIMULATOR_ID" launchctl list > "$DIAG_DIR/launchctl.txt" 2>&1 || true
+    xcrun simctl spawn "$SIMULATOR_ID" ps -axo pid,stat,etime,pcpu,comm > "$DIAG_DIR/ps.txt" 2>&1 || true
+    python3 - "$SIMULATOR_ID" "$DIAG_DIR/sim-log.txt" <<'PY' || true
+import subprocess, sys
+udid, dest = sys.argv[1], sys.argv[2]
+cmd = [
+    "xcrun", "simctl", "spawn", udid, "log", "show", "--last", "5m",
+    "--predicate",
+    'process == "RunSpecimenObserve" OR process == "SharingUIService" OR process == "ShareSheetUI" OR process == "SpringBoard" OR process == "testmanagerd"',
+]
+try:
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    open(dest, "w", encoding="utf-8").write(result.stdout + result.stderr)
+except subprocess.TimeoutExpired as error:
+    open(dest, "w", encoding="utf-8").write("log show truncated: %s\n" % error)
+PY
+  fi
   exit 1
 fi
 

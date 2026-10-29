@@ -85,6 +85,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests/PhonePeerCancellationTests
+      - path: Tests/ObserveSchemaTests/SessionTestIsolation.swift
     dependencies:
       - target: RunSpecimenObserve
     settings:
@@ -112,6 +113,12 @@ schemes:
       targets:
         RunSpecimenObserve: all
     test:
+      # UI tests launch without wait_for_debugger and without the
+      # in-process checkers that starved snapshot evaluation on CI.
+      debugEnabled: false
+      disableMainThreadChecker: true
+      environmentVariables:
+        OS_ACTIVITY_DT_MODE: NO
       targets:
         - ObserveSchemaTests
         - PhonePeerCancellationTests

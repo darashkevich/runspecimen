@@ -4,7 +4,7 @@ import Security
 import Darwin
 @testable import RunSpecimenObserve
 
-final class ObserveSchemaTests: XCTestCase {
+final class ObserveSchemaTests: IsolatedCompanionSessionTests {
     override func setUp() {
         super.setUp()
         executionTimeAllowance = 60
@@ -1930,7 +1930,7 @@ extension ObserveSchemaTests {
         let session = await CompanionSession()
         
         await MainActor.run {
-            let defaults = UserDefaults.standard
+            let defaults = CompanionSession.storageDefaults
             let oldKey = "rs.observe.pairing"
             
             if let existingConfig = defaults.dictionary(forKey: oldKey),
@@ -2106,7 +2106,7 @@ extension ObserveSchemaTests {
 
     @MainActor
     func testIOSQA702MigrationRetainsTokenUntilKeychainWriteSucceeds() throws {
-        let defaults = UserDefaults.standard
+        let defaults = CompanionSession.storageDefaults
         let key = "rs.observe.pairing"
         let previous = defaults.object(forKey: key)
         defer {
@@ -2759,7 +2759,7 @@ extension ObserveSchemaTests {
     @MainActor
     func testIOSQA702PairingWriteFailureKeepsPreviousConfigurationAndToken() throws {
         let key = "rs.observe.pairing"
-        let defaults = UserDefaults.standard
+        let defaults = CompanionSession.storageDefaults
         let previous = defaults.object(forKey: key)
         defer {
             defaults.set(previous, forKey: key)
@@ -2939,7 +2939,7 @@ extension ObserveSchemaTests {
 extension ObserveSchemaTests {
     @MainActor
     func testIOSQA8C1RejectedCandidateIsNeverPersistedOrRestored() async throws {
-        let defaults = UserDefaults.standard
+        let defaults = CompanionSession.storageDefaults
         let previous = defaults.object(forKey: "rs.observe.pairing")
         defer { defaults.set(previous, forKey: "rs.observe.pairing"); CompanionSession.testTokenRead = nil; CompanionSession.testTokenWrite = nil }
         defaults.removeObject(forKey: "rs.observe.pairing")
@@ -3085,7 +3085,7 @@ extension ObserveSchemaTests {
 extension ObserveSchemaTests {
     @MainActor
     func testIOSQA8C1FailedOrCancelledReplacementKeepsPreviouslySavedPairing() async throws {
-        let defaults = UserDefaults.standard
+        let defaults = CompanionSession.storageDefaults
         let previous = defaults.object(forKey: "rs.observe.pairing")
         defer { defaults.set(previous, forKey: "rs.observe.pairing"); CompanionSession.testTokenRead = nil; CompanionSession.testTokenWrite = nil }
         var token = "old-token"
