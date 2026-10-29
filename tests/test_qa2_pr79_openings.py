@@ -42,23 +42,17 @@ class QA2PR79OpeningsTests(unittest.TestCase):
             int(match)
             for match in re.findall(r"wait\(for:[^\n]*timeout:\s*(\d+)", source)
         ]
-        # main 769a0a0: first banner 15s; hidden/reopen/banner-again/export 5s.
-        self.assertEqual(existence[0], 15)
-        self.assertTrue(existence[1:])
-        self.assertTrue(all(value <= 5 for value in existence[1:]))
-        self.assertTrue(waits)
-        self.assertTrue(all(value <= 5 for value in waits))
+        # Job 123296368592: hide is the Key recovery toolbar (positive exists),
+        # not wait(for: exists == false). Banner 15s; toolbar/reopen/export 5s.
+        self.assertEqual(existence, [15, 5, 5, 5])
+        self.assertEqual(waits, [])
         self.assertNotIn("timeout: 90", source)
-        self.assertLessEqual(max(existence + waits), 15)
 
     def test_recovery_ui_waits_do_not_exceed_main(self) -> None:
         source = _read("apps/ios/Tests/ObserveRecoveryUITests/RecoveryUITests.swift")
         timeouts = [int(match) for match in re.findall(r"timeout:\s*(\d+)", source)]
-        # main 769a0a0: first banner 15s; hide/reopen/banner-again/export 5s.
-        self.assertGreaterEqual(len(timeouts), 5)
-        self.assertLessEqual(timeouts[0], 15)
-        self.assertTrue(all(value <= 5 for value in timeouts[1:]))
-        self.assertLessEqual(max(timeouts), 15)
+        # Job 123296368592: banner 15s; Key recovery / banner-again / export 5s.
+        self.assertEqual(timeouts, [15, 5, 5, 5])
         self.assertNotIn("timeout: 90", source)
 
     def test_recovery_teardown_dismisses_sheet_and_terminates(self) -> None:
@@ -66,6 +60,27 @@ class QA2PR79OpeningsTests(unittest.TestCase):
         self.assertIn("override func tearDown()", source)
         self.assertIn('otherElements["PopoverDismissRegion"]', source)
         self.assertIn("app.terminate()", source)
+
+    def test_recovery_dismiss_waits_on_key_recovery_not_any_exists_false(self) -> None:
+        """Job 123296368592: Dismiss VisiblePoint was the button center (71.3, 195.2)
+        inside frame {X:16,Y:185,W:110.67,H:20.33}. Key recovery was already in
+        the AX tree at 06:24:55.909; exists==false on the pre-tap
+        descendants(.any) firstMatch then walked the tree until 06:25:04.390
+        (empty match) and missed the 5s wait. Wait on that toolbar instead.
+        """
+        tests = _read("apps/ios/Tests/ObserveRecoveryUITests/RecoveryUITests.swift")
+        self.assertNotIn("exists == false", tests)
+        self.assertNotIn("expectation(for:", tests)
+        self.assertNotIn("NSPredicate", tests)
+        self.assertNotRegex(tests, r"sleep\(|Task\.sleep|Thread\.sleep")
+        self.assertRegex(
+            tests,
+            r'buttons\["Dismiss notice"\]\.tap\(\)\s+'
+            r'let reopen = app\.buttons\["Key recovery"\]\s+'
+            r'XCTAssertTrue\(reopen\.waitForExistence\(timeout: 5\)',
+        )
+        schema = _read("apps/ios/Tests/ObserveSchemaTests/SchemaTests.swift")
+        self.assertIn("testDismissNoticeHidesImmediatelyAndRetryDoesNotRestoreIt", schema)
 
     def test_ios_script_captures_failure_diagnostics(self) -> None:
         script = _read("apps/ios/Scripts/test_ios_observe.sh")
