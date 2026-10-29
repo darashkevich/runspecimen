@@ -42,6 +42,9 @@ c=write_contract(ws,'contract.json',base_contract(caps={'wall_timeout_sec':8,'st
     assert.equal(result.ok,false);
     assert.ok(!alive || result.cleanupFailed===true,'must not report confirmed cleanup while the approved contract is alive');
     if(status.phase==='running')assert.equal(result.cleanupFailed,true,'phase running must remain explicitly unresolved');
+    if(!alive && status.phase==='failed' && status.workspace_lease_held_by_other===false && !status.lease_meta){
+      assert.equal(result.cleanupFailed,false,'verified-empty interrupted run must report confirmed cleanup');
+    }
     if(process.env.QA2_EXPECT_STOP==='1'){
       assert.equal(alive,false,'signal-aware CLI must stop the approved contract');
       assert.equal(status.phase,'failed');

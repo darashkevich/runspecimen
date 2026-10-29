@@ -135,16 +135,15 @@ process and returns its URL and pid. It serves until stopped or until the config
 Stop it earlier with `runspecimen_dashboard_stop` (`pid` optional; omitting it stops
 every dashboard this plugin started).
 
-Every call inherits the caller's cancellation signal. Cleanup confirmation is
-limited to the plugin's owned process group. `runspecimen run` launches the
-approved contract in another session; killing the CLI group does not prove that
-contract stopped. An interrupted `runspecimen_run` therefore returns
-`cleanupFailed: true`, preserves `cancelled`/`timedOut` and `triggerKind`, and
-reports `terminationKind: "cleanup"`. Inspect that run with `runspecimen status`
-before continuing; do not treat this result as permission to retry or release a
-lease. Older CLIs without TERM/HUP handling can leave the contract running.
-This conservative result also applies when a newer CLI handled the signal,
-because this plugin has no independent contract-session death acknowledgement.
+Every call inherits the caller's cancellation signal. Cleanup confirmation of
+the plugin's owned process group is separate from the approved contract session
+that `runspecimen run` starts. After cancel or timeout of `runspecimen_run`,
+the plugin queries `runspecimen status`. It reports `cleanupFailed: false` only
+when that status shows the run is not `running`, the lease is free, and the
+initiating `cancelled`/`timedOut` cause is preserved. Any other observation,
+including a missing contract id or unreadable status, stays `cleanupFailed:
+true` with `terminationKind: "cleanup"`. Do not retry or start another
+lifecycle operation on an unconfirmed result.
 
 ## Layout
 
