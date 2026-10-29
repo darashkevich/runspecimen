@@ -18,6 +18,12 @@ def _read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
+def _shell_commands(source: str) -> str:
+    return "\n".join(
+        line for line in source.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
 class QA2PR79OpeningsTests(unittest.TestCase):
     def test_test_action_does_not_wait_for_debugger(self) -> None:
         source = _read("apps/ios/project.yml")
@@ -90,6 +96,39 @@ class QA2PR79OpeningsTests(unittest.TestCase):
         self.assertIn("launchctl list", script)
         self.assertRegex(script, r"uptime|vm_stat")
         self.assertIn("failure-diagnostics", workflow)
+
+    def test_ios_observe_does_not_block_on_bootstatus_before_compile(self) -> None:
+        """Job 123574866576 attempt 2: annotation
+        'The job has exceeded the maximum execution time of 15m0s'.
+        bootstatus -b ran 16:19:56–16:24:10 (Elapsed=04:11, Data Migration /
+        System App) after a 3m text simctl list. xcodebuild compiled until
+        16:30:36; ObserveSchemaTests launched at 16:31:38 with
+        wait_for_debugger=1; cancelled at 16:31:56. RecoveryUITests
+        scheduling.log was empty; no Test Case line. Kick boot in the
+        background so compile overlaps the simulator cold start. Do not
+        raise the 15m job timeout.
+        """
+        script = _read("apps/ios/Scripts/test_ios_observe.sh")
+        commands = _shell_commands(script)
+        workflow = _read(".github/workflows/ci.yml")
+        self.assertNotRegex(commands, r"simctl\s+bootstatus")
+        self.assertNotRegex(commands, r"(?m)^\s*sleep\b")
+        self.assertIn('xcrun simctl boot "$SIMULATOR_ID"', commands)
+        self.assertIn("xcodebuild test", commands)
+        boot = commands.index('xcrun simctl boot "$SIMULATOR_ID"')
+        compile_at = commands.index("xcodebuild test")
+        self.assertLess(boot, compile_at)
+        between = commands[boot:compile_at]
+        self.assertRegex(between, r"\|\|\s*true\s*&")
+        self.assertNotIn("wait ", between)
+        self.assertNotRegex(between, r"simctl\s+bootstatus")
+        before_test = commands[:compile_at]
+        self.assertNotRegex(before_test, r"simctl list devices available(?!\s+-j)")
+        self.assertRegex(before_test, r"simctl list devices available -j")
+        self.assertRegex(
+            workflow,
+            r"(?m)^  ios-observe-tests:\n    runs-on: macos-latest\n    timeout-minutes: 15\n",
+        )
 
     def test_launch_fault_workflow_labels_load_as_smoke(self) -> None:
         workflow = _read(".github/workflows/launch-fault-stress.yml")
