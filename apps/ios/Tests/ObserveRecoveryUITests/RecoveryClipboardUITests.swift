@@ -1,9 +1,15 @@
 import XCTest
 
 final class RecoveryClipboardUITests: XCTestCase {
+    private let app = XCUIApplication()
+
+    override func tearDown() {
+        app.terminate()
+        super.tearDown()
+    }
+
     func testRecoveryCopyContainsRetainedDiagnostics() {
         continueAfterFailure = false
-        let app = XCUIApplication()
         app.launchEnvironment["RUNSPECIMEN_UI_RECOVERY_TEST"] = "1"
         app.launch()
         XCTAssertTrue(app.buttons["Copy recovery diagnostics"].waitForExistence(timeout: 15), app.debugDescription)

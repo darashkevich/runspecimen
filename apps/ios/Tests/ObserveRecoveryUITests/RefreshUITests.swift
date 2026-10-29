@@ -1,9 +1,15 @@
 import XCTest
 
 final class RefreshUITests: XCTestCase {
+    private let app = XCUIApplication()
+
+    override func tearDown() {
+        app.terminate()
+        super.tearDown()
+    }
+
     func testCancelledRefreshDoesNotInventAnUpdateTimestamp() {
         continueAfterFailure = false
-        let app = XCUIApplication()
         app.launchEnvironment["RUNSPECIMEN_UI_REFRESH_TEST"] = "cancelled"
         app.launch()
         XCTAssertTrue(app.staticTexts["Stale"].waitForExistence(timeout: 15))
@@ -16,7 +22,6 @@ final class RefreshUITests: XCTestCase {
 
     func testTransportFailureIsVisibleBesideConnectionStatus() {
         continueAfterFailure = false
-        let app = XCUIApplication()
         app.launchEnvironment["RUNSPECIMEN_UI_REFRESH_TEST"] = "failure"
         app.launch()
         XCTAssertTrue(app.staticTexts["Stale"].waitForExistence(timeout: 15))
@@ -26,7 +31,6 @@ final class RefreshUITests: XCTestCase {
     }
     func testRefreshButtonPublishesRecoveredStatusWithoutPullToRefresh() {
         continueAfterFailure = false
-        let app = XCUIApplication()
         app.launchEnvironment["RUNSPECIMEN_UI_REFRESH_TEST"] = "recover"
         app.launch()
         XCTAssertTrue(app.staticTexts["Stale"].waitForExistence(timeout: 15))
@@ -41,7 +45,6 @@ final class RefreshUITests: XCTestCase {
 
     func testPairedPhoneHasVisiblePairingEntry() {
         continueAfterFailure = false
-        let app = XCUIApplication()
         app.launchEnvironment["RUNSPECIMEN_UI_REFRESH_TEST"] = "recover"
         app.launch()
         let entry = app.buttons["pairIPhone"]
@@ -54,7 +57,6 @@ final class RefreshUITests: XCTestCase {
 
     func testPairingEditsAreDiscardedWhenGoingBack() {
         continueAfterFailure = false
-        let app = XCUIApplication()
         app.launchEnvironment["RUNSPECIMEN_UI_REFRESH_TEST"] = "recover"
         app.launch()
         let entry = app.buttons["pairIPhone"]
