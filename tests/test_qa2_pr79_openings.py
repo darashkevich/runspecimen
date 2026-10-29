@@ -85,6 +85,11 @@ class QA2PR79OpeningsTests(unittest.TestCase):
         self.assertEqual(summary["outcomes"]["failure"], 17)
         self.assertEqual(len(failures), 17)
 
+    def test_schema_pairing_tests_use_isolated_storage_defaults(self) -> None:
+        source = _read("apps/ios/Tests/ObserveSchemaTests/SchemaTests.swift")
+        self.assertNotIn("let defaults = UserDefaults.standard", source)
+        self.assertIn("let defaults = CompanionSession.storageDefaults", source)
+
     def test_recovery_export_content_is_unit_tested(self) -> None:
         tests = _read("apps/ios/Tests/ObserveSchemaTests/SchemaTests.swift")
         self.assertIn("rotationRecoveryDiagnostics.contains", tests)
