@@ -33,4 +33,3 @@ class IsolatedCompanionSessionTests: XCTestCase {
         try await super.tearDown()
     }
 }
-

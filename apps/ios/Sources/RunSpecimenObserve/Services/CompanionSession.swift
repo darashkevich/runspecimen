@@ -81,6 +81,13 @@ final class CompanionSession: ObservableObject {
     static var testTokenWrite: ((String) -> OSStatus)?
     #endif
 
+    static var storageDefaults: UserDefaults {
+        #if RUNSPECIMEN_TEST_HOOKS
+        if let defaults = testDefaults { return defaults }
+        #endif
+        return .standard
+    }
+
     private let phoneKeyStage: PhoneKeyStage
 
     static var storageDefaults: UserDefaults {
