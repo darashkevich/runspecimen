@@ -56,6 +56,7 @@ xcodebuild test \
   CODE_SIGN_IDENTITY="" \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGNING_ALLOWED=NO \
+  ENABLE_MAIN_THREAD_CHECKER=NO \
   2>&1 | tee "$SCRATCH_DIR/test.log"
 
 TEST_RC=${PIPESTATUS[0]}
@@ -63,6 +64,31 @@ set -e
 
 if [[ "$TEST_RC" -ne 0 ]]; then
   echo "iOS tests FAILED with exit code $TEST_RC"
+  DIAG_DIR="$SCRATCH_DIR/failure-diagnostics"
+  mkdir -p "$DIAG_DIR"
+  {
+    date -u +%Y-%m-%dT%H:%M:%SZ
+    uptime || true
+    vm_stat || true
+  } > "$DIAG_DIR/host-load.txt" 2>&1 || true
+  if [[ -n "${SIMULATOR_ID:-}" ]]; then
+    xcrun simctl spawn "$SIMULATOR_ID" launchctl list > "$DIAG_DIR/launchctl.txt" 2>&1 || true
+    xcrun simctl spawn "$SIMULATOR_ID" ps -axo pid,stat,etime,pcpu,comm > "$DIAG_DIR/ps.txt" 2>&1 || true
+    python3 - "$SIMULATOR_ID" "$DIAG_DIR/sim-log.txt" <<'PY' || true
+import subprocess, sys
+udid, dest = sys.argv[1], sys.argv[2]
+cmd = [
+    "xcrun", "simctl", "spawn", udid, "log", "show", "--last", "5m",
+    "--predicate",
+    'process == "RunSpecimenObserve" OR process == "SharingUIService" OR process == "ShareSheetUI" OR process == "SpringBoard" OR process == "testmanagerd"',
+]
+try:
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    open(dest, "w", encoding="utf-8").write(result.stdout + result.stderr)
+except subprocess.TimeoutExpired as error:
+    open(dest, "w", encoding="utf-8").write("log show truncated: %s\n" % error)
+PY
+  fi
   exit 1
 fi
 
