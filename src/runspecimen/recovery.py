@@ -51,6 +51,8 @@ def is_recoverable_phase(state: dict) -> tuple[bool, str]:
         return False, "run already postflighted"
     if phase == "abandoned":
         return False, "run already abandoned"
+    if phase == "cleanup_pending":
+        return True, "cleanup was not confirmed"
     if phase == "running":
         return True, "phase is running"
 

@@ -68,6 +68,10 @@ class AdapterServer:
             snapshot_base=self.root / "run-snapshots",
         )
 
+    def wait_for_admission_slot(self, timeout: float) -> bool:
+        """True once a client has taken an in-flight admission slot."""
+        return self._admission.entered.wait(timeout=timeout)
+
     def start(self) -> None:
         if self.socket_path.exists():
             self.socket_path.unlink()
