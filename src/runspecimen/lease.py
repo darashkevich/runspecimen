@@ -71,6 +71,10 @@ class Lease:
     def held(self) -> bool:
         return self._fd is not None
 
+    def fileno(self) -> int | None:
+        """Return the lock fd so a child can inherit the flock, or None."""
+        return self._fd
+
     def acquire(self, *, blocking: bool = False) -> None:
         if self._fd is not None:
             return

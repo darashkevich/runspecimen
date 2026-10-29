@@ -654,10 +654,13 @@ class HolderSocketAdmissionTests(unittest.TestCase):
 
         # Oversize frame
         sock3 = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock3.connect(str(server.socket_path))
-        sock3.sendall(b"y" * 5000 + b"\n")
-        raw3 = sock3.recv(4096).decode("utf-8")
-        sock3.close()
+        sock3.settimeout(2.0)
+        try:
+            sock3.connect(str(server.socket_path))
+            sock3.sendall(b"y" * 5000 + b"\n")
+            raw3 = sock3.recv(4096).decode("utf-8")
+        finally:
+            sock3.close()
         self.assertIn("frame limit", raw3)
         self.assertLess(4096, MAX_FRAME_BYTES)
 
