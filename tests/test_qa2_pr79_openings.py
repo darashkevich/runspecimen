@@ -18,6 +18,12 @@ def _read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
+def _shell_commands(source: str) -> str:
+    return "\n".join(
+        line for line in source.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
 class QA2PR79OpeningsTests(unittest.TestCase):
     def test_test_action_does_not_wait_for_debugger(self) -> None:
         source = _read("apps/ios/project.yml")
@@ -42,23 +48,17 @@ class QA2PR79OpeningsTests(unittest.TestCase):
             int(match)
             for match in re.findall(r"wait\(for:[^\n]*timeout:\s*(\d+)", source)
         ]
-        # main 769a0a0: first banner 15s; hidden/reopen/banner-again/export 5s.
-        self.assertEqual(existence[0], 15)
-        self.assertTrue(existence[1:])
-        self.assertTrue(all(value <= 5 for value in existence[1:]))
-        self.assertTrue(waits)
-        self.assertTrue(all(value <= 5 for value in waits))
+        # Job 123296368592: hide is the Key recovery toolbar (positive exists),
+        # not wait(for: exists == false). Banner 15s; toolbar/reopen/export 5s.
+        self.assertEqual(existence, [15, 5, 5, 5])
+        self.assertEqual(waits, [])
         self.assertNotIn("timeout: 90", source)
-        self.assertLessEqual(max(existence + waits), 15)
 
     def test_recovery_ui_waits_do_not_exceed_main(self) -> None:
         source = _read("apps/ios/Tests/ObserveRecoveryUITests/RecoveryUITests.swift")
         timeouts = [int(match) for match in re.findall(r"timeout:\s*(\d+)", source)]
-        # main 769a0a0: first banner 15s; hide/reopen/banner-again/export 5s.
-        self.assertGreaterEqual(len(timeouts), 5)
-        self.assertLessEqual(timeouts[0], 15)
-        self.assertTrue(all(value <= 5 for value in timeouts[1:]))
-        self.assertLessEqual(max(timeouts), 15)
+        # Job 123296368592: banner 15s; Key recovery / banner-again / export 5s.
+        self.assertEqual(timeouts, [15, 5, 5, 5])
         self.assertNotIn("timeout: 90", source)
 
     def test_recovery_teardown_dismisses_sheet_and_terminates(self) -> None:
@@ -66,6 +66,27 @@ class QA2PR79OpeningsTests(unittest.TestCase):
         self.assertIn("override func tearDown()", source)
         self.assertIn('otherElements["PopoverDismissRegion"]', source)
         self.assertIn("app.terminate()", source)
+
+    def test_recovery_dismiss_waits_on_key_recovery_not_any_exists_false(self) -> None:
+        """Job 123296368592: Dismiss VisiblePoint was the button center (71.3, 195.2)
+        inside frame {X:16,Y:185,W:110.67,H:20.33}. Key recovery was already in
+        the AX tree at 06:24:55.909; exists==false on the pre-tap
+        descendants(.any) firstMatch then walked the tree until 06:25:04.390
+        (empty match) and missed the 5s wait. Wait on that toolbar instead.
+        """
+        tests = _read("apps/ios/Tests/ObserveRecoveryUITests/RecoveryUITests.swift")
+        self.assertNotIn("exists == false", tests)
+        self.assertNotIn("expectation(for:", tests)
+        self.assertNotIn("NSPredicate", tests)
+        self.assertNotRegex(tests, r"sleep\(|Task\.sleep|Thread\.sleep")
+        self.assertRegex(
+            tests,
+            r'buttons\["Dismiss notice"\]\.tap\(\)\s+'
+            r'let reopen = app\.buttons\["Key recovery"\]\s+'
+            r'XCTAssertTrue\(reopen\.waitForExistence\(timeout: 5\)',
+        )
+        schema = _read("apps/ios/Tests/ObserveSchemaTests/SchemaTests.swift")
+        self.assertIn("testDismissNoticeHidesImmediatelyAndRetryDoesNotRestoreIt", schema)
 
     def test_ios_script_captures_failure_diagnostics(self) -> None:
         script = _read("apps/ios/Scripts/test_ios_observe.sh")
@@ -75,6 +96,39 @@ class QA2PR79OpeningsTests(unittest.TestCase):
         self.assertIn("launchctl list", script)
         self.assertRegex(script, r"uptime|vm_stat")
         self.assertIn("failure-diagnostics", workflow)
+
+    def test_ios_observe_does_not_block_on_bootstatus_before_compile(self) -> None:
+        """Job 123574866576 attempt 2: annotation
+        'The job has exceeded the maximum execution time of 15m0s'.
+        bootstatus -b ran 16:19:56–16:24:10 (Elapsed=04:11, Data Migration /
+        System App) after a 3m text simctl list. xcodebuild compiled until
+        16:30:36; ObserveSchemaTests launched at 16:31:38 with
+        wait_for_debugger=1; cancelled at 16:31:56. RecoveryUITests
+        scheduling.log was empty; no Test Case line. Kick boot in the
+        background so compile overlaps the simulator cold start. Do not
+        raise the 15m job timeout.
+        """
+        script = _read("apps/ios/Scripts/test_ios_observe.sh")
+        commands = _shell_commands(script)
+        workflow = _read(".github/workflows/ci.yml")
+        self.assertNotRegex(commands, r"simctl\s+bootstatus")
+        self.assertNotRegex(commands, r"(?m)^\s*sleep\b")
+        self.assertIn('xcrun simctl boot "$SIMULATOR_ID"', commands)
+        self.assertIn("xcodebuild test", commands)
+        boot = commands.index('xcrun simctl boot "$SIMULATOR_ID"')
+        compile_at = commands.index("xcodebuild test")
+        self.assertLess(boot, compile_at)
+        between = commands[boot:compile_at]
+        self.assertRegex(between, r"\|\|\s*true\s*&")
+        self.assertNotIn("wait ", between)
+        self.assertNotRegex(between, r"simctl\s+bootstatus")
+        before_test = commands[:compile_at]
+        self.assertNotRegex(before_test, r"simctl list devices available(?!\s+-j)")
+        self.assertRegex(before_test, r"simctl list devices available -j")
+        self.assertRegex(
+            workflow,
+            r"(?m)^  ios-observe-tests:\n    runs-on: macos-latest\n    timeout-minutes: 15\n",
+        )
 
     def test_launch_fault_workflow_labels_load_as_smoke(self) -> None:
         workflow = _read(".github/workflows/launch-fault-stress.yml")

@@ -29,14 +29,14 @@ the workspace evidence with matching host runtime expectations.
 <details>
 <summary>Mac App Store details</summary>
 
-The Mac App Store package recorded in Connect on 2026-09-28 as **0.1.4 (9)** `Removed from App Store` (EU trader status missing) freezes engine **0.2.0rc14**. The Store app is guarantee (1) only and does not include the Developer ID holder. This branch's local label is **0.1.6 (16)** and is not an upload.
+The Mac App Store package recorded in Connect on 2026-09-28 as **historical 0.1.4 (9)** `Removed from App Store` (EU trader status missing) freezes engine **0.2.0rc14**. The Store app is guarantee (1) only and does not include the Developer ID holder. This branch's local label is **0.1.6 (16)** and is not an upload.
 </details>
 
 ## Does the Mac App Store app include the protected holder?
 
 No. The Store app and the Developer ID holder are different products with different guarantees.
 
-**Store app (guarantee 1):** You type `APPROVE` in a terminal for an ordinary contract. The approved **0.1.4 (9)** is this app. It does not ship the Developer ID holder.
+**Store app (guarantee 1):** You type `APPROVE` in a terminal for an ordinary contract. The approved **historical 0.1.4 (9)** is this app. It does not ship the Developer ID holder.
 
 **Developer ID holder (guarantee 2):** A separate component for enrollment, policy, and leases. It is not installed and not notarized in this release.
 

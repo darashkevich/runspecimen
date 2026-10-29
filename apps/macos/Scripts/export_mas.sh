@@ -74,6 +74,12 @@ fi
 TEAM="$(printf '%s\n' "$READY_OUT" | awk -F= '/^READY_TEAM=/{print $2; exit}')"
 PROFILE_UUID="$(printf '%s\n' "$READY_OUT" | awk -F= '/^READY_PROFILE_UUID=/{print $2; exit}')"
 
+# The gate must yield a real team before we bind the temporary export options.
+[[ "$TEAM" =~ ^[A-Z0-9]{10}$ && "$TEAM" != "TEAMID" ]] || {
+  echo "ERROR: export requires a resolved 10-character Apple Team ID; TEAMID is a template" >&2
+  exit 1
+}
+
 # Never mutate the committed ExportOptions plist (teamID placeholder stays TEAMID).
 WORK_PLIST="$(mktemp -t rs-export-options)"
 trap 'rm -f "$WORK_PLIST"' EXIT

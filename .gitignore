@@ -34,3 +34,5 @@ apps/macos/.swiftpm/
 
 .wrangler/
 apps/ios/build/
+
+node_modules/

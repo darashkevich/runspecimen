@@ -365,7 +365,7 @@ from a draft. Do not publish the rc11 draft.
 
 ## 3b. Mac App Store (`com.darashkevich.runspecimen`)
 
-**Status (App Store Connect):** macOS version **0.1.4 (9)** is **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded. Removed from the Mac App Store (EU trader status missing). Build **14** (0.1.5) was uploaded; next candidate is **0.1.6 (16)**. Yahor confirmed Mac 0.1.5 was withdrawn from review on 2026-10-18. Submission remains blocked on final QA closure.
+**Status (App Store Connect):** macOS version **historical 0.1.4 (9)** is **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded. Removed from the Mac App Store (EU trader status missing). Build **14** (historical 0.1.5) was uploaded; next candidate is **0.1.6 (16)**. Yahor confirmed Mac historical 0.1.5 was withdrawn from review on 2026-10-18. Submission remains blocked on final QA closure.
 
 The Mac App Store listing is now live with a public `apps.apple.com` URL.
 
@@ -430,7 +430,7 @@ listings are confirmed live (not pending review).
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
 | PyPI | ✅ | — | `0.2.0rc15` (same bytes as GitHub) | [runspecimen 0.2.0rc15](https://pypi.org/project/runspecimen/0.2.0rc15/) |
 | Homebrew tap | ✅ | — | `0.2.0rc15` sdist from GitHub Release | [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen) |
-| Mac App Store | ✅ READY_FOR_SALE | — | macOS **0.1.4 (9)** public | `apps.apple.com URL no longer live — see `apps/macos/asc-kit/STATUS.md` |
+| Mac App Store | ✅ READY_FOR_SALE | — | macOS **historical 0.1.4 (9)** public | `apps.apple.com URL no longer live — see `apps/macos/asc-kit/STATUS.md` |
 
 **Important:** Do not claim a listing is "public" or "available" until:
 1. Submission is accepted (not just submitted)

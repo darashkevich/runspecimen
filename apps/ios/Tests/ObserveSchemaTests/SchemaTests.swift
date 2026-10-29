@@ -6,6 +6,12 @@ import Darwin
 @testable import RunSpecimenObserve
 
 final class ObserveSchemaTests: IsolatedCompanionSessionTests {
+    @MainActor
+    func testSchemaStorageIsNotStandardDefaults() {
+        XCTAssertFalse(CompanionSession.storageDefaults === UserDefaults.standard)
+        XCTAssertNil(CompanionSession.testPairingToken)
+    }
+
     override func setUp() {
         super.setUp()
         executionTimeAllowance = 60
@@ -3069,6 +3075,23 @@ extension ObserveSchemaTests {
         XCTAssertNil(session.rotationRecoveryError)
         XCTAssertFalse(session.rotationRecoveryDismissed)
         XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+    }
+
+    @MainActor
+    func testDismissNoticeHidesImmediatelyAndRetryDoesNotRestoreIt() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data("corrupt-journal".utf8).write(to: directory.appendingPathComponent(".rotation-state.json"))
+        let session = CompanionSession(deferPhoneKeyState: true)
+        await session.recoverHardwareRotation(directory: directory)
+        let error = try XCTUnwrap(session.rotationRecoveryError)
+        session.dismissRotationRecoveryNotice()
+        XCTAssertEqual(session.rotationRecoveryError, error)
+        XCTAssertTrue(session.rotationRecoveryDismissed)
+        await session.recoverHardwareRotation(directory: directory)
+        XCTAssertEqual(session.rotationRecoveryError, error)
+        XCTAssertTrue(session.rotationRecoveryDismissed, "A Retry-shaped recover must not undo dismiss")
     }
 
     @MainActor

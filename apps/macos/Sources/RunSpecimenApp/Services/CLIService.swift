@@ -355,13 +355,7 @@ actor CLIService {
             // Refuse obviously tiny stub markers.
             // Read a bounded prefix instead of file attributes: this check needs
             // content length only, and must not collect file timestamps.
-            if let handle = try? FileHandle(forReadingFrom: url) {
-                defer { try? handle.close() }
-                do {
-                    let prefix = try handle.read(upToCount: 64)
-                    if (prefix?.count ?? 0) < 64 { continue }
-                } catch { /* Preserve discovery behavior when content is unreadable. */ }
-            }
+            guard let prefix = candidatePrefix(at: url), prefix.count >= 64 else { continue }
             return url.resolvingSymlinksInPath()
         }
         return nil
@@ -467,10 +461,22 @@ actor CLIService {
         return (cli, arguments)
     }
 
+    /// Reject non-regular candidates before opening. O_NONBLOCK also prevents a
+    /// replaced path becoming a blocking FIFO between the type check and open.
+    nonisolated static func candidatePrefix(at url: URL) -> Data? {
+        let resolved = url.resolvingSymlinksInPath()
+        guard (try? resolved.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { return nil }
+        let fd = open(resolved.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var bytes = [UInt8](repeating: 0, count: 64)
+        let count = bytes.withUnsafeMutableBytes { read(fd, $0.baseAddress!, $0.count) }
+        guard count >= 0 else { return nil }
+        return Data(bytes.prefix(count))
+    }
+
     nonisolated static func isShellScript(at url: URL) -> Bool {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
-        defer { try? handle.close() }
-        let prefix = handle.readData(ofLength: 64)
+        guard let prefix = candidatePrefix(at: url) else { return false }
         guard let text = String(data: prefix, encoding: .utf8) else { return false }
         let first = text.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
         return first.hasPrefix("#!") && (

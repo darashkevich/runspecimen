@@ -36,12 +36,19 @@ else
   trap 'rm -rf "$SCRATCH_DIR"' EXIT
 fi
 xcodebuild -version > "$SCRATCH_DIR/environment.txt"
-xcrun simctl list devices available >> "$SCRATCH_DIR/environment.txt"
-
 SDK_VERSION=$(xcrun --sdk iphonesimulator --show-sdk-version)
-SIMULATOR_ID=$(xcrun simctl list devices available -j | python3 "$SCRIPT_DIR/select_ios_simulator.py" "$SDK_VERSION")
-xcrun simctl bootstatus "$SIMULATOR_ID" -b
+echo "SDK_VERSION=$SDK_VERSION" >> "$SCRATCH_DIR/environment.txt"
+SIMULATOR_ID=$(xcrun simctl list devices available -j | tee -a "$SCRATCH_DIR/environment.txt" | python3 "$SCRIPT_DIR/select_ios_simulator.py" "$SDK_VERSION")
 DESTINATION="platform=iOS Simulator,id=$SIMULATOR_ID"
+{
+  echo "SIMULATOR_ID=$SIMULATOR_ID"
+  echo "DESTINATION=$DESTINATION"
+} >> "$SCRATCH_DIR/environment.txt"
+# Job 123574866576 attempt 2: bootstatus -b blocked 4m14s (Data Migration /
+# System App) after a 3m text simctl list, then the 15m job timeout cancelled
+# xcodebuild during ObserveSchemaTests launch. No Test Case ran. Kick boot
+# in the background so compile overlaps the simulator cold start.
+xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true &
 
 echo "Using destination: $DESTINATION"
 

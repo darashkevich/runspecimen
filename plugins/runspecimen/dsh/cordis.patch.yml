@@ -1,0 +1,21 @@
+# RunSpecimen bundle for DeepSeek Harness.
+#
+# One insert over the profile root adds the plugin row. The row's `id` is the
+# handle you address from your own profile `cordis.patch.yml`, so you can disable
+# it or override `config` without touching this file:
+#
+#   - id: runspecimen
+#     config:
+#       command: /opt/homebrew/bin/runspecimen
+#       timeoutMs: 900000
+#
+# `disabled` is left to the consumer: a profile that lists this bundle wants the
+# tools, and a profile that does not should not list it.
+
+- insert:
+    - id: runspecimen
+      name: 'runspecimen-dsh-plugin'
+      config:
+        command: 'runspecimen'
+        timeoutMs: 600000
+        maxOutputBytes: 64000

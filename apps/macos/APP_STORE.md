@@ -130,7 +130,7 @@ Operator steps (once per machine; no credential handling in git):
 6. Verify: `pkgutil --check-signature` (installer chain), then extract and
    `codesign --verify --strict` the `.app` and nested helper; entitlements
    sandbox + inherit; `RSDistributionChannel=mas`.
-7. Build **9** (`0.1.4`) is **Removed from App Store** (EU trader status missing). Ready for the next build when needed.
+7. Build **9** (`historical 0.1.4`) is **Removed from App Store** (EU trader status missing). Ready for the next build when needed.
 
 ASC paste pack (metadata / screenshots checklist / reviewer demo):
 [asc-kit/](asc-kit/) — mark screenshot PNGs and Connect record as **pending** until Yahor fills them.
@@ -263,7 +263,7 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 - [x] `./Scripts/test_mas_sandbox_e2e.sh` (actual APPROVE prompt + still waiting; never types APPROVE)
 - [x] Store export fail-closed (`assert_store_export_ready.sh` + `test_store_export_gate.sh` negatives)
 - [x] Apple Distribution signing + **local** Store pkg export (see asc-kit evidence) — Connect **replace/upload** still Yahor
-- [x] Connect upload of **0.1.4 (9)** — **Removed from App Store** (EU trader status missing).
+- [x] Connect upload of **historical 0.1.4 (9)** — **Removed from App Store** (EU trader status missing).
 - [x] Privacy policy URL in-app (Connect field **pending** Yahor)
 - [ ] Screenshots uploaded into Connect Media — **pending Yahor** (local PNGs ready in [asc-kit/screenshots/](asc-kit/screenshots/))
 - [x] Reviewer demo notes paste-ready ([asc-kit/reviewer-demo.md](asc-kit/reviewer-demo.md))
@@ -271,8 +271,8 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 
 ## Remaining Yahor-only blockers
 
-1. App Store Connect **0.1.4 (9)** is **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded.
-2. Product site pins public GitHub + PyPI `0.2.0rc15`. The Mac App Store binary is 0.1.4 (9) with engine `0.2.0rc14`.
+1. App Store Connect **historical 0.1.4 (9)** is **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded.
+2. Product site pins public GitHub + PyPI `0.2.0rc15`. The Mac App Store binary is historical 0.1.4 (9) with engine `0.2.0rc14`.
 3. Screenshots / privacy URL already in Connect.
 
 Do **not** use Developer ID notarization as a Mac App Store validation stand-in.
