@@ -108,3 +108,19 @@ jobs:
             ${{ runner.temp }}/ios-observe-results/failure-diagnostics
           if-no-files-found: warn
           retention-days: 7
+
+  dsh-plugin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: plugins/runspecimen/dsh
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: plugins/runspecimen/dsh/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm test

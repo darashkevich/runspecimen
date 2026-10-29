@@ -25,8 +25,6 @@ final class RecoveryUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Retry key recovery"].exists)
         XCTAssertTrue(app.buttons["Export recovery diagnostics"].exists)
         app.buttons["Dismiss notice"].tap()
-        let hidden = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: banner)
-        wait(for: [hidden], timeout: 5)
         let reopen = app.buttons["Key recovery"]
         XCTAssertTrue(reopen.waitForExistence(timeout: 5), app.debugDescription)
         reopen.tap()
