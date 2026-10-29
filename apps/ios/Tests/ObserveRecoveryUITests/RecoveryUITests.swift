@@ -25,18 +25,15 @@ final class RecoveryUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Retry key recovery"].exists)
         XCTAssertTrue(app.buttons["Export recovery diagnostics"].exists)
         app.buttons["Dismiss notice"].tap()
-        // Synchronize on the replacement control before querying the old banner.
-        // Cold CI accessibility snapshots can lag behind the dismiss action.
+        let hidden = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: banner)
+        wait(for: [hidden], timeout: 5)
         let reopen = app.buttons["Key recovery"]
-        XCTAssertTrue(reopen.waitForExistence(timeout: 15), app.debugDescription)
-        XCTAssertFalse(banner.exists, app.debugDescription)
+        XCTAssertTrue(reopen.waitForExistence(timeout: 5), app.debugDescription)
         reopen.tap()
-        XCTAssertTrue(banner.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(banner.waitForExistence(timeout: 5), app.debugDescription)
         app.buttons["Export recovery diagnostics"].tap()
-        // Assert the app presented the share sheet. Do not wait for
-        // SharingUIService's remote Copy action: CI snapshots show
-        // UIActivityView with an empty activity list (QA2-P2-01).
+        // App-presented share-sheet chrome. Do not wait for SharingUIService Copy.
         let sheet = app.navigationBars["UIActivityView"]
-        XCTAssertTrue(sheet.waitForExistence(timeout: 90), app.debugDescription)
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5), app.debugDescription)
     }
 }

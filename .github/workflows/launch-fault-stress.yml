@@ -25,6 +25,7 @@ jobs:
       - name: Deterministic real-pipe regression and non-discriminating smoke load
         shell: bash
         run: |
+          set -o pipefail
           PYTHONPATH=src python -m unittest tests.test_launch_faults -v 2>&1 | tee "$RUNNER_TEMP/lease-evidence/launch-faults.log"
           python scripts/stress_launch_faults.py --output "$RUNNER_TEMP/lease-evidence/fixed-load.json"
           python scripts/stress_launch_faults.py --test tests.test_launch_faults.LaunchFaultTests.test_rejected_launch_preserves_a_live_wrappers_pending_record --iterations 25 --workers 4 --output "$RUNNER_TEMP/lease-evidence/writer-boundary-load.json"
