@@ -67,6 +67,19 @@ class QA2PR79OpeningsTests(unittest.TestCase):
         self.assertIn('otherElements["PopoverDismissRegion"]', source)
         self.assertIn("app.terminate()", source)
 
+    def test_recovery_dismiss_is_its_own_hit_target(self) -> None:
+        """Job 123296368592: contain-grouping made Dismiss's VisiblePoint the banner center."""
+        view = _read("apps/ios/Sources/RunSpecimenObserve/Views/RootView.swift")
+        tests = _read("apps/ios/Tests/ObserveRecoveryUITests/RecoveryUITests.swift")
+        inset = view[view.index(".safeAreaInset(edge: .top)") : view.index(".tint(RSTheme.cyan)")]
+        self.assertIn('.accessibilityIdentifier("rotationRecoveryFailure")', inset)
+        self.assertIn('.accessibilityIdentifier("dismissRotationRecoveryNotice")', inset)
+        self.assertNotIn(".accessibilityElement(children: .contain)", inset)
+        self.assertIn('buttons["dismissRotationRecoveryNotice"]', tests)
+        self.assertNotRegex(tests, r"sleep\(|Task\.sleep|Thread\.sleep")
+        schema = _read("apps/ios/Tests/ObserveSchemaTests/SchemaTests.swift")
+        self.assertIn("testDismissNoticeHidesImmediatelyAndRetryDoesNotRestoreIt", schema)
+
     def test_ios_script_captures_failure_diagnostics(self) -> None:
         script = _read("apps/ios/Scripts/test_ios_observe.sh")
         workflow = _read(".github/workflows/ci.yml")

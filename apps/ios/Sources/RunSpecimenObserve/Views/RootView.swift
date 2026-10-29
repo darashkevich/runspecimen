@@ -48,19 +48,22 @@ struct RootView: View {
             .safeAreaInset(edge: .top) {
                 if let error = session.rotationRecoveryError, !session.rotationRecoveryDismissed {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(error).font(.callout)
+                        Text(error)
+                            .font(.callout)
+                            .accessibilityIdentifier("rotationRecoveryFailure")
                         Button(session.rotationRecoveryInProgress ? "Retrying recovery…" : "Retry key recovery") {
                             Task { await session.recoverHardwareRotation() }
                         }
                         .disabled(session.rotationRecoveryInProgress)
                         ShareLink("Export recovery diagnostics", item: session.rotationRecoveryDiagnostics)
                         Button("Dismiss notice") { session.dismissRotationRecoveryNotice() }
+                            .accessibilityIdentifier("dismissRotationRecoveryNotice")
                     }
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.orange.opacity(0.2))
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("rotationRecoveryFailure")
+                    .contentShape(Rectangle())
+                    .zIndex(1)
                 }
             }
         .tint(RSTheme.cyan)
