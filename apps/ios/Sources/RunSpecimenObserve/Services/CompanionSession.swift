@@ -94,13 +94,6 @@ final class CompanionSession: ObservableObject {
 
     private let phoneKeyStage: PhoneKeyStage
 
-    static var storageDefaults: UserDefaults {
-        #if RUNSPECIMEN_TEST_HOOKS
-        if let defaults = testDefaults { return defaults }
-        #endif
-        return .standard
-    }
-
     func applyVerifiedPairingTrustEdits(previousMacKey: String, previousHolderID: String, macKey: String, holderID: String) {
         // Verified re-pairing clears old trust. Only deliberate edits to the
         // form may supply replacement pins; unchanged drafts are stale.
