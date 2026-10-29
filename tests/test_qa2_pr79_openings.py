@@ -28,13 +28,12 @@ class QA2PR79OpeningsTests(unittest.TestCase):
         self.assertRegex(source, r"(?m)^\s*disableMainThreadChecker:\s*true\s*$")
         self.assertRegex(source, r"(?m)^\s*OS_ACTIVITY_DT_MODE:\s*NO\s*$")
 
-    def test_recovery_copy_query_is_scoped_to_activity_list(self) -> None:
+    def test_recovery_export_waits_for_share_sheet_chrome_not_system_copy(self) -> None:
         source = _read("apps/ios/Tests/ObserveRecoveryUITests/RecoveryUITests.swift")
         self.assertNotIn('descendants(matching: .any)["Copy"]', source)
-        self.assertRegex(
-            source,
-            r'otherElements\["ActivityListView"\]\.buttons\["Copy"\]',
-        )
+        self.assertNotIn('buttons["Copy"]', source)
+        self.assertIn('navigationBars["UIActivityView"]', source)
+        self.assertIn('buttons["Export recovery diagnostics"].tap()', source)
         waits = [int(match) for match in re.findall(r"waitForExistence\(timeout:\s*(\d+)", source)]
         self.assertTrue(waits)
         self.assertLessEqual(max(waits), 90)
