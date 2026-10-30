@@ -6,6 +6,10 @@ referenced the disallowed ``lzma_code`` / ``lzma_end`` / stream / properties /
 raw / decoder / encoder symbols. The scanner checks every architecture slice's
 Mach-O dependencies and both defined and undefined symbols.
 
+The embedded runtime must also omit unused DiskSpace APIs (statvfs/fstatvfs
+and their statfs equivalents). Build private CPython with build_mas_python.sh;
+the Mac privacy declaration intentionally does not include DiskSpace.
+
 The CPython module-table string ``_lzma`` between ``_lsprof`` and
 ``_markupbase`` is the standard library's name. It is not one of those
 symbols, it is not a ``liblzma`` load command, and the approved 0.1.4 (9)
@@ -43,6 +47,8 @@ def violations(dependencies: str, symbols: str) -> list[str]:
     for line in symbols.splitlines():
         if "_lzma_" in line or "TrustEvaluationAgent" in line:
             errors.append(f"rejected API reference: {line.strip()}")
+        if re.search(r"\b_+(?:statvfs|fstatvfs|statfs|fstatfs|statfs64|fstatfs64)$", line.strip()):
+            errors.append(f"unneeded DiskSpace API reference: {line.strip()}")
     return errors
 
 

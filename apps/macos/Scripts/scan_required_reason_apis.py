@@ -139,8 +139,13 @@ def scan(source: Path, *, read_symbols=None) -> dict:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', type=Path)
+    parser.add_argument('--check', action='store_true',
+                        help='exit nonzero when a shipped required-reason API category is undeclared')
     args = parser.parse_args()
-    print(json.dumps(scan(args.input), indent=2))
+    result = scan(args.input)
+    print(json.dumps(result, indent=2))
+    if args.check and result['undeclared_categories']:
+        raise SystemExit(1)
 
 
 if __name__ == '__main__':

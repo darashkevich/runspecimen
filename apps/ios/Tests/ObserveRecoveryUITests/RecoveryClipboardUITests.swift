@@ -15,7 +15,6 @@ final class RecoveryClipboardUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Copy recovery diagnostics"].waitForExistence(timeout: 15), app.debugDescription)
         let failure = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Key recovery needs attention:")).firstMatch.label
         let copy = app.buttons["Copy recovery diagnostics"]
-        XCTAssertTrue(copy.waitForExistence(timeout: 30), app.debugDescription)
         copy.tap()
         XCTAssertTrue(app.staticTexts["Recovery diagnostics copied."].waitForExistence(timeout: 15))
         app.buttons["Inspect copied diagnostics"].tap()

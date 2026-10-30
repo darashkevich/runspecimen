@@ -306,7 +306,7 @@ else
 fi
 
 echo "==> MAS packaging path (frozen helper required; fail closed)"
-if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/null 2>&1; then
+if "${RS_FREEZE_PYTHON:-python3}" -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/null 2>&1; then
   ./Scripts/build_app.sh --mas >"$EVIDENCE/mas-build.out" 2>&1 || {
     cat "$EVIDENCE/mas-build.out" >&2
     exit 1
@@ -320,6 +320,7 @@ if python3 -c 'import PyInstaller' 2>/dev/null || command -v pyinstaller >/dev/n
   file "$APP/Contents/Resources/RunSpecimenEngine/runspecimen" | grep -q 'Mach-O'
   /usr/libexec/PlistBuddy -c 'Print :RSDistributionChannel' "$APP/Contents/Info.plist" | grep -qx mas
   test -f "$APP/Contents/Resources/ReviewerDemo/contract.json"
+  python3 "$ROOT/Scripts/scan_required_reason_apis.py" --check "$APP"
   REPO_VER=$(
     python3 -c 'import pathlib,re,sys; t=pathlib.Path(sys.argv[1],"src/runspecimen/__init__.py").read_text(); m=re.search(r"__version__\s*=\s*\"([^\"]+)\"", t); assert m; print(m.group(1))' \
       "$REPO"
