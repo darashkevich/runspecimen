@@ -189,6 +189,8 @@ CHANNEL="$(/usr/libexec/PlistBuddy -c "Print :RSDistributionChannel" "$APP_IN_AR
 echo "RSDistributionChannel=${CHANNEL}"
 test -f "$APP_IN_ARCHIVE/Contents/Resources/AppIcon.icns"
 test -f "$APP_IN_ARCHIVE/Contents/Resources/PrivacyInfo.xcprivacy"
+python3 "$ROOT/Scripts/macos_privacy_gate.py" "$APP_IN_ARCHIVE"
+python3 "$ROOT/Scripts/scan_required_reason_apis.py" --check "$APP_IN_ARCHIVE"
 # ITMS-90546 — Mac App Store rejects binaries without a compiled asset catalog.
 test -f "$APP_IN_ARCHIVE/Contents/Resources/Assets.car" || {
   echo "ERROR: archived app missing Contents/Resources/Assets.car (asset catalog not compiled)" >&2

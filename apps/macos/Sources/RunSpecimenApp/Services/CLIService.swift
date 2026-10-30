@@ -353,6 +353,8 @@ actor CLIService {
             // Ignore non-executable placeholders (README / .gitkeep copies).
             guard fm.isExecutableFile(atPath: path) else { continue }
             // Refuse obviously tiny stub markers.
+            // Read a bounded prefix instead of file attributes: this check needs
+            // content length only, and must not collect file timestamps.
             guard let prefix = candidatePrefix(at: url), prefix.count >= 64 else { continue }
             return url.resolvingSymlinksInPath()
         }

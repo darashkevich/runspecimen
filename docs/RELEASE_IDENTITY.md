@@ -5,7 +5,7 @@ This file records what shipped; it does not authorize App Store Connect changes.
 
 Candidate source on this branch identifies as **`0.2.0rc15`** / **`0.2.0-rc.15`**. That cut is not published. Its bytes are not the rc14 wheel, sdist, or plugin zip. The Homebrew formula in this tree still installs the published rc14 sdist.
 
-App Store Connect macOS **0.1.4 (9)** was queried on 2026-09-28 as `Removed from App Store` (EU trader status missing) and `downloadable=true` (build `51a18894-02e3-4846-86f5-29cc345567f0`, review item `APPROVED`). That release is unchanged. A later **0.1.6 (1)** store update is a proposal, not an agreed scope.
+App Store Connect macOS **0.1.4 (9)** was queried on 2026-09-28 as `Removed from App Store` (EU trader status missing) and `downloadable=true` (build `51a18894-02e3-4846-86f5-29cc345567f0`, review item `APPROVED`). That release is unchanged. The current preparation target is **0.1.6 (16)**: Yahor authorized merging PR #75 on 2026-10-18 and confirmed Mac 0.1.5 withdrawn from review. This records preparation only; shipping is blocked until independent QA findings are closed.
 
 ## What is live today
 
@@ -48,7 +48,6 @@ Install pin is required: pip will not select an RC without `==0.2.0rc14`.
 | `runspecimen-0.2.0rc14.tar.gz` | `6ffcfe2fba33dea6b4b8bdf9369f8a05b5d4e286a1e8e01ec46bdbb81cfc4af3` |
 | `runspecimen-plugin-0.2.0-rc.14.zip` | `0073e04e21bd225da328de06ef840ead6956a8cced4510a0025fb1e2ddc7fc16` (GitHub only) |
 
-=======
 `publish-pypi.yml` downloaded those GitHub assets and uploaded the wheel and sdist without rebuilding. Provenance is **checksum-only**: no SLSA attestation on the wheel.
 
 ## Previous public cut
@@ -70,7 +69,6 @@ Install pin is required: pip will not select an RC without `==0.2.0rc13`.
 | `runspecimen-0.2.0rc13.tar.gz` | `0a807d65e73adfc2af2c8e5679706ed7c4d881ffefdc36e9222507cf5168f5c5` |
 | `runspecimen-plugin-0.2.0-rc.13.zip` | `02463625ce907ebf064448a944640088fe3ef77ee72088eaa831dab28cf99214` (GitHub only) |
 
->>>>>>> origin/main
 ## Do not publish `v0.2.0-rc.11`
 
 Draft https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122 still peels to **`ecc1709`**. Leave it unpublished. Do not move that tag. Do not move `v0.2.0-rc.12` or `v0.2.0-rc.13`.

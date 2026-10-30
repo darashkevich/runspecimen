@@ -39,6 +39,23 @@ class MacReleaseIdentityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "README.md"):
                 identity.check(root)
 
+    def test_stale_active_overview_zero_one_five_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in (*identity.FILES, *identity.ACTIVE_DOCS):
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / name, target)
+            overview = root / "README.md"
+            overview.write_text(
+                overview.read_text().replace(
+                    "local label on this branch is **0.1.6 (16)**",
+                    "local label on this branch is **0.1.5 (15)**",
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "README.md"):
+                identity.check(root)
+
     def test_each_release_identity_source_rejects_version_drift(self):
         version, _ = identity.check(ROOT)
         for changed in (*identity.FILES, *identity.ACTIVE_DOCS):

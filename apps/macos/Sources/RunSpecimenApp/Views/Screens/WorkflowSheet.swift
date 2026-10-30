@@ -33,6 +33,7 @@ struct WorkflowSheet: View {
     @State private var pairingText = ""
     @State private var packageText = ""
     @State private var expectedPolicy = "package"
+    @State private var carriedKeyStatus = ""
     @State private var carriedStatus = ""
 
     var body: some View {
@@ -526,19 +527,37 @@ struct WorkflowSheet: View {
             Text("The package policy is imported as written. A different choice does not switch it, and nothing here starts a run.")
                 .font(.system(size: 12))
                 .foregroundStyle(RSTheme.muted)
-            Text(ProductionNativeBridgeGate.status())
+            Text("Carried keys are unverified. Hardware-backed execution is not yet supported by this Store app.")
                 .font(.system(size: 12))
                 .foregroundStyle(RSTheme.muted)
-                .accessibilityLabel("Production native bridge")
+            DisclosureGroup("Signing support and limitations") {
+                Text(ProductionNativeBridgeGate.status())
+                    .font(.system(size: 12))
+                    .foregroundStyle(RSTheme.muted)
+                    .accessibilityLabel("Production native bridge")
+            }
+            .font(.system(size: 12))
             Text("Carried public key")
                 .font(.system(size: 12))
                 .foregroundStyle(RSTheme.muted)
             TextEditor(text: $pairingText)
+                .onChange(of: pairingText) { _ in carriedKeyStatus = "" }
                 .font(RSTheme.monoSmall)
-                .frame(minHeight: 48)
+                .frame(height: 72)
                 .accessibilityLabel("Carried public key")
-            Button("Pin carried public key") { pinCarriedKey() }
-                .disabled(pairingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            VStack(alignment: .leading, spacing: 6) {
+                Button("Pin carried public key") { pinCarriedKey() }
+                    .disabled(pairingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if !carriedKeyStatus.isEmpty {
+                    Text(carriedKeyStatus)
+                        .font(.system(size: 12))
+                        .foregroundStyle(RSTheme.ink)
+                        .accessibilityLabel("Carried key pin status")
+                        .accessibilityValue(carriedKeyStatus)
+                        .accessibilityIdentifier("carriedKeyPinStatus")
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
             Text("Approval package")
                 .font(.system(size: 12))
                 .foregroundStyle(RSTheme.muted)
@@ -581,19 +600,19 @@ struct WorkflowSheet: View {
         do {
             let record = try BiometricEnrollmentDirectory.pinCarriedCompanion(data, directory: carriedDirectory)
             if record.state == BiometricEnrollmentRecord.revoked {
-                carriedStatus = "The key \(record.keyID) is now marked revoked. The iPhone revoked this key."
+                carriedKeyStatus = "The key \(record.keyID) is now marked revoked. The iPhone revoked this key."
             } else {
-                carriedStatus = "Pinned \(record.keyID) as an unverified carried key. The file's Secure Enclave label was not accepted."
+                carriedKeyStatus = "Pinned \(record.keyID) as an unverified carried key. The file's Secure Enclave label was not accepted."
             }
         } catch let error as BiometricApprovalError {
             switch error {
             case .revoked:
-                carriedStatus = "The carried key is revoked or the local record is already revoked. It cannot be used."
+                carriedKeyStatus = "The carried key is revoked or the local record is already revoked. It cannot be used."
             default:
-                carriedStatus = "The carried key was not pinned."
+                carriedKeyStatus = "The carried key was not pinned."
             }
         } catch {
-            carriedStatus = "The carried key was not pinned."
+            carriedKeyStatus = "The carried key was not pinned."
         }
     }
 

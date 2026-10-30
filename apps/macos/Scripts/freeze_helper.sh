@@ -166,6 +166,18 @@ if [[ "${RS_FREEZE_SELECT_ONLY:-0}" == "1" ]]; then
   exit 0
 fi
 
+# A stock CPython has statvfs/fstatvfs in its built-in posix module. Excluding
+# Python modules cannot remove those native imports from the shipped libpython.
+# Keep optional freezes subject to the same rule so they cannot stage a payload
+# that a later MAS build accidentally reuses.
+FREEZE_RUNTIME="${RS_FREEZE_PYTHON:-python3}"
+"$FREEZE_RUNTIME" - <<'PY'
+import os, sysconfig
+for name in ('statvfs', 'fstatvfs'):
+    if hasattr(os, name) or sysconfig.get_config_var('HAVE_' + name.upper()):
+        raise SystemExit('Freeze requires CPython without DiskSpace APIs; run Scripts/build_mas_python.sh with a new private prefix')
+PY
+
 if [[ ! -f "$REPO/src/runspecimen/__main__.py" && ! -f "$REPO/src/runspecimen/cli.py" ]]; then
   echo "Missing runspecimen package under $REPO/src/runspecimen" >&2
   exit 1

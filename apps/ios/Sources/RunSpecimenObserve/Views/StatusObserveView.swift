@@ -4,7 +4,6 @@ import UIKit
 struct StatusObserveView: View {
     @EnvironmentObject private var session: CompanionSession
     @State private var busy = false
-    @State private var lastRefreshTime: Date?
     @State private var showDisconnectConfirmation = false
     @State private var confirmOutcome: ActionResultState = .idle
     @State private var refuseOutcome: ActionResultState = .idle
@@ -42,12 +41,14 @@ struct StatusObserveView: View {
 
                 lifecycleCard
 
-                if session.remoteConfirmPending {
-                    remoteConfirmPanel
-                } else {
-                    Text("No remote confirm pending. Primary approval is the Mac's local APPROVE command.")
-                        .font(.footnote)
-                        .foregroundStyle(RSTheme.muted)
+                TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                    if session.remoteConfirmPending(at: timeline.date) {
+                        remoteConfirmPanel
+                    } else {
+                        Text("No remote confirm pending. Primary approval is the Mac's local APPROVE command.")
+                            .font(.footnote)
+                            .foregroundStyle(RSTheme.muted)
+                    }
                 }
 
                 phonePeerCard
@@ -70,7 +71,7 @@ struct StatusObserveView: View {
                     HStack {
                         Image(systemName: "key.fill")
                             .foregroundStyle(RSTheme.cyan)
-                        Text("Manage this iPhone's key")
+                        Text("Manage carried approval keys")
                             .foregroundStyle(RSTheme.ink)
                         Spacer()
                         Image(systemName: "chevron.right")
@@ -90,10 +91,10 @@ struct StatusObserveView: View {
             .rsReadableWidth(720)
         }
         .refreshable {
-            await refreshWithTimestamp()
+            await refreshStatus()
         }
         .task {
-            await refreshWithTimestamp()
+            await refreshStatus()
         }
         .confirmationDialog(
             "Disconnect from Mac?",
@@ -105,7 +106,7 @@ struct StatusObserveView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This removes the pairing but does not revoke your iPhone key. To revoke, go to 'Manage this iPhone's key' first.")
+            Text("This removes the pairing but does not revoke your iPhone key. To revoke, go to 'Manage carried approval keys' first.")
         }
     }
 
@@ -118,22 +119,31 @@ struct StatusObserveView: View {
         case .stale: statusLabel = "Stale"; statusColor = RSTheme.amber
         case .connected: statusLabel = "Connected"; statusColor = RSTheme.signal
         }
-        return HStack(spacing: 10) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 10, height: 10)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(statusLabel)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(RSTheme.ink)
-                if let time = lastRefreshTime {
-                    Text("Updated \(time, style: .relative) ago")
-                        .font(.caption2)
-                        .foregroundStyle(RSTheme.muted)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 10, height: 10)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(statusLabel)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(RSTheme.ink)
+                    if let time = session.lastSuccessfulRefresh {
+                        Text("Last successful update \(time, style: .relative) ago")
+                            .font(.caption2)
+                            .foregroundStyle(RSTheme.muted)
+                            .accessibilityIdentifier("lastSuccessfulRefresh")
+                    }
+                    refreshFeedback
                 }
+                Spacer()
             }
-            Spacer()
+            actionButton("Refresh status", tint: RSTheme.cyan) {
+                await refreshStatus()
+            }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("connectionStatusCard")
         .padding(12)
         .background(RSTheme.panel)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -167,7 +177,7 @@ struct StatusObserveView: View {
 
     private var phonePeerCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("PHONE PEER KEY")
+            Text("ONLINE PHONE-PEER KEY")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(RSTheme.muted)
                 .tracking(0.6)
@@ -185,6 +195,16 @@ struct StatusObserveView: View {
             }
             actionButton("Enroll phone key after verification", tint: RSTheme.ink.opacity(0.85)) {
                 await session.commitPhoneKeyAfterHolderVerification()
+            }
+            switch session.phoneEnrollmentFeedback {
+            case .enrolled:
+                outcomeView(.success("Phone key enrolled after holder verification."))
+            case .refused(let reason):
+                outcomeView(.failure(reason))
+            case .cancelled:
+                Text("Enrollment cancelled.").font(.footnote).foregroundStyle(RSTheme.muted)
+            case nil:
+                EmptyView()
             }
 
             if session.phonePeerKeyState.isEnrolled {
@@ -279,7 +299,7 @@ struct StatusObserveView: View {
             HStack(spacing: 6) {
                 Image(systemName: "key.slash")
                     .foregroundStyle(RSTheme.muted)
-                Text("No phone-peer key enrolled")
+                Text("No online phone-peer key enrolled. Carried approval keys are managed separately.")
                     .font(.caption)
                     .foregroundStyle(RSTheme.muted)
             }
@@ -314,7 +334,7 @@ struct StatusObserveView: View {
                 Button("Repair saved key counter") {
                     Task {
                         do { try await session.repairPhoneKeyCounter() }
-                        catch { session.phonePeerNote = error.localizedDescription }
+                        catch { session.phonePeerNote = CompanionHardwareErrorPresentation.describe(error).message }
                     }
                 }
                 ShareLink("Export key diagnostics", item: "RunSpecimen phone key state: " + message + "\n" + session.phonePeerNote)
@@ -339,7 +359,7 @@ struct StatusObserveView: View {
                 phonePeerRevokeOutcome = .success("Phone-peer key revoked")
             } catch {
                 feedbackGenerator.notificationOccurred(.error)
-                phonePeerRevokeOutcome = .failure(error.localizedDescription)
+                phonePeerRevokeOutcome = .failure(CompanionHardwareErrorPresentation.describe(error).message)
             }
         }
     }
@@ -354,7 +374,7 @@ struct StatusObserveView: View {
                 phonePeerRotateOutcome = .success("Phone-peer key rotation started")
             } catch {
                 feedbackGenerator.notificationOccurred(.error)
-                phonePeerRotateOutcome = .failure(error.localizedDescription)
+                phonePeerRotateOutcome = .failure(CompanionHardwareErrorPresentation.describe(error).message)
             }
         }
     }
@@ -369,7 +389,7 @@ struct StatusObserveView: View {
                 phonePeerRotateOutcome = .success("Phone-peer key rotation completed")
             } catch {
                 feedbackGenerator.notificationOccurred(.error)
-                phonePeerRotateOutcome = .failure(error.localizedDescription)
+                phonePeerRotateOutcome = .failure(CompanionHardwareErrorPresentation.describe(error).message)
             }
         }
     }
@@ -381,7 +401,7 @@ struct StatusObserveView: View {
                 feedbackGenerator.notificationOccurred(.warning)
                 phonePeerRotateOutcome = .idle
             } catch {
-                phonePeerRotateOutcome = .failure(error.localizedDescription)
+                phonePeerRotateOutcome = .failure(CompanionHardwareErrorPresentation.describe(error).message)
             }
         }
     }
@@ -473,9 +493,6 @@ struct StatusObserveView: View {
 
     private var actionsCard: some View {
         VStack(spacing: 10) {
-            actionButton("Refresh status", tint: RSTheme.cyan) {
-                await refreshWithTimestamp()
-            }
             actionButton("Request attention on Mac", tint: RSTheme.amber) {
                 await session.requestAttention()
             }
@@ -498,6 +515,8 @@ struct StatusObserveView: View {
             .foregroundStyle(RSTheme.muted)
             .fixedSize(horizontal: false, vertical: true)
 
+            Text("Uses the Mac challenge and typed APPROVE. Does not request Face ID or sign with an enrolled key. For biometric signing, use carried approval or online phone-peer approval.")
+                .font(.footnote).foregroundStyle(RSTheme.muted)
             chipRow
 
             VStack(alignment: .leading, spacing: 4) {
@@ -569,7 +588,7 @@ struct StatusObserveView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(RSTheme.signal)
-            .disabled(!confirmIsValid || confirmOutcome == .inProgress)
+            .disabled(!confirmIsValid || confirmOutcome == .inProgress || refuseOutcome == .inProgress)
 
             outcomeView(confirmOutcome)
 
@@ -621,7 +640,7 @@ struct StatusObserveView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(RSTheme.danger)
-            .disabled(!refuseIsValid || refuseOutcome == .inProgress)
+            .disabled(!refuseIsValid || refuseOutcome == .inProgress || confirmOutcome == .inProgress)
 
             outcomeView(refuseOutcome)
         }
@@ -697,7 +716,9 @@ struct StatusObserveView: View {
         ) {
             chip("Who", pending?.who ?? "operator · workspace")
             chip("What", pending?.what ?? "—")
-            chip("Expiry", chips?.expiry ?? "—")
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                chip("Expiry", session.remoteConfirmExpiry(at: timeline.date))
+            }
             chip("Lease", chips?.lease ?? leaseLabel)
             chip("Isolation", chips?.isolation ?? "native-unspecified")
             chip("Predecessor", chips?.predecessor ?? "none")
@@ -761,10 +782,23 @@ struct StatusObserveView: View {
         .disabled(!alwaysEnabled && busy)
     }
 
-    private func refreshWithTimestamp() async {
-        await session.refresh()
-        if session.lastError == nil {
-            lastRefreshTime = Date()
+    @ViewBuilder
+    private var refreshFeedback: some View {
+        switch session.refreshOutcome {
+        case .notAttempted:
+            EmptyView()
+        case .inProgress:
+            ProgressView("Refreshing status…")
+        case .success:
+            Text("Status refreshed.").font(.footnote).foregroundStyle(RSTheme.signal)
+        case .failure(let reason):
+            Text(reason).font(.footnote).foregroundStyle(RSTheme.danger).accessibilityIdentifier("connectionRefreshFailure")
+        case .cancelled:
+            Text("Refresh cancelled.").font(.footnote).foregroundStyle(RSTheme.muted)
         }
+    }
+
+    private func refreshStatus() async {
+        await session.refresh()
     }
 }

@@ -43,9 +43,13 @@ final class CompanionSession: ObservableObject {
     @Published var macSessionPublicKey: String = ""
     /// Entered by the person from the Mac. A holder id inside a mailbox request is not this pin.
     @Published var pinnedHolderId: String = ""
-    @Published var phonePeerKeyState: PhonePeerKeyState = .unknown
+    @Published private(set) var phoneEnrollmentFeedback: PhoneEnrollmentOutcome?
+    @Published var phonePeerKeyState: PhonePeerKeyState = .unknown {
+        didSet { if oldValue != phonePeerKeyState { phoneEnrollmentFeedback = nil } }
+    }
     var phoneChallenge: PhonePeerChallengeMessage?
     var signedPhonePublicKey: String?
+    private var pairingRevision = 0
     private var phoneSignGeneration = 0
     private var explicitlyCancelledSignGeneration: Int?
     private var postingSignGeneration: Int?
@@ -89,6 +93,16 @@ final class CompanionSession: ObservableObject {
     }
 
     private let phoneKeyStage: PhoneKeyStage
+
+    func applyVerifiedPairingTrustEdits(previousMacKey: String, previousHolderID: String, macKey: String, holderID: String) {
+        // Verified re-pairing clears old trust. Only deliberate edits to the
+        // form may supply replacement pins; unchanged drafts are stale.
+        if macKey != previousMacKey { macSessionPublicKey = macKey }
+        if holderID != previousHolderID {
+            pinnedHolderId = holderID
+            rememberPinnedHolderId()
+        }
+    }
 
     private let defaultsKey = "rs.observe.pairing"
     private let keychainService = "com.darashkevich.runspecimen.observe.pairing"
@@ -263,6 +277,7 @@ final class CompanionSession: ObservableObject {
     }
 
     private func invalidatePhonePeerOperation() {
+        phoneEnrollmentFeedback = nil
         explicitlyCancelledSignGeneration = nil
         activePhonePeerTask?.cancel()
         if activePhonePeerTask != nil { activePhonePeerSigner?.discardStagedEnrollment() }
@@ -341,6 +356,11 @@ final class CompanionSession: ObservableObject {
     }
 
     func cancelAllTasks() {
+        if activeRemoteConfirmTask != nil {
+            challengeInput = ""
+            approvePhraseInput = ""
+            refuseReasonInput = ""
+        }
         keyLifecycleGeneration += 1
         activeKeyLifecycleTask?.cancel()
         activeKeyLifecycleTask = nil
@@ -388,45 +408,67 @@ final class CompanionSession: ObservableObject {
             + "Plugins cannot approve. This app is not an OS sandbox."
     }
 
-    var remoteConfirmPending: Bool {
-        status?.companion?.remoteConfirm?.pending == true
-            || status?.companion?.canRemoteConfirm == true
-            || capabilities?.canRemoteConfirm == true
+    var remoteConfirmPending: Bool { remoteConfirmPending(at: Date()) }
+
+    func remoteConfirmPending(at date: Date) -> Bool {
+        if let arm = status?.companion?.remoteConfirm {
+            if let expiry = arm.expiresAtUnix, !expiry.isFinite || expiry <= date.timeIntervalSince1970 { return false }
+            if let pending = arm.pending { return pending }
+        }
+        return status?.companion?.canRemoteConfirm == true || capabilities?.canRemoteConfirm == true
     }
 
-    func saveAndPair(client suppliedClient: CompanionClient? = nil) async {
+    func remoteConfirmExpiry(at date: Date) -> String {
+        guard let expiry = status?.companion?.remoteConfirm?.expiresAtUnix, expiry.isFinite else {
+            return status?.companion?.remoteConfirm?.chips?.expiry ?? "—"
+        }
+        return String(format: "%.0fs", max(0, ceil(expiry - date.timeIntervalSince1970)))
+    }
+
+    @discardableResult
+    func saveAndPair(candidate: PairingConfig? = nil, client suppliedClient: CompanionClient? = nil) async -> Bool {
+        let wasPaired = isPaired
+        let candidateURL = candidate?.baseURL.absoluteString ?? baseURLString
+        let candidateToken = candidate?.pairingToken ?? pairingToken
+        let candidateFingerprint = candidate.map { $0.tlsFingerprint ?? "" } ?? tlsFingerprint
+        activeRefreshTask?.cancel()
+        activeRefreshTask = nil
+        if refreshOutcome == .inProgress { refreshOutcome = .cancelled }
         refreshTaskGeneration += 1
         let generation = refreshTaskGeneration
         lastError = nil
-        guard let url = URL(string: baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)),
-              !pairingToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard let url = URL(string: candidateURL.trimmingCharacters(in: .whitespacesAndNewlines)),
+              !candidateToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
             lastError = "Enter a companion URL and pairing token from the Mac."
-            isPaired = false
-            return
+            isPaired = wasPaired
+            return false
         }
         let scheme = (url.scheme ?? "").lowercased()
-        let fingerprint = tlsFingerprint.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fingerprint = candidateFingerprint.trimmingCharacters(in: .whitespacesAndNewlines)
         if scheme == "https", fingerprint.isEmpty {
             lastError = "HTTPS requires the Mac tls_fingerprint_sha256 from companion --print-token."
-            isPaired = false
-            return
+            isPaired = wasPaired
+            return false
         }
         let config = PairingConfig(
             baseURL: url,
-            pairingToken: pairingToken.trimmingCharacters(in: .whitespacesAndNewlines),
+            pairingToken: candidateToken.trimmingCharacters(in: .whitespacesAndNewlines),
             tlsFingerprint: fingerprint.isEmpty ? nil : fingerprint
         )
         let client = suppliedClient ?? CompanionClient(config: config)
         do {
+            try Task.checkCancellation()
             let caps = try await client.fetchCapabilities()
+            try Task.checkCancellation()
+            guard generation == refreshTaskGeneration else { return false }
             switch CapabilityValidator.validateForPairing(capabilities: caps) {
             case .valid:
                 break
             case .invalid(let reason):
                 lastError = "Refusing pair: \(reason)"
-                isPaired = false
-                return
+                isPaired = wasPaired
+                return false
             }
             let verifiedStatus = try await client.fetchStatus()
             switch CapabilityValidator.validateForAction(capabilities: caps, status: verifiedStatus) {
@@ -437,18 +479,44 @@ final class CompanionSession: ObservableObject {
             guard generation == refreshTaskGeneration else { throw CancellationError() }
             // A rejected candidate must never replace the saved pairing.
             try persist(config)
+            pairingRevision += 1
+            // The newly verified connection must not inherit requests from the old Mac.
+            cancelAllTasks()
+            phoneEnrollmentFeedback = nil
+            phoneChallenge = nil
+            signedPhonePublicKey = nil
+            exactRunGeneration += 1
+            reviewedExactRun = nil
+            reviewedExactRunKeyGeneration = nil
+            reviewedExactRunLines = []
+            reviewedExactRunArgv = []
+            challengeInput = ""
+            approvePhraseInput = ""
+            refuseReasonInput = ""
+            lastRemoteConfirmNote = nil
+            lastAttentionNote = nil
+            phonePeerNote = "No phone-peer signature has been returned. Signing uses the published challenge. It does not approve a run."
+            exactRunNote = "No exact run is waiting for review. Phone approval is not physical presence at the Mac."
+            lastError = nil
+            macSessionPublicKey = ""
+            pinnedHolderId = ""
+            Self.storageDefaults.removeObject(forKey: holderPinKey)
             status = verifiedStatus
             capabilities = caps
             isPaired = true
             let now = Date()
             lastSuccessfulRefresh = now
             refreshOutcome = .success(now)
+            return true
         } catch {
-            guard generation == refreshTaskGeneration else { return }
-            capabilities = nil
-            status = nil
-            lastError = error.localizedDescription
-            isPaired = false
+            guard generation == refreshTaskGeneration else { return false }
+            if !wasPaired {
+                capabilities = nil
+                status = nil
+            }
+            lastError = (Task.isCancelled || error is CancellationError) ? nil : error.localizedDescription
+            isPaired = wasPaired
+            return false
         }
     }
 
@@ -466,14 +534,22 @@ final class CompanionSession: ObservableObject {
             case .valid:
                 status = fetchedStatus
                 capabilities = fetchedCapabilities
+                let now = Date()
+                lastSuccessfulRefresh = now
+                refreshOutcome = .success(now)
             case .invalid(let reason):
                 disconnect()
                 lastError = reason
+                // Disconnect invalidates refresh tasks; publish the refusal after
+                // that reset so the initiating refresh cannot erase the reason.
+                refreshOutcome = .failure(reason)
                 throw CompanionClientError.transport(reason)
             }
         } catch {
             if isPaired, generation == refreshTaskGeneration, !Task.isCancelled {
                 capabilities = nil
+                lastError = error.localizedDescription
+                refreshOutcome = .failure(error.localizedDescription)
             }
             throw error
         }
@@ -532,6 +608,7 @@ final class CompanionSession: ObservableObject {
         signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
         peer: (any PhonePeerTransport)? = nil
     ) async {
+        phoneEnrollmentFeedback = nil
         explicitlyCancelledSignGeneration = nil
         activePhonePeerTask?.cancel()
         if activePhonePeerTask != nil { activePhonePeerSigner?.discardStagedEnrollment() }
@@ -667,9 +744,11 @@ final class CompanionSession: ObservableObject {
         signer: PhoneChallengeSigning = LivePhoneSecureEnclaveSigner(),
         peer: (any PhonePeerTransport)? = nil
     ) async -> PhoneEnrollmentOutcome {
+        phoneEnrollmentFeedback = nil
         activePhonePeerTask?.cancel()
         phonePeerTaskGeneration += 1
         let myGeneration = phonePeerTaskGeneration
+        let originatingPairing = pairingRevision
         var outcome: PhoneEnrollmentOutcome = .cancelled
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -684,7 +763,12 @@ final class CompanionSession: ObservableObject {
         } onCancel: {
             task.cancel()
         }
+        if outcome == .enrolled {
+            if originatingPairing == pairingRevision { phoneEnrollmentFeedback = outcome }
+            return outcome
+        }
         guard !task.isCancelled, myGeneration == phonePeerTaskGeneration else { return .cancelled }
+        phoneEnrollmentFeedback = outcome
         return outcome
     }
 
@@ -713,9 +797,12 @@ final class CompanionSession: ObservableObject {
             return .refused(lastError ?? phonePeerNote)
         }
         guard let message = phoneChallenge, let phonePublicKey = signedPhonePublicKey else {
-            phonePeerNote = "Mailbox acceptance is not holder verification."
-            return .refused(lastError ?? phonePeerNote)
+            let reason = "Sign a phone peer challenge first, then verify it on the Mac before enrolling."
+            phonePeerNote = reason
+            lastError = reason
+            return .refused(reason)
         }
+        let originatingPairing = pairingRevision
         let generation = phoneSignGeneration
         let challengeId = message.challengeId
         do {
@@ -749,12 +836,17 @@ final class CompanionSession: ObservableObject {
                   signedPhonePublicKey == phonePublicKey else { return .cancelled }
             phonePeerKeyStateRevision += 1
             try await signer.commitEnrollmentAsync(ownedBy: challengeId, publicKey: phonePublicKey)
-            guard !Task.isCancelled else { throw CancellationError() }
+            // A successful durable commit is the outcome, even if cancellation
+            // arrived during the final write. Never leave its receipt reusable.
+            guard originatingPairing == pairingRevision else { return .enrolled }
             acceptedReceiptSignatures.insert(signature)
-            phoneChallenge = nil
-            await refreshPhonePeerKeyStateAsync()
-            guard generation == phoneSignGeneration, !Task.isCancelled else { return .cancelled }
-            phonePeerNote = "Holder receipt verified for challenge \(challengeId). The phone key is enrolled."
+            if phoneChallenge?.challengeId == challengeId { phoneChallenge = nil; signedPhonePublicKey = nil }
+            if originatingPairing == pairingRevision {
+                await Task { @MainActor in await self.refreshPhonePeerKeyStateAsync() }.value
+                guard originatingPairing == pairingRevision else { return .enrolled }
+                phonePeerNote = "Holder receipt verified for challenge \(challengeId). The phone key is enrolled."
+                lastError = nil
+            }
             return .enrolled
         } catch PhonePeerSignError.cancelled {
             phonePeerNote = "Phone peer challenge cancelled before the holder receipt committed."
@@ -765,8 +857,15 @@ final class CompanionSession: ObservableObject {
             lastError = nil
             return .cancelled
         } catch {
-            lastError = error.localizedDescription
-            return .refused(error.localizedDescription)
+            if CompanionHardwareErrorPresentation.isCancellation(error) {
+                phonePeerNote = "Phone key enrollment cancelled."
+                lastError = nil
+                return .cancelled
+            }
+            let message = CompanionHardwareErrorPresentation.describe(error).message
+            phonePeerNote = message
+            lastError = message
+            return .refused(message)
         }
     }
 
@@ -1051,6 +1150,7 @@ final class CompanionSession: ObservableObject {
     }
 
     func cancelPhonePeerChallenge() async {
+        phoneEnrollmentFeedback = nil
         activePhonePeerTask?.cancel()
         activePhonePeerTask = nil
         activePhonePeerSigner?.discardStagedEnrollment()
@@ -1121,7 +1221,9 @@ final class CompanionSession: ObservableObject {
     @discardableResult
     func submitRemoteConfirm() async -> RemoteSettleOutcome {
         guard !Task.isCancelled else { return .cancelled }
-        activeRemoteConfirmTask?.cancel()
+        guard activeRemoteConfirmTask == nil else {
+            return .failure("A remote settlement is already in progress.")
+        }
         remoteConfirmTaskGeneration += 1
         let myGeneration = remoteConfirmTaskGeneration
         let task = Task<RemoteSettleOutcome, Never> { @MainActor [weak self] in
@@ -1130,6 +1232,9 @@ final class CompanionSession: ObservableObject {
             if self.remoteConfirmTaskGeneration == myGeneration {
                 self.activeRemoteConfirmTask = nil
             }
+            // A validated server acknowledgement survives later local cancellation
+            // or a newer request. Only unacknowledged work can become cancelled.
+            if outcome == .confirmed || outcome == .refused || outcome == .failure(Self.unknownSettlementMessage) { return outcome }
             guard !Task.isCancelled, self.remoteConfirmTaskGeneration == myGeneration else { return .cancelled }
             return outcome
         }
@@ -1142,6 +1247,7 @@ final class CompanionSession: ObservableObject {
     }
 
     private func submitRemoteConfirmImpl() async -> RemoteSettleOutcome {
+        let generation = remoteConfirmTaskGeneration
         lastError = nil
         lastRemoteConfirmNote = nil
         guard !Task.isCancelled else { return .cancelled }
@@ -1168,33 +1274,43 @@ final class CompanionSession: ObservableObject {
         do {
             guard !Task.isCancelled else { return .cancelled }
             let result = try await client.submitRemoteConfirm(challenge: challenge, phrase: phrase)
-            guard !Task.isCancelled else { return .cancelled }
+            // Preserve the originating acknowledgement without publishing into a successor session.
+            guard generation == remoteConfirmTaskGeneration else {
+                return result.confirmedSuccessfully ? .confirmed : .cancelled
+            }
+            if Task.isCancelled && !result.confirmedSuccessfully { return settlementUnknown(generation: generation) }
             if result.isAmbiguous {
-                return settlementFailure("Server returned ambiguous confirm response. Refresh status to check state.")
+                return settlementUnknown(generation: generation)
             }
             guard result.confirmedSuccessfully else {
                 return settlementFailure(result.note ?? "Confirm was not accepted by the server.")
             }
-            guard !Task.isCancelled else { return .cancelled }
             lastRemoteConfirmNote = result.note
                 ?? "Remote human confirm settled. This is not equivalent to local TTY APPROVE."
             challengeInput = ""
             approvePhraseInput = ""
             // Settlement is already acknowledged; refresh cannot change its outcome.
             do { try await refreshStatus() } catch { }
-            guard !Task.isCancelled else { return .cancelled }
             return .confirmed
         } catch is CancellationError {
-            return .cancelled
+            return settlementUnknown(generation: generation)
         } catch {
-            return settlementFailure(error.localizedDescription)
+            if Task.isCancelled || generation != remoteConfirmTaskGeneration { return settlementUnknown(generation: generation) }
+            // Only a definite client rejection is safe to report as refused.
+            // A POST may have settled before transport/server/decoding failed.
+            if case CompanionClientError.http(let code, _) = error, (400..<500).contains(code) {
+                return settlementFailure(error.localizedDescription)
+            }
+            return settlementUnknown(generation: generation)
         }
     }
 
     @discardableResult
     func submitRemoteRefuse() async -> RemoteSettleOutcome {
         guard !Task.isCancelled else { return .cancelled }
-        activeRemoteConfirmTask?.cancel()
+        guard activeRemoteConfirmTask == nil else {
+            return .failure("A remote settlement is already in progress.")
+        }
         remoteConfirmTaskGeneration += 1
         let myGeneration = remoteConfirmTaskGeneration
         let task = Task<RemoteSettleOutcome, Never> { @MainActor [weak self] in
@@ -1203,6 +1319,9 @@ final class CompanionSession: ObservableObject {
             if self.remoteConfirmTaskGeneration == myGeneration {
                 self.activeRemoteConfirmTask = nil
             }
+            // A validated server acknowledgement survives later local cancellation
+            // or a newer request. Only unacknowledged work can become cancelled.
+            if outcome == .confirmed || outcome == .refused || outcome == .failure(Self.unknownSettlementMessage) { return outcome }
             guard !Task.isCancelled, self.remoteConfirmTaskGeneration == myGeneration else { return .cancelled }
             return outcome
         }
@@ -1215,6 +1334,7 @@ final class CompanionSession: ObservableObject {
     }
 
     private func submitRemoteRefuseImpl() async -> RemoteSettleOutcome {
+        let generation = remoteConfirmTaskGeneration
         lastError = nil
         lastRemoteConfirmNote = nil
         guard !Task.isCancelled else { return .cancelled }
@@ -1241,14 +1361,17 @@ final class CompanionSession: ObservableObject {
         do {
             guard !Task.isCancelled else { return .cancelled }
             let result = try await client.submitRemoteRefuse(challenge: challenge, reason: reason)
-            guard !Task.isCancelled else { return .cancelled }
+            // Preserve the originating acknowledgement without publishing into a successor session.
+            guard generation == remoteConfirmTaskGeneration else {
+                return result.refusedSuccessfully ? .refused : .cancelled
+            }
+            if Task.isCancelled && !result.refusedSuccessfully { return settlementUnknown(generation: generation) }
             if result.isAmbiguous {
-                return settlementFailure("Server returned ambiguous refuse response. Refresh status to check state.")
+                return settlementUnknown(generation: generation)
             }
             guard result.refusedSuccessfully else {
                 return settlementFailure(result.note ?? "Refuse was not accepted by the server.")
             }
-            guard !Task.isCancelled else { return .cancelled }
             lastRemoteConfirmNote = result.note
                 ?? "Pending refused. Re-arm or use local TTY APPROVE. Not an approval."
             challengeInput = ""
@@ -1256,13 +1379,29 @@ final class CompanionSession: ObservableObject {
             refuseReasonInput = ""
             // Settlement is already acknowledged; refresh cannot change its outcome.
             do { try await refreshStatus() } catch { }
-            guard !Task.isCancelled else { return .cancelled }
             return .refused
         } catch is CancellationError {
-            return .cancelled
+            return settlementUnknown(generation: generation)
         } catch {
-            return settlementFailure(error.localizedDescription)
+            if Task.isCancelled || generation != remoteConfirmTaskGeneration { return settlementUnknown(generation: generation) }
+            // Only a definite client rejection is safe to report as refused.
+            // A POST may have settled before transport/server/decoding failed.
+            if case CompanionClientError.http(let code, _) = error, (400..<500).contains(code) {
+                return settlementFailure(error.localizedDescription)
+            }
+            return settlementUnknown(generation: generation)
         }
+    }
+
+    static let unknownSettlementMessage = "Request outcome is unknown. Refresh status before trying again."
+
+    private func settlementUnknown(generation: Int) -> RemoteSettleOutcome {
+        if generation == remoteConfirmTaskGeneration {
+            challengeInput = ""
+            approvePhraseInput = ""
+            refuseReasonInput = ""
+        }
+        return .failure(Self.unknownSettlementMessage)
     }
 
     private func settlementFailure(_ message: String) -> RemoteSettleOutcome {
@@ -1271,9 +1410,18 @@ final class CompanionSession: ObservableObject {
     }
 
     func disconnect() {
+        pairingRevision += 1
+        phoneEnrollmentFeedback = nil
         cancelAllTasks()
         invalidateCachedClient()
         isPaired = false
+        pairingToken = ""
+        baseURLString = ""
+        tlsFingerprint = ""
+        macSessionPublicKey = ""
+        pinnedHolderId = ""
+        Self.storageDefaults.removeObject(forKey: holderPinKey)
+        lastSuccessfulRefresh = nil
         refreshOutcome = .notAttempted
         capabilities = nil
         status = nil
@@ -1595,7 +1743,7 @@ extension PhoneChallengeSigning {
         try await CryptoWorker.shared.perform { try self.signCommitted(message: message) }
     }
     func commitEnrollmentAsync(ownedBy challengeId: String, publicKey: String) async throws {
-        try await CryptoWorker.shared.perform { try self.commitEnrollment(ownedBy: challengeId, publicKey: publicKey) }
+        try await CryptoWorker.shared.performCommit { try self.commitEnrollment(ownedBy: challengeId, publicKey: publicKey) }
     }
     func signCommitted(message: Data) throws -> (publicKey: String, signature: String) {
         throw CompanionClientError.transport("phone session key is not enrolled")
@@ -2054,6 +2202,13 @@ final class CryptoOperationContext: @unchecked Sendable {
 
 actor CryptoWorker {
     static let shared = CryptoWorker()
+
+    /// Commit operations enforce cancellation before starting; once their
+    /// durable write succeeds, cancellation cannot turn success into failure.
+    func performCommit<T>(_ operation: @Sendable () throws -> T) throws -> T {
+        try Task.checkCancellation()
+        return try operation()
+    }
 
     func perform<T>(_ operation: @Sendable () throws -> T) throws -> T {
         try Task.checkCancellation()

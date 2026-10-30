@@ -6,41 +6,63 @@ enum PairingOutcome: Equatable {
     case inProgress
     case success
     case failure
+
+    static var successMessage: String { "Connected successfully. The previous Mac session key and holder pin were cleared. Re-enter them in Advanced settings to use phone-peer enrollment." }
+}
+
+struct PairingTrustDraft {
+    var macKey = ""
+    var holderID = ""
+    private(set) var initialMacKey = ""
+    private(set) var initialHolderID = ""
+
+    mutating func synchronize(macKey: String, holderID: String) {
+        self.macKey = macKey
+        self.holderID = holderID
+        initialMacKey = macKey
+        initialHolderID = holderID
+    }
 }
 
 struct PairingView: View {
     @EnvironmentObject private var session: CompanionSession
     @State private var busy = false
+    @State private var pairingTask: Task<Void, Never>?
+    @State private var draftURL = ""
+    @State private var draftToken = ""
+    @State private var draftFingerprint = ""
+    @State private var trustDraft = PairingTrustDraft()
+    @State private var didLoadDraft = false
     @State private var pairingOutcome: PairingOutcome = .none
     @State private var showAdvanced = false
     private let feedbackGenerator = UINotificationFeedbackGenerator()
 
     private var urlIsValid: Bool {
-        let trimmed = session.baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = draftURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let url = URL(string: trimmed) else { return false }
         let scheme = (url.scheme ?? "").lowercased()
         return scheme == "http" || scheme == "https"
     }
 
     private var isLoopback: Bool {
-        let trimmed = session.baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = draftURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed) else { return false }
         let host = (url.host ?? "").lowercased()
         return host == "localhost" || host == "127.0.0.1" || host == "::1"
     }
 
     private var tokenIsValid: Bool {
-        !session.pairingToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !draftToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var tlsRequired: Bool {
-        let trimmed = session.baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = draftURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed) else { return false }
         return (url.scheme ?? "").lowercased() == "https"
     }
 
     private var tlsIsValid: Bool {
-        !tlsRequired || !session.tlsFingerprint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !tlsRequired || !draftFingerprint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var canPair: Bool {
@@ -57,23 +79,30 @@ struct PairingView: View {
                         .frame(width: 56, height: 56)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Observe")
+                        Text("Pair iPhone")
                             .font(.largeTitle.weight(.semibold))
                             .foregroundStyle(RSTheme.ink)
                             .minimumScaleFactor(0.7)
                             .lineLimit(1)
-                        Text("Connect to a Mac you control to observe runs and sign requests.")
+                        Text("Connect this iPhone to your Mac to observe runs. Key enrollment is a separate step.")
                             .font(.subheadline)
                             .foregroundStyle(RSTheme.muted)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Connect to your Mac").font(.headline)
+                    Text("1. Start the companion service on your Mac.\n2. Copy its reachable HTTPS URL, pairing token, and certificate fingerprint below.\n3. Tap Pair. Keep both devices on a network that can reach the Mac.")
+                        .font(.footnote)
+                    Text("The Mac must already provide a companion service. This screen does not start it or change the Mac’s network settings.")
+                        .font(.caption).foregroundStyle(RSTheme.muted)
+                }
                 BoundaryBanner(text: session.boundaryCopy)
 
                 VStack(alignment: .leading, spacing: 10) {
                     fieldLabel("Mac companion URL")
-                    TextField("https://192.168.x.y:8787/", text: $session.baseURLString)
+                    TextField("https://192.168.x.y:8787/", text: $draftURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
@@ -83,7 +112,7 @@ struct PairingView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .stroke((urlIsValid && !isLoopback) || session.baseURLString.isEmpty ? Color.clear : RSTheme.danger.opacity(0.5), lineWidth: 1)
+                                .stroke((urlIsValid && !isLoopback) || draftURL.isEmpty ? Color.clear : RSTheme.danger.opacity(0.5), lineWidth: 1)
                         )
                     if isLoopback {
                         Text("127.0.0.1 and localhost cannot be used from this phone. Enter your Mac's local IP or Tailscale address.")
@@ -96,7 +125,7 @@ struct PairingView: View {
                     }
 
                     fieldLabel("Pairing token")
-                    SecureField("Paste from Mac terminal", text: $session.pairingToken)
+                    SecureField("Paste from Mac terminal", text: $draftToken)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .padding(12)
@@ -105,7 +134,7 @@ struct PairingView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .stroke(tokenIsValid || session.pairingToken.isEmpty ? Color.clear : RSTheme.danger.opacity(0.5), lineWidth: 1)
+                                .stroke(tokenIsValid || draftToken.isEmpty ? Color.clear : RSTheme.danger.opacity(0.5), lineWidth: 1)
                         )
                     Text("The token authorizes this phone to observe. Copy it from the Mac companion output.")
                         .font(.caption2)
@@ -113,7 +142,7 @@ struct PairingView: View {
 
                     if tlsRequired {
                         fieldLabel("TLS certificate fingerprint")
-                        TextField("SHA-256 fingerprint", text: $session.tlsFingerprint)
+                        TextField("SHA-256 fingerprint", text: $draftFingerprint)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .padding(12)
@@ -133,7 +162,7 @@ struct PairingView: View {
                 DisclosureGroup("Advanced settings", isExpanded: $showAdvanced) {
                     VStack(alignment: .leading, spacing: 10) {
                         fieldLabel("Mac session public key")
-                        TextField("For holder verification", text: $session.macSessionPublicKey)
+                        TextField("For holder verification", text: $trustDraft.macKey)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .padding(12)
@@ -150,16 +179,14 @@ struct PairingView: View {
                         .foregroundStyle(RSTheme.muted)
 
                         fieldLabel("Pinned holder ID")
-                        TextField("Holder identity to trust", text: $session.pinnedHolderId)
+                        TextField("Holder identity to trust", text: $trustDraft.holderID)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .padding(12)
                             .background(RSTheme.elevated)
                             .foregroundStyle(RSTheme.ink)
                             .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                            .onChange(of: session.pinnedHolderId) { _, _ in
-                                session.rememberPinnedHolderId()
-                            }
+
 
                         DisclosureGroup("What is this?") {
                             Text("When signing exact-run requests, the phone only signs if the holder ID in the request matches this pin. This prevents a compromised mailbox from substituting a different holder.")
@@ -175,13 +202,21 @@ struct PairingView: View {
                 .foregroundStyle(RSTheme.ink)
 
                 Button {
+                    guard let url = URL(string: draftURL.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
+                    let candidate = PairingConfig(baseURL: url, pairingToken: draftToken,
+                        tlsFingerprint: draftFingerprint.isEmpty ? nil : draftFingerprint)
+                    let macKey = trustDraft.macKey
+                    let holderID = trustDraft.holderID
                     feedbackGenerator.prepare()
                     busy = true
                     pairingOutcome = .inProgress
-                    Task {
-                        await session.saveAndPair()
+                    pairingTask?.cancel()
+                    pairingTask = Task {
+                        let paired = await session.saveAndPair(candidate: candidate)
                         busy = false
-                        if session.lastError == nil {
+                        if paired {
+                            session.applyVerifiedPairingTrustEdits(previousMacKey: trustDraft.initialMacKey, previousHolderID: trustDraft.initialHolderID, macKey: macKey, holderID: holderID)
+                            trustDraft.synchronize(macKey: session.macSessionPublicKey, holderID: session.pinnedHolderId)
                             feedbackGenerator.notificationOccurred(.success)
                             pairingOutcome = .success
                         } else {
@@ -207,7 +242,7 @@ struct PairingView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(RSTheme.signal)
-                        Text("Connected successfully")
+                        Text(PairingOutcome.successMessage)
                             .font(.subheadline)
                             .foregroundStyle(RSTheme.ink)
                     }
@@ -312,6 +347,15 @@ struct PairingView: View {
             .rsReadableWidth(720)
         }
         .scrollDismissesKeyboard(.interactively)
+        .onDisappear { pairingTask?.cancel() }
+        .onAppear {
+            guard !didLoadDraft else { return }
+            draftURL = session.baseURLString
+            draftToken = session.pairingToken
+            draftFingerprint = session.tlsFingerprint
+            trustDraft.synchronize(macKey: session.macSessionPublicKey, holderID: session.pinnedHolderId)
+            didLoadDraft = true
+        }
     }
 
     private func fieldLabel(_ title: String) -> some View {

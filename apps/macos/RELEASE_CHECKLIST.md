@@ -65,19 +65,29 @@ test -f build/RunSpecimen.app/Contents/Resources/AppIcon.icns
 
 ### 1. Freeze the helper
 
-Use a Homebrew python3.12 venv with pyinstaller>=6:
+Build a private CPython with the unused `statvfs`/`fstatvfs` functions excluded
+from its built-in `posix` module. A stock Homebrew/setup-python runtime imports
+DiskSpace APIs and is refused by the freeze gate. The builder downloads pinned,
+SHA-256-checked CPython 3.12.15 source from python.org and uses Homebrew OpenSSL;
+it does not modify the host interpreter. PyInstaller module exclusions cannot
+remove built-in native functions. The Mac privacy reasons remain unchanged.
 
 ```bash
-# One-time venv setup (if not already created)
-/opt/homebrew/opt/python@3.12/bin/python3.12 -m venv ~/.venvs/freeze312
-~/.venvs/freeze312/bin/pip install 'pyinstaller>=6'
+# One-time private runtime setup (the prefix must not exist)
+bash apps/macos/Scripts/build_mas_python.sh "$HOME/.venvs/mas-python312"
+"$HOME/.venvs/mas-python312/bin/python3.12" -m pip install 'pyinstaller>=6'
 
 # Freeze the helper
 cd apps/macos
-RS_FREEZE_PYTHON=~/.venvs/freeze312/bin/python ./Scripts/freeze_helper.sh --enable --require --verify
+RS_FREEZE_PYTHON="$HOME/.venvs/mas-python312/bin/python3.12" ./Scripts/freeze_helper.sh --enable --require --verify
 ```
 
 ### 2. Archive with xcodebuild
+
+`Scripts/archive_mas.sh` runs both the exact manifest gate and the required-reason
+symbol scanner with `--check` before recording archive identity or exporting.
+An undeclared category stops the archive pipeline. The MAS smoke build runs
+the same symbol check. Run the scanner without `--check` for inventory only.
 
 ```bash
 xcodebuild -project RunSpecimen.xcodeproj \
