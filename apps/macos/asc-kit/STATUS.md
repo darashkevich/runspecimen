@@ -23,7 +23,7 @@ Rejection of **historical 0.1.3 (8)** (submission `9c19e1cd-…`, review 2026-09
 `_lzma` symbols), **Design 4** missing main-window reopen menu, **2.4.5(i)** unused
 `network.server`. See [REJECTION-2026-09-23.md](REJECTION-2026-09-23.md).
 
-In-flight note: that `/inflight` URL is historical (saved while **historical 0.1.4 (9)** was waiting). The current Connect state in this file is `Removed from App Store` (EU trader status missing) for **historical 0.1.4 (9)** — see the top section. This integrated branch is unpublished **0.1.6 (16)** / engine **0.2.0rc15** and is not that Store package. Do not withdraw, replace, or claim a new Store submission from this note.
+In-flight note: that `/inflight` URL is historical (saved while **historical 0.1.4 (9)** was waiting). The current Connect state in this file is `Removed from App Store` (EU trader status missing) for **historical 0.1.4 (9)** — see the top section. This integrated branch is unpublished **0.1.6 (16)** / engine **0.2.0rc16** and is not that Store package. Do not withdraw, replace, or claim a new Store submission from this note.
 
 These identities are different artifacts. Do not treat them as the same package because an older local build reused the text **historical 0.1.4 (9)**.
 
@@ -35,7 +35,7 @@ These identities are different artifacts. Do not treat them as the same package 
 | Local Store package, not uploaded | **historical 0.1.5 (11)** | `3a0f48351b5717fb68168be6c56ac3038f2ea11e` | rc14 plus native workflows. No confirmation-claim or pipe-drain fix | pkg `2452956fe1179a7e4e019f5de5b2c40aba460ecbc077a7d75af35458b67ce309` | not uploaded |
 | Historical local candidate | **historical 0.1.5 (12)** | `c400f2d0ca82b21f2663df92f3f0c262a1ba09af` | rc14 plus native workflows, confirmation claim, and concurrent pipe drain. Receipt digest, diff, and retain stay CLI-only | pkg `6b3e9b3e1db219aafd834dd894b4ce04a8269cedb34dc116a4a154c22bb09a38` | not uploaded |
 | Historical integrated candidate | **historical 0.1.5 (13)** | `cursor/evidence-expansion-coherence` after #39/`e2a3216`, #47/`329e08b`, #49/`18ef461` (`cursor/integrated-release-candidate` historical at `a0dc233`) | engine **0.2.0rc15**. Packaged CryptoKit P-256 verifier is ad-hoc and hash-pinned, not a Secure Enclave. Development GUI remains the build of `27bb0c7` app sources | not a Store package | not uploaded |
-| Unpublished integrated candidate | **0.1.6 (16)** | Current PR head (see GitHub) | unpublished engine **0.2.0rc15**; source preparation only, not a newly built Store package | not a Store package | not uploaded |
+| Unpublished integrated candidate | **0.1.6 (16)** | Current PR head (see GitHub) | unpublished engine **0.2.0rc16**; source preparation only, not a newly built Store package | not a Store package | not uploaded |
 
 App Store Connect was not queried on 2026-09-25: the local API key file is present, and the issuer ID is not stored beside it, so no request was sent. Do not upload **historical 0.1.5 (11)** while the recorded submission is still **historical 0.1.4 (9)**.
 

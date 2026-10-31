@@ -11,6 +11,7 @@ import venv
 from pathlib import Path
 
 from tests.helpers import PYTHON, ROOT, base_contract, write_contract
+from runspecimen import __version__ as CURRENT_ENGINE_VERSION
 
 
 QAFIX4_PACK = ROOT / "artifacts" / "0.2.0rc15-2026-10-08-qafix4"
@@ -92,7 +93,7 @@ def _wheel_current_tree(dest: Path) -> Path:
     )
     if result.returncode != 0:
         raise AssertionError(f"pip wheel failed: {result.stdout}\n{result.stderr}")
-    wheels = list(dest.glob("runspecimen-0.2.0rc15-*.whl"))
+    wheels = list(dest.glob(f"runspecimen-{CURRENT_ENGINE_VERSION}-*.whl"))
     if len(wheels) != 1:
         raise AssertionError(f"expected one current wheel, got {wheels}")
     return wheels[0]

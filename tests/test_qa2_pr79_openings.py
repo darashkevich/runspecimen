@@ -123,11 +123,20 @@ class QA2PR79OpeningsTests(unittest.TestCase):
         self.assertNotIn("wait ", between)
         self.assertNotRegex(between, r"simctl\s+bootstatus")
         before_test = commands[:compile_at]
-        self.assertNotRegex(before_test, r"simctl list devices available(?!\s+-j)")
-        self.assertRegex(before_test, r"simctl list devices available -j")
+        # Job 124571864334: `simctl list devices available -j` blocked 2m11s
+        # on the pull_request runner (push listed in 5s). Never enumerate
+        # the device catalog; create one iPhone from runtimes/devicetypes.
+        self.assertNotRegex(before_test, r"simctl\s+list\s+devices")
+        self.assertIn('select_ios_simulator.py" --create', script)
+        self.assertIn('select_ios_simulator.py" --create', commands)
         self.assertRegex(
             workflow,
-            r"(?m)^  ios-observe-tests:\n    runs-on: macos-latest\n    timeout-minutes: 15\n",
+            r"(?m)^  ios-observe-tests:\n"
+            r"(?:    #.*\n)*"
+            r"    if: github\.event_name != 'pull_request' \|\| "
+            r"github\.event\.pull_request\.head\.repo\.full_name != github\.repository\n"
+            r"    runs-on: macos-latest\n"
+            r"    timeout-minutes: 15\n",
         )
 
     def test_launch_fault_workflow_labels_load_as_smoke(self) -> None:

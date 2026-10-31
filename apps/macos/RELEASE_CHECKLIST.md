@@ -7,7 +7,7 @@ Short operator path for shipping the macOS companion. Detail:
 **Invariants:** no telemetry; Approve never auto-types `APPROVE`; receipts ≠
 digital signatures; payload is **not** OS-sandboxed by the UI sandbox alone.
 
-**Engine:** a future MAS freeze must match `src/runspecimen/__version__` (**`0.2.0rc15`**). Build **9** shipped with engine **`0.2.0rc14`** and is now **Removed from App Store** (EU trader status missing).
+**Engine:** a future MAS freeze must match `src/runspecimen/__version__` (**`0.2.0rc16`**). Build **9** shipped with engine **`0.2.0rc14`** and is now **Removed from App Store** (EU trader status missing).
 
 ## Yahor-only prerequisites
 
@@ -50,7 +50,7 @@ python3 -m pip install --user 'pyinstaller>=6'
 ./Scripts/test_security_boundary.sh
 ./Scripts/build_app.sh --mas
 # Expect:
-build/RunSpecimen.app/Contents/Helpers/runspecimen --version   # → 0.2.0rc15 on a freeze of this branch; Store historical 0.1.4 (9) is published rc14
+build/RunSpecimen.app/Contents/Helpers/runspecimen --version   # → 0.2.0rc16 on a freeze of this branch; Store historical 0.1.4 (9) is published rc14
 test ! -d build/RunSpecimen.app/Contents/Helpers/lib
 /usr/libexec/PlistBuddy -c 'Print :RSDistributionChannel' \
   build/RunSpecimen.app/Contents/Info.plist   # → mas

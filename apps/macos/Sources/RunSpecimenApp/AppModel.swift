@@ -26,7 +26,7 @@ final class AppModel: ObservableObject {
     @Published var showWorkflows = false
     /// Consequential workflow waiting for an explicit human confirmation.
     @Published var pendingWorkflow: WorkflowRequest?
-    /// Persistent banner when CLI is missing, stale bookmark, or below 0.2.0rc15.
+    /// Persistent banner when CLI is missing, stale bookmark, or below 0.2.0rc16.
     @Published var cliSetupIssue: String?
     @Published var cliSourceLabel: String?
     @Published var dashboardRunning = false
@@ -123,7 +123,7 @@ final class AppModel: ObservableObject {
             if channel.requiresBundledHelper {
                 cliSetupIssue = "Mac App Store build: bundled runspecimen helper missing or not executable. This build fails closed — no host Python / PATH / pip fallback."
             } else {
-                cliSetupIssue = "runspecimen CLI not found. Install 0.2.0rc15+ then select the binary:\npython3 -m pip install 'runspecimen==0.2.0rc15'\n\nOr stage a helper into Contents/Helpers (see Helpers/README.md)."
+                cliSetupIssue = "runspecimen CLI not found. Install 0.2.0rc16+ then select the binary:\npython3 -m pip install 'runspecimen==0.2.0rc16'\n\nOr stage a helper into Contents/Helpers (see Helpers/README.md)."
             }
         }
 

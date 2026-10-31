@@ -1,6 +1,6 @@
 # Release candidate checklist
 
-Published engine bytes stay **`0.2.0rc14`**. This tree's engine is unpublished **`0.2.0rc15`**. Approved Mac App Store **historical 0.1.4 (9)** is `Removed from App Store` (EU trader status missing) and freezes rc14. The current local successor label is **0.1.6 (16)** and is not an upload. Earlier local labels **historical 0.1.5 (10)**, **(11)**, and **(12)** are not this candidate. Mac app sandbox versus payload: [apps/macos/docs/SECURITY_BOUNDARY.md](../apps/macos/docs/SECURITY_BOUNDARY.md). There is no `docs/SECURITY_BOUNDARY.md` at the repository root.
+Published engine bytes stay **`0.2.0rc14`**. This tree's engine is unpublished **`0.2.0rc16`**. Approved Mac App Store **historical 0.1.4 (9)** is `Removed from App Store` (EU trader status missing) and freezes rc14. The current local successor label is **0.1.6 (16)** and is not an upload. Earlier local labels **historical 0.1.5 (10)**, **(11)**, and **(12)** are not this candidate. Mac app sandbox versus payload: [apps/macos/docs/SECURITY_BOUNDARY.md](../apps/macos/docs/SECURITY_BOUNDARY.md). There is no `docs/SECURITY_BOUNDARY.md` at the repository root.
 
 - [x] One non-blocking workspace lease covers each lifecycle mutation.
 - [x] Approval requires a real stdin and stdout TTY.
@@ -34,7 +34,7 @@ Published engine bytes stay **`0.2.0rc14`**. This tree's engine is unpublished *
   (identical bytes; checksum-only, not attested).
   - Prospective release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15
 
-For unpublished `0.2.0rc15`, three decisions stay separate and none is made by this checklist: (1) candidate selection (published rc14, the `b3367eb` sdist, or the `fb05284` qualification sdist), (2) qualification (the human guarantee (1) session on those exact bytes, then a post-upload byte compare), and (3) release authorization by Yahor. A green suite or CI run is evidence for (2) only.
+For unpublished `0.2.0rc16`, three decisions stay separate and none is made by this checklist: (1) candidate selection (published rc14, the `b3367eb` sdist, or the `fb05284` qualification sdist), (2) qualification (the human guarantee (1) session on those exact bytes, then a post-upload byte compare), and (3) release authorization by Yahor. A green suite or CI run is evidence for (2) only.
 
 Run `python3 scripts/release_check.py` before tagging. A release candidate is not
 a stable release and does not change the explicit limitations in the threat model.
@@ -64,7 +64,7 @@ promote, or claim rc13 as stable. A release candidate is not a stable release.
 
 ### Still required before tagging `v0.2.0`
 
-- [ ] Version / classifier bump from `0.2.0rc15` → `0.2.0` (package, plugins,
+- [ ] Version / classifier bump from `0.2.0rc16` → `0.2.0` (package, plugins,
       docs identity pins) on a dedicated PR.
 - [ ] CI green on the exact cut commit (Linux 3.9–3.14, macOS 3.11/3.14, macos-app).
 - [ ] Copy audit: USER_GUIDE, THREAT_MODEL, FAQ, SUBMISSION, site pins — no

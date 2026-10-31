@@ -2,11 +2,11 @@
 
 RunSpecimen is a local safety and evidence layer for AI-driven research and engineering commands.
 
-**Current package version (this branch):** `0.2.0rc15`  
+**Current package version (this branch):** `0.2.0rc16`  
 **Release:** [v0.2.0-rc.15](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15) / PyPI `runspecimen==0.2.0rc15` (identical bytes; checksum-only, not SLSA-attested).  
 Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `v0.2.0-rc.12`. See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
 
-**Current version:** `0.2.0rc15`  
+**Current version:** `0.2.0rc16`  
 **GitHub release:** [v0.2.0-rc.15](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15)  
 **PyPI:** `runspecimen==0.2.0rc15`  
 **Homebrew:** `brew install darashkevich/runspecimen/runspecimen`

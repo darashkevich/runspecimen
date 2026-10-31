@@ -38,7 +38,11 @@ fi
 xcodebuild -version > "$SCRATCH_DIR/environment.txt"
 SDK_VERSION=$(xcrun --sdk iphonesimulator --show-sdk-version)
 echo "SDK_VERSION=$SDK_VERSION" >> "$SCRATCH_DIR/environment.txt"
-SIMULATOR_ID=$(xcrun simctl list devices available -j | tee -a "$SCRATCH_DIR/environment.txt" | python3 "$SCRIPT_DIR/select_ios_simulator.py" "$SDK_VERSION")
+# Job 124571864334: `simctl list devices available -j` blocked 2m11s on the
+# pull_request runner (push on the same SHA listed in 5s). xcodebuild then
+# spent ~5m more resolving that destination. Create one iPhone from the
+# runtime/devicetype lists instead of enumerating the device catalog.
+SIMULATOR_ID=$(python3 "$SCRIPT_DIR/select_ios_simulator.py" --create "$SDK_VERSION")
 DESTINATION="platform=iOS Simulator,id=$SIMULATOR_ID"
 {
   echo "SIMULATOR_ID=$SIMULATOR_ID"
