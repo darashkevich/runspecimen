@@ -20,6 +20,7 @@ from tests.helpers import SRC, ROOT
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from runspecimen import __version__ as CURRENT_ENGINE_VERSION
 from runspecimen.cli import build_parser
 
 
@@ -1036,7 +1037,7 @@ def _build_sheet_pack(dest: Path) -> Path:
     )
     if result.returncode != 0:
         raise AssertionError(f"pip wheel failed: {result.stdout}\n{result.stderr}")
-    wheels = list(dest.glob("runspecimen-0.2.0rc15-*.whl"))
+    wheels = list(dest.glob(f"runspecimen-{CURRENT_ENGINE_VERSION}-*.whl"))
     if len(wheels) != 1:
         raise AssertionError(f"expected one freshly built wheel in {dest}, got {wheels}")
     wheel = wheels[0]
