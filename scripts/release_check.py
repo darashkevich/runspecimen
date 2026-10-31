@@ -30,6 +30,46 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_PYTHON_VERSION = "0.2.0rc16"
 EXPECTED_PLUGIN_VERSION = "0.2.0-rc.16"
+# Current-candidate sentences that must name this tree's engine / plugin.
+# Published and historical rc15 pins (Homebrew, CHANGELOG, qafix packs) stay out.
+CANDIDATE_ENGINE_PINS = (
+    ("README.md", r"(?m)^\*\*Current package version \(this branch\):\*\* `([^`]+)`", ("python",)),
+    ("README.md", r"(?m)^\*\*Current version:\*\* `([^`]+)`", ("python",)),
+    (
+        "docs/RELEASE_IDENTITY.md",
+        r"Candidate source on this branch identifies as \*\*`([^`]+)`\*\* / \*\*`([^`]+)`\*\*",
+        ("python", "plugin"),
+    ),
+    ("docs/RELEASE_CHECKLIST.md", r"This tree's engine is unpublished \*\*`([^`]+)`\*\*", ("python",)),
+    ("docs/RELEASE_CHECKLIST.md", r"For unpublished `([^`]+)`, three decisions stay separate", ("python",)),
+    (
+        "apps/macos/RELEASE_CHECKLIST.md",
+        r"must match `src/runspecimen/__version__` \(\*\*`([^`]+)`\*\*\)",
+        ("python",),
+    ),
+    ("apps/macos/RELEASE_CHECKLIST.md", r"→ ([0-9.]+rc\d+) on a freeze of this branch", ("python",)),
+    (
+        "apps/macos/APP_STORE.md",
+        r"must match\*\* `src/runspecimen/__version__`, now \*\*([^*]+)\*\*",
+        ("python",),
+    ),
+    ("apps/macos/APP_STORE.md", r"current engine \(`([^`]+)` on this branch\)", ("python",)),
+    ("apps/macos/APP_STORE.md", r"source `__version__` is `([^`]+)`", ("python",)),
+    ("apps/macos/asc-kit/README.md", r"Source engine on this branch: \*\*([^*]+)\*\*", ("python",)),
+    (
+        "apps/macos/asc-kit/STATUS.md",
+        r"This integrated branch is unpublished \*\*0\.1\.6 \(16\)\*\* / engine \*\*([^*]+)\*\*",
+        ("python",),
+    ),
+    (
+        "apps/macos/asc-kit/STATUS.md",
+        r"\| Unpublished integrated candidate \| \*\*0\.1\.6 \(16\)\*\* .* unpublished engine \*\*([^*]+)\*\*",
+        ("python",),
+    ),
+    ("apps/macos/asc-kit/metadata.md", r"\| Bundled engine \| ([0-9.]+rc\d+) source", ("python",)),
+    ("docs/CANDIDATE_MANIFEST.md", r"\| Engine / package \| unpublished `([^`]+)` \|", ("python",)),
+    ("docs/CANDIDATE_MANIFEST.md", r"\| Plugin \| unpublished `([^`]+)` \|", ("plugin",)),
+)
 # Fixed metadata clock for release archives. Wall-clock gzip, tar, and zip
 # timestamps otherwise change the archive bytes on every build. 2020-01-01 UTC
 # matches the plugin zip and is representable in zip (dates before 1980 are not).
@@ -90,6 +130,51 @@ def _load_script_module(path: Path, name: str):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def plugin_version_for_python(version: str) -> str:
+    match = re.fullmatch(r"(\d+\.\d+\.\d+)rc(\d+)", version)
+    if match is None:
+        raise SystemExit(f"unsupported python version for plugin spelling: {version}")
+    return f"{match.group(1)}-rc.{match.group(2)}"
+
+
+def load_python_version(root: Path | None = None) -> str:
+    root = ROOT if root is None else Path(root)
+    match = re.search(
+        r'^__version__ = "([^"]+)"$',
+        (root / "src/runspecimen/__init__.py").read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    if match is None:
+        raise SystemExit("src/runspecimen/__init__.py is missing __version__")
+    return match.group(1)
+
+
+def check_candidate_engine_docs(root: Path | None = None) -> None:
+    """Fail when current-candidate docs disagree with ``__version__``.
+
+    Published and historical rc15 sentences (Homebrew, CHANGELOG, qafix packs)
+    are not in ``CANDIDATE_ENGINE_PINS`` and are left alone.
+    """
+    root = ROOT if root is None else Path(root)
+    python_version = load_python_version(root)
+    expected = {
+        "python": python_version,
+        "plugin": plugin_version_for_python(python_version),
+    }
+    for relative, pattern, kinds in CANDIDATE_ENGINE_PINS:
+        match = re.search(pattern, (root / relative).read_text(encoding="utf-8"))
+        if match is None:
+            raise SystemExit(f"{relative} is missing a current-candidate engine pin")
+        if match.lastindex != len(kinds):
+            raise SystemExit(f"{relative} current-candidate pin group count does not match")
+        for group, kind in zip(match.groups(), kinds):
+            if group != expected[kind]:
+                raise SystemExit(
+                    f"{relative} current-candidate pin {group!r} does not match "
+                    f"{expected[kind]!r}"
+                )
 
 
 def check_versions() -> None:
@@ -214,6 +299,7 @@ def check_versions() -> None:
     for relative in PLUGIN_COMPONENTS:
         if not (plugin_root / relative).is_file():
             raise SystemExit(f"missing plugin component: {relative}")
+    check_candidate_engine_docs()
 
 
 def ensure_build_backend() -> None:
