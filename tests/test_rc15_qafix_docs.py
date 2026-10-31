@@ -721,6 +721,23 @@ class Rc15QaDocfixTests(unittest.TestCase):
                 self.assertIn("PASS: N10", output)
                 self.assertIn("REACHED", output)
 
+    def test_acceptance_sheet_rewrites_pack_and_current_wheel(self) -> None:
+        if not HUMAN_ACCEPTANCE.is_file():
+            self.skipTest("HUMAN-ACCEPTANCE is not packed into the sdist")
+        with tempfile.TemporaryDirectory(prefix="rs-ha-rewrite-") as raw:
+            pack = Path(raw)
+            wheel = pack / f"runspecimen-{CURRENT_ENGINE_VERSION}-py3-none-any.whl"
+            wheel.write_bytes(b"wheel")
+            script = _acceptance_sheet_script(
+                HUMAN_ACCEPTANCE.read_text(encoding="utf-8"), pack
+            )
+            self.assertIn(f"export PACK={shlex.quote(str(pack))}", script)
+            self.assertIn(f"export WHEEL={shlex.quote(str(wheel))}", script)
+            self.assertNotIn(
+                'export WHEEL="$PACK/runspecimen-0.2.0rc15-py3-none-any.whl"',
+                script,
+            )
+
     def test_human_acceptance_sheet_n1_n7_n10_unk_in_bash(self) -> None:
         if not HUMAN_ACCEPTANCE.is_file():
             self.skipTest("HUMAN-ACCEPTANCE is not packed into the sdist")
@@ -1064,6 +1081,17 @@ def _acceptance_sheet_script(markdown: str, pack: Path) -> str:
     )
     if count != 1:
         raise AssertionError("could not rewrite PACK export in HUMAN-ACCEPTANCE sheet")
+    wheels = list(pack.glob(f"runspecimen-{CURRENT_ENGINE_VERSION}-*.whl"))
+    if len(wheels) != 1:
+        raise AssertionError(f"expected one current wheel in pack {pack}, got {wheels}")
+    replaced, wcount = re.subn(
+        r'export WHEEL="\$PACK/runspecimen-0\.2\.0rc15-py3-none-any\.whl"',
+        f"export WHEEL={shlex.quote(str(wheels[0]))}",
+        replaced,
+        count=1,
+    )
+    if wcount != 1:
+        raise AssertionError("could not rewrite WHEEL export in HUMAN-ACCEPTANCE sheet")
     return replaced
 
 
