@@ -16,14 +16,14 @@ Consult current Apple docs before each submission:
 
 | Channel | Role | Verdict |
 | --- | --- | --- |
-| **Target A — Mac App Store** | **Primary** | `./Scripts/build_app.sh --mas` (a future frozen helper **must match** `src/runspecimen/__version__`, now **0.2.0rc15**; build 9 shipped with **0.2.0rc14** and is **Removed from App Store** (EU trader status missing)) → `./Scripts/archive_mas.sh` → `RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh` for a local Store pkg, or explicit `RS_EXPORT_DESTINATION=upload` after Yahor authorizes release |
+| **Target A — Mac App Store** | **Primary** | `./Scripts/build_app.sh --mas` (a future frozen helper **must match** `src/runspecimen/__version__`, now **0.2.0rc16**; build 9 shipped with **0.2.0rc14** and is **Removed from App Store** (EU trader status missing)) → `./Scripts/archive_mas.sh` → `RS_EXPORT_DESTINATION=export ./Scripts/export_mas.sh` for a local Store pkg, or explicit `RS_EXPORT_DESTINATION=upload` after Yahor authorizes release |
 | **Target B — Developer ID + notarization** | Secondary / direct download | Optional after MAS; same sandbox entitlements preferred. **Not** a Store-validation substitute |
 
 ### Why MAS-first now
 
 1. **Guideline 2.4.5(viii)** — Store builds embed a **frozen Mach-O** helper
    (`Contents/Resources/RunSpecimenEngine/`, PyInstaller **onedir** + `_internal/`)
-   built from the current engine (`0.2.0rc15` on this branch). **Onefile is not used**
+   built from the current engine (`0.2.0rc16` on this branch). **Onefile is not used**
    — its bootloader needs SysV semaphores denied by App Sandbox. No host Python /
    optionally installed PyPI CLI is required for Store builds. `--from-src`
    host-Python launchers are **local/CI only** and are rejected at runtime when
@@ -205,7 +205,7 @@ Shipped under `Resources/PrivacyInfo.xcprivacy`:
 | Short version | `0.1.6` |
 | Build | `16` (builds **5**–**8** rejected or superseded; **9** was removed from the App Store (EU trader status missing)) |
 | Min macOS | 14.0 |
-| Bundled engine | source `__version__` is `0.2.0rc15`; build 9 shipped `0.2.0rc14` |
+| Bundled engine | source `__version__` is `0.2.0rc16`; build 9 shipped `0.2.0rc14` |
 | Icon | `Resources/AppIcon.icns` (+ iconset / 1024 for Connect) |
 
 ## Review notes (paste into App Review)
