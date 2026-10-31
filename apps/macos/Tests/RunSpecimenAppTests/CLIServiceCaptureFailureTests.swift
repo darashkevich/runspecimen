@@ -111,7 +111,7 @@ final class CLIServiceCaptureFailureTests: XCTestCase {
     ) -> BoundedProcessCapture.Output {
         var captured = BoundedProcessCapture.Output(
             exitCode: 0,
-            stdout: Data("runspecimen 0.2.0rc15\n".utf8),
+            stdout: Data("runspecimen 0.2.0rc16\n".utf8),
             stderr: Data("kept-stderr\n".utf8),
             stdoutTruncated: stdoutTruncated,
             stderrTruncated: false,

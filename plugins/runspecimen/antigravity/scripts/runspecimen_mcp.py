@@ -26,7 +26,7 @@ def _load():
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "runspecimen"
-SERVER_VERSION = "0.2.0-rc.15"
+SERVER_VERSION = "0.2.0-rc.16"
 
 ALLOWED = frozenset({
     "about",

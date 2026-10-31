@@ -24,15 +24,15 @@ final class CLIVersionGateTests: XCTestCase {
     }
 
     func testMinimumAccepted() {
-        for version in ["0.2.0rc15", "0.2.0-rc.15", "0.2.0"] {
+        for version in ["0.2.0rc16", "0.2.0-rc.16", "0.2.0"] {
             guard case .ok = CLIVersionGate.evaluate(versionOutput: version) else {
                 XCTFail("\(version) should be accepted")
                 continue
             }
         }
-        for version in ["0.2.0rc9", "0.2.0rc14"] {
+        for version in ["0.2.0rc9", "0.2.0rc15"] {
             guard case .tooOld = CLIVersionGate.evaluate(versionOutput: version) else {
-                XCTFail("\(version) must not satisfy the rc15 floor")
+                XCTFail("\(version) must not satisfy the rc16 floor")
                 continue
             }
         }
@@ -52,7 +52,7 @@ final class CLIVersionGateTests: XCTestCase {
         switch CLIVersionGate.evaluate(versionOutput: "runspecimen 0.2.0rc8") {
         case .tooOld(let found, let required, _):
             XCTAssertEqual(found.preNum, 8)
-            XCTAssertEqual(required.displayMinimum, "0.2.0rc15")
+            XCTAssertEqual(required.displayMinimum, "0.2.0rc16")
         default:
             XCTFail("expected tooOld")
         }
@@ -91,18 +91,18 @@ final class CLIVersionGateTests: XCTestCase {
     func testVersionProbeRejectsACaptureFailureThatPrintedAVersion() throws {
         let clean = BoundedProcessCapture.Output(
             exitCode: 0,
-            stdout: Data("runspecimen 0.2.0rc15\n".utf8),
+            stdout: Data("runspecimen 0.2.0rc16\n".utf8),
             stderr: Data(),
             stdoutTruncated: false,
             stderrTruncated: false,
             timedOut: false,
             cancelled: false
         )
-        XCTAssertEqual(try CLIVersionGate.acceptedVersion(from: clean), "runspecimen 0.2.0rc15")
+        XCTAssertEqual(try CLIVersionGate.acceptedVersion(from: clean), "runspecimen 0.2.0rc16")
 
         let failed = BoundedProcessCapture.Output(
             exitCode: 0,
-            stdout: Data("runspecimen 0.2.0rc15\n".utf8),
+            stdout: Data("runspecimen 0.2.0rc16\n".utf8),
             stderr: Data("child said hi".utf8),
             stdoutTruncated: false,
             stderrTruncated: false,
@@ -114,7 +114,7 @@ final class CLIVersionGateTests: XCTestCase {
             let message = (error as? EngineReportError)?.message ?? ""
             XCTAssertTrue(message.contains("could not be read"))
             XCTAssertTrue(message.contains("child said hi"))
-            XCTAssertFalse(message == "runspecimen 0.2.0rc15")
+            XCTAssertFalse(message == "runspecimen 0.2.0rc16")
         }
     }
 
