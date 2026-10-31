@@ -91,6 +91,10 @@ jobs:
           python -m unittest tests.test_ed25519 -v
 
   ios-observe-tests:
+    # Same-repo PRs already run this suite on push. The duplicate
+    # pull_request job (124571864334) queued behind other macos-latest
+    # runners and then spent 15m in simctl/xcodebuild dest + UI tests.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
