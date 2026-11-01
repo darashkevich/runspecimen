@@ -183,7 +183,11 @@ launcher runs only if a later command starts it.
 ## Residual risks
 
 The wall-clock timeout kills the launched process group, but detached or hostile
-process behavior is outside the security boundary. Native libraries, environment
+process behavior is outside the security boundary. `0.2.0rc16` records cleanup
+as `cleanup_scope=process_group`: a descendant that called `setsid()`, SIGKILL
+of both the supervisor and the bind watchdog, or an unwritable state directory
+after the group is stopped can still leave work or a stale `phase=running`
+record. Native libraries, environment
 variables, input services, and datasets are not automatically fingerprinted.
 Place material local inputs in `source.roots`. When the payload is not trusted,
 name `sandbox-exec` or `bwrap` in the contract and read the receipt field

@@ -1,9 +1,9 @@
 # Release identity
 
-Python/plugin cut currently public: **`0.2.0rc15`** / **`v0.2.0-rc.15`**.
+Python/plugin cut currently public: **`0.2.0rc16`** / **`v0.2.0-rc.16`**.
 This file records what shipped; it does not authorize App Store Connect changes.
 
-Candidate source on this branch identifies as **`0.2.0rc16`** / **`0.2.0-rc.16`**. That cut is not published. Its bytes are not the rc14 wheel, sdist, or plugin zip. The Homebrew formula in this tree still installs the published rc15 sdist.
+Candidate source on this branch identifies as **`0.2.0rc16`** / **`0.2.0-rc.16`**. That cut is published (tag `v0.2.0-rc.16` on `ae94701`). Advisory [GHSA-8357-m9wf-gjh9](https://github.com/darashkevich/runspecimen/security/advisories/GHSA-8357-m9wf-gjh9). The live Homebrew tap and the product site still served rc15 on 2026-11-01.
 
 App Store Connect macOS **0.1.4 (9)** was queried on 2026-09-28 as `Removed from App Store` (EU trader status missing) and `downloadable=true` (build `51a18894-02e3-4846-86f5-29cc345567f0`, review item `APPROVED`). That release is unchanged. The current preparation target is **0.1.6 (16)**: Yahor authorized merging PR #75 on 2026-10-18 and confirmed Mac 0.1.5 withdrawn from review. This records preparation only; shipping is blocked until independent QA findings are closed.
 
@@ -11,10 +11,31 @@ App Store Connect macOS **0.1.4 (9)** was queried on 2026-09-28 as `Removed from
 
 | Channel | Identity | Evidence |
 | --- | --- | --- |
+| GitHub Release | **`v0.2.0-rc.16`** (published prerelease) | https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.16 |
+| PyPI | **`0.2.0rc16`** (identical SHA-256 to GitHub) | https://pypi.org/project/runspecimen/0.2.0rc16/ |
+| Homebrew tap | **`0.2.0rc15`** (tap still lagged 2026-11-01) | https://github.com/darashkevich/homebrew-runspecimen · `brew tap darashkevich/runspecimen && brew install runspecimen` |
+| Product site | still `python3 -m pip install --pre runspecimen==0.2.0rc15` (lagged 2026-11-01) | https://runspecimen.darashkevich.com/ — source is `darashkevich/darashkevich.com` `sites/runspecimen/`, not this repo |
+| Mac App Store | **Removed from App Store** (EU trader status missing) | Connect macOS **0.1.4 (9)** is public with engine **0.2.0rc14**. Builds 5–8 were rejected or superseded. |
+
+Install pin is required: `pip install --pre runspecimen==0.2.0rc16`. pip will not select an RC without `--pre` or an exact `==` pin.
+
+### rc16 identical bytes (checksum-only)
+
+| Artifact | SHA-256 (GitHub Release = PyPI) |
+| --- | --- |
+| `runspecimen-0.2.0rc16-py3-none-any.whl` | `59044b56fbe3fa798a5ebb8ead3f0460141c96c98e8d0861aafd4a83ede8e9cc` |
+| `runspecimen-0.2.0rc16.tar.gz` | `83625441d316816107087870525a88d20cd42b61c69e7e398ce95cdcc3fe31d4` |
+| `runspecimen-plugin-0.2.0-rc.16.zip` | `1d5961b9c70b18efacb7ebf6babcdb6a51825f2a786d559b8a980677cc67c2bd` (GitHub only) |
+
+`publish-pypi.yml` downloaded those GitHub assets and uploaded the wheel and sdist without rebuilding. Provenance is **checksum-only**: no SLSA attestation on the wheel.
+
+## Previous public cut
+
+| Channel | Identity | Evidence |
+| --- | --- | --- |
 | GitHub Release | **`v0.2.0-rc.15`** (published prerelease) | https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15 |
 | PyPI | **`0.2.0rc15`** (identical SHA-256 to GitHub) | https://pypi.org/project/runspecimen/0.2.0rc15/ |
-| Homebrew tap | **`0.2.0rc15`** (same sdist URL + sha256) | https://github.com/darashkevich/homebrew-runspecimen · `brew tap darashkevich/runspecimen && brew install runspecimen` |
-| Product site | `python3 -m pip install runspecimen==0.2.0rc15` | https://runspecimen.darashkevich.com/ (pin update may lag the package publish) |
+| Homebrew tap / product site at publication | still pinned `0.2.0rc15` on 2026-11-01 | tap and `https://runspecimen.darashkevich.com/` lagged the rc16 publish |
 | Mac App Store | **Removed from App Store** (EU trader status missing) | Connect macOS **0.1.4 (9)** is public with engine **0.2.0rc14**. Builds 5–8 were rejected or superseded. |
 
 Install pin is required: pip will not select an RC without `==0.2.0rc15`.
@@ -79,4 +100,4 @@ rc10 GitHub Release bytes and PyPI bytes were produced by **separate rebuilds**.
 
 ## Website / Store language
 
-Product page install commands match **rc15**. Mac App Store **0.1.4 (9)** with engine **0.2.0rc14** is **Removed from App Store** (EU trader status missing in App Store Connect).
+Product page install commands still matched **rc15** on 2026-11-01 (site source is not in this repo). Mac App Store **0.1.4 (9)** with engine **0.2.0rc14** is **Removed from App Store** (EU trader status missing in App Store Connect).

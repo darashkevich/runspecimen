@@ -4,6 +4,12 @@
 
 No unreleased changes.
 
+## 0.2.0rc16 - 2026-11-01
+
+- SIGTERM, SIGHUP, and SIGINT during `runspecimen run` go through process-group cleanup and record an interrupted outcome. A detached supervisor keeps the contract process group bounded by `wall_timeout_sec` if the CLI is SIGKILLed, its group dies, or it is SIGSTOPped. The lease stays held until the group is confirmed empty; otherwise the run is recorded as `cleanup_pending`. `killpg` EPERM, failed `ps` probes, and unreadable `/proc` entries count as unknown membership, including the Darwin zombie-only case. Advisory [GHSA-8357-m9wf-gjh9](https://github.com/darashkevich/runspecimen/security/advisories/GHSA-8357-m9wf-gjh9) (affected `>=0.2.0rc3,<0.2.0rc16`).
+- Residual limits (`cleanup_scope=process_group`): a descendant that called `setsid()` can outlive cleanup; SIGKILL of both the supervisor and the bind watchdog can still orphan work; an unwritable state directory after the group is stopped can leave `phase=running` plus an error that state could not be persisted.
+- Upgrade: `pip install --upgrade --pre runspecimen==0.2.0rc16`. Tag `v0.2.0-rc.16` is on `ae94701`. GitHub Release and PyPI `0.2.0rc16` are identical bytes (checksum-only, not SLSA-attested). The DeepSeek Harness integration is not in the PyPI wheel.
+
 ## 0.2.0rc15 - 2026-10-13
 
 - The wheel check walks `pyvenv.cfg` home the way CPython does, including a parent directory and an `os.pyc` landmark, and refuses a library that is not the trusted base. A symlink home with no landmark on that walk still uses the compiled-in library. A landmark found by walking to `/` is refused when it is not that library. A nested package-directory alias is inventoried instead of ignored. A hard link at a different path is checked for loader dependencies. The probe still runs captured bytes on the trusted base interpreter; it does not observe the live venv. qafix32 pack.
