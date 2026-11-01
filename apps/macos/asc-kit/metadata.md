@@ -64,11 +64,22 @@ Bundles engine 0.2.0rc16. Interrupted runs no longer orphan the approved contrac
 
 ## App Privacy
 
-Declare **Data Not Collected** while true (no analytics, crash uploaders, ads, accounts, phone-home). Align with `Resources/PrivacyInfo.xcprivacy` (`NSPrivacyTracking=false`, empty collected types, UserDefaults `CA92.1` for bookmarks).
+Declare **Data Not Collected** while true (no analytics, crash uploaders, ads, accounts, phone-home). Align with `Resources/PrivacyInfo.xcprivacy`:
+
+- `NSPrivacyTracking` = false
+- `NSPrivacyCollectedDataTypes` = empty
+- Required-reason APIs already in the manifest:
+  - UserDefaults `CA92.1` (bookmarks / last workspace)
+  - SystemBootTime `35F9.1`
+  - FileTimestamp `C617.1` and `3B52.1`
 
 ## Export compliance
 
-Uses HTTPS only for optional docs links in-browser. Standard export-compliance answers apply — **pending** confirmation in Connect.
+`ITSAppUsesNonExemptEncryption` stays **false** in `Config/Info-mas.plist`. Do not change that key from this repo.
+
+The UI uses HTTPS only for optional in-browser docs links. The bundled engine also implements **HMAC-SHA256** as a shared-secret message authentication code for receipt authentication and integrity (`sign` / `verify-signature` default). That is not confidentiality encryption of user content. Optional Ed25519 is a PyNaCl extra and is not the default Store freeze.
+
+This likely falls under the US EAR Category 5 Part 2 authentication / digital-signature exemption (Apple’s “uses encryption only for authentication or HTTPS” path), not a non-exempt encryption product. **Yahor must make the final App Store Connect answer.** This file does not accept an agreement or file a CCATS.
 
 ## Copyright
 

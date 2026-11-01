@@ -68,3 +68,27 @@ class PublishedRc16DocsTests(unittest.TestCase):
         self.assertIn("sites/runspecimen/", submission)
         self.assertFalse((ROOT / "site").exists())
         self.assertFalse((ROOT / "website").exists())
+
+    def test_human_acceptance_is_historical_published_rc15(self) -> None:
+        text = (ROOT / "docs/HUMAN-ACCEPTANCE.md").read_text(encoding="utf-8")
+        lead = "\n".join(text.splitlines()[:20])
+        self.assertIn("# Human acceptance — historical 0.2.0rc15", lead)
+        self.assertIn("This is a **historical** qafix32 sheet.", lead)
+        self.assertIn("The current published engine is", lead)
+        self.assertIn("**`0.2.0rc16`**", lead)
+        self.assertIn("published rc15 bytes", lead)
+        self.assertIn(
+            "d9d0c9dfc978beb29ac34901d788e647812d3f663c703281da35d2172ac4f048",
+            lead,
+        )
+        self.assertIn(
+            "7abe59f54e974140e305f3b31f24767ca078eaafe0b606c26f606cb1ece9e63b",
+            lead,
+        )
+        self.assertIn(
+            "ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb",
+            lead,
+        )
+        self.assertNotIn("never published", text)
+        self.assertNotIn("unpublished 0.2.0rc15", text)
+        self.assertIn("They are\nnot unpublished.", lead)

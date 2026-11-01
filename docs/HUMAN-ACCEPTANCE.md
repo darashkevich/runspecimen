@@ -1,12 +1,21 @@
-# Human acceptance — unpublished 0.2.0rc15
+# Human acceptance — historical 0.2.0rc15
 
 This sheet is not packed into the sdist. It is not a production sign-off. It
 does not authorize a merge, tag, notarization, install, or upload. An agent
 must not type `APPROVE`, pass `--human-invoked` or `-allowProvisioningUpdates`,
 or invoke biometrics.
 
+This is a **historical** qafix32 sheet. The current published engine is
+**`0.2.0rc16`** (see [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md)). Do not treat
+this pack as the live install pin.
+
 Candidate pack: `artifacts/0.2.0rc15-2026-10-12-qafix32/`. Engine identity:
-`0.2.0rc15` (never published). Prior packs, including
+historical **`0.2.0rc15`**. The qafix32 wheel/sdist/plugin hashes are the
+**published rc15 bytes** in [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md) (wheel
+`d9d0c9dfc978beb29ac34901d788e647812d3f663c703281da35d2172ac4f048`, sdist
+`7abe59f54e974140e305f3b31f24767ca078eaafe0b606c26f606cb1ece9e63b`, plugin
+`ea38d5bc345eb8b2993611b50cfc943b97d55138a83205241fad6dd4bb3e9dcb`). They are
+not unpublished. Prior packs, including
 `artifacts/0.2.0rc15-2026-10-12-qafix31/` (authenticated probe; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix30/` (pip-free install; not this sheet),
 `artifacts/0.2.0rc15-2026-10-12-qafix29/` (QA28 sheet fixes; not this sheet),
