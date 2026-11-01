@@ -352,6 +352,13 @@ if "${RS_FREEZE_PYTHON:-python3}" -c 'import PyInstaller' 2>/dev/null || command
   fi
   echo "OK: MAS frozen helper bundle matches repo $REPO_VER (sandbox+inherit; shell rc=$MAS_HELPER_RC)"
 
+  if [[ "${RS_SKIP_UNSIGNED_ARCHIVE:-}" != "1" ]]; then
+    echo "==> unsigned Release archive (ad-hoc CODE_SIGN_IDENTITY=-; no provisioning updates)"
+    ./Scripts/archive_unsigned_release.sh
+  else
+    echo "RS_SKIP_UNSIGNED_ARCHIVE=1 — skipping unsigned Release archive"
+  fi
+
   echo "==> Store export gate unit fixtures (fail-closed profile parse)"
   ./Scripts/test_store_export_gate.sh
 

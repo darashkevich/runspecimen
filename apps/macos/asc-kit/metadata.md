@@ -58,6 +58,10 @@ runspecimen,evidence,approval,local,cli,developer,receipt,preflight,control
 | Bundled engine | 0.2.0rc16 source; verify exact frozen build before upload |
 | Min macOS | 14.0 |
 
+## What's New (0.1.6)
+
+Bundles engine 0.2.0rc16. Interrupted runs no longer orphan the approved contract on SIGTERM or SIGHUP ([GHSA-8357-m9wf-gjh9](https://github.com/darashkevich/runspecimen/security/advisories/GHSA-8357-m9wf-gjh9)). Residual limits: a descendant that called `setsid()`; SIGKILL of both the supervisor and the bind watchdog; an unwritable state directory. App Sandbox still confines the UI and inherit helper only — it does not OS-sandbox the payload.
+
 ## App Privacy
 
 Declare **Data Not Collected** while true (no analytics, crash uploaders, ads, accounts, phone-home). Align with `Resources/PrivacyInfo.xcprivacy` (`NSPrivacyTracking=false`, empty collected types, UserDefaults `CA92.1` for bookmarks).

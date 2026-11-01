@@ -68,7 +68,7 @@ python3 -m pip install --user 'pyinstaller>=6'   # freeze machine only
 ./Scripts/verify_app_icon.sh
 ./Scripts/test_security_boundary.sh
 ./Scripts/build_app.sh --mas
-# Confirm helper is current engine (rc12 on this branch):
+# Confirm helper is current engine (0.2.0rc16 on this branch):
 #   Helpers/payload/runspecimen --version   # gate BEFORE inherit sign
 #   codesign -d --entitlements - Contents/Resources/RunSpecimenEngine/runspecimen
 #   # Do NOT expect engine --version from a normal shell —
@@ -252,7 +252,7 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 
 ## Packaging checklist (MAS)
 
-- [x] `./Scripts/build_app.sh --mas` succeeded for build 9 (Mach-O onedir engine `0.2.0rc14`, `RunSpecimenEngine/_internal`, no `Helpers/lib/`).
+- [x] `./Scripts/build_app.sh --mas` succeeded for historical build 9 (Mach-O onedir engine `0.2.0rc14`, `RunSpecimenEngine/_internal`, no `Helpers/lib/`). A 0.1.6 (16) freeze must report `0.2.0rc16`.
 - [x] Helper entitlements: `codesign -d --entitlements - …/RunSpecimenEngine/runspecimen` shows sandbox+inherit
 - [x] App Sandbox entitlements (`RunSpecimen.mas.entitlements`)
 - [x] `PrivacyInfo.xcprivacy` present
@@ -272,7 +272,7 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 ## Remaining Yahor-only blockers
 
 1. App Store Connect **historical 0.1.4 (9)** is **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded.
-2. Product site pins public GitHub + PyPI `0.2.0rc15`. The Mac App Store binary is historical 0.1.4 (9) with engine `0.2.0rc14`.
+2. Product site still pinned public GitHub + PyPI `0.2.0rc15` on 2026-11-01 (site source is not in this repo). PyPI is `0.2.0rc16`. The Mac App Store binary is historical 0.1.4 (9) with engine `0.2.0rc14`. Human upload steps: [docs/MACOS_APPSTORE_SUBMISSION.md](../../docs/MACOS_APPSTORE_SUBMISSION.md).
 3. Screenshots / privacy URL already in Connect.
 
 Do **not** use Developer ID notarization as a Mac App Store validation stand-in.
