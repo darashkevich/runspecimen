@@ -22,15 +22,38 @@ the workspace evidence with matching host runtime expectations.
 
 ## Which build is current?
 
-**Current release:** CLI and plugin version **0.2.0rc15**. This release includes evidence-expansion commands (ADR-005) that were not in rc14.
+**Current release:** CLI **0.2.0rc16**, plugin **0.2.0-rc.16** (the `plugin.json` spelling). This release includes evidence-expansion commands (ADR-005) that were not in rc14, and the SIGTERM/SIGHUP cleanup fix in [GHSA-8357-m9wf-gjh9](https://github.com/darashkevich/runspecimen/security/advisories/GHSA-8357-m9wf-gjh9).
 
-**Previous release:** **0.2.0rc14** remains available but does not include the evidence-expansion features.
+**Previous release:** **0.2.0rc15** remains available but does not include that signal-cleanup fix. **0.2.0rc14** also remains available and does not include the evidence-expansion features.
+
+The Homebrew tap and the product site (`darashkevich/darashkevich.com` `sites/runspecimen/`) still served rc15 on 2026-11-01.
 
 <details>
 <summary>Mac App Store details</summary>
 
 The Mac App Store package recorded in Connect on 2026-09-28 as **historical 0.1.4 (9)** `Removed from App Store` (EU trader status missing) freezes engine **0.2.0rc14**. The Store app is guarantee (1) only and does not include the Developer ID holder. This branch's local label is **0.1.6 (16)** and is not an upload.
 </details>
+
+## What does GHSA-8357-m9wf-gjh9 change?
+
+Advisory [GHSA-8357-m9wf-gjh9](https://github.com/darashkevich/runspecimen/security/advisories/GHSA-8357-m9wf-gjh9) covers SIGTERM/SIGHUP orphaning of an approved contract. Affected versions are `>=0.2.0rc3,<0.2.0rc16`. Those builds started the contract in its own session and only handled SIGINT, so a closed terminal, `kill`, or a supervisor/CI cancel could leave the contract running and free the workspace lease.
+
+**Upgrade:**
+
+```bash
+python3 -m pip install --upgrade --pre runspecimen==0.2.0rc16
+runspecimen --version
+```
+
+`0.2.0rc16` routes SIGTERM, SIGHUP, and SIGINT through process-group cleanup, records an interrupted outcome, and keeps a detached supervisor so `wall_timeout_sec` still bounds the group if the CLI is SIGKILLed, its group dies, or it is SIGSTOPped. The lease stays held until the group is confirmed empty; otherwise the run is recorded as `cleanup_pending`.
+
+**Residual limits** (also stated as `cleanup_scope=process_group` in state):
+
+- A descendant that calls `setsid()` leaves the process group and can outlive cleanup.
+- SIGKILL of both the supervisor and the bind watchdog can still orphan remaining work.
+- A permanently unwritable state directory either keeps the lease (retry) or, if the group was already stopped, leaves a stale `phase=running` record plus an error that state could not be persisted.
+
+This is not an OS sandbox. Default `isolation.backend` remains `none`.
 
 ## Does the Mac App Store app include the protected holder?
 
@@ -163,7 +186,8 @@ assertions, use a fresh `run_id` per attempt, and chain steps with
 
 - Repository: https://github.com/darashkevich/runspecimen
 - Check installed CLI: `runspecimen --version` (engine package version, e.g.
-  `0.2.0rc15`, also the published PyPI pin)
+  `0.2.0rc16`, also the published PyPI pin)
+- Plugin version: `0.2.0-rc.16` (`.codex-plugin/plugin.json` and the other adapter manifests)
 
 ## Why does `runspecimen --version` show an older build than Homebrew?
 
@@ -171,7 +195,7 @@ assertions, use a fresh `run_id` per attempt, and chain steps with
 dev install leaves a `~/.local/bin/runspecimen` shim that **shadows** Homebrew’s
 `/opt/homebrew/bin/runspecimen`, so `which runspecimen` and plugins that call
 the CLI can keep an obsolete build (for example rc11) while brew has
-`0.2.0rc15`.
+`0.2.0rc15` (the tap still lagged published `0.2.0rc16` on 2026-11-01).
 
 Check:
 
@@ -214,9 +238,11 @@ terminal.
 
 ## How do contract and receipt versions work?
 
-Contracts require `"version": 1`. Receipts may omit `schema_version` (legacy v1)
-or set `"schema_version": 1`. Unknown versions fail closed. See
-[SCHEMA_COMPATIBILITY.md](SCHEMA_COMPATIBILITY.md).
+Contracts require `"version": 1`. New certificates set `"schema_version": 2`
+and bind that value into `certificate_id`. Receipts may omit `schema_version`
+(legacy v1) or set `"schema_version": 1`; those still parse, then fail closed
+unless a bound approval event or holder receipt is present. Unknown versions
+fail closed. See [SCHEMA_COMPATIBILITY.md](SCHEMA_COMPATIBILITY.md).
 
 ## HMAC vs Ed25519 — what do authenticated receipts prove?
 

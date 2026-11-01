@@ -6,19 +6,19 @@ by a human with appropriate credentials.
 
 ## Published release
 
-Package / plugin identity: **`0.2.0rc15`** / **`0.2.0-rc.15`**.
+Package / plugin identity: **`0.2.0rc16`** / **`0.2.0-rc.16`**.
 
-**Published:** [v0.2.0-rc.15](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15) / PyPI `runspecimen==0.2.0rc15`. GitHub Release assets and PyPI are the same bytes (checksum-only; not SLSA-attested).
+**Published:** [v0.2.0-rc.16](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.16) / PyPI `runspecimen==0.2.0rc16`. GitHub Release assets and PyPI are the same bytes (checksum-only; not SLSA-attested).
 
-**Do not publish** the existing draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) (annotated tag peels to `ecc1709`). Do not move that tag. Do not move `v0.2.0-rc.12`. See [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md).
+**Do not publish** the existing draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) (annotated tag peels to `ecc1709`). Do not move that tag. Do not move `v0.2.0-rc.12` through `v0.2.0-rc.15`. See [RELEASE_IDENTITY.md](RELEASE_IDENTITY.md).
 
 Published URLs:
 
-- Release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15
-- Wheel: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-0.2.0rc15-py3-none-any.whl
-- Source: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-0.2.0rc15.tar.gz
-- Plugin archive: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-plugin-0.2.0-rc.15.zip
-- Checksums: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/SHA256SUMS
+- Release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.16
+- Wheel: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.16/runspecimen-0.2.0rc16-py3-none-any.whl
+- Source: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.16/runspecimen-0.2.0rc16.tar.gz
+- Plugin archive: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.16/runspecimen-plugin-0.2.0-rc.16.zip
+- Checksums: https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.16/SHA256SUMS
 
 ## 1. Cursor Marketplace
 
@@ -321,14 +321,14 @@ listing later; filesystem skills/rules are the supported path today.
 
 ## 3. PyPI (Python Package Index)
 
-**Status:** **`0.2.0rc15` is the published package** (identical bytes to the GitHub Release). **`0.2.0rc14` stays as the previous release.** **`0.2.0rc11` draft must stay unpublished.**
+**Status:** **`0.2.0rc16` is the published package** (identical bytes to the GitHub Release). **`0.2.0rc15` stays as the previous release.** **`0.2.0rc11` draft must stay unpublished.**
 
-**Registry URL:** https://pypi.org/project/runspecimen/0.2.0rc15/
+**Registry URL:** https://pypi.org/project/runspecimen/0.2.0rc16/
 
 ### Published package
 
-- **Version:** `0.2.0rc15`
-- **Install:** `python3 -m pip install runspecimen==0.2.0rc15`
+- **Version:** `0.2.0rc16`
+- **Install:** `python3 -m pip install --pre runspecimen==0.2.0rc16`
 - **Publishing:** GitHub Actions trusted publishing with OIDC; no PyPI API
   token is stored in GitHub.
 
@@ -351,14 +351,14 @@ Release assets** (wheel, sdist, plugin zip, SHA256SUMS), verifies SHA-256
 digests and filenames, and uploads **those same wheel/sdist bytes** to PyPI.
 It does **not** rebuild distributions at publish time.
 
-**rc14 provenance (same as rc12 and rc13):** checksum-only. `SHA256SUMS` is the integrity contract.
+**rc16 provenance (same as rc12 through rc15):** checksum-only. `SHA256SUMS` is the integrity contract.
 `gh attestation verify` is expected to 404 until a future CI-built release
 attaches SLSA / GitHub Artifact Attestation provenance. Do not describe this
 candidate as attested.
 
 The GitHub `pypi` environment is restricted to `v*` tags.
 
-Public product and support pages pin **rc14** (website source last read 2026-10-06; see section 4). Do not retarget download links
+Public product and support pages still pinned **rc15** on 2026-11-01 (website source is `darashkevich/darashkevich.com` `sites/runspecimen/`, not this repo; see section 4). Do not retarget download links
 from a draft. Do not publish the rc11 draft.
 
 ---
@@ -367,13 +367,17 @@ from a draft. Do not publish the rc11 draft.
 
 **Status (App Store Connect):** macOS version **historical 0.1.4 (9)** is **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded. Removed from the Mac App Store (EU trader status missing). Build **14** (historical 0.1.5) was uploaded; next candidate is **0.1.6 (16)**. Yahor confirmed Mac historical 0.1.5 was withdrawn from review on 2026-10-18. Submission remains blocked on final QA closure.
 
-The Mac App Store listing is now live with a public `apps.apple.com` URL.
+The Mac App Store listing is **not live**. **historical 0.1.4 (9)** is `Removed from App Store` (EU trader status missing). There is no public `apps.apple.com` URL. Next candidate is **0.1.6 (16)** and is not an upload. See [MACOS_APPSTORE_SUBMISSION.md](MACOS_APPSTORE_SUBMISSION.md).
 
 ### Working MAS build path (Yahor's Mac)
 
-1. **Freeze the helper** with a Homebrew python3.12 venv that has pyinstaller>=6:
+1. **Freeze the helper** with the private MAS CPython (stock Homebrew/setup-python runtimes import DiskSpace APIs and are refused by `freeze_helper.sh`):
    ```bash
-   RS_FREEZE_PYTHON=~/.venvs/freeze312/bin/python ./Scripts/freeze_helper.sh --enable --require --verify
+   bash apps/macos/Scripts/build_mas_python.sh "$HOME/.venvs/mas-python312"
+   "$HOME/.venvs/mas-python312/bin/python3.12" -m pip install 'pyinstaller>=6'
+   cd apps/macos
+   RS_FREEZE_PYTHON="$HOME/.venvs/mas-python312/bin/python3.12" \
+     ./Scripts/freeze_helper.sh --enable --require --verify
    ```
 
 2. **Archive with xcodebuild:**
@@ -392,13 +396,13 @@ The Mac App Store listing is now live with a public `apps.apple.com` URL.
 
 **Never use `-allowProvisioningUpdates`.** Manual signing only.
 
-Details: `apps/macos/asc-kit/STATUS.md`, `apps/macos/RELEASE_CHECKLIST.md`.
+Details: `docs/MACOS_APPSTORE_SUBMISSION.md`, `apps/macos/asc-kit/STATUS.md`, `apps/macos/RELEASE_CHECKLIST.md`.
 
 ---
 
 ## 4. Website (runspecimen.darashkevich.com)
 
-**Status:** Live (hexaflake mark + `runspecimen==0.2.0rc15`). Marketplace links stay pending until listings are accepted.
+**Status:** Live (hexaflake mark + `runspecimen==0.2.0rc15` still observed 2026-11-01; PyPI is `0.2.0rc16`). Marketplace links stay pending until listings are accepted. The site source is not in this repo.
 
 **Earlier content check, not repeated on 2026-10-06:** Site mentions "Public marketplace availability is not yet confirmed."
 
@@ -418,7 +422,7 @@ listings are confirmed live (not pending review).
 
 | Channel | Submitted | Pending | Live | URL |
 | --- | --- | --- | --- | --- |
-| GitHub Release | ✅ published prerelease | — | [v0.2.0-rc.15](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15) | keep draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) unpublished; do not move `v0.2.0-rc.12` |
+| GitHub Release | ✅ published prerelease | — | [v0.2.0-rc.16](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.16) | keep draft [v0.2.0-rc.11](https://github.com/darashkevich/runspecimen/releases/tag/untagged-784a2101f44640f11122) unpublished; do not move `v0.2.0-rc.12` through `v0.2.0-rc.15` |
 | Cursor Marketplace | form submitted 2026-09-21 | Anysphere review | no public listing yet | https://cursor.com/marketplace/publish |
 | Codex Directory | ❌ | not submitted (Persona identity still required) | no public listing | https://chatgpt.com/apps |
 | Claude Code community | submitted 2026-09-21 | Anthropic review | not listed yet | https://platform.claude.com/plugins/submit |
@@ -428,9 +432,9 @@ listings are confirmed live (not pending review).
 | Meta Muse Code | ❌ | skill + MCP + beta hooks | not submitted | local skill/MCP install |
 | JetBrains Junie / Marketplace | PR open | JetBrains review | not merged | https://github.com/JetBrains/junie-extensions/pull/16 |
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
-| PyPI | ✅ | — | `0.2.0rc15` (same bytes as GitHub) | [runspecimen 0.2.0rc15](https://pypi.org/project/runspecimen/0.2.0rc15/) |
-| Homebrew tap | ✅ | — | `0.2.0rc15` sdist from GitHub Release | [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen) |
-| Mac App Store | ✅ READY_FOR_SALE | — | macOS **historical 0.1.4 (9)** public | `apps.apple.com URL no longer live — see `apps/macos/asc-kit/STATUS.md` |
+| PyPI | ✅ | — | `0.2.0rc16` (same bytes as GitHub) | [runspecimen 0.2.0rc16](https://pypi.org/project/runspecimen/0.2.0rc16/) |
+| Homebrew tap | ✅ | — | still `0.2.0rc15` sdist on 2026-11-01 | [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen) |
+| Mac App Store | historical upload | — | **Removed from App Store** (EU trader status missing); **historical 0.1.4 (9)** is not live | [MACOS_APPSTORE_SUBMISSION.md](MACOS_APPSTORE_SUBMISSION.md) |
 
 **Important:** Do not claim a listing is "public" or "available" until:
 1. Submission is accepted (not just submitted)
@@ -452,6 +456,6 @@ After each channel goes live, verify:
 7. **Muse Code:** `muse skills list` shows runspecimen; MCP optional; hooks beta
 8. **Junie:** `/extensions` shows `runspecimen` after marketplace add
 9. **Windsurf:** `@runspecimen` skill resolves; rule appears under Customizations
-10. **PyPI:** `pip install runspecimen==0.2.0rc15` works and `runspecimen --version` shows `0.2.0rc15`
-11. **Homebrew:** `brew install darashkevich/runspecimen/runspecimen` installs `0.2.0rc15` from the published sdist
-12. **Website:** Update with verified live links only
+10. **PyPI:** `pip install --pre runspecimen==0.2.0rc16` works and `runspecimen --version` shows `0.2.0rc16`
+11. **Homebrew:** `brew install darashkevich/runspecimen/runspecimen` still installed `0.2.0rc15` on 2026-11-01; bump the tap separately
+12. **Website:** Update `darashkevich/darashkevich.com` `sites/runspecimen/` with verified live links and the rc16 pin (source is not in this repo)

@@ -22,10 +22,11 @@ kinds/versions fail closed. They do not replace `verify`.
 - Forward compatibility: new optional fields may be added under the same
   version only when older engines that reject unknown fields are no longer
   required. Until then, unknown top-level or nested fields fail closed.
-- Optional on version 1, accepted by `0.2.0rc15` and rejected by
-  published `0.2.0rc12`: `isolation` (`backend` of `none`, `sandbox-exec`, or
-  `bwrap`, plus optional `network`) and `policy` (`id`, `path`, `sha256` of a
-  workspace-local JSON file). Absent `isolation` means backend `none`.
+- Optional on version 1, accepted by `0.2.0rc16` (and by `0.2.0rc15`) and
+  rejected by published `0.2.0rc12`: `isolation` (`backend` of `none`,
+  `sandbox-exec`, or `bwrap`, plus optional `network`) and `policy` (`id`,
+  `path`, `sha256` of a workspace-local JSON file). Absent `isolation` means
+  backend `none`.
 
 ## Receipt schema versions (`certificate.json`)
 

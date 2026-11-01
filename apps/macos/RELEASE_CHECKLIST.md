@@ -1,7 +1,8 @@
 # Release checklist (Yahor) — MAS first
 
 Short operator path for shipping the macOS companion. Detail:
-[APP_STORE.md](APP_STORE.md), [apps/macos/docs/SECURITY_BOUNDARY.md](docs/SECURITY_BOUNDARY.md),
+[APP_STORE.md](APP_STORE.md), [docs/MACOS_APPSTORE_SUBMISSION.md](../../docs/MACOS_APPSTORE_SUBMISSION.md),
+[apps/macos/docs/SECURITY_BOUNDARY.md](docs/SECURITY_BOUNDARY.md),
 [Helpers/README.md](Helpers/README.md), [NOTARIZATION.md](NOTARIZATION.md).
 
 **Invariants:** no telemetry; Approve never auto-types `APPROVE`; receipts ≠
@@ -147,7 +148,7 @@ See NOTARIZATION.md.
 | Ad-hoc `.app` + Prefer Bundled (`--from-src`) | Works (local/CI) |
 | App icon wired (`AppIcon.icns` / iconset / 1024) | Done |
 | Security boundary docs + tests | Done |
-| `./Scripts/build_app.sh --mas` frozen helper fail-closed | Done; must report **rc10** |
+| `./Scripts/build_app.sh --mas` frozen helper fail-closed | Done; must report **0.2.0rc16** |
 | PrivacyInfo + MAS entitlements | Done |
 | `RunSpecimen.xcodeproj` + `archive_mas.sh` | Done (Xcode 27; nested helper sandbox+inherit) |
 | Nested helper signing (`sign_nested_helper.sh`) | Done — identity-aware; ad-hoc only when no certs |

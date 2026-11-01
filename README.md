@@ -3,25 +3,26 @@
 RunSpecimen is a local safety and evidence layer for AI-driven research and engineering commands.
 
 **Current package version (this branch):** `0.2.0rc16`  
-**Release:** [v0.2.0-rc.15](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15) / PyPI `runspecimen==0.2.0rc15` (identical bytes; checksum-only, not SLSA-attested).  
-Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `v0.2.0-rc.12`. See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
+**Release:** [v0.2.0-rc.16](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.16) / PyPI `runspecimen==0.2.0rc16` (identical bytes; checksum-only, not SLSA-attested).  
+Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `v0.2.0-rc.12` through `v0.2.0-rc.15`. See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
 
 **Current version:** `0.2.0rc16`  
-**GitHub release:** [v0.2.0-rc.15](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15)  
-**PyPI:** `runspecimen==0.2.0rc15`  
-**Homebrew:** `brew install darashkevich/runspecimen/runspecimen`
+**GitHub release:** [v0.2.0-rc.16](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.16)  
+**PyPI:** `runspecimen==0.2.0rc16`  
+**Homebrew:** `brew install darashkevich/runspecimen/runspecimen` (tap still served `0.2.0rc15` on 2026-11-01)
 
 <details>
 <summary>Release identity details</summary>
 
-- **Previous release:** [v0.2.0-rc.14](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.14) / PyPI `runspecimen==0.2.0rc14` (identical bytes; checksum-only, not SLSA-attested).
+- **Previous release:** [v0.2.0-rc.15](https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15) / PyPI `runspecimen==0.2.0rc15` (identical bytes; checksum-only, not SLSA-attested).
 - **Mac App Store:** version **historical 0.1.4 (9)** with engine `0.2.0rc14` was removed from App Store (EU trader status missing in App Store Connect). The local label on this branch is **0.1.6 (16)** and is not an upload.
-- Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `v0.2.0-rc.12`. See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
+- Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `v0.2.0-rc.12` through `v0.2.0-rc.15`. See [docs/RELEASE_IDENTITY.md](docs/RELEASE_IDENTITY.md).
+- Signal-cleanup advisory: [GHSA-8357-m9wf-gjh9](https://github.com/darashkevich/runspecimen/security/advisories/GHSA-8357-m9wf-gjh9).
 </details>
 
 ## What it does
 
-`0.2.0rc15` includes opt-in `isolation` (`none` by default), a workspace `policy` file, `retain`, `digest`, and `diff`. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md). `none` does not confine the process. `sandbox-exec` and `bwrap` are not an OS sandbox. Published `0.2.0rc12` rejects `isolation` and `policy`.
+`0.2.0rc16` includes opt-in `isolation` (`none` by default), a workspace `policy` file, `retain`, `digest`, and `diff`, and process-group cleanup on SIGTERM/SIGHUP. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) and [docs/FAQ.md](docs/FAQ.md#what-does-ghsa-8357-m9wf-gjh9-change). `none` does not confine the process. `sandbox-exec` and `bwrap` are not an OS sandbox. Published `0.2.0rc12` rejects `isolation` and `policy`.
 
 ## Requirements
 
@@ -58,23 +59,23 @@ Do **not** publish draft `v0.2.0-rc.11` (points at `ecc1709`). Do **not** move `
 ### From PyPI
 
 ```bash
-python3 -m pip install runspecimen==0.2.0rc15
+python3 -m pip install --pre runspecimen==0.2.0rc16
 runspecimen --version
 ```
 
-Pin the version. pip will not select an RC without `==0.2.0rc15`. The rc11 draft tag must stay unpublished.
+Pin the version. pip will not select an RC without `--pre` or `==0.2.0rc16`. The rc11 draft tag must stay unpublished.
 
-PyPI project: [runspecimen 0.2.0rc15](https://pypi.org/project/runspecimen/0.2.0rc15/)
+PyPI project: [runspecimen 0.2.0rc16](https://pypi.org/project/runspecimen/0.2.0rc16/)
 
 ### From Homebrew
 
 ```bash
 brew tap darashkevich/runspecimen
 brew install runspecimen
-runspecimen --version   # should show 0.2.0rc15
+runspecimen --version   # tap still showed 0.2.0rc15 on 2026-11-01
 ```
 
-Or as a one-liner: `brew install darashkevich/runspecimen/runspecimen`.
+Or as a one-liner: `brew install darashkevich/runspecimen/runspecimen`. The tap is a separate repo and still lagged rc16 on 2026-11-01.
 
 Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen).
 
@@ -92,33 +93,33 @@ runspecimen --version
 Details in [docs/FAQ.md](docs/FAQ.md#why-does-runspecimen---version-show-an-older-build-than-homebrew).
 </details>
 
-Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen). Pins the same `v0.2.0-rc.15` sdist as the GitHub Release (not `main`).
+Tap: [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen). On 2026-11-01 it still pinned the `v0.2.0-rc.15` sdist (not `main`, not rc16).
 
 ```bash
-pip install runspecimen==0.2.0rc15
+pip install --pre runspecimen==0.2.0rc16
 # or with pipx for isolated installs:
-pipx install runspecimen==0.2.0rc15
+pipx install --pip-args=--pre 'runspecimen==0.2.0rc16'
 
-runspecimen --version   # should show 0.2.0rc15
+runspecimen --version   # should show 0.2.0rc16
 ```
 
-Pin the version explicitly. pip will not select an RC without `==0.2.0rc15`.
+Pin the version explicitly. pip will not select an RC without `--pre` or `==0.2.0rc16`.
 
-PyPI project: [runspecimen 0.2.0rc15](https://pypi.org/project/runspecimen/0.2.0rc15/)
+PyPI project: [runspecimen 0.2.0rc16](https://pypi.org/project/runspecimen/0.2.0rc16/)
 
 ### From GitHub release
 
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-0.2.0rc15-py3-none-any.whl
+python3 -m pip install --pre https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.16/runspecimen-0.2.0rc16-py3-none-any.whl
 ```
 
 Or from source tarball:
 
 ```bash
-python3 -m pip install https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/runspecimen-0.2.0rc15.tar.gz
+python3 -m pip install --pre https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.16/runspecimen-0.2.0rc16.tar.gz
 ```
 
-Verify checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.15/SHA256SUMS)
+Verify checksums: [SHA256SUMS](https://github.com/darashkevich/runspecimen/releases/download/v0.2.0-rc.16/SHA256SUMS)
 
 ### From local clone
 
@@ -350,7 +351,7 @@ RunSpecimen stops agents from approving through the app. However:
   public-key trust anchor; a key embedded only in the receipt is never enough
   for `ok: true`. Soft keys on disk are not absolute non-repudiation.
 - Default `isolation.backend` is `none`: the workload is not confined. Published
-  `0.2.0rc15` accepts opt-in `sandbox-exec` and `bwrap` when the contract names
+  `0.2.0rc16` accepts opt-in `sandbox-exec` and `bwrap` when the contract names
   them and the tool is installed; a missing tool fails closed. Those backends
   can confine writes to the workspace and deny network. They are not an OS
   sandbox. Linux CI installs bubblewrap and runs a real `bwrap` spawn

@@ -1,6 +1,6 @@
 # Release candidate checklist
 
-Published engine bytes stay **`0.2.0rc14`**. This tree's engine is unpublished **`0.2.0rc16`**. Approved Mac App Store **historical 0.1.4 (9)** is `Removed from App Store` (EU trader status missing) and freezes rc14. The current local successor label is **0.1.6 (16)** and is not an upload. Earlier local labels **historical 0.1.5 (10)**, **(11)**, and **(12)** are not this candidate. Mac app sandbox versus payload: [apps/macos/docs/SECURITY_BOUNDARY.md](../apps/macos/docs/SECURITY_BOUNDARY.md). There is no `docs/SECURITY_BOUNDARY.md` at the repository root.
+Published engine bytes are **`0.2.0rc16`**. This tree's engine is **`0.2.0rc16`**. Tag **`v0.2.0-rc.16`** is on **`ae94701`**. Approved Mac App Store **historical 0.1.4 (9)** is `Removed from App Store` (EU trader status missing) and freezes rc14. The current local successor label is **0.1.6 (16)** and is not an upload. Earlier local labels **historical 0.1.5 (10)**, **(11)**, and **(12)** are not this candidate. Mac app sandbox versus payload: [apps/macos/docs/SECURITY_BOUNDARY.md](../apps/macos/docs/SECURITY_BOUNDARY.md). There is no `docs/SECURITY_BOUNDARY.md` at the repository root. Signal-cleanup advisory: [GHSA-8357-m9wf-gjh9](https://github.com/darashkevich/runspecimen/security/advisories/GHSA-8357-m9wf-gjh9).
 
 - [x] One non-blocking workspace lease covers each lifecycle mutation.
 - [x] Approval requires a real stdin and stdout TTY.
@@ -27,14 +27,16 @@ Published engine bytes stay **`0.2.0rc14`**. This tree's engine is unpublished *
 - [x] Wheel is built and smoke-tested from a clean target directory.
 - [x] Release smoke includes keygen/list-keys success and sign/verify-signature error handling.
 - [x] Plugin and skill validators pass.
-- [x] Tag `v0.2.0-rc.15` after the release gate passes on the **merged green**
-  commit **and Yahor publishes that GitHub Release** (do not publish or move
-  draft `v0.2.0-rc.11`; do not move `v0.2.0-rc.12`).
-  Publishing the GitHub Release also uploads `0.2.0rc15` to PyPI via OIDC
-  (identical bytes; checksum-only, not attested).
-  - Prospective release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.15
+- [x] Tag `v0.2.0-rc.16` on **`ae94701`** is published. GitHub Release
+  `v0.2.0-rc.16` and PyPI `0.2.0rc16` are identical bytes (checksum-only, not
+  attested). Do not publish or move draft `v0.2.0-rc.11`; do not move
+  `v0.2.0-rc.12` through `v0.2.0-rc.15`.
+  - Release URL: https://github.com/darashkevich/runspecimen/releases/tag/v0.2.0-rc.16
 
-For unpublished `0.2.0rc16`, three decisions stay separate and none is made by this checklist: (1) candidate selection (published rc14, the `b3367eb` sdist, or the `fb05284` qualification sdist), (2) qualification (the human guarantee (1) session on those exact bytes, then a post-upload byte compare), and (3) release authorization by Yahor. A green suite or CI run is evidence for (2) only.
+Published `0.2.0rc16` is the current cut. Stable `0.2.0` remains a separate
+gate. A green suite or CI run is not that gate. The product site
+(`darashkevich/darashkevich.com` `sites/runspecimen/`) and the Homebrew tap
+still lagged on 2026-11-01 (site and tap still served rc15).
 
 Run `python3 scripts/release_check.py` before tagging. A release candidate is not
 a stable release and does not change the explicit limitations in the threat model.
@@ -42,8 +44,8 @@ a stable release and does not change the explicit limitations in the threat mode
 
 ## Stable 0.2.0 gate
 
-**Status: not met.** Published package remains **`0.2.0rc15`**. Do not retag,
-promote, or claim rc13 as stable. A release candidate is not a stable release.
+**Status: not met.** Published package remains **`0.2.0rc16`**. Do not retag,
+promote, or claim an RC as stable. A release candidate is not a stable release.
 
 ### Honesty constraints (must stay true on the cut commit)
 

@@ -40,8 +40,8 @@ CANDIDATE_ENGINE_PINS = (
         r"Candidate source on this branch identifies as \*\*`([^`]+)`\*\* / \*\*`([^`]+)`\*\*",
         ("python", "plugin"),
     ),
-    ("docs/RELEASE_CHECKLIST.md", r"This tree's engine is unpublished \*\*`([^`]+)`\*\*", ("python",)),
-    ("docs/RELEASE_CHECKLIST.md", r"For unpublished `([^`]+)`, three decisions stay separate", ("python",)),
+    ("docs/RELEASE_CHECKLIST.md", r"Published engine bytes are \*\*`([^`]+)`\*\*", ("python",)),
+    ("docs/RELEASE_CHECKLIST.md", r"This tree's engine is \*\*`([^`]+)`\*\*", ("python",)),
     (
         "apps/macos/RELEASE_CHECKLIST.md",
         r"must match `src/runspecimen/__version__` \(\*\*`([^`]+)`\*\*\)",
@@ -58,17 +58,17 @@ CANDIDATE_ENGINE_PINS = (
     ("apps/macos/asc-kit/README.md", r"Source engine on this branch: \*\*([^*]+)\*\*", ("python",)),
     (
         "apps/macos/asc-kit/STATUS.md",
-        r"This integrated branch is unpublished \*\*0\.1\.6 \(16\)\*\* / engine \*\*([^*]+)\*\*",
+        r"This integrated branch is \*\*0\.1\.6 \(16\)\*\* / published engine \*\*([^*]+)\*\*",
         ("python",),
     ),
     (
         "apps/macos/asc-kit/STATUS.md",
-        r"\| Unpublished integrated candidate \| \*\*0\.1\.6 \(16\)\*\* .* unpublished engine \*\*([^*]+)\*\*",
+        r"\| Integrated candidate \| \*\*0\.1\.6 \(16\)\*\* .* published engine \*\*([^*]+)\*\*",
         ("python",),
     ),
     ("apps/macos/asc-kit/metadata.md", r"\| Bundled engine \| ([0-9.]+rc\d+) source", ("python",)),
-    ("docs/CANDIDATE_MANIFEST.md", r"\| Engine / package \| unpublished `([^`]+)` \|", ("python",)),
-    ("docs/CANDIDATE_MANIFEST.md", r"\| Plugin \| unpublished `([^`]+)` \|", ("plugin",)),
+    ("docs/CANDIDATE_MANIFEST.md", r"\| Engine / package \| published `([^`]+)` \|", ("python",)),
+    ("docs/CANDIDATE_MANIFEST.md", r"\| Plugin \| published `([^`]+)` \|", ("plugin",)),
 )
 # Fixed metadata clock for release archives. Wall-clock gzip, tar, and zip
 # timestamps otherwise change the archive bytes on every build. 2020-01-01 UTC
