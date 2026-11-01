@@ -12,4 +12,4 @@ Paste-ready ASC fields, reviewer demo, and screenshot guidance for
 
 Source engine on this branch: **0.2.0rc16**. The published app is marketing version **historical 0.1.4** / Connect build **9**, **Removed from App Store** (EU trader status missing), frozen at engine **0.2.0rc14**. Builds 5–8 were rejected or superseded. See [STATUS.md](STATUS.md). Human upload steps: [docs/MACOS_APPSTORE_SUBMISSION.md](../../../docs/MACOS_APPSTORE_SUBMISSION.md).
 
-Mac App Store listing is now live.
+The Mac App Store listing is **not live**. **historical 0.1.4 (9)** is `Removed from App Store` (EU trader status missing). Next candidate **0.1.6 (16)** is not an upload.

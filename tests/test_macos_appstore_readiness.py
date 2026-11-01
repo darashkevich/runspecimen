@@ -18,6 +18,22 @@ class MacosAppStoreReadinessTests(unittest.TestCase):
         self.assertIn("Screenshots", text)
         self.assertIn("EU trader status", text)
         self.assertIn("archive_unsigned_release.sh", text)
+        self.assertIn("**STALE**", text)
+        self.assertIn("0.1.3 (4)", text)
+        self.assertIn("0.2.0rc10", text)
+        self.assertNotIn("listing is now live", text)
+
+    def test_store_listing_is_removed_not_live(self) -> None:
+        submission = (ROOT / "docs/SUBMISSION.md").read_text(encoding="utf-8")
+        kit = (MACOS / "asc-kit/README.md").read_text(encoding="utf-8")
+        checklist = (ROOT / "docs/MACOS_APPSTORE_SUBMISSION.md").read_text(encoding="utf-8")
+        for text in (submission, kit, checklist):
+            self.assertIn("Removed from App Store", text)
+            self.assertNotIn("listing is now live", text)
+        self.assertNotIn("READY_FOR_SALE", submission)
+        self.assertIn("mas-python312", submission)
+        self.assertNotIn("freeze312", submission)
+        self.assertIn("DiskSpace", submission)
 
     def test_unsigned_archive_script_is_ad_hoc_only(self) -> None:
         script = MACOS / "Scripts/archive_unsigned_release.sh"

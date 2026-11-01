@@ -16,12 +16,33 @@ class PublishedRc16DocsTests(unittest.TestCase):
     def test_faq_names_advisory_and_residuals(self) -> None:
         text = (ROOT / "docs/FAQ.md").read_text(encoding="utf-8")
         self.assertIn("**0.2.0rc16**", text)
+        self.assertIn("plugin **0.2.0-rc.16**", text)
+        self.assertIn("Plugin version: `0.2.0-rc.16`", text)
         self.assertIn("GHSA-8357-m9wf-gjh9", text)
         self.assertIn("pip install --upgrade --pre runspecimen==0.2.0rc16", text)
         self.assertIn("setsid()", text)
         self.assertIn("SIGKILL of both the supervisor and the bind watchdog", text)
         self.assertIn("unwritable state directory", text)
         self.assertIn('schema_version": 2', text)
+
+    def test_candidate_manifest_published_digests_are_rc16(self) -> None:
+        text = (ROOT / "docs/CANDIDATE_MANIFEST.md").read_text(encoding="utf-8")
+        self.assertIn("| Engine / package | published `0.2.0rc16` |", text)
+        self.assertIn("| Plugin | published `0.2.0-rc.16` |", text)
+        self.assertIn("59044b56fbe3fa798a5ebb8ead3f0460141c96c98e8d0861aafd4a83ede8e9cc", text)
+        self.assertIn("83625441d316816107087870525a88d20cd42b61c69e7e398ce95cdcc3fe31d4", text)
+        self.assertIn("1d5961b9c70b18efacb7ebf6babcdb6a51825f2a786d559b8a980677cc67c2bd", text)
+        self.assertIn("the published engine is now `0.2.0rc16`", text)
+        self.assertNotIn("Version stays `0.2.0rc15` (never published)", text)
+        published_row = next(
+            line for line in text.splitlines() if line.startswith("| Published wheel / sdist / plugin zip |")
+        )
+        self.assertNotIn("d720bf5163a2b250699c30e804f89708e71c1c0d22682fbb43a4644b59c45948", published_row)
+
+    def test_next_changes_names_published_rc16(self) -> None:
+        text = (ROOT / "docs/NEXT_CHANGES.md").read_text(encoding="utf-8")
+        self.assertIn("published package is `0.2.0rc16`", text)
+        self.assertNotIn("published package is `0.2.0rc15`", text)
 
     def test_changelog_and_security_record_the_cut(self) -> None:
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")

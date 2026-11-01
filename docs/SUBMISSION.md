@@ -367,13 +367,17 @@ from a draft. Do not publish the rc11 draft.
 
 **Status (App Store Connect):** macOS version **historical 0.1.4 (9)** is **Removed from App Store** (EU trader status missing). Builds 5–8 were rejected or superseded. Removed from the Mac App Store (EU trader status missing). Build **14** (historical 0.1.5) was uploaded; next candidate is **0.1.6 (16)**. Yahor confirmed Mac historical 0.1.5 was withdrawn from review on 2026-10-18. Submission remains blocked on final QA closure.
 
-The Mac App Store listing is now live with a public `apps.apple.com` URL.
+The Mac App Store listing is **not live**. **historical 0.1.4 (9)** is `Removed from App Store` (EU trader status missing). There is no public `apps.apple.com` URL. Next candidate is **0.1.6 (16)** and is not an upload. See [MACOS_APPSTORE_SUBMISSION.md](MACOS_APPSTORE_SUBMISSION.md).
 
 ### Working MAS build path (Yahor's Mac)
 
-1. **Freeze the helper** with a Homebrew python3.12 venv that has pyinstaller>=6:
+1. **Freeze the helper** with the private MAS CPython (stock Homebrew/setup-python runtimes import DiskSpace APIs and are refused by `freeze_helper.sh`):
    ```bash
-   RS_FREEZE_PYTHON=~/.venvs/freeze312/bin/python ./Scripts/freeze_helper.sh --enable --require --verify
+   bash apps/macos/Scripts/build_mas_python.sh "$HOME/.venvs/mas-python312"
+   "$HOME/.venvs/mas-python312/bin/python3.12" -m pip install 'pyinstaller>=6'
+   cd apps/macos
+   RS_FREEZE_PYTHON="$HOME/.venvs/mas-python312/bin/python3.12" \
+     ./Scripts/freeze_helper.sh --enable --require --verify
    ```
 
 2. **Archive with xcodebuild:**
@@ -430,7 +434,7 @@ listings are confirmed live (not pending review).
 | Windsurf / Open VSX | ❌ | skill/rule pack ready | - | - |
 | PyPI | ✅ | — | `0.2.0rc16` (same bytes as GitHub) | [runspecimen 0.2.0rc16](https://pypi.org/project/runspecimen/0.2.0rc16/) |
 | Homebrew tap | ✅ | — | still `0.2.0rc15` sdist on 2026-11-01 | [darashkevich/homebrew-runspecimen](https://github.com/darashkevich/homebrew-runspecimen) |
-| Mac App Store | ✅ READY_FOR_SALE | — | macOS **historical 0.1.4 (9)** public | `apps.apple.com URL no longer live — see `apps/macos/asc-kit/STATUS.md` |
+| Mac App Store | historical upload | — | **Removed from App Store** (EU trader status missing); **historical 0.1.4 (9)** is not live | [MACOS_APPSTORE_SUBMISSION.md](MACOS_APPSTORE_SUBMISSION.md) |
 
 **Important:** Do not claim a listing is "public" or "available" until:
 1. Submission is accepted (not just submitted)

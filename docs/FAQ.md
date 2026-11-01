@@ -22,7 +22,7 @@ the workspace evidence with matching host runtime expectations.
 
 ## Which build is current?
 
-**Current release:** CLI and plugin version **0.2.0rc16**. This release includes evidence-expansion commands (ADR-005) that were not in rc14, and the SIGTERM/SIGHUP cleanup fix in [GHSA-8357-m9wf-gjh9](https://github.com/darashkevich/runspecimen/security/advisories/GHSA-8357-m9wf-gjh9).
+**Current release:** CLI **0.2.0rc16**, plugin **0.2.0-rc.16** (the `plugin.json` spelling). This release includes evidence-expansion commands (ADR-005) that were not in rc14, and the SIGTERM/SIGHUP cleanup fix in [GHSA-8357-m9wf-gjh9](https://github.com/darashkevich/runspecimen/security/advisories/GHSA-8357-m9wf-gjh9).
 
 **Previous release:** **0.2.0rc15** remains available but does not include that signal-cleanup fix. **0.2.0rc14** also remains available and does not include the evidence-expansion features.
 
@@ -187,6 +187,7 @@ assertions, use a fresh `run_id` per attempt, and chain steps with
 - Repository: https://github.com/darashkevich/runspecimen
 - Check installed CLI: `runspecimen --version` (engine package version, e.g.
   `0.2.0rc16`, also the published PyPI pin)
+- Plugin version: `0.2.0-rc.16` (`.codex-plugin/plugin.json` and the other adapter manifests)
 
 ## Why does `runspecimen --version` show an older build than Homebrew?
 

@@ -21,6 +21,7 @@ Never pass `-allowProvisioningUpdates`.
 | Export compliance key | `ITSAppUsesNonExemptEncryption=false` in `Config/Info-mas.plist` |
 | ASC paste copy | `apps/macos/asc-kit/metadata.md` (description, What's New, keywords, support/privacy URLs) |
 | CI unsigned Release archive | `apps/macos/Scripts/archive_unsigned_release.sh` from `smoke_macos.sh` (ad-hoc `CODE_SIGN_IDENTITY=-` only) |
+| In-repo About screenshot | **STALE** — `apps/macos/asc-kit/screenshots/04-about-privacy-links-1280x800.png` is documented as app `0.1.3 (4)` / engine `0.2.0rc10`, not 0.1.6 (16) / rc16 |
 
 There is no `fastlane/` folder. Connect fields are pasted from `asc-kit/metadata.md`.
 
@@ -156,8 +157,10 @@ uploaders, ads, accounts, or phone-home). Align Connect with
 
 ### 9. Screenshots
 
-Upload new 1280×800 (or current ASC sizes) captures from the **0.1.6 (16)**
-archive, not the older PNGs under `apps/macos/asc-kit/screenshots/`:
+**STALE media in-repo:** `apps/macos/asc-kit/screenshots/04-about-privacy-links-1280x800.png`
+is documented as About **historical 0.1.3 (4)** / engine **0.2.0rc10**. Do not upload it for
+0.1.6 (16). Recapture 1280×800 (or current ASC sizes) from a **0.1.6 (16)** /
+**0.2.0rc16** archive:
 
 1. Main Console with brand + Bundled Helpers + status (not Terminal.app)
 2. Approve sheet with empty PTY input (never type `APPROVE` for the shot)
