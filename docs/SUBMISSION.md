@@ -371,19 +371,22 @@ The Mac App Store listing is **not live**. **historical 0.1.4 (9)** is `Removed 
 
 ### Working MAS build path (Yahor's Mac)
 
-1. **Freeze the helper** with the private MAS CPython (stock Homebrew/setup-python runtimes import DiskSpace APIs and are refused by `freeze_helper.sh`):
+1. **Freeze the helper** with the private MAS CPython (stock Homebrew/setup-python runtimes import DiskSpace APIs and are refused by `freeze_helper.sh`). `build_mas_python.sh` **refuses an existing prefix** — do not rerun it against `$HOME/.venvs/mas-python312` if that path already exists. Reuse a finished prefix; run the builder only when the path is absent:
    ```bash
-   bash apps/macos/Scripts/build_mas_python.sh "$HOME/.venvs/mas-python312"
-   "$HOME/.venvs/mas-python312/bin/python3.12" -m pip install 'pyinstaller>=6'
+   PREFIX="$HOME/.venvs/mas-python312"
+   if [[ ! -x "$PREFIX/bin/python3.12" ]]; then
+     bash apps/macos/Scripts/build_mas_python.sh "$PREFIX"
+     "$PREFIX/bin/python3.12" -m pip install 'pyinstaller>=6'
+   fi
    cd apps/macos
-   RS_FREEZE_PYTHON="$HOME/.venvs/mas-python312/bin/python3.12" \
+   RS_FREEZE_PYTHON="$PREFIX/bin/python3.12" \
      ./Scripts/freeze_helper.sh --enable --require --verify
    ```
 
-2. **Archive with xcodebuild:**
+2. **Archive with `archive_mas.sh`** (same flow as [MACOS_APPSTORE_SUBMISSION.md](MACOS_APPSTORE_SUBMISSION.md)). Do not run a bare `xcodebuild archive` — that uses Automatic signing / Apple Development. Never pass `-allowProvisioningUpdates`.
    ```bash
-   xcodebuild -project RunSpecimen.xcodeproj -scheme RunSpecimen -configuration Release \
-     -archivePath build/RunSpecimen.xcarchive archive
+   cd apps/macos
+   ./Scripts/archive_mas.sh
    ```
 
 3. **Export locally with manual signing** (Apple Distribution + 3rd Party Mac Developer Installer + RunSpecimen MAS profile):

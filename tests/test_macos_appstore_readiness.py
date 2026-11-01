@@ -35,6 +35,31 @@ class MacosAppStoreReadinessTests(unittest.TestCase):
         self.assertNotIn("freeze312", submission)
         self.assertIn("DiskSpace", submission)
 
+    def test_submission_archives_via_archive_mas_and_refuses_existing_prefix(self) -> None:
+        submission = (ROOT / "docs/SUBMISSION.md").read_text(encoding="utf-8")
+        checklist = (ROOT / "docs/MACOS_APPSTORE_SUBMISSION.md").read_text(encoding="utf-8")
+        builder = (MACOS / "Scripts/build_mas_python.sh").read_text(encoding="utf-8")
+        working = submission.split("## 3b. Mac App Store")[1].split("## 4. Website")[0]
+        self.assertIn("./Scripts/archive_mas.sh", working)
+        self.assertIn("Do not run a bare `xcodebuild archive`", working)
+        self.assertEqual(
+            [line.strip() for line in working.splitlines() if line.strip().startswith("xcodebuild archive")],
+            [],
+        )
+        self.assertIn("Never pass `-allowProvisioningUpdates`", working)
+        self.assertIn("**Never use `-allowProvisioningUpdates`.**", working)
+        self.assertIn("refuses an existing prefix", working)
+        self.assertIn("Reuse a finished prefix", working)
+        self.assertIn('if [[ ! -x "$PREFIX/bin/python3.12" ]]; then', working)
+        self.assertIn("bash apps/macos/Scripts/build_mas_python.sh", working)
+        self.assertIn("./Scripts/archive_mas.sh", checklist)
+        self.assertIn("refuses an existing prefix", checklist)
+        self.assertIn('[[ ! -e "$PREFIX" ]]', checklist)
+        self.assertIn("Do not change that safety check", checklist)
+        self.assertIn('[[ ! -e "$PREFIX" ]]', builder)
+        self.assertIn("Refusing existing prefix", builder)
+        self.assertNotIn("-allowProvisioningUpdates", builder)
+
     def test_unsigned_archive_script_is_ad_hoc_only(self) -> None:
         script = MACOS / "Scripts/archive_unsigned_release.sh"
         text = script.read_text(encoding="utf-8")
@@ -79,3 +104,23 @@ class MacosAppStoreReadinessTests(unittest.TestCase):
         self.assertIn("https://runspecimen.darashkevich.com/privacy/", metadata)
         self.assertFalse((MACOS / "fastlane").exists())
         self.assertFalse((ROOT / "fastlane").exists())
+
+    def test_asc_metadata_lists_required_reason_apis_and_honest_export(self) -> None:
+        metadata = (MACOS / "asc-kit/metadata.md").read_text(encoding="utf-8")
+        info_mas = plistlib.loads((MACOS / "Config/Info-mas.plist").read_bytes())
+        checklist = (ROOT / "docs/MACOS_APPSTORE_SUBMISSION.md").read_text(encoding="utf-8")
+        self.assertIn("UserDefaults `CA92.1`", metadata)
+        self.assertIn("SystemBootTime `35F9.1`", metadata)
+        self.assertIn("FileTimestamp `C617.1` and `3B52.1`", metadata)
+        self.assertIn("HMAC-SHA256", metadata)
+        self.assertIn("authentication and integrity", metadata)
+        self.assertIn("Category 5 Part 2", metadata)
+        self.assertIn("Yahor must make the final App Store Connect answer", metadata)
+        self.assertIn("`ITSAppUsesNonExemptEncryption` stays **false**", metadata)
+        self.assertFalse(info_mas["ITSAppUsesNonExemptEncryption"])
+        self.assertIn("CA92.1", checklist)
+        self.assertIn("35F9.1", checklist)
+        self.assertIn("C617.1", checklist)
+        self.assertIn("3B52.1", checklist)
+        self.assertIn("Yahor must make the final", checklist)
+        self.assertIn("`ITSAppUsesNonExemptEncryption` stays `false`", checklist)

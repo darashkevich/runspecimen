@@ -58,12 +58,18 @@ Do not create or regenerate it from this repo.
 ### 2. Freeze the rc16 helper with the private MAS Python
 
 A stock Homebrew/setup-python runtime imports DiskSpace APIs and is refused.
-Use the already-documented private CPython 3.12.15 prefix if it exists:
+`apps/macos/Scripts/build_mas_python.sh` **refuses an existing prefix** (`[[ ! -e "$PREFIX" ]]`).
+Do not change that safety check. Reuse `$HOME/.venvs/mas-python312` when
+`python3.12` is already there. Run the builder only when that path does not exist:
 
 ```bash
-"$HOME/.venvs/mas-python312/bin/python3.12" -m pip install 'pyinstaller>=6'
+PREFIX="$HOME/.venvs/mas-python312"
+if [[ ! -x "$PREFIX/bin/python3.12" ]]; then
+  bash apps/macos/Scripts/build_mas_python.sh "$PREFIX"
+  "$PREFIX/bin/python3.12" -m pip install 'pyinstaller>=6'
+fi
 cd apps/macos
-RS_FREEZE_PYTHON="$HOME/.venvs/mas-python312/bin/python3.12" \
+RS_FREEZE_PYTHON="$PREFIX/bin/python3.12" \
   ./Scripts/freeze_helper.sh --enable --require --verify
 Helpers/payload/runspecimen --version   # must contain 0.2.0rc16
 ```
@@ -139,9 +145,10 @@ Confirm the selected build's engine is **0.2.0rc16** before attaching it.
 
 ### 7. Export compliance
 
-Answer **No** to non-exempt encryption. The Info.plist key
-`ITSAppUsesNonExemptEncryption` is already `false`. The app uses HTTPS only for
-optional in-browser docs links. Do not invent a custom encryption declaration.
+Paste the honest note from
+[apps/macos/asc-kit/metadata.md](../apps/macos/asc-kit/metadata.md). The Info.plist
+key `ITSAppUsesNonExemptEncryption` stays `false`. Yahor must make the final
+Connect answer. Do not change that key from this repo.
 
 ### 8. Privacy nutrition labels
 
