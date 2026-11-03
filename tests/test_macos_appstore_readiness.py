@@ -1,6 +1,7 @@
 """Mac App Store preparation locks for the 0.1.6 (16) / 0.2.0rc16 cut."""
 from pathlib import Path
 import plistlib
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,7 +22,14 @@ class MacosAppStoreReadinessTests(unittest.TestCase):
         self.assertIn("**STALE**", text)
         self.assertIn("0.1.3 (4)", text)
         self.assertIn("0.2.0rc10", text)
+        self.assertIn("01-main.png", text)
+        self.assertIn("02-doctor.png", text)
+        self.assertIn("03-approve.png", text)
+        self.assertIn("04-dashboard.png", text)
+        self.assertIn("05-settings.png", text)
+        self.assertIn("screenshots/archive/04-about-privacy-links-1280x800.png", text)
         self.assertNotIn("listing is now live", text)
+        self.assertNotIn("apps/macos/asc-kit/screenshots/04-about-privacy-links-1280x800.png", text)
 
     def test_store_listing_is_removed_not_live(self) -> None:
         submission = (ROOT / "docs/SUBMISSION.md").read_text(encoding="utf-8")
@@ -124,3 +132,35 @@ class MacosAppStoreReadinessTests(unittest.TestCase):
         self.assertIn("3B52.1", checklist)
         self.assertIn("Yahor must make the final", checklist)
         self.assertIn("`ITSAppUsesNonExemptEncryption` stays `false`", checklist)
+
+    def test_screenshot_doc_links_resolve(self) -> None:
+        current = ("01-main.png", "02-doctor.png", "03-approve.png", "04-dashboard.png", "05-settings.png")
+        shots = MACOS / "asc-kit/screenshots"
+        for name in current:
+            self.assertTrue((shots / name).is_file(), name)
+        app_store = (MACOS / "APP_STORE.md").read_text(encoding="utf-8")
+        for name in current:
+            self.assertIn(f"asc-kit/screenshots/{name}", app_store)
+        self.assertNotIn("asc-kit/screenshots/01-main-console-1280x800.png", app_store)
+        self.assertIn("asc-kit/screenshots/archive/", app_store)
+        docs = (
+            MACOS / "APP_STORE.md",
+            ROOT / "docs/MACOS_APPSTORE_SUBMISSION.md",
+            shots / "README.md",
+            shots / "archive/2026-11-02-local-channel/README.md",
+        )
+        for path in docs:
+            text = path.read_text(encoding="utf-8")
+            for target in re.findall(r"\[[^\]]*\]\(([^)]+)\)", text):
+                if target.startswith(("http://", "https://", "mailto:")):
+                    continue
+                dest = (path.parent / target.split("#", 1)[0]).resolve()
+                self.assertTrue(dest.exists(), f"{path.name}: {target} -> {dest}")
+        evidence = shots / "archive/mas-build-evidence-2026-11-02"
+        for name in ("mas-build.log", "final-dimensions.txt", "prepare.swift"):
+            leaked = (evidence / name).read_text(encoding="utf-8")
+            self.assertNotIn("/Users/yahor/", leaked, name)
+            self.assertIn("~/runspecimen/", leaked, name)
+        local_readme = (shots / "archive/2026-11-02-local-channel/README.md").read_text(encoding="utf-8")
+        self.assertIn("/tmp demo paths", local_readme)
+        self.assertIn("PNGs were not edited", local_readme)

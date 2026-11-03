@@ -21,7 +21,7 @@ Never pass `-allowProvisioningUpdates`.
 | Export compliance key | `ITSAppUsesNonExemptEncryption=false` in `Config/Info-mas.plist` |
 | ASC paste copy | `apps/macos/asc-kit/metadata.md` (description, What's New, keywords, support/privacy URLs) |
 | CI unsigned Release archive | `apps/macos/Scripts/archive_unsigned_release.sh` from `smoke_macos.sh` (ad-hoc `CODE_SIGN_IDENTITY=-` only) |
-| In-repo About screenshot | **STALE** — `apps/macos/asc-kit/screenshots/04-about-privacy-links-1280x800.png` is documented as app `0.1.3 (4)` / engine `0.2.0rc10`, not 0.1.6 (16) / rc16 |
+| In-repo screenshots | **Current** — 2880×1800 Store-channel set `01-main.png` … `05-settings.png` in [`apps/macos/asc-kit/screenshots/`](../apps/macos/asc-kit/screenshots/). **STALE** About shot [`screenshots/archive/04-about-privacy-links-1280x800.png`](../apps/macos/asc-kit/screenshots/archive/04-about-privacy-links-1280x800.png) is **historical 0.1.3 (4)** / engine **0.2.0rc10** |
 
 There is no `fastlane/` folder. Connect fields are pasted from `asc-kit/metadata.md`.
 
@@ -30,7 +30,7 @@ There is no `fastlane/` folder. Connect fields are pasted from `asc-kit/metadata
 1. **EU trader status.** Connect macOS **historical 0.1.4 (9)** is `Removed from App Store` because EU trader status is missing. A new upload does not clear that legal requirement.
 2. **Yahor's Apple Distribution identity** and the **RunSpecimen MAS** provisioning profile must already exist on the signing Mac. This repository must not create, download, or regenerate certificates, profiles, or devices.
 3. **App Store Connect access** (Apple ID or API key) lives only on Yahor's machine. Do not store keys in git.
-4. **In-repo screenshots are older builds** (About shot still shows `0.1.3 (4)` / `0.2.0rc10`; other PNGs predate 0.1.6). Recapture 1280×800 media from a 0.1.6 (16) / rc16 archive before Connect upload.
+4. **Connect media is not uploaded.** Use the 2880×1800 Store-channel set (`01-main` … `05-settings`). Do not upload [`screenshots/archive/`](../apps/macos/asc-kit/screenshots/archive/) (includes the **STALE** About shot, **historical 0.1.3 (4)** / **0.2.0rc10**).
 5. **Product site still pinned rc15** on 2026-11-01. Source is `darashkevich/darashkevich.com` `sites/runspecimen/`, not this repo. Support and privacy URLs must stay live.
 6. **Yahor release decision / independent QA closure** before Submit for Review. This file does not authorize review.
 7. CI produces an **unsigned / ad-hoc** archive only. It is not the upload binary.
@@ -164,15 +164,18 @@ uploaders, ads, accounts, or phone-home). Align Connect with
 
 ### 9. Screenshots
 
-**STALE media in-repo:** `apps/macos/asc-kit/screenshots/04-about-privacy-links-1280x800.png`
-is documented as About **historical 0.1.3 (4)** / engine **0.2.0rc10**. Do not upload it for
-0.1.6 (16). Recapture 1280×800 (or current ASC sizes) from a **0.1.6 (16)** /
-**0.2.0rc16** archive:
+Current Connect set (2880×1800, Store channel **0.1.6 (16)** / **0.2.0rc16**):
 
-1. Main Console with brand + Bundled Helpers + status (not Terminal.app)
-2. Approve sheet with empty PTY input (never type `APPROVE` for the shot)
-3. Settings → Privacy (Telemetry None — local only)
-4. About with the privacy-policy link and **0.1.6 (16)** / **0.2.0rc16**
+1. [01-main.png](../apps/macos/asc-kit/screenshots/01-main.png) — Main Console with brand + Bundled Helpers + status (not Terminal.app)
+2. [02-doctor.png](../apps/macos/asc-kit/screenshots/02-doctor.png) — Doctor / native status JSON
+3. [03-approve.png](../apps/macos/asc-kit/screenshots/03-approve.png) — Approve sheet with empty PTY input (never type `APPROVE` for the shot)
+4. [04-dashboard.png](../apps/macos/asc-kit/screenshots/04-dashboard.png) — native evidence inspector (not a browser dashboard)
+5. [05-settings.png](../apps/macos/asc-kit/screenshots/05-settings.png) — Settings → Privacy (bundled helper; Telemetry None — local only)
+
+Do not upload the archived 1280×800 set under
+[screenshots/archive/](../apps/macos/asc-kit/screenshots/archive/), including
+[04-about-privacy-links-1280x800.png](../apps/macos/asc-kit/screenshots/archive/04-about-privacy-links-1280x800.png)
+(**STALE** About, **historical 0.1.3 (4)** / engine **0.2.0rc10**).
 
 Recipe: [apps/macos/asc-kit/screenshots/README.md](../apps/macos/asc-kit/screenshots/README.md).
 

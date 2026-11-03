@@ -7,16 +7,16 @@ Explicit MAS freeze runtime: /tmp/rs-asc-mas-20261102/python/bin/python3.12 3.12
 31 INFO: Python: 3.12.15
 41 INFO: Platform: macOS-27.2-arm64-arm-64bit
 41 INFO: Python environment: /tmp/rs-asc-mas-20261102/python
-41 INFO: wrote /Users/yahor/runspecimen/apps/macos/build/pyinstaller/runspecimen.spec
-44 INFO: Removing temporary files and cleaning cache in /Users/yahor/Library/Application Support/pyinstaller
+41 INFO: wrote ~/runspecimen/apps/macos/build/pyinstaller/runspecimen.spec
+44 INFO: Removing temporary files and cleaning cache in ~/Library/Application Support/pyinstaller
 51 INFO: Module search paths (PYTHONPATH):
-['/Users/yahor/runspecimen',
+['~/runspecimen',
  '/tmp/rs-asc-mas-20261102/python/lib/python312.zip',
  '/tmp/rs-asc-mas-20261102/python/lib/python3.12',
  '/tmp/rs-asc-mas-20261102/python/lib/python3.12/lib-dynload',
  '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages',
- '/Users/yahor/runspecimen/apps/macos/build/pyinstaller/work',
- '/Users/yahor/runspecimen/src']
+ '~/runspecimen/apps/macos/build/pyinstaller/work',
+ '~/runspecimen/src']
 140 INFO: checking Analysis
 140 INFO: Building Analysis because Analysis-00.toc is non existent
 140 INFO: Looking for Python shared library...
@@ -31,7 +31,7 @@ Explicit MAS freeze runtime: /tmp/rs-asc-mas-20261102/python/bin/python3.12 3.12
 1355 INFO: Processing standard module hook 'hook-math.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
 1537 INFO: Processing standard module hook 'hook-pickle.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
 2391 INFO: Caching module dependency graph...
-2412 INFO: Analyzing /Users/yahor/runspecimen/apps/macos/build/pyinstaller/work/runspecimen_main.py
+2412 INFO: Analyzing ~/runspecimen/apps/macos/build/pyinstaller/work/runspecimen_main.py
 2469 INFO: Processing standard module hook 'hook-platform.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
 2486 INFO: Processing standard module hook 'hook-xml.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
 2498 INFO: Processing standard module hook 'hook-webbrowser.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
@@ -47,12 +47,12 @@ Explicit MAS freeze runtime: /tmp/rs-asc-mas-20261102/python/bin/python3.12 3.12
 3550 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
 3554 INFO: Creating base_library.zip...
 3565 INFO: Looking for dynamic libraries
-3623 INFO: Warnings written to /Users/yahor/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/warn-runspecimen.txt
-3631 INFO: Graph cross-reference written to /Users/yahor/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/xref-runspecimen.html
+3623 INFO: Warnings written to ~/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/warn-runspecimen.txt
+3631 INFO: Graph cross-reference written to ~/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/xref-runspecimen.html
 3663 INFO: checking PYZ
 3663 INFO: Building PYZ because PYZ-00.toc is non existent
-3663 INFO: Building PYZ (ZlibArchive) /Users/yahor/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/PYZ-00.pyz
-3833 INFO: Building PYZ (ZlibArchive) /Users/yahor/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/PYZ-00.pyz completed successfully.
+3663 INFO: Building PYZ (ZlibArchive) ~/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/PYZ-00.pyz
+3833 INFO: Building PYZ (ZlibArchive) ~/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/PYZ-00.pyz completed successfully.
 3835 INFO: EXE target arch: arm64
 3835 INFO: Code signing identity: None
 3836 INFO: checking PKG
@@ -63,7 +63,7 @@ Explicit MAS freeze runtime: /tmp/rs-asc-mas-20261102/python/bin/python3.12 3.12
 3844 INFO: checking EXE
 3844 INFO: Building EXE because EXE-00.toc is non existent
 3844 INFO: Building EXE from EXE-00.toc
-3844 INFO: Copying bootloader EXE to /Users/yahor/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/runspecimen
+3844 INFO: Copying bootloader EXE to ~/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/runspecimen
 3844 INFO: Converting EXE to target arch (arm64)
 4383 INFO: Removing signature(s) from EXE
 4399 INFO: Modifying Mach-O image UUID(s) in EXE
@@ -75,13 +75,13 @@ Explicit MAS freeze runtime: /tmp/rs-asc-mas-20261102/python/bin/python3.12 3.12
 4424 INFO: Building COLLECT because COLLECT-00.toc is non existent
 4424 INFO: Building COLLECT COLLECT-00.toc
 5927 INFO: Building COLLECT COLLECT-00.toc completed successfully.
-5928 INFO: Build complete! The results are available in: /Users/yahor/runspecimen/apps/macos/build/pyinstaller/dist
+5928 INFO: Build complete! The results are available in: ~/runspecimen/apps/macos/build/pyinstaller/dist
 MAS runtime scan: 51 Mach-O files; 0 violations
-Staged frozen helper: /Users/yahor/runspecimen/apps/macos/Helpers/payload/runspecimen
-Staged runtime:       /Users/yahor/runspecimen/apps/macos/Helpers/payload/_internal
--rwxr-xr-x  1 yahor  staff  2594624 Nov  2 21:25 /Users/yahor/runspecimen/apps/macos/Helpers/payload/runspecimen
+Staged frozen helper: ~/runspecimen/apps/macos/Helpers/payload/runspecimen
+Staged runtime:       ~/runspecimen/apps/macos/Helpers/payload/_internal
+-rwxr-xr-x  1 yahor  staff  2594624 Nov  2 21:25 ~/runspecimen/apps/macos/Helpers/payload/runspecimen
  _internal size: 18M
-==> /Users/yahor/runspecimen/apps/macos/Helpers/payload/runspecimen --version
+==> ~/runspecimen/apps/macos/Helpers/payload/runspecimen --version
 runspecimen 0.2.0rc16
 OK: frozen helper reports a RunSpecimen version
 Next: ./Scripts/build_app.sh  # copies into Contents/Helpers/
@@ -90,8 +90,8 @@ Building via SwiftPM (release)…
 Building for production...
 [1 / 1]
 Build complete! (0.45 sec)
-Bundled app icon: /Users/yahor/runspecimen/apps/macos/build/RunSpecimen.app/Contents/Resources/AppIcon.icns
-Bundled onedir engine: /Users/yahor/runspecimen/apps/macos/build/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/runspecimen
+Bundled app icon: ~/runspecimen/apps/macos/build/RunSpecimen.app/Contents/Resources/AppIcon.icns
+Bundled onedir engine: ~/runspecimen/apps/macos/build/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/runspecimen
 Helper pre-sign --version → runspecimen 0.2.0rc16
 Signing onedir _internal runtime under /tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal
 /tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/libpython3.12.dylib: replacing existing signature
@@ -152,10 +152,10 @@ OK: nested helper signed (adhoc) with sandbox+inherit: /tmp/rs-seal-app.RXRgAz/R
 /tmp/rs-seal-app.RXRgAz/RunSpecimen.app: satisfies its Designated Requirement
 Signed frozen helper with sandbox+inherit; app sealed (adhoc).
 Signed with entitlements.
-Built: /Users/yahor/runspecimen/apps/macos/build/RunSpecimen.app
+Built: ~/runspecimen/apps/macos/build/RunSpecimen.app
 Channel: mas
-Entitlements source: /Users/yahor/runspecimen/apps/macos/Entitlements/RunSpecimen.mas.entitlements
-Open with: open "/Users/yahor/runspecimen/apps/macos/build/RunSpecimen.app"
+Entitlements source: ~/runspecimen/apps/macos/Entitlements/RunSpecimen.mas.entitlements
+Open with: open "~/runspecimen/apps/macos/build/RunSpecimen.app"
 MAS packaging: ./Scripts/build_app.sh --mas
 Local helper:  ./Scripts/build_app.sh --from-src
 Archive/upload (needs Xcode + Apple Distribution): see APP_STORE.md / RELEASE_CHECKLIST.md

@@ -228,9 +228,13 @@ Provide a sample workspace zip in Review notes if the showcase tree is not in th
 
 ## Screenshots / metadata checklist
 
-- [x] 1280×800 (or current ASC sizes) showing Main Console with brand + status (not Terminal) — [asc-kit/screenshots/01-main-console-1280x800.png](asc-kit/screenshots/01-main-console-1280x800.png)
-- [x] Approve sheet visible (human PTY, no auto-fill) — [asc-kit/screenshots/02-approve-sheet-pty-1280x800.png](asc-kit/screenshots/02-approve-sheet-pty-1280x800.png)
-- [x] Settings / Privacy + About privacy-policy link — [asc-kit/screenshots/03-settings-privacy.png](asc-kit/screenshots/03-settings-privacy.png), [04-about-privacy-links-1280x800.png](asc-kit/screenshots/04-about-privacy-links-1280x800.png)
+- [x] 2880×1800 Main Console (Store channel, not Terminal) — [asc-kit/screenshots/01-main.png](asc-kit/screenshots/01-main.png)
+- [x] Doctor / native status JSON — [asc-kit/screenshots/02-doctor.png](asc-kit/screenshots/02-doctor.png)
+- [x] Approve sheet visible (human PTY, empty input) — [asc-kit/screenshots/03-approve.png](asc-kit/screenshots/03-approve.png)
+- [x] Native evidence inspector (filename `04-dashboard.png`; not a browser dashboard) — [asc-kit/screenshots/04-dashboard.png](asc-kit/screenshots/04-dashboard.png)
+- [x] Settings / Privacy (bundled helper) — [asc-kit/screenshots/05-settings.png](asc-kit/screenshots/05-settings.png)
+
+Older 1280×800 captures, including the **STALE** About shot (**historical 0.1.3 (4)** / engine **0.2.0rc10**), are under [asc-kit/screenshots/archive/](asc-kit/screenshots/archive/). Do not upload those.
 - [ ] App icon: opaque `#070A0F` field, **not** pre-rounded (`AppIcon-1024.png`)
 - [ ] Subtitle / description: local evidence control — not “OS sandbox for malware”
 - [ ] Support URL: https://runspecimen.darashkevich.com/support/

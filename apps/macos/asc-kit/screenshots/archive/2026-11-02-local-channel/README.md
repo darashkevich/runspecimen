@@ -12,6 +12,9 @@ Each is **2880 × 1800 pixels (16:10), RGB, sRGB IEC61966-2.1, no alpha**.
 | [04-dashboard.png](04-dashboard.png) | Real loopback-only, read-only browser dashboard: ready-to-review demo, safety boundary and evidence trust ladder. This feature belongs to the local channel; see the Store caveat below. |
 | [05-settings.png](05-settings.png) | Settings: bundled helper identity and version, Prefer Bundled Helper control, and local-only privacy information. |
 
+These images show /tmp demo paths (`/tmp/rs-asc-capture-20261102`,
+`/tmp/runspecimen-demo-asc-016`). The PNGs were not edited.
+
 ## Build and capture provenance
 
 - Built with `./apps/macos/Scripts/build_app.sh --from-src` at the source SHA above.
@@ -47,7 +50,7 @@ Verified for every file: `pixelWidth: 2880`, `pixelHeight: 1800`, `space: RGB`, 
 
 The four PNGs in this directory predate the submitted **0.1.4 (9)** Store app. They are not the **0.1.5 (11)** candidate and they are not what Apple is reviewing.
 
-Captures from the signed **0.1.5 (11)** archive app (source `3a0f483`, Apple Distribution, not the installed Store package) are in [0.1.5-11/](0.1.5-11/). Those are local evidence for the candidate. Do not upload them as the media for **0.1.4 (9)**.
+Captures from the signed **0.1.5 (11)** archive app (source `3a0f483`, Apple Distribution, not the installed Store package) are in [0.1.5-11/](../0.1.5-11/). Those are local evidence for the candidate. Do not upload them as the media for **0.1.4 (9)**.
 
 **Status: CAPTURED (local ad-hoc MAS app)** — real product chrome from the sandboxed
 `RunSpecimen.app` (Archive ad-hoc / `build/screenshot-RunSpecimen.app`), not mocks.
@@ -59,12 +62,12 @@ Capture host: Retina Mac. Logical window size **1280×800** → PNG pixels **256
 
 | File | Content | ASC size note |
 | --- | --- | --- |
-| [01-main-console-1280x800.png](01-main-console-1280x800.png) | Main Console — brand, Bundled Helpers, lifecycle + evidence (`approval: null`) | 1280×800 @2× |
-| [02-approve-sheet-pty-1280x800.png](02-approve-sheet-pty-1280x800.png) | Approve sheet — PTY live, empty input (“Type APPROVE… nothing is sent automatically”); never typed APPROVE | 1280×800 @2× |
-| [03-settings-privacy.png](03-settings-privacy.png) | Settings — CLI engine + **Privacy: Telemetry None — local only** | Settings window (not full ASC canvas) |
-| [04-about-privacy-links-1280x800.png](04-about-privacy-links-1280x800.png) | About — app `0.1.3 (4)` / engine `0.2.0rc10` + **Privacy policy** link visible | 1280×800 @2× |
+| [01-main-console-1280x800.png](../01-main-console-1280x800.png) | Main Console — brand, Bundled Helpers, lifecycle + evidence (`approval: null`) | 1280×800 @2× |
+| [02-approve-sheet-pty-1280x800.png](../02-approve-sheet-pty-1280x800.png) | Approve sheet — PTY live, empty input (“Type APPROVE… nothing is sent automatically”); never typed APPROVE | 1280×800 @2× |
+| [03-settings-privacy.png](../03-settings-privacy.png) | Settings — CLI engine + **Privacy: Telemetry None — local only** | Settings window (not full ASC canvas) |
+| [04-about-privacy-links-1280x800.png](../04-about-privacy-links-1280x800.png) | About — app **historical 0.1.3 (4)** / engine `0.2.0rc10` + **Privacy policy** link visible | 1280×800 @2× |
 
-Optional raw captures under [raw/](raw/) are local provenance only (may be gitignored).
+Optional raw captures were local provenance only and are not in git.
 
 ## Honest caveats (not faked)
 
@@ -88,5 +91,6 @@ Optional raw captures under [raw/](raw/) are local provenance only (may be gitig
 
 ## Icon for Connect
 
-Use `../Resources/AppIcon-1024.png` (opaque `#070A0F` field, **not** pre-rounded).
+Use [`../../../../Resources/AppIcon-1024.png`](../../../../Resources/AppIcon-1024.png)
+(opaque `#070A0F` field, **not** pre-rounded).
 Verified by `./Scripts/verify_app_icon.sh`.

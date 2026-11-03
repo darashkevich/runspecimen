@@ -4,7 +4,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 let inputRoot = URL(fileURLWithPath: "/tmp/rs-asc-mas-20261102")
-let outputRoot = URL(fileURLWithPath: "/Users/yahor/runspecimen/apps/macos/asc-kit/screenshots")
+let outputRoot = URL(fileURLWithPath: "~/runspecimen/apps/macos/asc-kit/screenshots")
 let entries: [(String,String,Int,Int,Double)] = [
  ("01-main-raw.png", "01-main.png", 56, 0, 1.0),
  ("02-doctor-raw.png", "02-doctor.png", 56, 0, 1.0),
