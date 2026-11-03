@@ -1,0 +1,31 @@
+There has been no change in the accessibility tree for Window: "RunSpecimen".
+The focused UI element is 96 text {
+  "approval" : null,
+  "campaign_id" : "demo-campaign",
+  "certificate" : null,
+  "contract" : {
+    "argv" : [
+      "python3",
+      "work\/compute.py"
+    ],
+    "hash" : "a260eabb43e1e086f619621795d60958dbce7cd17d240016f74d3935cf061e59",
+    "path" : "\/private\/tmp\/runspecimen-store-demo-016\/contract.json"
+  },
+  "event_chain_msg" : "empty",
+  "event_chain_ok" : true,
+  "event_count" : 0,
+  "lease_held_by_other" : false,
+  "lease_meta" : null,
+  "needs_recovery" : false,
+  "phase" : "none",
+  "recovery_reason" : null,
+  "run_id" : "run-001",
+  "state" : {
+    "campaign_id" : null,
+    "phase" : "none",
+    "run_id" : null
+  },
+  "state_dir" : "\/private\/tmp\/runspecimen-store-demo-016\/.runspecimen\/runs\/demo-campaign\/run-001",
+  "workspace" : "\/private\/tmp\/runspecimen-store-demo-016",
+  "workspace_lease_held_by_other" : false
+}
