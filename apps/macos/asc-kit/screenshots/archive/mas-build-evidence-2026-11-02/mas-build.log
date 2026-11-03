@@ -1,0 +1,161 @@
+==> MAS channel: frozen helper required (fail closed); entitlements=RunSpecimen.mas.entitlements
+==> --mas: freezing self-contained helper (no --from-src fallback)
+Explicit MAS freeze runtime: /tmp/rs-asc-mas-20261102/python/bin/python3.12 3.12.15 (main, Nov  2 2026, 21:25:04) [Clang 21.0.0 (clang-2100.4.1.1)] /tmp/rs-asc-mas-20261102/python
+==> PyInstaller onedir freeze (App Sandbox–compatible; not onefile)
+    tool: /tmp/rs-asc-mas-20261102/python/bin/python3.12 -m PyInstaller
+31 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.9
+31 INFO: Python: 3.12.15
+41 INFO: Platform: macOS-27.2-arm64-arm-64bit
+41 INFO: Python environment: /tmp/rs-asc-mas-20261102/python
+41 INFO: wrote ~/runspecimen/apps/macos/build/pyinstaller/runspecimen.spec
+44 INFO: Removing temporary files and cleaning cache in ~/Library/Application Support/pyinstaller
+51 INFO: Module search paths (PYTHONPATH):
+['~/runspecimen',
+ '/tmp/rs-asc-mas-20261102/python/lib/python312.zip',
+ '/tmp/rs-asc-mas-20261102/python/lib/python3.12',
+ '/tmp/rs-asc-mas-20261102/python/lib/python3.12/lib-dynload',
+ '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages',
+ '~/runspecimen/apps/macos/build/pyinstaller/work',
+ '~/runspecimen/src']
+140 INFO: checking Analysis
+140 INFO: Building Analysis because Analysis-00.toc is non existent
+140 INFO: Looking for Python shared library...
+142 INFO: Using Python shared library: /tmp/rs-asc-mas-20261102/python/lib/libpython3.12.dylib
+142 INFO: Running Analysis Analysis-00.toc
+142 INFO: Target bytecode optimization level: 0
+142 INFO: Initializing module dependency graph...
+143 INFO: Initializing module graph hook caches...
+149 INFO: Analyzing modules for base_library.zip ...
+514 INFO: Processing standard module hook 'hook-heapq.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
+570 INFO: Processing standard module hook 'hook-encodings.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
+1355 INFO: Processing standard module hook 'hook-math.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
+1537 INFO: Processing standard module hook 'hook-pickle.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
+2391 INFO: Caching module dependency graph...
+2412 INFO: Analyzing ~/runspecimen/apps/macos/build/pyinstaller/work/runspecimen_main.py
+2469 INFO: Processing standard module hook 'hook-platform.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
+2486 INFO: Processing standard module hook 'hook-xml.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
+2498 INFO: Processing standard module hook 'hook-webbrowser.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
+2635 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
+2732 INFO: Processing standard module hook 'hook-_ctypes.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
+2764 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks'
+3386 INFO: Processing module hooks (post-graph stage)...
+3517 INFO: Performing binary vs. data reclassification (1 entries)
+3518 INFO: Looking for ctypes DLLs
+3547 INFO: Analyzing run-time hooks ...
+3548 INFO: Including run-time hook 'pyi_rth_inspect.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+3549 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+3550 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from '/tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+3554 INFO: Creating base_library.zip...
+3565 INFO: Looking for dynamic libraries
+3623 INFO: Warnings written to ~/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/warn-runspecimen.txt
+3631 INFO: Graph cross-reference written to ~/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/xref-runspecimen.html
+3663 INFO: checking PYZ
+3663 INFO: Building PYZ because PYZ-00.toc is non existent
+3663 INFO: Building PYZ (ZlibArchive) ~/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/PYZ-00.pyz
+3833 INFO: Building PYZ (ZlibArchive) ~/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/PYZ-00.pyz completed successfully.
+3835 INFO: EXE target arch: arm64
+3835 INFO: Code signing identity: None
+3836 INFO: checking PKG
+3836 INFO: Building PKG because PKG-00.toc is non existent
+3836 INFO: Building PKG (CArchive) runspecimen.pkg
+3844 INFO: Building PKG (CArchive) runspecimen.pkg completed successfully.
+3844 INFO: Bootloader /tmp/rs-asc-mas-20261102/python/lib/python3.12/site-packages/PyInstaller/bootloader/Darwin-64bit/run
+3844 INFO: checking EXE
+3844 INFO: Building EXE because EXE-00.toc is non existent
+3844 INFO: Building EXE from EXE-00.toc
+3844 INFO: Copying bootloader EXE to ~/runspecimen/apps/macos/build/pyinstaller/work/runspecimen/runspecimen
+3844 INFO: Converting EXE to target arch (arm64)
+4383 INFO: Removing signature(s) from EXE
+4399 INFO: Modifying Mach-O image UUID(s) in EXE
+4402 INFO: Appending PKG archive to EXE
+4403 INFO: Fixing EXE headers for code signing
+4406 INFO: Re-signing the EXE
+4423 INFO: Building EXE from EXE-00.toc completed successfully.
+4424 INFO: checking COLLECT
+4424 INFO: Building COLLECT because COLLECT-00.toc is non existent
+4424 INFO: Building COLLECT COLLECT-00.toc
+5927 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+5928 INFO: Build complete! The results are available in: ~/runspecimen/apps/macos/build/pyinstaller/dist
+MAS runtime scan: 51 Mach-O files; 0 violations
+Staged frozen helper: ~/runspecimen/apps/macos/Helpers/payload/runspecimen
+Staged runtime:       ~/runspecimen/apps/macos/Helpers/payload/_internal
+-rwxr-xr-x  1 yahor  staff  2594624 Nov  2 21:25 ~/runspecimen/apps/macos/Helpers/payload/runspecimen
+ _internal size: 18M
+==> ~/runspecimen/apps/macos/Helpers/payload/runspecimen --version
+runspecimen 0.2.0rc16
+OK: frozen helper reports a RunSpecimen version
+Next: ./Scripts/build_app.sh  # copies into Contents/Helpers/
+==> Using frozen helper payload for MAS
+Building via SwiftPM (release)…
+Building for production...
+[1 / 1]
+Build complete! (0.45 sec)
+Bundled app icon: ~/runspecimen/apps/macos/build/RunSpecimen.app/Contents/Resources/AppIcon.icns
+Bundled onedir engine: ~/runspecimen/apps/macos/build/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/runspecimen
+Helper pre-sign --version → runspecimen 0.2.0rc16
+Signing onedir _internal runtime under /tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/libpython3.12.dylib: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/libssl.3.dylib: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/libcrypto.3.dylib: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_struct.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/array.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_queue.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_blake2.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_sha1.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_posixshmem.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_hashlib.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/grp.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_socket.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_decimal.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_csv.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_statistics.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_sha3.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/fcntl.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_ssl.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/termios.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/zlib.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/unicodedata.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_bisect.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_cn.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_multibytecodec.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_posixsubprocess.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/select.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/pyexpat.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_pickle.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_jp.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_bz2.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_ctypes.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/mmap.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_datetime.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/math.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_sha2.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_iso2022.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_tw.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_opcode.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_kr.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_heapq.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_scproxy.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_md5.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_multiprocessing.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_elementtree.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_random.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_contextvars.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/resource.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_codecs_hk.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/binascii.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/_internal/python3.12/lib-dynload/_json.cpython-312-darwin.so: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/runspecimen: replacing existing signature
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/runspecimen: valid on disk
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/runspecimen: satisfies its Designated Requirement
+OK: nested helper signed (adhoc) with sandbox+inherit: /tmp/rs-seal-app.RXRgAz/RunSpecimen.app/Contents/Resources/RunSpecimenEngine/runspecimen
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app: valid on disk
+/tmp/rs-seal-app.RXRgAz/RunSpecimen.app: satisfies its Designated Requirement
+Signed frozen helper with sandbox+inherit; app sealed (adhoc).
+Signed with entitlements.
+Built: ~/runspecimen/apps/macos/build/RunSpecimen.app
+Channel: mas
+Entitlements source: ~/runspecimen/apps/macos/Entitlements/RunSpecimen.mas.entitlements
+Open with: open "~/runspecimen/apps/macos/build/RunSpecimen.app"
+MAS packaging: ./Scripts/build_app.sh --mas
+Local helper:  ./Scripts/build_app.sh --from-src
+Archive/upload (needs Xcode + Apple Distribution): see APP_STORE.md / RELEASE_CHECKLIST.md

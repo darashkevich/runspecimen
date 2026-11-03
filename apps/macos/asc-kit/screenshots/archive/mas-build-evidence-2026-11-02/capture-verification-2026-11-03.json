@@ -1,0 +1,58 @@
+{
+  "captured": "2026-11-03",
+  "source_sha": "18f509ececa92c7a41faea35a42926241e84f53b",
+  "channel": "mas",
+  "version": "0.1.6",
+  "build": "16",
+  "approval_field_empty": true,
+  "approval_sent": false,
+  "native_evidence_view": true,
+  "host_CLI_controls_absent": true,
+  "files": [
+    {
+      "file": "01-main.png",
+      "width": 2880,
+      "height": 1800,
+      "profile": "sRGB IEC61966-2.1",
+      "alpha": false,
+      "sha256": "ca86b3fbd0f40f420d3ff4abb1b7e12528df89f683c51f7dd4ce56ba12dbeb3e",
+      "bytes": 1054805
+    },
+    {
+      "file": "02-doctor.png",
+      "width": 2880,
+      "height": 1800,
+      "profile": "sRGB IEC61966-2.1",
+      "alpha": false,
+      "sha256": "86ecbbbfc6c7851234fe93d19b574821f86d42e2586d14275e8567c0daf3795a",
+      "bytes": 1294064
+    },
+    {
+      "file": "03-approve.png",
+      "width": 2880,
+      "height": 1800,
+      "profile": "sRGB IEC61966-2.1",
+      "alpha": false,
+      "sha256": "6e4655d08eb3680530130edf3460ace601ce24c88c85f5b153d21927f562ebf3",
+      "bytes": 1295270
+    },
+    {
+      "file": "04-dashboard.png",
+      "width": 2880,
+      "height": 1800,
+      "profile": "sRGB IEC61966-2.1",
+      "alpha": false,
+      "sha256": "7ce276f9740d217718ba9e6fa8e805a44567e5091e2876642c798ea026aa7d03",
+      "bytes": 1268924
+    },
+    {
+      "file": "05-settings.png",
+      "width": 2880,
+      "height": 1800,
+      "profile": "sRGB IEC61966-2.1",
+      "alpha": false,
+      "sha256": "2e629eca3bc032a1a52dfcd5d09972d78b573d1284c3abb44132cd2dd1e145b8",
+      "bytes": 535005
+    }
+  ]
+}

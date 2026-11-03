@@ -1,0 +1,30 @@
+~/runspecimen/apps/macos/asc-kit/screenshots/01-main.png
+  pixelWidth: 2880
+  pixelHeight: 1800
+  space: RGB
+  profile: sRGB IEC61966-2.1
+  hasAlpha: no
+~/runspecimen/apps/macos/asc-kit/screenshots/02-doctor.png
+  pixelWidth: 2880
+  pixelHeight: 1800
+  space: RGB
+  profile: sRGB IEC61966-2.1
+  hasAlpha: no
+~/runspecimen/apps/macos/asc-kit/screenshots/03-approve.png
+  pixelWidth: 2880
+  pixelHeight: 1800
+  space: RGB
+  profile: sRGB IEC61966-2.1
+  hasAlpha: no
+~/runspecimen/apps/macos/asc-kit/screenshots/04-dashboard.png
+  pixelWidth: 2880
+  pixelHeight: 1800
+  space: RGB
+  profile: sRGB IEC61966-2.1
+  hasAlpha: no
+~/runspecimen/apps/macos/asc-kit/screenshots/05-settings.png
+  pixelWidth: 2880
+  pixelHeight: 1800
+  space: RGB
+  profile: sRGB IEC61966-2.1
+  hasAlpha: no

@@ -1,0 +1,26 @@
+{
+  "CFBundleIdentifier": "com.darashkevich.runspecimen.screenshots.mas20261102",
+  "CFBundleShortVersionString": "0.1.6",
+  "CFBundleVersion": "16",
+  "RSDistributionChannel": "mas",
+  "app": {
+    "adhoc": true,
+    "entitlements": {
+      "com.apple.security.app-sandbox": true,
+      "com.apple.security.cs.allow-unsigned-executable-memory": true,
+      "com.apple.security.cs.disable-library-validation": true,
+      "com.apple.security.files.user-selected.executable": true,
+      "com.apple.security.files.user-selected.read-write": true,
+      "com.apple.security.network.client": true
+    }
+  },
+  "helper": {
+    "adhoc": true,
+    "entitlements": {
+      "com.apple.security.app-sandbox": true,
+      "com.apple.security.cs.allow-unsigned-executable-memory": true,
+      "com.apple.security.cs.disable-library-validation": true,
+      "com.apple.security.inherit": true
+    }
+  }
+}

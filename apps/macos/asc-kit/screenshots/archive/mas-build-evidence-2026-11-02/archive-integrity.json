@@ -1,0 +1,47 @@
+[
+  {
+    "file": "01-main-console-1280x800.png",
+    "unchanged": true,
+    "sha256": "4a1e5d0eda6159c3faa6c5baace4dcceeb7b18e395ba9d54dcd5e4ce8b0d8fe2"
+  },
+  {
+    "file": "02-approve-sheet-pty-1280x800.png",
+    "unchanged": true,
+    "sha256": "b8892fc692b49bec563e0184aae6224eca780a41abc5ab2a414520c4a56c612c"
+  },
+  {
+    "file": "03-settings-privacy.png",
+    "unchanged": true,
+    "sha256": "e0b95d02e1c7d63672f6eb3b4f553304da0109110afd7c1aab3a8e48b2a94ddf"
+  },
+  {
+    "file": "04-about-privacy-links-1280x800.png",
+    "unchanged": true,
+    "sha256": "47a54c4da514569eff035cd0fad004859be774da49c48ecc519df4f084bae7e7"
+  },
+  {
+    "file": "apps/macos/asc-kit/screenshots/0.1.5-11/03-refresh-evidence.png",
+    "unchanged": true,
+    "sha256": "3aa35d163e305dafc8afd937b6bc00cd5366a3c4bd2b2877273f438401343491"
+  },
+  {
+    "file": "apps/macos/asc-kit/screenshots/0.1.5-11/01-no-contract.png",
+    "unchanged": true,
+    "sha256": "971c6ffa5d83c8210d09766b0278bfb02b01e25b7a54b75148eab9da7bc3433a"
+  },
+  {
+    "file": "apps/macos/asc-kit/screenshots/0.1.5-11/04-workflows.png",
+    "unchanged": true,
+    "sha256": "6efde185b4fe2ebcdbafe0a1678c725b08a2378b5f357b46c6da6cd9ce229001"
+  },
+  {
+    "file": "apps/macos/asc-kit/screenshots/0.1.5-11/README.md",
+    "unchanged": true,
+    "sha256": "f1e9c9633a8836cd6acab3fbb34f38c083b3d088becee278eafacd90d182b8c0"
+  },
+  {
+    "file": "apps/macos/asc-kit/screenshots/0.1.5-11/02-reviewer-demo.png",
+    "unchanged": true,
+    "sha256": "05c278ec4f03c9a790029cb4f2c8760b71ccbba9150ee25fe05272936f4a530f"
+  }
+]
