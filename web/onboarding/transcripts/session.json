@@ -1,0 +1,187 @@
+{
+  "approve_prompt": "Approve bounded run?\n  campaign: demo-campaign\n  run_id:   run-001\n  argv:     ['python3', 'work/compute.py']\n  cwd:      .\n  sources:  ['work']\n  excludes: ['*.pyc', '__pycache__']\n  outputs:  ['outputs/result.json']\n  timeout:  30s\n  capture:  stdout=65536B stderr=65536B\n  prior:    None\n  isolation: No isolation backend. The workload is not confined by RunSpecimen.\n  policy:   none\n  approver: ubuntu (local OS user)\n  contract: a260eabb43e1e086f619621795d60958dbce7cd17d240016f74d3935cf061e59\n  source:   f097f7e4c5689b9ff241df085f7b1f38bcd546e14f70723783b0eed9dc934193\n  runtime:  /usr/bin/python3.12\n  runtime#: 3f48ad01f46aa84462c918f963ba93ef478cc5b6cbfa9f324c17f13da961889f\n  ttl_sec:  3600\nType 'APPROVE' to bind this approval: ",
+  "approve_result": {
+    "approval": {
+      "approved_at": "2026-10-07T14:04:03Z",
+      "approved_at_unix": 1791381843.7912009,
+      "approver": {
+        "kind": "local_os_user",
+        "uid": 1000,
+        "user": "ubuntu"
+      },
+      "argv": [
+        "python3",
+        "work/compute.py"
+      ],
+      "campaign_id": "demo-campaign",
+      "confirm_channel": "local_tty_approve",
+      "confirm_evidence": {
+        "claim": "Interactive local TTY APPROVE on the Mac.",
+        "kind": "interactive_tty_phrase",
+        "phrase": "APPROVE"
+      },
+      "contract_hash": "a260eabb43e1e086f619621795d60958dbce7cd17d240016f74d3935cf061e59",
+      "contract_path": "$WORKSPACE/contract.json",
+      "expires_at_unix": 1791385443.7912009,
+      "isolation": {
+        "backend": "none",
+        "claim": "No isolation backend. The workload is not confined by RunSpecimen.",
+        "enforced": false,
+        "network": "not-enforced",
+        "residual": "Orchestration limits only: one workspace lease, wall clock, capture bounds, and process-group stop. Writes and network are not confined.",
+        "tool": null,
+        "tool_sha256": null
+      },
+      "run_id": "run-001",
+      "runtime": {
+        "argv0": "python3",
+        "executable_sha256": "e1efa562c2cc2e35521a5c9c9b9939921001ff8ca9708a13ef15ace68cc2ccd7",
+        "resolved_executable": "/usr/bin/python3.12",
+        "runtime_id": "3f48ad01f46aa84462c918f963ba93ef478cc5b6cbfa9f324c17f13da961889f"
+      },
+      "source_hash": "f097f7e4c5689b9ff241df085f7b1f38bcd546e14f70723783b0eed9dc934193",
+      "ttl_sec": 3600
+    },
+    "ok": true
+  },
+  "cli_version": "runspecimen 0.2.0rc14",
+  "contract": "init-demo contract.json (demo-campaign / run-001)",
+  "doctor": {
+    "active_lease": null,
+    "docs": {
+      "about": "https://github.com/darashkevich/runspecimen/blob/main/docs/ABOUT.md",
+      "faq": "https://github.com/darashkevich/runspecimen/blob/main/docs/FAQ.md",
+      "user_guide": "https://github.com/darashkevich/runspecimen/blob/main/docs/USER_GUIDE.md"
+    },
+    "isolation": {
+      "backends": {
+        "bwrap": {
+          "available": false,
+          "platform": "linux"
+        },
+        "none": {
+          "available": true,
+          "enforced": false
+        },
+        "sandbox-exec": {
+          "available": false,
+          "platform": "darwin"
+        }
+      },
+      "claim": "Default execution is not confined. Opt in with contract.isolation. Resource limits are not an OS sandbox.",
+      "default_backend": "none"
+    },
+    "ok": true,
+    "platform": "Linux-6.12.94+-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "workspace": "$WORKSPACE",
+    "workspace_lease_held": false,
+    "workspace_writable": true
+  },
+  "init": {
+    "approved": false,
+    "contract": "$WORKSPACE/contract.json",
+    "executed": false,
+    "ok": true,
+    "workspace": "$WORKSPACE"
+  },
+  "postflight_result": {
+    "certificate": {
+      "approval_expires_at_unix": 1791385443.7912009,
+      "approver": {
+        "kind": "local_os_user",
+        "uid": 1000,
+        "user": "ubuntu"
+      },
+      "campaign_id": "demo-campaign",
+      "certificate_id": "10ad13a6a8df5bca11ecc94ec659b02df1f07326dfb0e76b3b68b34be1d259c2",
+      "contract_hash": "a260eabb43e1e086f619621795d60958dbce7cd17d240016f74d3935cf061e59",
+      "event_head": "dc351befd21f96d18e3e4e25202d0353f5e9d1b7b297abb2384e30a656d27329",
+      "exit_code": 0,
+      "isolation": {
+        "backend": "none",
+        "claim": "No isolation backend. The workload is not confined by RunSpecimen.",
+        "enforced": false,
+        "network": "not-enforced",
+        "residual": "Orchestration limits only: one workspace lease, wall clock, capture bounds, and process-group stop. Writes and network are not confined.",
+        "tool": null,
+        "tool_sha256": null
+      },
+      "issued_at": "2026-10-07T14:04:04Z",
+      "output_digests": {
+        "outputs/result.json": "f27e425a8c4f00f3b88fc4b1d1fe97a408a06e0318368b11c3b80c7a6d694b2a"
+      },
+      "run_id": "run-001",
+      "run_result": "completed",
+      "runtime": {
+        "argv0": "python3",
+        "executable_sha256": "e1efa562c2cc2e35521a5c9c9b9939921001ff8ca9708a13ef15ace68cc2ccd7",
+        "resolved_executable": "/usr/bin/python3.12",
+        "runtime_id": "3f48ad01f46aa84462c918f963ba93ef478cc5b6cbfa9f324c17f13da961889f"
+      },
+      "schema_version": 1,
+      "source_hash": "f097f7e4c5689b9ff241df085f7b1f38bcd546e14f70723783b0eed9dc934193"
+    },
+    "ok": true
+  },
+  "preflight_result": {
+    "approval_expires_at_unix": 1791385443.7912009,
+    "campaign_id": "demo-campaign",
+    "contract_hash": "a260eabb43e1e086f619621795d60958dbce7cd17d240016f74d3935cf061e59",
+    "isolation_backend": "none",
+    "isolation_enforced": false,
+    "ok": true,
+    "run_id": "run-001",
+    "runtime": {
+      "argv0": "python3",
+      "executable_sha256": "e1efa562c2cc2e35521a5c9c9b9939921001ff8ca9708a13ef15ace68cc2ccd7",
+      "resolved_executable": "/usr/bin/python3.12",
+      "runtime_id": "3f48ad01f46aa84462c918f963ba93ef478cc5b6cbfa9f324c17f13da961889f"
+    },
+    "source_hash": "f097f7e4c5689b9ff241df085f7b1f38bcd546e14f70723783b0eed9dc934193"
+  },
+  "run_result": {
+    "campaign_id": "demo-campaign",
+    "exit_code": 0,
+    "run_id": "run-001",
+    "run_result": "completed",
+    "stderr_bytes": 0,
+    "stderr_truncated": false,
+    "stdout_bytes": 43,
+    "stdout_truncated": false,
+    "timed_out": false
+  },
+  "source": "live CLI capture of `runspecimen init-demo` via PTY",
+  "validate": {
+    "campaign_id": "demo-campaign",
+    "contract_hash": "a260eabb43e1e086f619621795d60958dbce7cd17d240016f74d3935cf061e59",
+    "isolation": {
+      "backend": "none",
+      "claim": "No isolation backend. The workload is not confined by RunSpecimen.",
+      "enforced": false,
+      "network": "not-enforced",
+      "residual": "Orchestration limits only: one workspace lease, wall clock, capture bounds, and process-group stop. Writes and network are not confined.",
+      "tool": null,
+      "tool_sha256": null
+    },
+    "ok": true,
+    "policy": null,
+    "run_id": "run-001",
+    "runtime": {
+      "argv0": "python3",
+      "executable_sha256": "e1efa562c2cc2e35521a5c9c9b9939921001ff8ca9708a13ef15ace68cc2ccd7",
+      "resolved_executable": "/usr/bin/python3.12",
+      "runtime_id": "3f48ad01f46aa84462c918f963ba93ef478cc5b6cbfa9f324c17f13da961889f"
+    }
+  },
+  "verify_result": {
+    "campaign_id": "demo-campaign",
+    "certificate_id": "10ad13a6a8df5bca11ecc94ec659b02df1f07326dfb0e76b3b68b34be1d259c2",
+    "confirm_channel": "local_tty_approve",
+    "confirm_channel_note": null,
+    "event_chain": "ok",
+    "event_head": "dc351befd21f96d18e3e4e25202d0353f5e9d1b7b297abb2384e30a656d27329",
+    "ok": true,
+    "run_id": "run-001"
+  }
+}
