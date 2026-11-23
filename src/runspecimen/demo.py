@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from runspecimen.errors import RunSpecimenError
@@ -29,7 +30,7 @@ def init_demo(workspace: Path) -> dict:
         "version": 1,
         "campaign_id": "demo-campaign",
         "run_id": "run-001",
-        "argv": ["python3", "work/compute.py"],
+        "argv": [sys.executable, "work/compute.py"],
         "cwd": ".",
         "source": {"roots": ["work"], "excludes": ["*.pyc", "__pycache__"]},
         "outputs": {"required": ["outputs/result.json"]},
