@@ -162,7 +162,7 @@ runspecimen validate --workspace . --contract examples/demo_contract.json
 
 ## Typical sequence
 
-Prefer `init-demo` after a pip or Homebrew install. `examples/showcase/` exists in a git checkout only; create a workspace with `init-demo` before running commands that name those files. The block below uses the in-tree example path (git clone) or substitute `contract.json` inside an `init-demo` workspace:
+Prefer `init-demo` after a pip or Homebrew install. The generated contract uses the absolute Python interpreter running the CLI, so another `python3` on PATH cannot select a different demo runtime. Keep that interpreter installed until the demo is complete. `examples/showcase/` exists in a git checkout only; create a workspace with `init-demo` before running commands that name those files. The block below uses the in-tree example path (git clone) or substitute `contract.json` inside an `init-demo` workspace:
 
 ```bash
 # 1) Bind approval on a real TTY (refuses pipes/CI without a TTY)

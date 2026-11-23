@@ -2,6 +2,10 @@
 
 import contextlib
 import io
+import json
+import os
+import subprocess
+import sys
 from unittest.mock import patch
 
 from tests.helpers import RunSpecimenTestCase
@@ -22,6 +26,26 @@ class TestDemoCLI(RunSpecimenTestCase):
         self.assertFalse((destination / ".runspecimen").exists())
         self.assertEqual(list((destination / "outputs").iterdir()), [])
         self.assertEqual(contract.postflight.json_equals[1].equals, 338350)
+
+    def test_demo_uses_cli_interpreter_despite_conflicting_path(self):
+        destination = self.ws / "new demo"
+        init_demo(destination)
+        contract = load_contract(destination / "contract.json")
+        self.assertEqual(contract.argv[0], sys.executable)
+        self.assertTrue(os.path.isabs(contract.argv[0]))
+        fake_bin = self.ws / "conflicting-bin"
+        fake_bin.mkdir()
+        fake_python = fake_bin / "python3"
+        fake_python.write_text("#!/bin/sh\nexit 73\n", encoding="utf-8")
+        fake_python.chmod(0o755)
+        env = dict(os.environ, PATH=str(fake_bin))
+        # Execute only the demo payload, not approval or lifecycle commands.
+        result = subprocess.run(contract.argv, cwd=destination, env=env,
+                                text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads((destination / "outputs/result.json").read_text(encoding="utf-8"))
+        self.assertEqual(output, {"status": "ok", "sum_of_squares": 338350})
+        self.assertFalse((destination / ".runspecimen").exists())
 
     def test_demo_refuses_existing_directory_without_mutation(self):
         sentinel = self.ws / "important.txt"
