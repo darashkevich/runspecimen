@@ -23,7 +23,7 @@ class TestMCPValidation(unittest.TestCase):
             for key in valid:
                 cases.append((name, {k: v for k, v in valid.items() if k != key}))
             for key, prop in schema['properties'].items():
-                invalid = ('yes', 1, None) if prop['type'] == 'boolean' else (False, 1, [], {}, None, '', 'a\x00b')
+                invalid = ('yes', 1, None) if prop['type'] == 'boolean' else (False, 1, [], {}, None, '', ' ', '\t', 'a\x00b')
                 cases.extend((name, dict(valid, **{key: value})) for value in invalid)
             cases.append((name, dict(valid, unexpected='x')))
         with patch.object(mcp.shutil, 'which') as which, patch.object(mcp.subprocess, 'run') as run:
@@ -32,6 +32,32 @@ class TestMCPValidation(unittest.TestCase):
                     self.assertTrue(mcp._run_cli(name, arguments)['isError'])
             which.assert_not_called()
             run.assert_not_called()
+
+    def test_allowed_action_without_schema_fails_closed(self):
+        with patch.object(mcp, 'TOOLS', []), patch.object(mcp.shutil, 'which') as which, patch.object(
+            mcp.subprocess, 'run'
+        ) as run:
+            response = mcp._handle({'id': 1, 'method': 'tools/call',
+                                    'params': {'name': 'about', 'arguments': {}}})
+            self.assertTrue(response['result']['isError'])
+            self.assertIn('No argument schema', response['result']['content'][0]['text'])
+            self.assertEqual(mcp._handle({'id': 2, 'method': 'ping'})['result'], {})
+            which.assert_not_called()
+            run.assert_not_called()
+
+    def test_bad_arguments_do_not_kill_either_server(self):
+        requests = [{'id': i, 'method': 'tools/call',
+                     'params': {'name': 'about', 'arguments': arguments}}
+                    for i, arguments in enumerate((None, [], '', False, 1))]
+        requests.append({'id': 99, 'method': 'ping'})
+        for path in (MCP, ROOT / 'plugins/runspecimen/antigravity/scripts/runspecimen_mcp.py'):
+            result = subprocess.run([sys.executable, str(path)], text=True, capture_output=True,
+                                    input=''.join(json.dumps(r) + '\n' for r in requests), check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            responses = [json.loads(line) for line in result.stdout.splitlines()]
+            self.assertEqual(len(responses), len(requests))
+            self.assertTrue(all(r['result']['isError'] for r in responses[:-1]))
+            self.assertEqual(responses[-1], {'jsonrpc': '2.0', 'id': 99, 'result': {}})
 
     def test_valid_schema_arguments_reach_cli(self):
         for tool in mcp.TOOLS:

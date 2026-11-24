@@ -208,7 +208,9 @@ def _validate_arguments(action: str, arguments: Any) -> str | None:
     """Enforce the small advertised schema without an optional dependency."""
     if not isinstance(arguments, dict):
         return "arguments must be an object"
-    schema = next(tool["inputSchema"] for tool in TOOLS if tool["name"] == action)
+    schema = next((tool["inputSchema"] for tool in TOOLS if tool["name"] == action), None)
+    if schema is None:
+        return f"No argument schema registered for action '{action}'"
     properties = schema["properties"]
     if any(key not in properties for key in arguments):
         return "arguments contain unsupported fields"
@@ -220,7 +222,7 @@ def _validate_arguments(action: str, arguments: Any) -> str | None:
         if kind == "boolean":
             if not isinstance(value, bool):
                 return f"{key} must be a boolean"
-        elif not isinstance(value, str) or not value or "\x00" in value:
+        elif not isinstance(value, str) or not value.strip() or "\x00" in value:
             return f"{key} must be a non-empty string without NUL bytes"
     return None
 
