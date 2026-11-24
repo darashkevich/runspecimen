@@ -204,12 +204,38 @@ def _error(msg_id: Any, code: int, message: str) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
 
 
+def _validate_arguments(action: str, arguments: Any) -> str | None:
+    """Enforce the small advertised schema without an optional dependency."""
+    if not isinstance(arguments, dict):
+        return "arguments must be an object"
+    schema = next((tool["inputSchema"] for tool in TOOLS if tool["name"] == action), None)
+    if schema is None:
+        return f"No argument schema registered for action '{action}'"
+    properties = schema["properties"]
+    if any(key not in properties for key in arguments):
+        return "arguments contain unsupported fields"
+    for key in schema.get("required", []):
+        if key not in arguments:
+            return f"{key} is required"
+    for key, value in arguments.items():
+        kind = properties[key]["type"]
+        if kind == "boolean":
+            if not isinstance(value, bool):
+                return f"{key} must be a boolean"
+        elif not isinstance(value, str) or not value.strip() or "\x00" in value:
+            return f"{key} must be a non-empty string without NUL bytes"
+    return None
+
+
 def _run_cli(action: str, arguments: dict[str, Any]) -> dict[str, Any]:
     if action not in ALLOWED:
         return {
             "isError": True,
             "content": [{"type": "text", "text": f"Action '{action}' is not allowed via MCP"}],
         }
+    problem = _validate_arguments(action, arguments)
+    if problem is not None:
+        return {"isError": True, "content": [{"type": "text", "text": problem}]}
     executable = shutil.which("runspecimen")
     if executable is None:
         return {
@@ -293,7 +319,9 @@ def _run_cli(action: str, arguments: dict[str, Any]) -> dict[str, Any]:
 def _handle(request: dict[str, Any]) -> dict[str, Any] | None:
     method = request.get("method")
     msg_id = request.get("id")
-    params = request.get("params") or {}
+    params = request.get("params", {})
+    if not isinstance(params, dict):
+        return _error(msg_id, -32602, "params must be an object")
 
     if method == "initialize":
         return _message(msg_id, {
@@ -312,7 +340,9 @@ def _handle(request: dict[str, Any]) -> dict[str, Any] | None:
     if method == "tools/list":
         return _message(msg_id, {"tools": TOOLS})
     if method == "tools/call":
-        name = str(params.get("name") or "")
+        name = params.get("name")
+        if not isinstance(name, str):
+            return _error(msg_id, -32602, "name must be a string")
         if name not in ALLOWED:
             return _message(msg_id, {
                 "isError": True,
@@ -324,9 +354,7 @@ def _handle(request: dict[str, Any]) -> dict[str, Any] | None:
                     ),
                 }],
             })
-        arguments = params.get("arguments") or {}
-        if not isinstance(arguments, dict):
-            arguments = {}
+        arguments = params.get("arguments", {})
         return _message(msg_id, _run_cli(name, arguments))
     if msg_id is None:
         return None
